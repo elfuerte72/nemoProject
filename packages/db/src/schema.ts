@@ -79,6 +79,46 @@ export const bonusTransactionKindEnum = pgEnum('bonus_transaction_kind', [
 export const actorTypeEnum = pgEnum('actor_type', ['system', 'client', 'manager']);
 
 /**
+ * Настройки сервиса: единственная строка, `id` всегда 1.
+ *
+ * Синглтон, а не набор пар «ключ-значение», потому что каждая настройка
+ * имеет свой тип и своё ограничение: ставка — целые базисные пункты в
+ * разумных пределах, минимальная сумма вывода — денежная величина. В
+ * таблице «ключ-значение» и то и другое стало бы текстом, а проверять
+ * его пришлось бы в коде.
+ *
+ * Значения по умолчанию — заглушки: конкретные ставки и минимальная
+ * сумма вывода зависят от блокеров B1 и B3 и заполняются администратором
+ * через экран настроек (тикет 14).
+ */
+export const serviceSettings = pgTable(
+  'service_settings',
+  {
+    id: smallint('id').primaryKey().default(1),
+    /** Ставка первой линии в базисных пунктах: 100 bps = 1%. */
+    referralLine1Bps: integer('referral_line1_bps').default(500).notNull(),
+    /** Ставка второй линии в базисных пунктах. */
+    referralLine2Bps: integer('referral_line2_bps').default(200).notNull(),
+    /** Ниже этой суммы заявка на вывод не принимается. */
+    minWithdrawalAmount: money('min_withdrawal_amount').default('1000').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('service_settings_singleton', sql`${table.id} = 1`),
+    // Ставка выше 100% отдавала бы рефереру больше, чем сервис заработал.
+    check(
+      'service_settings_line1_range',
+      sql`${table.referralLine1Bps} between 0 and 10000`,
+    ),
+    check(
+      'service_settings_line2_range',
+      sql`${table.referralLine2Bps} between 0 and 10000`,
+    ),
+    check('service_settings_min_withdrawal_non_negative', sql`${table.minWithdrawalAmount} >= 0`),
+  ],
+);
+
+/**
  * Клиент. Ключ — `telegram_user_id`, а не username: username в Telegram
  * изменяем и переиспользуется другими людьми (принцип 2.2 ТЗ).
  */

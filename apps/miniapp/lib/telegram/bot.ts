@@ -23,9 +23,10 @@ export function getBot(): Bot {
   const bot = new Bot(token);
 
   bot.command('start', async (ctx) => {
-    // Реферальная ссылка приходит как `/start ref_<telegram_user_id>`.
-    // Привязка выполняется на стороне Mini App, где уже проверен initData:
-    // здесь идентификатор пригласившего ничем не подтверждён.
+    // Реферальный код едет в Mini App параметром `startapp` ссылки
+    // t.me/<bot>/<app>?startapp=<код>, а не через эту команду: привязка
+    // выполняется там, где `telegram_user_id` подтверждён подписью
+    // initData. Здесь он ничем не подтверждён.
     const keyboard = new InlineKeyboard().webApp('Открыть обменник', appUrl);
     await ctx.reply(
       'Здравствуйте. Здесь можно обменять валюту: откройте приложение, ' +

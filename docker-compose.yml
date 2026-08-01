@@ -1,0 +1,28 @@
+# Postgres для разработки и тестов. Одна команда: docker compose up -d
+#
+# Базы две: `nemo_dev` для разработки и `nemo_test` для тестов. Тесты
+# очищают данные между собой, и делать это с базой разработки означало бы
+# терять то, что разработчик наполнил руками.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: nemo-postgres
+    environment:
+      POSTGRES_USER: nemo
+      POSTGRES_PASSWORD: nemo
+      POSTGRES_DB: nemo_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - nemo-pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/10-create-test-database.sql:ro
+    healthcheck:
+      # Без этого `docker compose up -d` возвращается раньше, чем база
+      # начинает принимать соединения, и первая же миграция падает.
+      test: ['CMD-SHELL', 'pg_isready -U nemo -d nemo_dev']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  nemo-pgdata:

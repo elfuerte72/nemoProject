@@ -11,8 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@nemo/crypto": "workspace:*",
-    "@nemo/db": "workspace:*",
+    "@nemo/core": "workspace:*",
     "@nemo/types": "workspace:*",
     "next": "^15.1.4",
     "react": "^19.0.0",

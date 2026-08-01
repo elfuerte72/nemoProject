@@ -5,7 +5,7 @@ export default defineConfig({
   out: './migrations',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? 'postgres://localhost:5432/nemo_dev',
+    url: process.env.DATABASE_URL ?? 'postgres://nemo:nemo@localhost:5432/nemo_dev',
   },
   casing: 'snake_case',
 });

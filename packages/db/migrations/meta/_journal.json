@@ -8,6 +8,13 @@
       "when": 1785599827975,
       "tag": "0000_good_triton",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785604943731,
+      "tag": "0001_service_settings",
+      "breakpoints": true
     }
   ]
 }
