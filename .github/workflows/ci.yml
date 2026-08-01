@@ -1,0 +1,77 @@
+# Проверки, через которые проходит каждый PR.
+#
+# Тесты идут против настоящего Postgres — той же версии, что в
+# docker-compose. Иначе смысл выбранного seam теряется: значимая часть
+# правил сервиса выражена ограничениями базы, и на моке они не
+# проверяются (см. «Testing Decisions» спеки).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Новый коммит в ветку отменяет прогон по предыдущему: держать очередь
+# из устаревших проверок незачем.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Типы, тесты, сборка
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: nemo
+          POSTGRES_PASSWORD: nemo
+          POSTGRES_DB: nemo_dev
+        ports:
+          - 5432:5432
+        # Без проверки готовности шаги стартуют раньше, чем база
+        # начинает принимать соединения, и падает первая же миграция.
+        options: >-
+          --health-cmd "pg_isready -U nemo -d nemo_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://nemo:nemo@localhost:5432/nemo_dev
+      # Базовое имя: обвязка тестов добавляет к нему суффикс пакета и
+      # создаёт базу сама.
+      TEST_DATABASE_URL: postgres://nemo:nemo@localhost:5432/nemo_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Версия pnpm берётся из поля packageManager в package.json —
+      # второго места, где её надо не забыть обновить, не появляется.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Установка зависимостей
+        run: pnpm install --frozen-lockfile
+
+      - name: Типы
+        run: pnpm typecheck
+
+      # Отдельным шагом, хотя тесты применяют миграции сами: так видно,
+      # что схема ложится на пустую базу без ошибок, а не только что
+      # тесты позеленели.
+      - name: Миграции на чистой базе
+        run: pnpm db:migrate
+
+      - name: Тесты
+        run: pnpm test
+
+      - name: Сборка
+        run: pnpm build
