@@ -58,7 +58,9 @@ function renderExchangeRequestStatus(
       return 'Менеджер взял вашу заявку на обмен в работу и скоро назовёт финальный курс.';
     case 'rate_confirmed':
       return [
-        `Финальный курс по вашей заявке на обмен: ${notification.finalRate ?? '—'}.`,
+        notification.finalRate
+          ? `Финальный курс по вашей заявке на обмен: ${notification.finalRate}.`
+          : undefined,
         notification.paymentInstructions
           ? `Реквизиты для оплаты: ${notification.paymentInstructions}`
           : undefined,

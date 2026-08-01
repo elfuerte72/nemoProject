@@ -69,6 +69,8 @@ export function LoginForm() {
         return;
       }
       window.location.href = '/';
+    } catch {
+      setError('Не удалось связаться с сервером. Повторите попытку.');
     } finally {
       setBusy(false);
     }

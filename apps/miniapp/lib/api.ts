@@ -3,6 +3,7 @@ import {
   unauthorizedResponse,
   unexpectedErrorResponse,
 } from '@nemo/http';
+import { botToken } from '@nemo/telegram';
 import { InitDataError, verifyInitData, type InitData } from '@/lib/telegram/init-data';
 
 /**
@@ -23,10 +24,7 @@ import { InitDataError, verifyInitData, type InitData } from '@/lib/telegram/ini
  * подставить туда чужой может кто угодно.
  */
 export function requireInitData(request: Request): InitData {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) {
-    throw new Error('Не задан TELEGRAM_BOT_TOKEN');
-  }
+  const token = botToken();
 
   const header = request.headers.get('authorization');
   const raw = header?.startsWith('tma ') ? header.slice(4) : undefined;

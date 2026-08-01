@@ -69,6 +69,16 @@ export async function saveRequisites(
   const card = cardNumber === undefined ? undefined : sealCard(ctx, cardNumber);
 
   return ctx.db.transaction(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(clientRequisites)
+      .where(
+        and(eq(clientRequisites.clientId, clientId), isNull(clientRequisites.archivedAt)),
+      )
+      .orderBy(desc(clientRequisites.createdAt))
+      .limit(1)
+      .for('update');
+
     await tx
       .update(clientRequisites)
       .set({ archivedAt: new Date() })
@@ -76,14 +86,17 @@ export async function saveRequisites(
         and(eq(clientRequisites.clientId, clientId), isNull(clientRequisites.archivedAt)),
       );
 
+    // Незаполненное поле означает «оставить как было», а не «стереть»:
+    // клиент, меняющий карту, не должен терять телефон, по которому
+    // менеджер отправляет перевод.
     const [row] = await tx
       .insert(clientRequisites)
       .values({
         clientId,
-        bankName: bankName ?? null,
-        phone: phone ?? null,
-        cardLast4: card?.last4 ?? null,
-        cardSealed: card?.sealed ?? null,
+        bankName: bankName ?? current?.bankName ?? null,
+        phone: phone ?? current?.phone ?? null,
+        cardLast4: card?.last4 ?? current?.cardLast4 ?? null,
+        cardSealed: card?.sealed ?? current?.cardSealed ?? null,
       })
       .returning();
 

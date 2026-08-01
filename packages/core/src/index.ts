@@ -16,6 +16,7 @@ import {
 import { beginStaffLogin, completeStaffLogin, getActiveStaff } from './staff.js';
 import {
   cancelExchangeRequest,
+  cancelOwnExchangeRequest,
   claimExchangeRequest,
   completeExchangeRequest,
   confirmExchangeRate,
@@ -65,6 +66,8 @@ export function createCore(ctx: CoreConfig) {
       saveRequisites(ctx, actor, input),
     getRequisites: (actor: Actor) => getRequisites(ctx, actor),
 
+    cancelOwnExchangeRequest: (actor: Actor, requestId: string) =>
+      cancelOwnExchangeRequest(ctx, actor, requestId),
     cancelExchangeRequest: (actor: Actor, requestId: string, input?: { reason?: string }) =>
       cancelExchangeRequest(ctx, actor, requestId, input),
 
@@ -120,6 +123,7 @@ export type {
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
 export type { BeginStaffLoginResult, StaffSession } from './staff.js';
 export type {
+  ClientTransitionResult,
   CompleteExchangeRequestInput,
   ConfirmExchangeRateInput,
   ExchangeRequestEventView,

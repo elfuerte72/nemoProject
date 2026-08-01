@@ -7,6 +7,7 @@ import {
   SESSION_COOKIE,
   sessionSecret,
 } from '@/lib/auth/session';
+import { botToken } from '@nemo/telegram';
 import { verifyTelegramLogin } from '@/lib/auth/telegram-login';
 
 export const runtime = 'nodejs';
@@ -22,13 +23,8 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: Request): Promise<Response> {
   try {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (!token) {
-      throw new Error('Не задан TELEGRAM_BOT_TOKEN');
-    }
-
     const payload = (await request.json()) as Record<string, string>;
-    const login = verifyTelegramLogin(payload, token);
+    const login = verifyTelegramLogin(payload, botToken());
     const { staffId, enrollmentSecret } = await getCore().beginStaffLogin(login.telegramUserId);
 
     const store = await cookies();

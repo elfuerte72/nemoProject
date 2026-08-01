@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { ExchangeRequestEventView, ManagerExchangeRequestView } from '@nemo/core';
 import { canTransition, type ExchangeRequestStatus } from '@nemo/types';
-import { STATUS_LABELS } from '@/lib/exchange-request-labels';
+import { KIND_LABELS, STATUS_LABELS } from '@/lib/exchange-request-labels';
 
 /**
  * Действия менеджера над заявкой.
@@ -70,6 +70,10 @@ export function ExchangeRequestCard({
         return;
       }
       router.refresh();
+    } catch {
+      // Оборвавшаяся сеть без этой ветки выглядела бы как «нажал, и
+      // ничего не произошло» — менеджер нажал бы ещё раз.
+      setError('Не удалось связаться с сервером. Повторите попытку.');
     } finally {
       setBusy(false);
     }
@@ -83,12 +87,12 @@ export function ExchangeRequestCard({
         </h1>
         <p style={styles.muted}>
           {STATUS_LABELS[request.status]} ·{' '}
-          {request.kind === 'cash' ? 'наличные' : 'электронный перевод'} · клиент{' '}
+          {KIND_LABELS[request.kind]} · клиент{' '}
           {request.clientId}
         </p>
         {request.finalRate ? (
           <p style={styles.muted}>
-            Курс {request.finalRate}
+            Финальный курс {request.finalRate}
             {request.toAmount ? `, к выдаче ${request.toAmount} ${request.toCode}` : ''}
           </p>
         ) : undefined}

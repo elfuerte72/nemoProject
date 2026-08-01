@@ -31,11 +31,3 @@ export function requireStaff(actor: Actor): { staffId: string; role: StaffRole }
   }
   return { staffId: actor.staffId, role: actor.role };
 }
-
-export function requireAdmin(actor: Actor): { staffId: string } {
-  const staff = requireStaff(actor);
-  if (staff.role !== 'admin') {
-    throw new ForbiddenError('Операция доступна только администратору');
-  }
-  return { staffId: staff.staffId };
-}

@@ -13,7 +13,9 @@ import { InvalidInputError } from './errors.js';
 export function requirePositiveAmount(value: string, subject: string): Amount {
   const parsed = Money.positiveAmountSchema.safeParse(value);
   if (!parsed.success) {
-    throw new InvalidInputError(`${subject} должен быть числом больше нуля`);
+    // Двоеточием, а не связкой: подставляется и «Сумма заявки», и
+    // «Курс», и согласовать их в одном шаблоне по-русски нельзя.
+    throw new InvalidInputError(`${subject}: ожидается число больше нуля`);
   }
   return parsed.data;
 }

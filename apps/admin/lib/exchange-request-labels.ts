@@ -1,4 +1,4 @@
-import type { ExchangeRequestStatus } from '@nemo/types';
+import type { ExchangeKind, ExchangeRequestStatus } from '@nemo/types';
 
 /**
  * Состояния заявки словами из `CONTEXT.md`. Менеджер и клиент видят
@@ -12,4 +12,10 @@ export const STATUS_LABELS: Record<ExchangeRequestStatus, string> = {
   payment_received: 'Оплата получена',
   completed: 'Исполнена',
   cancelled: 'Отменена',
+};
+
+/** Способ исполнения. Одна карта на всю админку: в двух местах подписи разошлись. */
+export const KIND_LABELS: Record<ExchangeKind, string> = {
+  electronic: 'электронный перевод',
+  cash: 'наличные',
 };

@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import {
   createCore,
+  ForbiddenError,
   InvalidInputError,
   NotFoundError,
   TransitionNotAllowedError,
@@ -49,7 +50,7 @@ describe('отмена клиентом', () => {
   it('доступна, пока заявку никто не взял', async () => {
     const id = await givenNewRequest();
 
-    const { request } = await core.cancelExchangeRequest(asClient(100n), id);
+    const { request } = await core.cancelOwnExchangeRequest(asClient(100n), id);
 
     expect(request.status).toBe('cancelled');
   });
@@ -58,7 +59,7 @@ describe('отмена клиентом', () => {
     const id = await givenNewRequest();
     await core.claimExchangeRequest(manager, id);
 
-    await expect(core.cancelExchangeRequest(asClient(100n), id)).rejects.toThrow(
+    await expect(core.cancelOwnExchangeRequest(asClient(100n), id)).rejects.toThrow(
       TransitionNotAllowedError,
     );
   });
@@ -67,15 +68,31 @@ describe('отмена клиентом', () => {
     await core.registerClient({ telegramUserId: 200n });
     const id = await givenNewRequest();
 
-    await expect(core.cancelExchangeRequest(asClient(200n), id)).rejects.toThrow(NotFoundError);
+    await expect(core.cancelOwnExchangeRequest(asClient(200n), id)).rejects.toThrow(NotFoundError);
   });
 
   it('не требует объяснений', async () => {
     const id = await givenNewRequest();
 
-    const { request } = await core.cancelExchangeRequest(asClient(100n), id);
+    const { request } = await core.cancelOwnExchangeRequest(asClient(100n), id);
 
     expect(request.cancelReason).toBeNull();
+  });
+
+  it('возвращает заявку без дохода по ней: это внутренняя величина', async () => {
+    const id = await givenNewRequest();
+
+    const { request } = await core.cancelOwnExchangeRequest(asClient(100n), id);
+
+    expect(request).not.toHaveProperty('serviceIncome');
+  });
+
+  it('не выполняется через операцию менеджера', async () => {
+    const id = await givenNewRequest();
+
+    await expect(
+      core.cancelExchangeRequest(asClient(100n), id, { reason: 'передумал' }),
+    ).rejects.toThrow(ForbiddenError);
   });
 });
 
@@ -136,7 +153,7 @@ describe('отмена менеджером', () => {
 describe('отменённая заявка', () => {
   it('дальше никуда не переходит', async () => {
     const id = await givenNewRequest();
-    await core.cancelExchangeRequest(asClient(100n), id);
+    await core.cancelOwnExchangeRequest(asClient(100n), id);
 
     // Именно «переход запрещён», а не «заявку уже взяли»: менеджеру,
     // открывшему отменённую заявку, нельзя сообщать, что её забрал

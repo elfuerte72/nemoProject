@@ -20,16 +20,13 @@ export async function POST(
     const initData = requireInitData(request);
     const { id } = await context.params;
 
-    const actor = { type: 'client', telegramUserId: initData.telegramUserId } as const;
-    const core = getCore();
-
-    const result = await core.cancelExchangeRequest(actor, id);
+    const result = await getCore().cancelOwnExchangeRequest(
+      { type: 'client', telegramUserId: initData.telegramUserId },
+      id,
+    );
     await deliverNotifications(result.notifications, { botToken: botToken() });
 
-    // Операция отдаёт заявку в представлении менеджера — с доходом
-    // сервиса. Клиенту уходит его собственное представление, где такого
-    // поля нет вовсе.
-    return json({ request: await core.getExchangeRequest(actor, id) });
+    return json({ request: result.request });
   } catch (error) {
     return errorResponse(error);
   }

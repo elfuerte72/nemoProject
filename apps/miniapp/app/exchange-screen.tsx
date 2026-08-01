@@ -237,7 +237,7 @@ export function ExchangeScreen() {
                   {request.cancelReason ? ` — ${request.cancelReason}` : ''}
                 </div>
                 {request.finalRate ? (
-                  <div style={styles.muted}>Курс {request.finalRate}</div>
+                  <div style={styles.muted}>Финальный курс {request.finalRate}</div>
                 ) : undefined}
                 {/*
                   Реквизиты для оплаты живут в самой заявке, а не только

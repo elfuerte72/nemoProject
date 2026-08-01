@@ -60,6 +60,18 @@ export interface TransitionResult {
   readonly notifications: readonly Notification[];
 }
 
+/** То же, но для перехода, который выполнил клиент: без дохода по заявке. */
+export interface ClientTransitionResult {
+  readonly request: ExchangeRequestView;
+  readonly notifications: readonly Notification[];
+}
+
+/** Внутренний результат перехода: строка, из которой строят нужное представление. */
+interface AppliedTransition {
+  readonly row: ExchangeRequestRow;
+  readonly notifications: readonly Notification[];
+}
+
 type ExchangeRequestRow = typeof exchangeRequests.$inferSelect;
 
 /**
@@ -172,7 +184,7 @@ async function applyTransition(
   executor: Executor,
   row: ExchangeRequestRow,
   input: TransitionInput,
-): Promise<TransitionResult> {
+): Promise<AppliedTransition> {
   if (!canTransition(row.status, input.to)) {
     throw new TransitionNotAllowedError(
       `Из состояния «${row.status}» нельзя перейти в «${input.to}»`,
@@ -199,7 +211,17 @@ async function applyTransition(
     comment: input.comment ?? null,
   });
 
-  return { request: toManagerView(updated!), notifications: [notificationFor(updated!)] };
+  return { row: updated!, notifications: [notificationFor(updated!)] };
+}
+
+/** Переход, выполненный сотрудником: наружу уходит его представление. */
+async function staffTransition(
+  executor: Executor,
+  row: ExchangeRequestRow,
+  input: TransitionInput,
+): Promise<TransitionResult> {
+  const applied = await applyTransition(executor, row, input);
+  return { request: toManagerView(applied.row), notifications: applied.notifications };
 }
 
 /** Очередь: заявки, которых никто не взял. */
@@ -293,7 +315,7 @@ export async function claimExchangeRequest(
       throw new ConflictError('Заявку на обмен уже взяли в работу');
     }
 
-    return applyTransition(tx, row, {
+    return staffTransition(tx, row, {
       to: 'in_progress',
       actorType: 'manager',
       actorStaffId: staff.staffId,
@@ -330,7 +352,7 @@ export async function confirmExchangeRate(
     const row = await lockRequest(tx, requestId);
     const staffId = requireOwnership(row, actor);
 
-    return applyTransition(tx, row, {
+    return staffTransition(tx, row, {
       to: 'rate_confirmed',
       actorType: 'manager',
       actorStaffId: staffId,
@@ -352,7 +374,7 @@ export async function markPaymentReceived(
     const row = await lockRequest(tx, requestId);
     const staffId = requireOwnership(row, actor);
 
-    return applyTransition(tx, row, {
+    return staffTransition(tx, row, {
       to: 'payment_received',
       actorType: 'manager',
       actorStaffId: staffId,
@@ -383,7 +405,7 @@ export async function completeExchangeRequest(
     const staffId = requireOwnership(row, actor);
     await requireKnownCurrency(tx, serviceIncomeCode);
 
-    return applyTransition(tx, row, {
+    return staffTransition(tx, row, {
       to: 'completed',
       actorType: 'manager',
       actorStaffId: staffId,
@@ -393,10 +415,41 @@ export async function completeExchangeRequest(
 }
 
 /**
- * Отмена — единственный переход, доступный клиенту, и только пока
- * заявку никто не взял. Дальше в работе уже участвует менеджер, и
- * бросать её на полпути клиент не может.
+ * Отмена клиентом — единственный переход, который он может выполнить, и
+ * только пока заявку никто не взял. Дальше в работе участвует менеджер,
+ * и бросать её на полпути клиент не может.
+ *
+ * Отдельная операция от менеджерской, а не общая с проверкой роли
+ * внутри: у них разные правила — клиент не объясняется, менеджер обязан
+ * назвать причину, — и, главное, разный ответ. Клиенту уходит его
+ * представление заявки, в котором дохода по заявке нет вовсе; общая
+ * операция вернула бы менеджерское, и не забыть про это пришлось бы
+ * каждому маршруту.
  */
+export async function cancelOwnExchangeRequest(
+  ctx: CoreConfig,
+  actor: Actor,
+  requestId: string,
+): Promise<ClientTransitionResult> {
+  const clientId = requireClient(actor);
+
+  return ctx.db.transaction(async (tx) => {
+    const row = await lockRequest(tx, requestId);
+    if (row.clientId !== clientId) {
+      throw new NotFoundError('Заявка на обмен не найдена');
+    }
+    if (row.status !== 'new') {
+      throw new TransitionNotAllowedError(
+        'Заявку на обмен уже взяли в работу — отменить её может только менеджер',
+      );
+    }
+
+    const result = await applyTransition(tx, row, { to: 'cancelled', actorType: 'client' });
+    return { request: toExchangeRequestView(result.row), notifications: result.notifications };
+  });
+}
+
+/** Отмена менеджером: из любого незавершённого состояния и с причиной. */
 export async function cancelExchangeRequest(
   ctx: CoreConfig,
   actor: Actor,
@@ -405,20 +458,6 @@ export async function cancelExchangeRequest(
 ): Promise<TransitionResult> {
   return ctx.db.transaction(async (tx) => {
     const row = await lockRequest(tx, requestId);
-
-    if (actor.type === 'client') {
-      const clientId = requireClient(actor);
-      if (row.clientId !== clientId) {
-        throw new NotFoundError('Заявка на обмен не найдена');
-      }
-      if (row.status !== 'new') {
-        throw new TransitionNotAllowedError(
-          'Заявку на обмен уже взяли в работу — отменить её может только менеджер',
-        );
-      }
-      return applyTransition(tx, row, { to: 'cancelled', actorType: 'client' });
-    }
-
     const staffId = requireOwnership(row, actor);
     const reason = input.reason?.trim();
     if (!reason) {
@@ -427,7 +466,7 @@ export async function cancelExchangeRequest(
       throw new InvalidInputError('Укажите причину отмены');
     }
 
-    return applyTransition(tx, row, {
+    return staffTransition(tx, row, {
       to: 'cancelled',
       actorType: 'manager',
       actorStaffId: staffId,

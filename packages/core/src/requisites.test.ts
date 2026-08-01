@@ -77,6 +77,24 @@ describe('замена реквизитов', () => {
     expect(current?.cardLast4).toBe('2222');
   });
 
+  it('не теряет то, что клиент не вводил заново', async () => {
+    await core.saveRequisites(asClient(100n), {
+      bankName: 'Тинькофф',
+      phone: '+79990000000',
+      cardNumber: CARD,
+    });
+
+    // Клиент меняет только карту. Телефон, по которому менеджер
+    // отправляет перевод, при этом никуда не девается.
+    const replaced = await core.saveRequisites(asClient(100n), {
+      cardNumber: '5536910011112222',
+    });
+
+    expect(replaced.cardLast4).toBe('2222');
+    expect(replaced.phone).toBe('+79990000000');
+    expect(replaced.bankName).toBe('Тинькофф');
+  });
+
   it('сохраняет прежние в архиве: на них ссылаются прошлые заявки', async () => {
     const first = await core.saveRequisites(asClient(100n), { cardNumber: CARD });
     const { request } = await core.submitExchangeRequest(asClient(100n), {

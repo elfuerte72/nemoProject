@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import type { ManagerExchangeRequestView } from '@nemo/core';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
-import { STATUS_LABELS } from '@/lib/exchange-request-labels';
+import { KIND_LABELS, STATUS_LABELS } from '@/lib/exchange-request-labels';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,7 +68,7 @@ function ExchangeRequestList({
           </Link>
           <div style={styles.muted}>
             {STATUS_LABELS[request.status]} ·{' '}
-            {request.kind === 'cash' ? 'наличные' : 'электронный'} · клиент{' '}
+            {KIND_LABELS[request.kind]} · клиент{' '}
             {request.clientId.toString()}
           </div>
         </li>
