@@ -43,7 +43,6 @@ export interface ManagerExchangeRequestView extends ExchangeRequestView {
   readonly assignedManagerId: string | null;
   readonly serviceIncome: Amount | null;
   readonly serviceIncomeCode: string | null;
-  readonly requisitesId: string | null;
 }
 
 export interface ExchangeRequestEventView {
@@ -91,7 +90,6 @@ export function toManagerView(row: ExchangeRequestRow): ManagerExchangeRequestVi
     assignedManagerId: row.assignedManagerId,
     serviceIncome: row.serviceIncome === null ? null : Money.toAmount(row.serviceIncome),
     serviceIncomeCode: row.serviceIncomeCode,
-    requisitesId: row.requisitesId,
   };
 }
 

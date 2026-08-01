@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import type { Actor } from '@nemo/core';
+import { CoreError, type Actor } from '@nemo/core';
 import { getCore } from '@/lib/core';
 import {
   readToken,
@@ -16,6 +16,17 @@ import {
  * сих пор. Второе обязательно при каждом запросе: увольнение должно
  * закрывать доступ немедленно, а не когда истечёт выданная раньше кука.
  */
+/**
+ * Отказ во входе — от отказавшей базы или незаданного секрета сессии.
+ *
+ * Экраны заводят посетителя на страницу входа только по первому: если
+ * молча отправлять туда и по второму, оборванная база превратится в
+ * бесконечный редирект без единой записи в логе.
+ */
+export function isAuthRefusal(error: unknown): boolean {
+  return error instanceof SessionError || (error instanceof CoreError && error.code === 'forbidden');
+}
+
 export async function requireStaffActor(): Promise<Actor & { type: 'staff' }> {
   const store = await cookies();
   const payload = readToken(store.get(SESSION_COOKIE)?.value, { secret: sessionSecret() });

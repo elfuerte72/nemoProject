@@ -5,7 +5,7 @@ import type { CurrencyPairView, ExchangeRequestView, RequisitesView } from '@nem
 import type { ExchangeKind } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { getWebApp } from '@/lib/telegram/webapp';
-import { STATUS_LABELS } from '@/lib/exchange-request-labels';
+import { KIND_LABELS, STATUS_LABELS } from '@/lib/exchange-request-labels';
 import { RequisitesSection } from './requisites-section';
 
 /**
@@ -16,11 +16,6 @@ import { RequisitesSection } from './requisites-section';
  * справочный. Экран говорит об этом прямо — обещание курса, которое
  * сервис не сможет сдержать, дороже неудобства.
  */
-
-const KIND_LABELS: Record<ExchangeKind, string> = {
-  electronic: 'Электронный перевод',
-  cash: 'Наличные',
-};
 
 export function ExchangeScreen() {
   const [pairs, setPairs] = useState<CurrencyPairView[]>([]);
