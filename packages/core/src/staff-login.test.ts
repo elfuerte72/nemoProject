@@ -9,9 +9,9 @@ import { disableStaff, givenStaff } from './test-support.js';
  *
  * Telegram Login подтверждает только владение аккаунтом — этого мало:
  * за админкой лежат чужие номера карт. Допуск даёт список сотрудников,
- * а сессию — второй фактор. Отказ во всех случаях одинаков: разные
- * ответы на «не сотрудник» и «неверный код» подсказывали бы
- * подбирающему, на каком он шаге.
+ * а сессию — второй фактор, выданный администратором заранее. Отказ во
+ * всех случаях одинаков: разные ответы на «не сотрудник» и «второй
+ * фактор не выдан» подсказывали бы подбирающему, на каком он шаге.
  */
 
 const keys = generateRequisiteKeyPair();
@@ -19,6 +19,16 @@ const core = createCore({
   db: testDatabase(),
   requisites: { publicKey: keys.publicKey, privateKey: keys.privateKey },
 });
+
+/** Сотрудник, которому администратор уже выдал второй фактор. */
+async function givenEnrolledStaff(telegramUserId: bigint, role: 'manager' | 'admin' = 'manager') {
+  const admin = await core.enrollFirstAdmin({
+    telegramUserId: telegramUserId + 1n,
+    displayName: 'Первый администратор',
+  });
+  const actor = { type: 'staff' as const, staffId: admin.staff.id, role: 'admin' as const };
+  return core.addStaff(actor, { telegramUserId, displayName: 'Сотрудник', role });
+}
 
 beforeEach(() => resetDatabase());
 afterAll(() => closeTestDatabase());
@@ -29,15 +39,15 @@ describe('допуск', () => {
   });
 
   it('не даётся отключённому сотруднику', async () => {
-    const staff = await givenStaff({ telegramUserId: 777n });
-    await disableStaff(staff.staffId);
+    const { staff } = await givenEnrolledStaff(777n);
+    await disableStaff(staff.id);
 
     await expect(core.beginStaffLogin(777n)).rejects.toThrow(ForbiddenError);
   });
 
   it('не сообщает, чем именно отказ отличается от другого отказа', async () => {
-    const staff = await givenStaff({ telegramUserId: 777n });
-    await disableStaff(staff.staffId);
+    const { staff } = await givenEnrolledStaff(777n);
+    await disableStaff(staff.id);
 
     const unknown = await core.beginStaffLogin(555n).catch((error: Error) => error.message);
     const disabled = await core.beginStaffLogin(777n).catch((error: Error) => error.message);
@@ -47,55 +57,59 @@ describe('допуск', () => {
 });
 
 describe('второй фактор', () => {
-  it('настраивается при первом входе: секрет выдаётся один раз', async () => {
-    await givenStaff({ telegramUserId: 777n });
+  it('обязателен: без выданного секрета вход не начинается', async () => {
+    // Сотрудник заведён в обход администратора — секрета у него нет.
+    // Сам вход его не заводит: секрет, появляющийся при первом входе,
+    // отдал бы админку тому, кто угнал аккаунт раньше настоящего
+    // сотрудника.
+    const staff = await givenStaff({ telegramUserId: 777n });
 
-    const first = await core.beginStaffLogin(777n);
-    const second = await core.beginStaffLogin(777n);
-
-    expect(first.enrollmentSecret).toMatch(/^[A-Z2-7]+$/);
-    expect(second.enrollmentSecret).toBeUndefined();
+    await expect(core.beginStaffLogin(777n)).rejects.toThrow(ForbiddenError);
+    expect(staff.staffId).toBeTypeOf('string');
   });
 
   it('не выдаёт сессию без кода', async () => {
-    await givenStaff({ telegramUserId: 777n });
+    await givenEnrolledStaff(777n);
     const { staffId } = await core.beginStaffLogin(777n);
 
     await expect(core.completeStaffLogin(staffId, '000000')).rejects.toThrow(ForbiddenError);
   });
 
   it('выдаёт сессию по коду из приложения-аутентификатора', async () => {
-    await givenStaff({ telegramUserId: 777n, role: 'admin' });
-    const { staffId, enrollmentSecret } = await core.beginStaffLogin(777n);
+    const enrolled = await givenEnrolledStaff(777n, 'admin');
+    const { staffId } = await core.beginStaffLogin(777n);
 
-    const session = await core.completeStaffLogin(staffId, totpCode(enrollmentSecret!));
+    const session = await core.completeStaffLogin(
+      staffId,
+      totpCode(enrolled.enrollmentSecret),
+    );
 
     expect(session).toEqual({ staffId, role: 'admin' });
   });
 
   it('не принимает код у сотрудника, отключённого между шагами входа', async () => {
-    await givenStaff({ telegramUserId: 777n });
-    const { staffId, enrollmentSecret } = await core.beginStaffLogin(777n);
+    const enrolled = await givenEnrolledStaff(777n);
+    const { staffId } = await core.beginStaffLogin(777n);
     await disableStaff(staffId);
 
     await expect(
-      core.completeStaffLogin(staffId, totpCode(enrollmentSecret!)),
+      core.completeStaffLogin(staffId, totpCode(enrolled.enrollmentSecret)),
     ).rejects.toThrow(ForbiddenError);
   });
 });
 
 describe('действующая сессия', () => {
   it('перестаёт действовать, как только сотрудника отключили', async () => {
-    const staff = await givenStaff({ telegramUserId: 777n });
+    const { staff } = await givenEnrolledStaff(777n);
 
-    expect(await core.getActiveStaff(staff.staffId)).toEqual({
-      staffId: staff.staffId,
+    expect(await core.getActiveStaff(staff.id)).toEqual({
+      staffId: staff.id,
       role: 'manager',
     });
 
-    await disableStaff(staff.staffId);
+    await disableStaff(staff.id);
 
-    await expect(core.getActiveStaff(staff.staffId)).rejects.toThrow(ForbiddenError);
+    await expect(core.getActiveStaff(staff.id)).rejects.toThrow(ForbiddenError);
   });
 
   it('не действует для сотрудника, которого нет', async () => {

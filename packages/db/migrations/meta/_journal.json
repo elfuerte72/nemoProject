@@ -22,6 +22,13 @@
       "when": 1785606451195,
       "tag": "0002_manager_workflow",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785614039547,
+      "tag": "0003_bonuses_and_admin",
+      "breakpoints": true
     }
   ]
 }

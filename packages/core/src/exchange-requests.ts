@@ -6,6 +6,7 @@ import { requirePositiveAmount } from './amounts.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
+import { quoteForSubmission } from './rates.js';
 import { requireOwnRequisites } from './requisites.js';
 
 /**
@@ -163,6 +164,15 @@ export async function submitExchangeRequest(
     );
   }
 
+  // Котировка запрашивается до транзакции: это обращение к чужому API,
+  // и держать открытой транзакцию на время сетевого запроса значило бы
+  // отдавать соединение с базой в распоряжение чужого сервиса. У
+  // наличных курса нет вовсе — там ставку называет менеджер.
+  const preliminaryRate =
+    input.kind === 'electronic'
+      ? await quoteForSubmission(ctx, { fromCode: input.fromCode, toCode: input.toCode })
+      : null;
+
   return ctx.db.transaction(async (tx) => {
     await requireActivePair(tx, input);
     if (input.requisitesId !== undefined) {
@@ -177,6 +187,7 @@ export async function submitExchangeRequest(
         fromCode: input.fromCode,
         toCode: input.toCode,
         fromAmount,
+        preliminaryRate,
         requisitesId: input.requisitesId ?? null,
       })
       .returning();

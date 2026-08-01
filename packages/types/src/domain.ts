@@ -62,6 +62,37 @@ export const withdrawalRequestStatuses = [
 export const withdrawalRequestStatusSchema = z.enum(withdrawalRequestStatuses);
 export type WithdrawalRequestStatus = z.infer<typeof withdrawalRequestStatusSchema>;
 
+/**
+ * Допустимые переходы заявки на вывод. Отдельная таблица от заявки на
+ * обмен: у них разные жизненные циклы, и объединять их значило бы
+ * разрешить «оплата получена» там, где оплаты нет.
+ *
+ * Баллы списываются в «выплачена» — это состояние конечное, и вернуться
+ * из него нельзя: возврат означал бы, что баллы появились обратно, а
+ * деньги у клиента уже.
+ */
+export const withdrawalRequestTransitions: Record<
+  WithdrawalRequestStatus,
+  readonly WithdrawalRequestStatus[]
+> = {
+  new: ['approved', 'rejected'],
+  approved: ['paid', 'rejected'],
+  paid: [],
+  rejected: [],
+};
+
+export function canTransitionWithdrawal(
+  from: WithdrawalRequestStatus,
+  to: WithdrawalRequestStatus,
+): boolean {
+  return withdrawalRequestTransitions[from].includes(to);
+}
+
+/** Заявка ещё в работе: из этого состояния куда-то ведёт переход. */
+export function isWithdrawalOpen(status: WithdrawalRequestStatus): boolean {
+  return withdrawalRequestTransitions[status].length > 0;
+}
+
 /** Способ выплаты бонусов. Исполняет менеджер вручную. */
 export const withdrawalMethods = ['bank', 'crypto'] as const;
 export const withdrawalMethodSchema = z.enum(withdrawalMethods);
@@ -79,6 +110,47 @@ export const cardApplicationStatuses = [
 ] as const;
 export const cardApplicationStatusSchema = z.enum(cardApplicationStatuses);
 export type CardApplicationStatus = z.infer<typeof cardApplicationStatusSchema>;
+
+/**
+ * Допустимые переходы заявки на карту. Менеджер ведёт их по тому, что
+ * сообщил провайдер: сервис карту не выпускает и сам ничего решить не
+ * может.
+ */
+export const cardApplicationTransitions: Record<
+  CardApplicationStatus,
+  readonly CardApplicationStatus[]
+> = {
+  submitted: ['processing', 'rejected'],
+  processing: ['active', 'rejected'],
+  active: [],
+  rejected: [],
+};
+
+export function canTransitionCardApplication(
+  from: CardApplicationStatus,
+  to: CardApplicationStatus,
+): boolean {
+  return cardApplicationTransitions[from].includes(to);
+}
+
+/** Заявка на карту ещё в работе: из этого состояния куда-то ведёт переход. */
+export function isCardApplicationOpen(status: CardApplicationStatus): boolean {
+  return cardApplicationTransitions[status].length > 0;
+}
+
+/**
+ * Движение бонусных баллов. Баланс — сумма движений, поэтому списание
+ * при выплате хранится отрицательной величиной: отдельного знака у
+ * движения нет, иначе баланс пришлось бы считать по правилу «сложить
+ * одни виды и вычесть другие», и это правило разошлось бы между местами.
+ */
+export const bonusTransactionKinds = [
+  'accrual', // начисление за исполненную заявку реферала
+  'withdrawal', // списание при выплате
+  'adjustment', // ручная правка администратором
+] as const;
+export const bonusTransactionKindSchema = z.enum(bonusTransactionKinds);
+export type BonusTransactionKind = z.infer<typeof bonusTransactionKindSchema>;
 
 /** Линия реферальной сети. Глубже второй начисления не идут. */
 export const referralLines = [1, 2] as const;

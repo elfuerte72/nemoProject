@@ -25,7 +25,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const payload = parseLoginPayload(await request.json());
     const login = verifyTelegramLogin(payload, botToken());
-    const { staffId, enrollmentSecret } = await getCore().beginStaffLogin(login.telegramUserId);
+    const { staffId } = await getCore().beginStaffLogin(login.telegramUserId);
 
     const store = await cookies();
     store.set(SESSION_COOKIE, issueToken({ staffId, stage: 'pending' }, {
@@ -39,9 +39,11 @@ export async function POST(request: Request): Promise<Response> {
       maxAge: PENDING_TTL_SECONDS,
     });
 
-    // Секрет второго фактора показывается один раз — при первом входе.
-    // Дальше он не возвращается ни при каких обстоятельствах.
-    return json({ enrollmentSecret });
+    // Секрет второго фактора отсюда не выдаётся: его заводит
+    // администратор при заведении сотрудника и передаёт лично. Секрет,
+    // который появлялся бы при первом входе, отдал бы админку тому, кто
+    // угнал аккаунт раньше самого сотрудника.
+    return json({ ok: true });
   } catch (error) {
     return errorResponse(error);
   }

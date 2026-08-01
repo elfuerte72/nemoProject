@@ -12,7 +12,6 @@ import { useEffect, useRef, useState } from 'react';
 export function LoginForm() {
   const widgetRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<'telegram' | 'code'>('telegram');
-  const [enrollmentSecret, setEnrollmentSecret] = useState<string>();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -31,12 +30,11 @@ export function LoginForm() {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        const body = (await response.json()) as { enrollmentSecret?: string; error?: string };
+        const body = (await response.json()) as { error?: string };
         if (!response.ok) {
           setError(body.error ?? 'Вход не выполнен');
           return;
         }
-        setEnrollmentSecret(body.enrollmentSecret);
         setStage('code');
       } catch {
         setError('Вход не выполнен');
@@ -89,15 +87,6 @@ export function LoginForm() {
         </>
       ) : (
         <form onSubmit={submitCode} style={styles.form}>
-          {enrollmentSecret ? (
-            <div style={styles.enrollment}>
-              <p style={styles.muted}>
-                Первый вход. Добавьте этот ключ в приложение-аутентификатор — второй
-                раз он показан не будет:
-              </p>
-              <code style={styles.secret}>{enrollmentSecret}</code>
-            </div>
-          ) : undefined}
           <label style={styles.muted} htmlFor="totp">
             Код из приложения
           </label>
@@ -139,8 +128,6 @@ const styles = {
   },
   heading: { fontSize: '1.25rem' },
   form: { display: 'flex', flexDirection: 'column', gap: '0.6rem' },
-  enrollment: { display: 'flex', flexDirection: 'column', gap: '0.4rem' },
-  secret: { fontSize: '0.95rem', wordBreak: 'break-all', userSelect: 'all' },
   input: { padding: '0.6rem', fontSize: '1.1rem', letterSpacing: '0.2em' },
   button: { padding: '0.7rem', fontSize: '1rem', fontWeight: 600 },
   muted: { opacity: 0.7, fontSize: '0.85rem', lineHeight: 1.45 },

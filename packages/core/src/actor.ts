@@ -31,3 +31,19 @@ export function requireStaff(actor: Actor): { staffId: string; role: StaffRole }
   }
   return { staffId: actor.staffId, role: actor.role };
 }
+
+/**
+ * Права администратора: управление сотрудниками и экономикой сервиса,
+ * журнал обращений к реквизитам.
+ *
+ * Отделено от прав менеджера, потому что менеджер — тот, за кем этот
+ * журнал и ведётся: доступ к нему у проверяемого обесценивает саму
+ * проверку.
+ */
+export function requireAdmin(actor: Actor): { staffId: string } {
+  const staff = requireStaff(actor);
+  if (staff.role !== 'admin') {
+    throw new ForbiddenError('Операция доступна только администратору');
+  }
+  return { staffId: staff.staffId };
+}

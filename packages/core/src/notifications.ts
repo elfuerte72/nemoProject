@@ -1,4 +1,10 @@
-import type { Amount, ExchangeRequestStatus, ReferralLine } from '@nemo/types';
+import type {
+  Amount,
+  CardApplicationStatus,
+  ExchangeRequestStatus,
+  ReferralLine,
+  WithdrawalRequestStatus,
+} from '@nemo/types';
 
 /**
  * Что нужно сообщить клиенту — следствие операции, а не отдельное
@@ -27,6 +33,25 @@ export type Notification =
       readonly paymentInstructions?: string;
       /** Причина отмены: обязательна, когда отменяет менеджер. */
       readonly cancelReason?: string;
+    }
+  | {
+      readonly kind: 'bonus-accrued';
+      readonly to: bigint;
+      readonly line: ReferralLine;
+      readonly amount: Amount;
+    }
+  | {
+      readonly kind: 'withdrawal-request-status';
+      readonly to: bigint;
+      readonly status: WithdrawalRequestStatus;
+      readonly amount: Amount;
+      /** Причина отказа: обязательна при отклонении. */
+      readonly rejectReason?: string;
+    }
+  | {
+      readonly kind: 'card-application-status';
+      readonly to: bigint;
+      readonly status: CardApplicationStatus;
     };
 
 /**
@@ -45,6 +70,15 @@ export function renderNotification(notification: Notification): string {
         : 'У вас новый реферал во второй линии: ваш реферал привёл знакомого.';
     case 'exchange-request-status':
       return renderExchangeRequestStatus(notification);
+    case 'bonus-accrued':
+      return (
+        `Вам начислено ${notification.amount} баллов за исполненную заявку ` +
+        `реферала ${notification.line === 1 ? 'первой' : 'второй'} линии.`
+      );
+    case 'withdrawal-request-status':
+      return renderWithdrawalRequestStatus(notification);
+    case 'card-application-status':
+      return renderCardApplicationStatus(notification.status);
   }
 }
 
@@ -76,5 +110,37 @@ function renderExchangeRequestStatus(
       return notification.cancelReason
         ? `Заявка на обмен отменена. Причина: ${notification.cancelReason}`
         : 'Заявка на обмен отменена.';
+  }
+}
+
+function renderWithdrawalRequestStatus(
+  notification: Extract<Notification, { kind: 'withdrawal-request-status' }>,
+): string {
+  switch (notification.status) {
+    case 'new':
+      return `Заявка на вывод ${notification.amount} баллов принята. Менеджер её рассмотрит.`;
+    case 'approved':
+      return `Заявка на вывод ${notification.amount} баллов одобрена. Готовим выплату.`;
+    case 'paid':
+      return `Выплата ${notification.amount} баллов отправлена. Баллы списаны с бонусного баланса.`;
+    case 'rejected':
+      // Причина обязательна при отклонении, но тип уведомления допускает
+      // её отсутствие: язык не даёт выразить «обязательна только здесь».
+      return notification.rejectReason
+        ? `Заявка на вывод отклонена. Причина: ${notification.rejectReason}`
+        : 'Заявка на вывод отклонена.';
+  }
+}
+
+function renderCardApplicationStatus(status: CardApplicationStatus): string {
+  switch (status) {
+    case 'submitted':
+      return 'Заявка на карту принята. Мы сообщим, когда она сдвинется.';
+    case 'processing':
+      return 'Заявка на карту в обработке у провайдера.';
+    case 'active':
+      return 'Карта выпущена и активна. Менеджер свяжется с вами по получению.';
+    case 'rejected':
+      return 'Заявка на карту отклонена. Менеджер расскажет подробности.';
   }
 }

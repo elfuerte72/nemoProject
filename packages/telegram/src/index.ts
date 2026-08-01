@@ -62,3 +62,78 @@ export function botToken(): string {
   }
   return token;
 }
+
+export interface BroadcastResult {
+  readonly delivered: number;
+  readonly failed: number;
+}
+
+export interface BroadcastOptions extends DeliveryOptions {
+  /**
+   * Сколько сообщений отправлять в секунду. Telegram ограничивает
+   * массовую рассылку тридцатью — берём с запасом: превышение стоит
+   * временной блокировки бота, и пострадает не только рассылка, но и
+   * уведомления по заявкам.
+   */
+  readonly perSecond?: number;
+  /** Подменяется в тестах, чтобы не ждать по-настоящему. */
+  readonly wait?: (ms: number) => Promise<void>;
+}
+
+const DEFAULT_PER_SECOND = 25;
+
+/**
+ * Ручная рассылка по списку получателей.
+ *
+ * Отправка идёт порциями с паузой: список в тысячи человек, посланный
+ * разом, приводит к 429 от Telegram и временной блокировке бота —
+ * рассылка при этом не доходит ни до кого, а заодно перестают ходить
+ * уведомления по заявкам.
+ *
+ * Отказ по одному получателю не прерывает остальных: клиент,
+ * заблокировавший бота, — обычное дело, а не повод оборвать рассылку на
+ * нём. Такие получатели считаются недоставленными, и администратор
+ * видит их числом.
+ */
+export async function deliverBroadcast(
+  recipients: readonly bigint[],
+  body: string,
+  options: BroadcastOptions,
+): Promise<BroadcastResult> {
+  const perSecond = Math.max(1, options.perSecond ?? DEFAULT_PER_SECOND);
+  const wait = options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+  let delivered = 0;
+  let failed = 0;
+
+  for (let offset = 0; offset < recipients.length; offset += perSecond) {
+    const chunk = recipients.slice(offset, offset + perSecond);
+    const results = await Promise.all(
+      chunk.map((to) => sendText(to, body, options.botToken)),
+    );
+    for (const ok of results) {
+      if (ok) delivered += 1;
+      else failed += 1;
+    }
+
+    if (offset + perSecond < recipients.length) {
+      await wait(1000);
+    }
+  }
+
+  return { delivered, failed };
+}
+
+/** `true`, если Telegram принял сообщение. Ошибки не бросаются наружу. */
+async function sendText(to: bigint, text: string, botToken: string): Promise<boolean> {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: to.toString(), text }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
