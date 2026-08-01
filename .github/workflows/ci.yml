@@ -47,13 +47,13 @@ jobs:
       TEST_DATABASE_URL: postgres://nemo:nemo@localhost:5432/nemo_test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Версия pnpm берётся из поля packageManager в package.json —
       # второго места, где её надо не забыть обновить, не появляется.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
