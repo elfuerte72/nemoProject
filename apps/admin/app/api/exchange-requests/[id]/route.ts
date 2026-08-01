@@ -3,7 +3,7 @@ import { InvalidInputError } from '@nemo/core';
 import { errorResponse, json } from '@/lib/api';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
-import { deliver } from '@/lib/notify';
+import { botToken, deliverNotifications } from '@nemo/telegram';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,7 +71,7 @@ export async function POST(
       }
     })();
 
-    await deliver(result.notifications);
+    await deliverNotifications(result.notifications, { botToken: botToken() });
     return json({ request: result.request });
   } catch (error) {
     return errorResponse(error);

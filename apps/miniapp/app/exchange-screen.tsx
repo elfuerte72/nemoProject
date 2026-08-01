@@ -240,6 +240,16 @@ export function ExchangeScreen() {
                   <div style={styles.muted}>Курс {request.finalRate}</div>
                 ) : undefined}
                 {/*
+                  Реквизиты для оплаты живут в самой заявке, а не только
+                  в сообщении бота: клиент возвращается сюда через день и
+                  не должен искать их в переписке.
+                */}
+                {request.paymentInstructions ? (
+                  <div style={styles.muted}>
+                    Реквизиты для оплаты: {request.paymentInstructions}
+                  </div>
+                ) : undefined}
+                {/*
                   Отменить можно, только пока заявку не взяли: дальше в
                   работе участвует менеджер, и бросить её на полпути
                   клиент уже не может.

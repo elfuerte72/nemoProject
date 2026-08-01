@@ -1,7 +1,12 @@
 import { cookies } from 'next/headers';
 import type { Actor } from '@nemo/core';
 import { getCore } from '@/lib/core';
-import { readToken, SESSION_COOKIE, sessionSecret, SessionError } from './session.js';
+import {
+  readToken,
+  SESSION_COOKIE,
+  sessionSecret,
+  SessionError,
+} from '@/lib/auth/session';
 
 /**
  * Кто выполняет запрос в админке.

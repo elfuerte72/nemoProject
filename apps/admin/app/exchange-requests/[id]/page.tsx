@@ -30,6 +30,7 @@ export default async function RequestPage({
     <ExchangeRequestCard
       request={{ ...request, clientId: request.clientId.toString() }}
       events={events}
+      viewerStaffId={actor.staffId}
     />
   );
 }

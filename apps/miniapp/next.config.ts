@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const config: NextConfig = {
-  transpilePackages: ['@nemo/core', '@nemo/http', '@nemo/db', '@nemo/types', '@nemo/crypto'],
+  transpilePackages: ['@nemo/core', '@nemo/http', '@nemo/telegram', '@nemo/db', '@nemo/types', '@nemo/crypto'],
   serverExternalPackages: ['postgres'],
   webpack: (config) => {
     // Пакеты монорепо импортируют друг друга по правилам ESM — с

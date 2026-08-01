@@ -3,7 +3,7 @@ import { exchangeKindSchema } from '@nemo/types';
 import { InvalidInputError } from '@nemo/core';
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
-import { deliver } from '@/lib/telegram/notify';
+import { botToken, deliverNotifications } from '@nemo/telegram';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,14 +23,14 @@ export async function POST(request: Request): Promise<Response> {
     const initData = requireInitData(request);
     const parsed = submitSchema.safeParse(await request.json());
     if (!parsed.success) {
-      throw new InvalidInputError('Заявка заполнена не полностью');
+      throw new InvalidInputError('Заявка на обмен заполнена не полностью');
     }
 
     const { request: created, notifications } = await getCore().submitExchangeRequest(
       { type: 'client', telegramUserId: initData.telegramUserId },
       parsed.data,
     );
-    await deliver(notifications);
+    await deliverNotifications(notifications, { botToken: botToken() });
 
     return json({ request: created }, { status: 201 });
   } catch (error) {

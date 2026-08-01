@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { clients, referrals } from '@nemo/db';
+import { requireClient, type Actor } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
@@ -164,12 +165,13 @@ async function updateUsername(
   return row;
 }
 
-/** Профиль клиента. Читает только сам клиент — чужой профиль не отдаётся. */
-export async function getClient(
-  ctx: CoreConfig,
-  telegramUserId: bigint,
-): Promise<ClientView> {
-  const row = await findByTelegramUserId(ctx.db, telegramUserId);
+/**
+ * Профиль самого клиента. Идентификатор берётся из `Actor`, а не из
+ * аргумента: операция, которой можно передать чужой `telegram_user_id`,
+ * рано или поздно его и получит.
+ */
+export async function getClient(ctx: CoreConfig, actor: Actor): Promise<ClientView> {
+  const row = await findByTelegramUserId(ctx.db, requireClient(actor));
   if (!row) {
     throw new NotFoundError('Клиент не найден');
   }

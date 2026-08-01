@@ -34,6 +34,12 @@ export interface ExchangeRequestView {
   readonly preliminaryRate: Amount | null;
   readonly finalRate: Amount | null;
   readonly status: ExchangeRequestStatus;
+  /**
+   * Куда клиенту платить. Названы менеджером и показываются в самой
+   * заявке, а не только в сообщении бота: клиент возвращается к ней
+   * через день и не должен искать сообщение в переписке.
+   */
+  readonly paymentInstructions: string | null;
   readonly cancelReason: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -83,6 +89,7 @@ export function toExchangeRequestView(row: ExchangeRequestRow): ExchangeRequestV
     preliminaryRate: toDisplayAmount(row.preliminaryRate),
     finalRate: toDisplayAmount(row.finalRate),
     status: row.status,
+    paymentInstructions: row.paymentInstructions,
     cancelReason: row.cancelReason,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

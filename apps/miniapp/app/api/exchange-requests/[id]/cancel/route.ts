@@ -1,6 +1,6 @@
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
-import { deliver } from '@/lib/telegram/notify';
+import { botToken, deliverNotifications } from '@nemo/telegram';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export async function POST(
     const core = getCore();
 
     const result = await core.cancelExchangeRequest(actor, id);
-    await deliver(result.notifications);
+    await deliverNotifications(result.notifications, { botToken: botToken() });
 
     // Операция отдаёт заявку в представлении менеджера — с доходом
     // сервиса. Клиенту уходит его собственное представление, где такого

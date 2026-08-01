@@ -1,6 +1,6 @@
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
-import { deliver } from '@/lib/telegram/notify';
+import { botToken, deliverNotifications } from '@nemo/telegram';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export async function POST(request: Request): Promise<Response> {
       referralCode: initData.startParam,
     });
 
-    await deliver(notifications);
+    await deliverNotifications(notifications, { botToken: botToken() });
 
     return json({ client, created });
   } catch (error) {

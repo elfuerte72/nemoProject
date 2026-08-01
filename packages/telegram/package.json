@@ -1,5 +1,5 @@
 {
-  "name": "@nemo/core",
+  "name": "@nemo/telegram",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -10,13 +10,10 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@nemo/crypto": "workspace:*",
-    "@nemo/db": "workspace:*",
-    "@nemo/types": "workspace:*",
-    "drizzle-orm": "^0.38.3"
+    "@nemo/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

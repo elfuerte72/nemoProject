@@ -1,7 +1,9 @@
-import { and, asc, eq, ne } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { currencies, exchangeRequestEvents, exchangeRequests } from '@nemo/db';
 import {
   canTransition,
+  exchangeRequestStatuses,
+  exchangeRequestTransitions,
   Money,
   type ActorType,
   type Amount,
@@ -41,7 +43,6 @@ export interface ManagerExchangeRequestView extends ExchangeRequestView {
   readonly assignedManagerId: string | null;
   readonly serviceIncome: Amount | null;
   readonly serviceIncomeCode: string | null;
-  readonly paymentInstructions: string | null;
   readonly requisitesId: string | null;
 }
 
@@ -61,13 +62,23 @@ export interface TransitionResult {
 
 type ExchangeRequestRow = typeof exchangeRequests.$inferSelect;
 
+/**
+ * Заявки, которые уже начали вести и ещё не закрыли.
+ *
+ * Выводится из таблицы переходов: завершённое состояние — то, из
+ * которого перейти некуда. Перечисли их здесь руками — и новое
+ * состояние молча попало бы в список работ, ничего при этом не сломав.
+ */
+const IN_PROGRESS_STATUSES = exchangeRequestStatuses.filter(
+  (status) => status !== 'new' && exchangeRequestTransitions[status].length > 0,
+);
+
 export function toManagerView(row: ExchangeRequestRow): ManagerExchangeRequestView {
   return {
     ...toExchangeRequestView(row),
     assignedManagerId: row.assignedManagerId,
     serviceIncome: row.serviceIncome === null ? null : Money.toAmount(row.serviceIncome),
     serviceIncomeCode: row.serviceIncomeCode,
-    paymentInstructions: row.paymentInstructions,
     requisitesId: row.requisitesId,
   };
 }
@@ -131,12 +142,30 @@ function requireOwnership(row: ExchangeRequestRow, actor: Actor): string {
   return staff.staffId;
 }
 
+/**
+ * Что переход дописывает в заявку помимо статуса. Перечислено поимённо:
+ * с `Partial` от всей строки переход мог бы поменять и клиента, и
+ * состояние в обход таблицы, и собственный идентификатор.
+ */
+type ExchangeRequestPatch = Partial<
+  Pick<
+    typeof exchangeRequests.$inferInsert,
+    | 'assignedManagerId'
+    | 'finalRate'
+    | 'toAmount'
+    | 'paymentInstructions'
+    | 'serviceIncome'
+    | 'serviceIncomeCode'
+    | 'cancelReason'
+  >
+>;
+
 interface TransitionInput {
   readonly to: ExchangeRequestStatus;
   readonly actorType: ActorType;
   readonly actorStaffId?: string | undefined;
   readonly comment?: string | undefined;
-  readonly patch?: Partial<typeof exchangeRequests.$inferInsert> | undefined;
+  readonly patch?: ExchangeRequestPatch | undefined;
 }
 
 async function applyTransition(
@@ -203,13 +232,7 @@ export async function listExchangeRequestsInProgress(
   const rows = await ctx.db
     .select()
     .from(exchangeRequests)
-    .where(
-      and(
-        ne(exchangeRequests.status, 'new'),
-        ne(exchangeRequests.status, 'completed'),
-        ne(exchangeRequests.status, 'cancelled'),
-      ),
-    )
+    .where(inArray(exchangeRequests.status, IN_PROGRESS_STATUSES))
     .orderBy(asc(exchangeRequests.createdAt));
   return rows.map(toManagerView);
 }

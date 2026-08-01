@@ -41,6 +41,8 @@ import {
  * Интерфейс — операции, а не таблицы: «подать заявку», а не
  * «вставить строку в exchange_requests». Каждая операция принимает
  * данные и того, кто её выполняет, и сама решает, разрешено ли действие.
+ * Исключение — вход сотрудника: эти операции исполнителя не принимают,
+ * потому что как раз его и устанавливают.
  *
  * Список ниже перечисляет операции руками, хотя каждая строка только
  * подставляет `ctx`. Собрать его обобщённой функцией можно, но тогда
@@ -50,7 +52,7 @@ import {
 export function createCore(ctx: CoreConfig) {
   return {
     registerClient: (input: RegisterClientInput) => registerClient(ctx, input),
-    getClient: (telegramUserId: bigint) => getClient(ctx, telegramUserId),
+    getClient: (actor: Actor) => getClient(ctx, actor),
 
     listCurrencyPairs: () => listCurrencyPairs(ctx),
     submitExchangeRequest: (actor: Actor, input: SubmitExchangeRequestInput) =>

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { ExchangeRequestEventView, ManagerExchangeRequestView } from '@nemo/core';
+import { canTransition, type ExchangeRequestStatus } from '@nemo/types';
 import { STATUS_LABELS } from '@/lib/exchange-request-labels';
 
 /**
@@ -18,9 +19,11 @@ type ExchangeRequestForDisplay = Omit<ManagerExchangeRequestView, 'clientId'> & 
 export function ExchangeRequestCard({
   request,
   events,
+  viewerStaffId,
 }: {
   request: ExchangeRequestForDisplay;
   events: readonly ExchangeRequestEventView[];
+  viewerStaffId: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
@@ -34,16 +37,22 @@ export function ExchangeRequestCard({
   const [reason, setReason] = useState('');
 
   /**
-   * Что состояние заявки позволяет сделать. Собрано в одном месте, а не
-   * разбросано по разметке: список действий должен читаться рядом с
-   * таблицей переходов, а не собираться из условий по всему экрану.
+   * Что можно сделать с заявкой на обмен прямо сейчас.
+   *
+   * Берётся из той же таблицы переходов, по которой отказывает
+   * операция, и из закрепления за менеджером. Своя копия правил
+   * разошлась бы с ядром молча: экран показывал бы кнопку, а операция
+   * отвечала бы отказом уже после нажатия.
    */
+  const mine = request.assignedManagerId === null || request.assignedManagerId === viewerStaffId;
+  const allowed = (to: ExchangeRequestStatus) => mine && canTransition(request.status, to);
+
   const can = {
-    claim: request.status === 'new',
-    confirmRate: request.status === 'in_progress',
-    markPaymentReceived: request.status === 'rate_confirmed',
-    complete: request.status === 'payment_received',
-    cancel: request.status !== 'completed' && request.status !== 'cancelled',
+    claim: request.assignedManagerId === null && canTransition(request.status, 'in_progress'),
+    confirmRate: allowed('rate_confirmed'),
+    markPaymentReceived: allowed('payment_received'),
+    complete: allowed('completed'),
+    cancel: allowed('cancelled'),
   };
 
   async function act(body: Record<string, string>) {
@@ -88,8 +97,14 @@ export function ExchangeRequestCard({
             Доход по заявке: {request.serviceIncome} {request.serviceIncomeCode}
           </p>
         ) : undefined}
+        {request.paymentInstructions ? (
+          <p style={styles.muted}>Клиенту выданы реквизиты: {request.paymentInstructions}</p>
+        ) : undefined}
         {request.cancelReason ? (
           <p style={styles.muted}>Причина отмены: {request.cancelReason}</p>
+        ) : undefined}
+        {!mine && request.assignedManagerId ? (
+          <p style={styles.muted}>Заявку на обмен ведёт другой менеджер — действия закрыты.</p>
         ) : undefined}
       </header>
 
@@ -161,7 +176,7 @@ export function ExchangeRequestCard({
 
       {can.complete ? (
         <section style={styles.form}>
-          <h2 style={styles.subheading}>Исполнение заявки</h2>
+          <h2 style={styles.subheading}>Исполнение заявки на обмен</h2>
           <p style={styles.muted}>
             Доход по заявке — база реферальных начислений. Без него заявку закрыть
             нельзя, а поправить его потом означало бы пересчитывать уже начисленное.
@@ -185,7 +200,7 @@ export function ExchangeRequestCard({
             style={styles.button}
             onClick={() => act({ action: 'complete', serviceIncome, serviceIncomeCode })}
           >
-            Заявка исполнена
+            Заявка на обмен исполнена
           </button>
         </section>
       ) : undefined}
@@ -205,7 +220,7 @@ export function ExchangeRequestCard({
             style={styles.button}
             onClick={() => act({ action: 'cancel', reason })}
           >
-            Отменить заявку
+            Отменить заявку на обмен
           </button>
         </section>
       ) : undefined}

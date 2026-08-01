@@ -68,7 +68,7 @@ function ExchangeRequestList({
           </Link>
           <div style={styles.muted}>
             {STATUS_LABELS[request.status]} ·{' '}
-            {request.kind === 'cash' ? 'наличные' : 'перевод'} · клиент{' '}
+            {request.kind === 'cash' ? 'наличные' : 'электронный'} · клиент{' '}
             {request.clientId.toString()}
           </div>
         </li>

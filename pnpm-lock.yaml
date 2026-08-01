@@ -26,6 +26,9 @@ importers:
       '@nemo/http':
         specifier: workspace:*
         version: link:../../packages/http
+      '@nemo/telegram':
+        specifier: workspace:*
+        version: link:../../packages/telegram
       '@nemo/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -66,6 +69,9 @@ importers:
       '@nemo/http':
         specifier: workspace:*
         version: link:../../packages/http
+      '@nemo/telegram':
+        specifier: workspace:*
+        version: link:../../packages/telegram
       '@nemo/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -115,9 +121,6 @@ importers:
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(@types/react@19.2.18)(postgres@3.4.9)(react@19.2.8)
-      zod:
-        specifier: ^3.24.1
-        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -167,6 +170,22 @@ importers:
         version: 2.1.9(@types/node@24.13.3)
 
   packages/http:
+    dependencies:
+      '@nemo/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@24.13.3)
+
+  packages/telegram:
     dependencies:
       '@nemo/core':
         specifier: workspace:*

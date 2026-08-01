@@ -110,6 +110,22 @@ describe('финальный курс', () => {
     expect(request.toAmount).toBe('95500');
   });
 
+  it('оставляет реквизиты для оплаты в самой заявке, а не только в сообщении', async () => {
+    const id = await givenNewRequest();
+    await core.claimExchangeRequest(manager, id);
+    await core.confirmExchangeRate(manager, id, {
+      finalRate: '95.5',
+      paymentInstructions: 'TRC20: TXYZ...',
+    });
+
+    // Клиент возвращается к заявке через день: искать реквизиты в
+    // переписке с ботом он не должен.
+    const seen = await core.getExchangeRequest(asClient(100n), id);
+
+    expect(seen.paymentInstructions).toBe('TRC20: TXYZ...');
+    expect(seen.finalRate).toBe('95.5');
+  });
+
   it('уходит клиенту вместе с реквизитами для оплаты', async () => {
     const id = await givenNewRequest();
     await core.claimExchangeRequest(manager, id);
