@@ -123,7 +123,7 @@ export function LoginForm() {
 
 declare global {
   interface Window {
-    onTelegramAuth?: (payload: Record<string, string>) => void;
+    onTelegramAuth?: (payload: Record<string, string | number>) => void;
   }
 }
 

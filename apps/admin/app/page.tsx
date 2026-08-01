@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { ManagerExchangeRequestView } from '@nemo/core';
-import { isAuthRefusal, requireStaffActor } from '@/lib/auth/require-session';
+import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { KIND_LABELS, STATUS_LABELS } from '@/lib/exchange-request-labels';
 
@@ -15,10 +15,7 @@ export const dynamic = 'force-dynamic';
  * одной заявкой — это два звонка клиенту и два разных курса.
  */
 export default async function DeskPage() {
-  const actor = await requireStaffActor().catch((error: unknown) => {
-    if (isAuthRefusal(error)) return undefined;
-    throw error;
-  });
+  const actor = await requireStaffActorOrNull();
   if (!actor) {
     redirect('/login');
   }

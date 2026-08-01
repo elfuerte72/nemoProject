@@ -7,9 +7,8 @@ import {
   SESSION_COOKIE,
   sessionSecret,
 } from '@/lib/auth/session';
-import { z } from 'zod';
 import { botToken } from '@nemo/telegram';
-import { TelegramLoginError, verifyTelegramLogin } from '@/lib/auth/telegram-login';
+import { parseLoginPayload, verifyTelegramLogin } from '@/lib/auth/telegram-login';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,14 +23,8 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: Request): Promise<Response> {
   try {
-    // Значения виджета идут в строку проверки подписи как есть, поэтому
-    // сюда должны попасть только строки: с вложенным объектом подпись
-    // считалась бы от «[object Object]».
-    const parsed = z.record(z.string()).safeParse(await request.json());
-    if (!parsed.success) {
-      throw new TelegramLoginError('Данные входа непонятного вида');
-    }
-    const login = verifyTelegramLogin(parsed.data, botToken());
+    const payload = parseLoginPayload(await request.json());
+    const login = verifyTelegramLogin(payload, botToken());
     const { staffId, enrollmentSecret } = await getCore().beginStaffLogin(login.telegramUserId);
 
     const store = await cookies();

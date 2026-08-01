@@ -1,12 +1,9 @@
 import { cookies } from 'next/headers';
 import { CoreError, type Actor } from '@nemo/core';
 import { getCore } from '@/lib/core';
-import {
-  readToken,
-  SESSION_COOKIE,
-  sessionSecret,
-  SessionError,
-} from '@/lib/auth/session';
+import { readToken, SESSION_COOKIE, sessionSecret, SessionError } from '@/lib/auth/session';
+
+export type StaffActor = Actor & { type: 'staff' };
 
 /**
  * Кто выполняет запрос в админке.
@@ -16,18 +13,7 @@ import {
  * сих пор. Второе обязательно при каждом запросе: увольнение должно
  * закрывать доступ немедленно, а не когда истечёт выданная раньше кука.
  */
-/**
- * Отказ во входе — от отказавшей базы или незаданного секрета сессии.
- *
- * Экраны заводят посетителя на страницу входа только по первому: если
- * молча отправлять туда и по второму, оборванная база превратится в
- * бесконечный редирект без единой записи в логе.
- */
-export function isAuthRefusal(error: unknown): boolean {
-  return error instanceof SessionError || (error instanceof CoreError && error.code === 'forbidden');
-}
-
-export async function requireStaffActor(): Promise<Actor & { type: 'staff' }> {
+export async function requireStaffActor(): Promise<StaffActor> {
   const store = await cookies();
   const payload = readToken(store.get(SESSION_COOKIE)?.value, { secret: sessionSecret() });
 
@@ -37,4 +23,23 @@ export async function requireStaffActor(): Promise<Actor & { type: 'staff' }> {
 
   const session = await getCore().getActiveStaff(payload.staffId);
   return { type: 'staff', staffId: session.staffId, role: session.role };
+}
+
+/**
+ * То же, но для экранов: `null` означает «нужно войти».
+ *
+ * `null` возвращается только на отказ во входе — нет куки, кука
+ * истекла, сотрудник отключён. Всё остальное — незаданный секрет
+ * сессии, отказавшая база — пробрасывается: молча отправлять и такое
+ * на страницу входа значит превращать аварию в бесконечный редирект,
+ * о котором никто не узнает.
+ */
+export async function requireStaffActorOrNull(): Promise<StaffActor | null> {
+  try {
+    return await requireStaffActor();
+  } catch (error) {
+    if (error instanceof SessionError) return null;
+    if (error instanceof CoreError && error.code === 'forbidden') return null;
+    throw error;
+  }
 }

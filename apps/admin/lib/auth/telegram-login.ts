@@ -33,6 +33,34 @@ export interface TelegramLogin {
   authDate: Date;
 }
 
+/**
+ * Разбор того, что прислал виджет.
+ *
+ * Значения приходят и строками, и числами — `id` и `auth_date` виджет
+ * отдаёт числами, — а в строку проверки подписи они попадают как есть.
+ * Поэтому привести их к строке нужно здесь, одинаково и заранее: от
+ * порядка и формы этих значений зависит, сойдётся ли подпись.
+ *
+ * Вложенные объекты отвергаются: `${value}` превратил бы их в
+ * «[object Object]», и подпись считалась бы от текста, которого Telegram
+ * никогда не подписывал.
+ */
+const payloadSchema = z
+  .record(z.union([z.string(), z.number()]))
+  .transform((payload) =>
+    Object.fromEntries(
+      Object.entries(payload).map(([key, value]) => [key, String(value)]),
+    ),
+  );
+
+export function parseLoginPayload(input: unknown): Record<string, string> {
+  const parsed = payloadSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new TelegramLoginError('Данные входа непонятного вида');
+  }
+  return parsed.data;
+}
+
 export function verifyTelegramLogin(
   payload: Record<string, string>,
   botToken: string,

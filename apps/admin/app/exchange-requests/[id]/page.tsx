@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { isAuthRefusal, requireStaffActor } from '@/lib/auth/require-session';
+import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { ExchangeRequestCard } from './exchange-request-card';
 
@@ -14,10 +14,7 @@ export default async function RequestPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const actor = await requireStaffActor().catch((error: unknown) => {
-    if (isAuthRefusal(error)) return undefined;
-    throw error;
-  });
+  const actor = await requireStaffActorOrNull();
   if (!actor) {
     redirect('/login');
   }

@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { TelegramLoginError, verifyTelegramLogin } from './telegram-login.js';
+import { parseLoginPayload, TelegramLoginError, verifyTelegramLogin } from './telegram-login.js';
 
 const BOT_TOKEN = '123456:TEST-TOKEN';
 const NOW = new Date('2026-08-01T12:00:00Z');
@@ -66,5 +66,42 @@ describe('verifyTelegramLogin', () => {
 
   it('отвергает данные без подписи', () => {
     expect(() => verifyTelegramLogin(validFields(), BOT_TOKEN, NOW)).toThrow(/нет подписи/);
+  });
+});
+
+/**
+ * Разбор того, что прислал виджет.
+ *
+ * Проверяется не «схема отработала», а свойство, от которого зависит
+ * подпись: значение должно дойти до строки проверки ровно таким, каким
+ * его подписал Telegram.
+ */
+describe('данные виджета', () => {
+  it('принимает числа: id и auth_date виджет отдаёт числами', () => {
+    const parsed = parseLoginPayload({ id: 7999999999, auth_date: 1767225600, hash: 'ab' });
+
+    expect(parsed).toEqual({ id: '7999999999', auth_date: '1767225600', hash: 'ab' });
+  });
+
+  it('пропускает подписанные числом данные до проверки подписи', () => {
+    const signed = signLogin(validFields());
+
+    // Виджет прислал бы то же самое, но числами. Подпись обязана сойтись.
+    const asWidget = { ...signed, id: Number(signed.id), auth_date: Number(signed.auth_date) };
+
+    expect(verifyTelegramLogin(parseLoginPayload(asWidget), BOT_TOKEN, NOW).telegramUserId).toBe(
+      BigInt(signed.id!),
+    );
+  });
+
+  it('отвергает вложенный объект: подпись считалась бы от «[object Object]»', () => {
+    expect(() => parseLoginPayload({ id: { nested: true }, hash: 'ab' })).toThrow(
+      TelegramLoginError,
+    );
+  });
+
+  it('отвергает то, что вовсе не набор полей', () => {
+    expect(() => parseLoginPayload('строка')).toThrow(TelegramLoginError);
+    expect(() => parseLoginPayload(null)).toThrow(TelegramLoginError);
   });
 });
