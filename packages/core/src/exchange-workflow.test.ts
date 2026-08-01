@@ -21,6 +21,7 @@ import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
 const core = createCore({ db: testDatabase() });
 
 let manager: Actor & { type: 'staff' };
+let requisitesId: string;
 
 async function givenNewRequest(): Promise<string> {
   const { request } = await core.submitExchangeRequest(asClient(100n), {
@@ -28,6 +29,7 @@ async function givenNewRequest(): Promise<string> {
     fromCode: 'USDT',
     toCode: 'RUB',
     fromAmount: '1000',
+    requisitesId,
   });
   return request.id;
 }
@@ -36,6 +38,8 @@ beforeEach(async () => {
   await resetDatabase();
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
   await core.registerClient({ telegramUserId: 100n });
+  const requisites = await core.saveRequisites(asClient(100n), { phone: '+79990000000' });
+  requisitesId = requisites.id;
   manager = await givenStaff({ displayName: 'Пётр' });
 });
 
@@ -134,17 +138,14 @@ describe('финальный курс', () => {
     ).rejects.toThrow(ForbiddenError);
   });
 
-  it('называется администратором и по чужой заявке: менеджер мог заболеть', async () => {
+  it('не называется и администратором, пока заявка закреплена за другим', async () => {
     const admin = await givenStaff({ displayName: 'Владелец', role: 'admin' });
     const id = await givenNewRequest();
     await core.claimExchangeRequest(manager, id);
 
-    const { request } = await core.confirmExchangeRate(admin, id, {
-      finalRate: '95.5',
-      paymentInstructions: 'x',
-    });
-
-    expect(request.status).toBe('rate_confirmed');
+    await expect(
+      core.confirmExchangeRate(admin, id, { finalRate: '95.5', paymentInstructions: 'x' }),
+    ).rejects.toThrow(ForbiddenError);
   });
 
   it('не называется, пока заявку не взяли в работу', async () => {
@@ -209,5 +210,34 @@ describe('запрещённые переходы', () => {
         serviceIncomeCode: 'RUB',
       }),
     ).rejects.toThrow(TransitionNotAllowedError);
+  });
+});
+
+describe('состояние заявки в руках клиента', () => {
+  it('не меняется ничем, кроме отмены новой', async () => {
+    const id = await givenNewRequest();
+    const client = asClient(100n);
+
+    // Всё, что делает менеджер, клиенту недоступно — включая заявку,
+    // которую подал он сам: иначе он объявил бы собственный курс или
+    // отметил бы оплату, которой не было.
+    await expect(core.claimExchangeRequest(client, id)).rejects.toThrow(ForbiddenError);
+    await expect(
+      core.confirmExchangeRate(client, id, { finalRate: '95', paymentInstructions: 'x' }),
+    ).rejects.toThrow(ForbiddenError);
+    await expect(core.markPaymentReceived(client, id)).rejects.toThrow(ForbiddenError);
+    await expect(
+      core.completeExchangeRequest(client, id, {
+        serviceIncome: '500',
+        serviceIncomeCode: 'RUB',
+      }),
+    ).rejects.toThrow(ForbiddenError);
+  });
+
+  it('не меняется и в чужой заявке', async () => {
+    await core.registerClient({ telegramUserId: 200n });
+    const id = await givenNewRequest();
+
+    await expect(core.claimExchangeRequest(asClient(200n), id)).rejects.toThrow(ForbiddenError);
   });
 });

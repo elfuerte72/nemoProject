@@ -13,13 +13,13 @@ import { STATUS_LABELS } from '@/lib/exchange-request-labels';
  * операции, но менеджер узнал бы об этом уже после нажатия.
  */
 
-type RequestForDisplay = Omit<ManagerExchangeRequestView, 'clientId'> & { clientId: string };
+type ExchangeRequestForDisplay = Omit<ManagerExchangeRequestView, 'clientId'> & { clientId: string };
 
-export function RequestCard({
+export function ExchangeRequestCard({
   request,
   events,
 }: {
-  request: RequestForDisplay;
+  request: ExchangeRequestForDisplay;
   events: readonly ExchangeRequestEventView[];
 }) {
   const router = useRouter();
@@ -32,6 +32,19 @@ export function RequestCard({
   const [serviceIncome, setServiceIncome] = useState('');
   const [serviceIncomeCode, setServiceIncomeCode] = useState(request.toCode);
   const [reason, setReason] = useState('');
+
+  /**
+   * Что состояние заявки позволяет сделать. Собрано в одном месте, а не
+   * разбросано по разметке: список действий должен читаться рядом с
+   * таблицей переходов, а не собираться из условий по всему экрану.
+   */
+  const can = {
+    claim: request.status === 'new',
+    confirmRate: request.status === 'in_progress',
+    markPaymentReceived: request.status === 'rate_confirmed',
+    complete: request.status === 'payment_received',
+    cancel: request.status !== 'completed' && request.status !== 'cancelled',
+  };
 
   async function act(body: Record<string, string>) {
     setError(undefined);
@@ -72,7 +85,7 @@ export function RequestCard({
         ) : undefined}
         {request.serviceIncome ? (
           <p style={styles.muted}>
-            Доход сервиса: {request.serviceIncome} {request.serviceIncomeCode}
+            Доход по заявке: {request.serviceIncome} {request.serviceIncomeCode}
           </p>
         ) : undefined}
         {request.cancelReason ? (
@@ -82,7 +95,7 @@ export function RequestCard({
 
       {error ? <p style={styles.error}>{error}</p> : undefined}
 
-      {request.status === 'new' ? (
+      {can.claim ? (
         <button
           type="button"
           onClick={() => act({ action: 'claim' })}
@@ -93,7 +106,7 @@ export function RequestCard({
         </button>
       ) : undefined}
 
-      {request.status === 'in_progress' ? (
+      {can.confirmRate ? (
         <section style={styles.form}>
           <h2 style={styles.subheading}>Финальный курс</h2>
           <input
@@ -135,7 +148,7 @@ export function RequestCard({
         </section>
       ) : undefined}
 
-      {request.status === 'rate_confirmed' ? (
+      {can.markPaymentReceived ? (
         <button
           type="button"
           onClick={() => act({ action: 'payment-received' })}
@@ -146,9 +159,9 @@ export function RequestCard({
         </button>
       ) : undefined}
 
-      {request.status === 'payment_received' ? (
+      {can.complete ? (
         <section style={styles.form}>
-          <h2 style={styles.subheading}>Завершение сделки</h2>
+          <h2 style={styles.subheading}>Исполнение заявки</h2>
           <p style={styles.muted}>
             Доход по заявке — база реферальных начислений. Без него заявку закрыть
             нельзя, а поправить его потом означало бы пересчитывать уже начисленное.
@@ -156,14 +169,14 @@ export function RequestCard({
           <input
             value={serviceIncome}
             onChange={(event) => setServiceIncome(event.target.value)}
-            placeholder="Сколько заработал сервис"
+            placeholder="Доход по заявке"
             inputMode="decimal"
             style={styles.input}
           />
           <input
             value={serviceIncomeCode}
             onChange={(event) => setServiceIncomeCode(event.target.value)}
-            placeholder="Валюта дохода"
+            placeholder="Валюта дохода по заявке"
             style={styles.input}
           />
           <button
@@ -172,12 +185,12 @@ export function RequestCard({
             style={styles.button}
             onClick={() => act({ action: 'complete', serviceIncome, serviceIncomeCode })}
           >
-            Сделка исполнена
+            Заявка исполнена
           </button>
         </section>
       ) : undefined}
 
-      {request.status !== 'completed' && request.status !== 'cancelled' ? (
+      {can.cancel ? (
         <section style={styles.form}>
           <h2 style={styles.subheading}>Отмена</h2>
           <input

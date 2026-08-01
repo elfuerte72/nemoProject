@@ -9,7 +9,7 @@ import {
 import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
 
 /**
- * Завершение сделки.
+ * Исполнение заявки на обмен.
  *
  * Доход по заявке — не отчётность, а база всех реферальных начислений
  * (docs/adr/0003). Поэтому исполнить заявку, не назвав его, нельзя: без
@@ -20,26 +20,35 @@ import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
 const core = createCore({ db: testDatabase() });
 
 let manager: Actor & { type: 'staff' };
+let requisitesId: string;
 
-async function givenRequestAwaitingPayment(): Promise<string> {
+async function givenNewRequest(): Promise<string> {
   const { request } = await core.submitExchangeRequest(asClient(100n), {
     kind: 'electronic',
     fromCode: 'USDT',
     toCode: 'RUB',
     fromAmount: '1000',
+    requisitesId,
   });
-  await core.claimExchangeRequest(manager, request.id);
-  await core.confirmExchangeRate(manager, request.id, {
+  return request.id;
+}
+
+async function givenRequestAwaitingPayment(): Promise<string> {
+  const id = await givenNewRequest();
+  await core.claimExchangeRequest(manager, id);
+  await core.confirmExchangeRate(manager, id, {
     finalRate: '95.5',
     paymentInstructions: 'TRC20: TXYZ',
   });
-  return request.id;
+  return id;
 }
 
 beforeEach(async () => {
   await resetDatabase();
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
   await core.registerClient({ telegramUserId: 100n });
+  const requisites = await core.saveRequisites(asClient(100n), { phone: '+79990000000' });
+  requisitesId = requisites.id;
   manager = await givenStaff();
 });
 
@@ -58,22 +67,17 @@ describe('поступление оплаты', () => {
   });
 
   it('не отмечается, пока курс не назван', async () => {
-    const { request } = await core.submitExchangeRequest(asClient(100n), {
-      kind: 'electronic',
-      fromCode: 'USDT',
-      toCode: 'RUB',
-      fromAmount: '1000',
-    });
-    await core.claimExchangeRequest(manager, request.id);
+    const id = await givenNewRequest();
+    await core.claimExchangeRequest(manager, id);
 
-    await expect(core.markPaymentReceived(manager, request.id)).rejects.toThrow(
+    await expect(core.markPaymentReceived(manager, id)).rejects.toThrow(
       TransitionNotAllowedError,
     );
   });
 });
 
 describe('исполнение заявки', () => {
-  it('требует указать доход сервиса', async () => {
+  it('требует указать доход по заявке', async () => {
     const id = await givenRequestAwaitingPayment();
     await core.markPaymentReceived(manager, id);
 
@@ -97,6 +101,20 @@ describe('исполнение заявки', () => {
 
     await expect(
       core.completeExchangeRequest(manager, id, { serviceIncome: '500', serviceIncomeCode: ' ' }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('требует валюту из справочника: от неё считаются начисления', async () => {
+    const id = await givenRequestAwaitingPayment();
+    await core.markPaymentReceived(manager, id);
+
+    // «RUR» вместо «RUB» — вторая валюта, в которой у реферера копится
+    // отдельный, ни с чем не сходящийся остаток.
+    await expect(
+      core.completeExchangeRequest(manager, id, {
+        serviceIncome: '500',
+        serviceIncomeCode: 'RUR',
+      }),
     ).rejects.toThrow(InvalidInputError);
   });
 
@@ -129,7 +147,7 @@ describe('исполнение заявки', () => {
     ]);
   });
 
-  it('не показывает клиенту доход сервиса', async () => {
+  it('не показывает клиенту доход по заявке', async () => {
     const id = await givenRequestAwaitingPayment();
     await core.markPaymentReceived(manager, id);
     await core.completeExchangeRequest(manager, id, {
@@ -141,6 +159,40 @@ describe('исполнение заявки', () => {
 
     expect(seen).not.toHaveProperty('serviceIncome');
     expect(seen).not.toHaveProperty('serviceIncomeCode');
+  });
+});
+
+describe('полный путь заявки', () => {
+  it('проходит все состояния, и каждый переход записан с исполнителем', async () => {
+    const id = await givenNewRequest();
+    await core.claimExchangeRequest(manager, id);
+    await core.confirmExchangeRate(manager, id, {
+      finalRate: '95.5',
+      paymentInstructions: 'TRC20: TXYZ',
+    });
+    await core.markPaymentReceived(manager, id);
+    await core.completeExchangeRequest(manager, id, {
+      serviceIncome: '500',
+      serviceIncomeCode: 'RUB',
+    });
+
+    const events = await core.listExchangeRequestEvents(manager, id);
+
+    expect(
+      events.map((event) => ({
+        from: event.fromStatus,
+        to: event.toStatus,
+        by: event.actorStaffId,
+        who: event.actorType,
+      })),
+    ).toEqual([
+      { from: null, to: 'new', by: null, who: 'client' },
+      { from: 'new', to: 'in_progress', by: manager.staffId, who: 'manager' },
+      { from: 'in_progress', to: 'rate_confirmed', by: manager.staffId, who: 'manager' },
+      { from: 'rate_confirmed', to: 'payment_received', by: manager.staffId, who: 'manager' },
+      { from: 'payment_received', to: 'completed', by: manager.staffId, who: 'manager' },
+    ]);
+    expect(events.every((event) => event.createdAt instanceof Date)).toBe(true);
   });
 });
 

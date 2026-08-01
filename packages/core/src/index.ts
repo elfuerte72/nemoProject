@@ -1,6 +1,6 @@
 import type { Actor } from './actor.js';
 import { getClient, registerClient, type RegisterClientInput } from './clients.js';
-import { toContext, type CoreConfig } from './context.js';
+import type { CoreConfig } from './context.js';
 import {
   getExchangeRequest,
   listCurrencyPairs,
@@ -41,10 +41,13 @@ import {
  * Интерфейс — операции, а не таблицы: «подать заявку», а не
  * «вставить строку в exchange_requests». Каждая операция принимает
  * данные и того, кто её выполняет, и сама решает, разрешено ли действие.
+ *
+ * Список ниже перечисляет операции руками, хотя каждая строка только
+ * подставляет `ctx`. Собрать его обобщённой функцией можно, но тогда
+ * единственное место, где видно, что ядро вообще умеет, перестанет
+ * читаться глазами — а сюда приходят именно за этим.
  */
-export function createCore(config: CoreConfig) {
-  const ctx = toContext(config);
-
+export function createCore(ctx: CoreConfig) {
   return {
     registerClient: (input: RegisterClientInput) => registerClient(ctx, input),
     getClient: (telegramUserId: bigint) => getClient(ctx, telegramUserId),

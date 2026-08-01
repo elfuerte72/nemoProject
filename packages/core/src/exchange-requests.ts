@@ -2,7 +2,8 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { currencies, currencyPairs, exchangeRequestEvents, exchangeRequests } from '@nemo/db';
 import { Money, type Amount, type ExchangeKind, type ExchangeRequestStatus } from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
-import type { CoreContext, Executor } from './context.js';
+import { requirePositiveAmount } from './amounts.js';
+import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
 import { requireOwnRequisites } from './requisites.js';
@@ -13,13 +14,13 @@ import { requireOwnRequisites } from './requisites.js';
  *
  * Курс здесь не называется. У наличных его до разговора с менеджером
  * не существует вовсе, а у электронных переводов он справочный
- * (docs/adr/0004). Заявка — это запрос, а не сделка по зафиксированной
+ * (docs/adr/0004). Заявка — это запрос, а не обмен по зафиксированной
  * цене, и обещать цену в момент подачи означало бы обещать то, чем
  * сервис не управляет.
  */
 
 /**
- * Заявка глазами клиента. Дохода сервиса здесь нет и быть не может:
+ * Заявка на обмен глазами клиента. Дохода сервиса здесь нет и быть не может:
  * это внутренняя величина, из которой считаются реферальные начисления.
  */
 export interface ExchangeRequestView {
@@ -137,23 +138,23 @@ async function requireActivePair(
   }
 }
 
-function parsePositiveAmount(value: string): Amount {
-  const parsed = Money.positiveAmountSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new InvalidInputError(
-      parsed.error.issues[0]?.message ?? 'Некорректная сумма заявки',
-    );
-  }
-  return parsed.data;
-}
-
 export async function submitExchangeRequest(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   input: SubmitExchangeRequestInput,
 ): Promise<SubmitExchangeRequestResult> {
   const clientId = requireClient(actor);
-  const fromAmount = parsePositiveAmount(input.fromAmount);
+  const fromAmount = requirePositiveAmount(input.fromAmount, 'Сумма заявки');
+
+  // Электронный перевод без реквизитов исполнить невозможно: деньги
+  // некуда отправить. Правило живёт здесь, а не в форме, потому что
+  // форма — не единственный способ вызвать операцию, а последствие у
+  // пропуска одно на всех: заявка, застрявшая у менеджера.
+  if (input.kind === 'electronic' && input.requisitesId === undefined) {
+    throw new InvalidInputError(
+      'Для электронного перевода нужны реквизиты: укажите, куда отправить деньги',
+    );
+  }
 
   return ctx.db.transaction(async (tx) => {
     await requireActivePair(tx, input);
@@ -174,7 +175,7 @@ export async function submitExchangeRequest(
       .returning();
 
     // История заявки начинается с того, как она появилась: иначе в
-    // разборе спорной сделки первый её шаг ничем не подтверждён.
+    // разборе спорного обмена первый её шаг ничем не подтверждён.
     await tx.insert(exchangeRequestEvents).values({
       requestId: row!.id,
       fromStatus: null,
@@ -198,7 +199,7 @@ export async function submitExchangeRequest(
 }
 
 export async function listExchangeRequests(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
 ): Promise<readonly ExchangeRequestView[]> {
   const clientId = requireClient(actor);
@@ -211,12 +212,12 @@ export async function listExchangeRequests(
 }
 
 /**
- * Заявка по идентификатору. Чужая заявка не «запрещена», а «не
+ * Заявка на обмен по идентификатору. Чужая заявка не «запрещена», а «не
  * найдена»: отличать одно от другого значило бы подтверждать
  * существование заявки тому, кто её перебирает.
  */
 export async function getExchangeRequest(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   requestId: string,
 ): Promise<ExchangeRequestView> {
@@ -228,14 +229,14 @@ export async function getExchangeRequest(
     .limit(1);
 
   if (!row) {
-    throw new NotFoundError('Заявка не найдена');
+    throw new NotFoundError('Заявка на обмен не найдена');
   }
   return toExchangeRequestView(row);
 }
 
 /** Справочник направлений для экрана обмена. */
 export async function listCurrencyPairs(
-  ctx: CoreContext,
+  ctx: CoreConfig,
 ): Promise<readonly CurrencyPairView[]> {
   const rows = await ctx.db
     .select({

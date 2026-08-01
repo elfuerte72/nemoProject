@@ -21,6 +21,7 @@ import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
 const core = createCore({ db: testDatabase() });
 
 let manager: Actor & { type: 'staff' };
+let requisitesId: string;
 
 async function givenNewRequest(): Promise<string> {
   const { request } = await core.submitExchangeRequest(asClient(100n), {
@@ -28,6 +29,7 @@ async function givenNewRequest(): Promise<string> {
     fromCode: 'USDT',
     toCode: 'RUB',
     fromAmount: '1000',
+    requisitesId,
   });
   return request.id;
 }
@@ -36,6 +38,8 @@ beforeEach(async () => {
   await resetDatabase();
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
   await core.registerClient({ telegramUserId: 100n });
+  const requisites = await core.saveRequisites(asClient(100n), { phone: '+79990000000' });
+  requisitesId = requisites.id;
   manager = await givenStaff();
 });
 
@@ -134,7 +138,12 @@ describe('отменённая заявка', () => {
     const id = await givenNewRequest();
     await core.cancelExchangeRequest(asClient(100n), id);
 
-    await expect(core.claimExchangeRequest(manager, id)).rejects.toThrow();
+    // Именно «переход запрещён», а не «заявку уже взяли»: менеджеру,
+    // открывшему отменённую заявку, нельзя сообщать, что её забрал
+    // коллега, — он пойдёт этого коллегу искать.
+    await expect(core.claimExchangeRequest(manager, id)).rejects.toThrow(
+      TransitionNotAllowedError,
+    );
     await expect(
       core.completeExchangeRequest(manager, id, {
         serviceIncome: '500',

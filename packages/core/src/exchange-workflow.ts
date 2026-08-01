@@ -1,13 +1,15 @@
 import { and, asc, eq, ne } from 'drizzle-orm';
-import { exchangeRequestEvents, exchangeRequests } from '@nemo/db';
+import { currencies, exchangeRequestEvents, exchangeRequests } from '@nemo/db';
 import {
   canTransition,
   Money,
+  type ActorType,
   type Amount,
   type ExchangeRequestStatus,
 } from '@nemo/types';
 import { requireClient, requireStaff, type Actor } from './actor.js';
-import type { CoreContext, Executor } from './context.js';
+import type { CoreConfig, Executor } from './context.js';
+import { requirePositiveAmount } from './amounts.js';
 import {
   ConflictError,
   ForbiddenError,
@@ -19,11 +21,11 @@ import { toExchangeRequestView, type ExchangeRequestView } from './exchange-requ
 import type { Notification } from './notifications.js';
 
 /**
- * Путь заявки от очереди до исполнения.
+ * Путь заявки на обмен от очереди до исполнения.
  *
  * Смена состояния, запись в историю и уведомление клиента — одна
  * операция и одна транзакция. Разделять их нельзя: заявка, у которой
- * поменялся статус, но не появилось события, оставляет спорную сделку
+ * поменялся статус, но не появилось события, оставляет спорный обмен
  * без следов, а исполнение без начисления баллов тихо обворовывает
  * реферера.
  *
@@ -32,7 +34,7 @@ import type { Notification } from './notifications.js';
  */
 
 /**
- * Заявка глазами менеджера: с доходом сервиса и тем, кто её ведёт.
+ * Заявка на обмен глазами менеджера: с доходом по заявке и тем, кто её ведёт.
  * Клиенту это представление не отдаётся.
  */
 export interface ManagerExchangeRequestView extends ExchangeRequestView {
@@ -46,7 +48,7 @@ export interface ManagerExchangeRequestView extends ExchangeRequestView {
 export interface ExchangeRequestEventView {
   readonly fromStatus: ExchangeRequestStatus | null;
   readonly toStatus: ExchangeRequestStatus;
-  readonly actorType: 'system' | 'client' | 'manager';
+  readonly actorType: ActorType;
   readonly actorStaffId: string | null;
   readonly comment: string | null;
   readonly createdAt: Date;
@@ -106,29 +108,32 @@ async function lockRequest(
     .for('update');
 
   if (!row) {
-    throw new NotFoundError('Заявка не найдена');
+    throw new NotFoundError('Заявка на обмен не найдена');
   }
   return row;
 }
 
 /**
- * Заявку ведёт тот, кто её взял. Администратор может вмешаться в любую:
- * менеджер увольняется, болеет и уходит в отпуск, а клиент ждать не
- * должен. Невзятая заявка ничья — с ней работает любой сотрудник.
+ * Заявку на обмен ведёт тот, кто её взял: клиенту звонит один человек и
+ * курс называет тоже он. Невзятая заявка ничья — с ней работает любой
+ * сотрудник.
+ *
+ * Обхода для администратора здесь нет. Заявка, застрявшая на уволенном
+ * менеджере, — настоящая беда, но лечится она передачей заявки другому,
+ * а не правом действовать поверх закрепления: иначе в истории окажется
+ * два исполнителя, а закрепление останется за первым.
  */
 function requireOwnership(row: ExchangeRequestRow, actor: Actor): string {
   const staff = requireStaff(actor);
-  const isForeign =
-    row.assignedManagerId !== null && row.assignedManagerId !== staff.staffId;
-  if (isForeign && staff.role !== 'admin') {
-    throw new ForbiddenError('Заявку ведёт другой менеджер');
+  if (row.assignedManagerId !== null && row.assignedManagerId !== staff.staffId) {
+    throw new ForbiddenError('Заявку на обмен ведёт другой менеджер');
   }
   return staff.staffId;
 }
 
 interface TransitionInput {
   readonly to: ExchangeRequestStatus;
-  readonly actorType: 'system' | 'client' | 'manager';
+  readonly actorType: ActorType;
   readonly actorStaffId?: string | undefined;
   readonly comment?: string | undefined;
   readonly patch?: Partial<typeof exchangeRequests.$inferInsert> | undefined;
@@ -170,7 +175,7 @@ async function applyTransition(
 
 /** Очередь: заявки, которых никто не взял. */
 export async function listExchangeRequestQueue(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
 ): Promise<readonly ManagerExchangeRequestView[]> {
   requireStaff(actor);
@@ -182,9 +187,16 @@ export async function listExchangeRequestQueue(
   return rows.map(toManagerView);
 }
 
-/** Все заявки в работе — чтобы менеджер видел, что на нём висит. */
+/**
+ * Заявки, которые уже взяли, но ещё не закрыли.
+ *
+ * Без этого списка взятая заявка исчезает из интерфейса: из очереди она
+ * ушла, а другого пути к её карточке нет — и назвать курс, отметить
+ * оплату или исполнить её становится нечем. Тикет просит только
+ * очередь, но очередь без этого списка работать не даёт.
+ */
 export async function listExchangeRequestsInProgress(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
 ): Promise<readonly ManagerExchangeRequestView[]> {
   requireStaff(actor);
@@ -203,7 +215,7 @@ export async function listExchangeRequestsInProgress(
 }
 
 export async function getExchangeRequestForStaff(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   requestId: string,
 ): Promise<ManagerExchangeRequestView> {
@@ -214,13 +226,13 @@ export async function getExchangeRequestForStaff(
     .where(eq(exchangeRequests.id, requestId))
     .limit(1);
   if (!row) {
-    throw new NotFoundError('Заявка не найдена');
+    throw new NotFoundError('Заявка на обмен не найдена');
   }
   return toManagerView(row);
 }
 
 export async function listExchangeRequestEvents(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   requestId: string,
 ): Promise<readonly ExchangeRequestEventView[]> {
@@ -242,7 +254,7 @@ export async function listExchangeRequestEvents(
 }
 
 export async function claimExchangeRequest(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   requestId: string,
 ): Promise<TransitionResult> {
@@ -251,9 +263,11 @@ export async function claimExchangeRequest(
   return ctx.db.transaction(async (tx) => {
     const row = await lockRequest(tx, requestId);
     // Отдельный ответ вместо общего «переход запрещён»: менеджеру важно
-    // понимать, что заявку не потеряли, а просто взял коллега.
-    if (row.status !== 'new') {
-      throw new ConflictError('Заявку уже взяли в работу');
+    // понимать, что заявку не потеряли, а просто взял коллега. Про
+    // отменённую и исполненную так сказать нельзя — их разбирает общая
+    // таблица переходов, иначе отказ вводил бы в заблуждение.
+    if (row.assignedManagerId !== null && row.status === 'in_progress') {
+      throw new ConflictError('Заявку на обмен уже взяли в работу');
     }
 
     return applyTransition(tx, row, {
@@ -274,16 +288,16 @@ export interface ConfirmExchangeRateInput {
 }
 
 export async function confirmExchangeRate(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   requestId: string,
   input: ConfirmExchangeRateInput,
 ): Promise<TransitionResult> {
-  const finalRate = parsePositive(input.finalRate, 'Курс должен быть больше нуля');
+  const finalRate = requirePositiveAmount(input.finalRate, 'Курс');
   const toAmount =
     input.toAmount === undefined
       ? undefined
-      : parsePositive(input.toAmount, 'Встречная сумма должна быть больше нуля');
+      : requirePositiveAmount(input.toAmount, 'Сумма к выдаче');
   const paymentInstructions = input.paymentInstructions.trim();
   if (!paymentInstructions) {
     throw new InvalidInputError('Укажите реквизиты для оплаты');
@@ -307,7 +321,7 @@ export async function confirmExchangeRate(
 }
 
 export async function markPaymentReceived(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   requestId: string,
 ): Promise<TransitionResult> {
@@ -330,23 +344,21 @@ export interface CompleteExchangeRequestInput {
 }
 
 export async function completeExchangeRequest(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   requestId: string,
   input: CompleteExchangeRequestInput,
 ): Promise<TransitionResult> {
-  const serviceIncome = parsePositive(
-    input.serviceIncome,
-    'Доход по заявке должен быть больше нуля',
-  );
+  const serviceIncome = requirePositiveAmount(input.serviceIncome, 'Доход по заявке');
   const serviceIncomeCode = input.serviceIncomeCode.trim();
   if (!serviceIncomeCode) {
-    throw new InvalidInputError('Укажите валюту дохода');
+    throw new InvalidInputError('Укажите валюту дохода по заявке');
   }
 
   return ctx.db.transaction(async (tx) => {
     const row = await lockRequest(tx, requestId);
     const staffId = requireOwnership(row, actor);
+    await requireKnownCurrency(tx, serviceIncomeCode);
 
     return applyTransition(tx, row, {
       to: 'completed',
@@ -363,7 +375,7 @@ export async function completeExchangeRequest(
  * бросать её на полпути клиент не может.
  */
 export async function cancelExchangeRequest(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   requestId: string,
   input: { reason?: string | undefined } = {},
@@ -374,11 +386,11 @@ export async function cancelExchangeRequest(
     if (actor.type === 'client') {
       const clientId = requireClient(actor);
       if (row.clientId !== clientId) {
-        throw new NotFoundError('Заявка не найдена');
+        throw new NotFoundError('Заявка на обмен не найдена');
       }
       if (row.status !== 'new') {
         throw new TransitionNotAllowedError(
-          'Заявку уже взяли в работу — отменить её может только менеджер',
+          'Заявку на обмен уже взяли в работу — отменить её может только менеджер',
         );
       }
       return applyTransition(tx, row, { to: 'cancelled', actorType: 'client' });
@@ -402,10 +414,20 @@ export async function cancelExchangeRequest(
   });
 }
 
-function parsePositive(value: string, message: string): Amount {
-  const parsed = Money.positiveAmountSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new InvalidInputError(message);
+/**
+ * Валюта дохода сверяется со справочником, а не принимается как есть:
+ * от неё считаются реферальные начисления, и «RUR» вместо «RUB»
+ * означало бы вторую валюту, в которой у клиента копится отдельный, ни
+ * с чем не сходящийся остаток.
+ */
+async function requireKnownCurrency(executor: Executor, code: string): Promise<void> {
+  const [row] = await executor
+    .select({ code: currencies.code })
+    .from(currencies)
+    .where(eq(currencies.code, code))
+    .limit(1);
+
+  if (!row) {
+    throw new InvalidInputError(`Валюта ${code} не заведена в справочнике`);
   }
-  return parsed.data;
 }

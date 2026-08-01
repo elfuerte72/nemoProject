@@ -37,18 +37,18 @@ export default async function DeskPage() {
 
       <section>
         <h2 style={styles.subheading}>Очередь — {queue.length}</h2>
-        <RequestList requests={queue} empty="Новых заявок нет." />
+        <ExchangeRequestList requests={queue} empty="Новых заявок нет." />
       </section>
 
       <section>
         <h2 style={styles.subheading}>В работе — {inProgress.length}</h2>
-        <RequestList requests={inProgress} empty="Ничего не в работе." />
+        <ExchangeRequestList requests={inProgress} empty="Ничего не в работе." />
       </section>
     </main>
   );
 }
 
-function RequestList({
+function ExchangeRequestList({
   requests,
   empty,
 }: {
@@ -63,7 +63,7 @@ function RequestList({
     <ul style={styles.list}>
       {requests.map((request) => (
         <li key={request.id} style={styles.item}>
-          <Link href={`/requests/${request.id}`} style={styles.link}>
+          <Link href={`/exchange-requests/${request.id}`} style={styles.link}>
             {request.fromAmount} {request.fromCode} → {request.toCode}
           </Link>
           <div style={styles.muted}>

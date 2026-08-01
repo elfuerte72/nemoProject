@@ -8,16 +8,23 @@ import { asClient, givenCurrencyPair } from './test-support.js';
  *
  * Курс на этом шаге не называется: у наличных его вообще нет до
  * разговора с менеджером, а у электронных переводов он справочный.
- * Заявка — это запрос, а не сделка по зафиксированной цене.
+ * Заявка — это запрос, а не обмен по зафиксированной цене.
  */
 
 const core = createCore({ db: testDatabase() });
+
+/** Куда отправлять деньги. Для электронного перевода без этого никак. */
+let requisitesId: string;
 
 beforeEach(async () => {
   await resetDatabase();
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
   await core.registerClient({ telegramUserId: 100n });
+  // Телефон вместо карты: шифровать нечего, а значит и ключ не нужен —
+  // проверяются здесь правила подачи, а не хранение номеров.
+  const requisites = await core.saveRequisites(asClient(100n), { phone: '+79990000000' });
+  requisitesId = requisites.id;
 });
 
 afterAll(() => closeTestDatabase());
@@ -29,6 +36,7 @@ describe('поданная заявка', () => {
       fromCode: 'USDT',
       toCode: 'RUB',
       fromAmount: '100',
+      requisitesId,
     });
 
     expect(request.status).toBe('new');
@@ -43,6 +51,7 @@ describe('поданная заявка', () => {
       // Восемнадцать знаков: один wei. Через число такая сумма
       // потеряла бы точность задолго до последнего знака.
       fromAmount: '1.000000000000000001',
+      requisitesId,
     });
 
     const [stored] = await core.listExchangeRequests(asClient(100n));
@@ -57,6 +66,7 @@ describe('поданная заявка', () => {
       fromCode: 'USDT',
       toCode: 'RUB',
       fromAmount: '100',
+      requisitesId,
     });
 
     expect(request.fromAmount).toBe('100');
@@ -76,6 +86,44 @@ describe('поданная заявка', () => {
   });
 });
 
+describe('реквизиты при подаче', () => {
+  it('обязательны для электронного перевода: деньги некуда отправить', async () => {
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не нужны для наличных: их клиент получает на руки', async () => {
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'cash',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+    });
+
+    expect(request.status).toBe('new');
+  });
+
+  it('должны быть действующими: заменённые в заявку не принимаются', async () => {
+    await core.saveRequisites(asClient(100n), { phone: '+79991111111' });
+
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+        requisitesId,
+      }),
+    ).rejects.toThrow(NotFoundError);
+  });
+});
+
 describe('проверка заявки', () => {
   it('отвергает нулевую сумму', async () => {
     await expect(
@@ -84,6 +132,7 @@ describe('проверка заявки', () => {
         fromCode: 'USDT',
         toCode: 'RUB',
         fromAmount: '0',
+        requisitesId,
       }),
     ).rejects.toThrow(InvalidInputError);
   });
@@ -95,6 +144,7 @@ describe('проверка заявки', () => {
         fromCode: 'USDT',
         toCode: 'RUB',
         fromAmount: '-1',
+        requisitesId,
       }),
     ).rejects.toThrow(InvalidInputError);
   });
@@ -106,6 +156,7 @@ describe('проверка заявки', () => {
         fromCode: 'USDT',
         toCode: 'EUR',
         fromAmount: '100',
+        requisitesId,
       }),
     ).rejects.toThrow(NotFoundError);
   });
@@ -124,6 +175,7 @@ describe('проверка заявки', () => {
         fromCode: 'BTC',
         toCode: 'RUB',
         fromAmount: '1',
+        requisitesId,
       }),
     ).rejects.toThrow(NotFoundError);
   });
@@ -149,6 +201,7 @@ describe('список заявок клиента', () => {
       fromCode: 'USDT',
       toCode: 'RUB',
       fromAmount: '100',
+      requisitesId,
     });
     const second = await core.submitExchangeRequest(asClient(100n), {
       kind: 'cash',
@@ -169,6 +222,7 @@ describe('список заявок клиента', () => {
       fromCode: 'USDT',
       toCode: 'RUB',
       fromAmount: '100',
+      requisitesId,
     });
 
     const list = await core.listExchangeRequests(asClient(200n));
@@ -183,6 +237,7 @@ describe('список заявок клиента', () => {
       fromCode: 'USDT',
       toCode: 'RUB',
       fromAmount: '100',
+      requisitesId,
     });
 
     await expect(core.getExchangeRequest(asClient(200n), request.id)).rejects.toThrow(

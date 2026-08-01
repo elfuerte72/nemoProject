@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
-import { RequestCard } from './request-card';
+import { ExchangeRequestCard } from './exchange-request-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +27,7 @@ export default async function RequestPage({
   ]);
 
   return (
-    <RequestCard
+    <ExchangeRequestCard
       request={{ ...request, clientId: request.clientId.toString() }}
       events={events}
     />

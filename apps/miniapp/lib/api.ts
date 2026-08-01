@@ -1,4 +1,8 @@
-import { CoreError } from '@nemo/core';
+import {
+  coreErrorResponse,
+  unauthorizedResponse,
+  unexpectedErrorResponse,
+} from '@nemo/http';
 import { InitDataError, verifyInitData, type InitData } from '@/lib/telegram/init-data';
 
 /**
@@ -32,36 +36,11 @@ export function requireInitData(request: Request): InitData {
   return verifyInitData(raw, token);
 }
 
-const STATUS_BY_CODE = {
-  'not-found': 404,
-  forbidden: 403,
-  'invalid-input': 422,
-  'transition-not-allowed': 409,
-  conflict: 409,
-} as const;
-
 export function errorResponse(error: unknown): Response {
   if (error instanceof InitDataError) {
-    // Подробностей клиенту не сообщаем: они помогли бы подбирать подпись.
-    return Response.json({ error: 'Не удалось подтвердить запуск' }, { status: 401 });
+    return unauthorizedResponse('Не удалось подтвердить запуск');
   }
-  if (error instanceof CoreError) {
-    return Response.json({ error: error.message }, { status: STATUS_BY_CODE[error.code] });
-  }
-  console.error(error);
-  return Response.json({ error: 'Внутренняя ошибка' }, { status: 500 });
+  return coreErrorResponse(error) ?? unexpectedErrorResponse(error);
 }
 
-/**
- * JSON без потери точности: `telegram_user_id` и денежные величины —
- * bigint и строки, и `JSON.stringify` на первом же bigint бросает.
- */
-export function json(payload: unknown, init?: ResponseInit): Response {
-  const body = JSON.stringify(payload, (_key, value) =>
-    typeof value === 'bigint' ? value.toString() : value,
-  );
-  return new Response(body, {
-    ...init,
-    headers: { 'content-type': 'application/json', ...init?.headers },
-  });
-}
+export { json } from '@nemo/http';

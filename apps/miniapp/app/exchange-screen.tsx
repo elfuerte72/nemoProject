@@ -102,9 +102,9 @@ export function ExchangeScreen() {
       });
       setRequests((current) => [created.request, ...current]);
       setAmount('');
-      setNotice('Заявка принята. Её возьмёт менеджер — бот сообщит о каждом шаге.');
+      setNotice('Заявка на обмен принята. Её возьмёт менеджер — бот сообщит о каждом шаге.');
     } catch (failure) {
-      setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку');
+      setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на обмен');
     } finally {
       setBusy(false);
     }
@@ -123,7 +123,7 @@ export function ExchangeScreen() {
         ),
       );
     } catch (failure) {
-      setError(failure instanceof ApiError ? failure.message : 'Не удалось отменить заявку');
+      setError(failure instanceof ApiError ? failure.message : 'Не удалось отменить заявку на обмен');
     } finally {
       setBusy(false);
     }
@@ -208,7 +208,7 @@ export function ExchangeScreen() {
             disabled={busy || !fromCode || !toCode || (kind === 'electronic' && !requisites)}
             style={styles.button}
           >
-            Подать заявку
+            Подать заявку на обмен
           </button>
           {kind === 'electronic' && !requisites ? (
             <p style={styles.muted}>
@@ -222,9 +222,9 @@ export function ExchangeScreen() {
       {notice ? <p style={styles.notice}>{notice}</p> : undefined}
 
       <section style={styles.section}>
-        <h2 style={styles.subheading}>Мои заявки</h2>
+        <h2 style={styles.subheading}>Мои заявки на обмен</h2>
         {requests.length === 0 ? (
-          <p style={styles.muted}>Заявок пока нет.</p>
+          <p style={styles.muted}>Заявок на обмен пока нет.</p>
         ) : (
           <ul style={styles.list}>
             {requests.map((request) => (

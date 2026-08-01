@@ -42,7 +42,7 @@ export function renderNotification(notification: Notification): string {
       return notification.line === 1
         ? 'По вашей ссылке зарегистрировался новый клиент. ' +
             'Баллы начислятся, когда он совершит обмен.'
-        : 'В вашей второй линии новый партнёр: ваш реферал привёл знакомого.';
+        : 'У вас новый реферал во второй линии: ваш реферал привёл знакомого.';
     case 'exchange-request-status':
       return renderExchangeRequestStatus(notification);
   }
@@ -53,12 +53,12 @@ function renderExchangeRequestStatus(
 ): string {
   switch (notification.status) {
     case 'new':
-      return 'Заявка принята. Её возьмёт менеджер — вы получите сообщение.';
+      return 'Заявка на обмен принята. Её возьмёт менеджер — вы получите сообщение.';
     case 'in_progress':
-      return 'Менеджер взял вашу заявку в работу и скоро назовёт финальный курс.';
+      return 'Менеджер взял вашу заявку на обмен в работу и скоро назовёт финальный курс.';
     case 'rate_confirmed':
       return [
-        `Финальный курс по вашей заявке: ${notification.finalRate ?? '—'}.`,
+        `Финальный курс по вашей заявке на обмен: ${notification.finalRate ?? '—'}.`,
         notification.paymentInstructions
           ? `Реквизиты для оплаты: ${notification.paymentInstructions}`
           : undefined,
@@ -72,7 +72,7 @@ function renderExchangeRequestStatus(
       return 'Обмен исполнен, средства отправлены. Спасибо, что выбрали нас.';
     case 'cancelled':
       return notification.cancelReason
-        ? `Заявка отменена. Причина: ${notification.cancelReason}`
-        : 'Заявка отменена.';
+        ? `Заявка на обмен отменена. Причина: ${notification.cancelReason}`
+        : 'Заявка на обмен отменена.';
   }
 }

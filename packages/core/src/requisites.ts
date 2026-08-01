@@ -2,7 +2,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import { lastFour, seal } from '@nemo/crypto';
 import { clientRequisites } from '@nemo/db';
 import { requireClient, type Actor } from './actor.js';
-import type { CoreContext, Executor } from './context.js';
+import { requirePublicKey, type CoreConfig, type Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 
 /**
@@ -16,7 +16,7 @@ import { InvalidInputError, NotFoundError } from './errors.js';
  * он узнавал свою карту.
  *
  * Прежние реквизиты не удаляются, а архивируются: на них ссылаются
- * прошлые заявки, и в разборе спорной сделки должно быть видно, куда
+ * прошлые заявки, и в разборе спорного обмена должно быть видно, куда
  * деньги ушли тогда, а не куда ушли бы сейчас.
  */
 
@@ -52,7 +52,7 @@ function toView(row: RequisitesRow): RequisitesView {
 }
 
 export async function saveRequisites(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
   input: SaveRequisitesInput,
 ): Promise<RequisitesView> {
@@ -92,13 +92,10 @@ export async function saveRequisites(
 }
 
 function sealCard(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   cardNumber: string,
 ): { last4: string; sealed: Buffer } {
-  const publicKey = ctx.requisites.publicKey;
-  if (!publicKey) {
-    throw new Error('Не задан публичный ключ шифрования реквизитов');
-  }
+  const publicKey = requirePublicKey(ctx);
   try {
     return { last4: lastFour(cardNumber), sealed: seal(publicKey, cardNumber) };
   } catch (error) {
@@ -111,7 +108,7 @@ function sealCard(
 
 /** Текущие реквизиты клиента. `null`, пока он их не сохранил. */
 export async function getRequisites(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   actor: Actor,
 ): Promise<RequisitesView | null> {
   const clientId = requireClient(actor);

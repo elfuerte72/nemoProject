@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@nemo/core": "workspace:*",
+    "@nemo/http": "workspace:*",
     "@nemo/types": "workspace:*",
     "grammy": "^1.32.0",
     "next": "^15.1.4",

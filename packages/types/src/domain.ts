@@ -85,6 +85,15 @@ export const referralLines = [1, 2] as const;
 export const referralLineSchema = z.union([z.literal(1), z.literal(2)]);
 export type ReferralLine = z.infer<typeof referralLineSchema>;
 
+/**
+ * Кто выполнил действие. Система ставит только начальные состояния;
+ * клиент подаёт заявку на обмен и отменяет её, пока она новая; всё
+ * остальное делает менеджер.
+ */
+export const actorTypes = ['system', 'client', 'manager'] as const;
+export const actorTypeSchema = z.enum(actorTypes);
+export type ActorType = z.infer<typeof actorTypeSchema>;
+
 /** Роль сотрудника в админ-панели. */
 export const staffRoles = ['manager', 'admin'] as const;
 export const staffRoleSchema = z.enum(staffRoles);

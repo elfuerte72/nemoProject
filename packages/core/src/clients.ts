@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { clients, referrals } from '@nemo/db';
-import type { CoreContext, Executor } from './context.js';
+import type { CoreConfig, Executor } from './context.js';
 import { NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
 import { generateReferralCode } from './referral-code.js';
@@ -63,7 +63,7 @@ async function findByTelegramUserId(
 }
 
 export async function registerClient(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   input: RegisterClientInput,
 ): Promise<RegisterClientResult> {
   return ctx.db.transaction(async (tx) => {
@@ -166,7 +166,7 @@ async function updateUsername(
 
 /** Профиль клиента. Читает только сам клиент — чужой профиль не отдаётся. */
 export async function getClient(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   telegramUserId: bigint,
 ): Promise<ClientView> {
   const row = await findByTelegramUserId(ctx.db, telegramUserId);

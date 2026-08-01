@@ -2,7 +2,12 @@ import { eq } from 'drizzle-orm';
 import { generateTotpSecret, open, seal, verifyTotp } from '@nemo/crypto';
 import { staff } from '@nemo/db';
 import type { StaffRole } from '@nemo/types';
-import type { CoreContext, Executor } from './context.js';
+import {
+  requirePrivateKey,
+  requirePublicKey,
+  type CoreConfig,
+  type Executor,
+} from './context.js';
 import { ForbiddenError } from './errors.js';
 
 /**
@@ -51,7 +56,7 @@ async function findActive(executor: Executor, staffId: string): Promise<StaffRow
  * дошёл даже до ввода кода.
  */
 export async function beginStaffLogin(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   telegramUserId: bigint,
 ): Promise<BeginStaffLoginResult> {
   return ctx.db.transaction(async (tx) => {
@@ -68,6 +73,9 @@ export async function beginStaffLogin(
       return { staffId: row.id, role: row.role };
     }
 
+    // Секрет второго фактора шифруется тем же ключом, что и реквизиты:
+    // оба читаются только в админке, и заводить для них два разных ключа
+    // значило бы удвоить число мест, где ключ можно потерять.
     const secret = generateTotpSecret();
     await tx
       .update(staff)
@@ -80,7 +88,7 @@ export async function beginStaffLogin(
 
 /** Второй шаг: без верного кода сессия не выдаётся. */
 export async function completeStaffLogin(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   staffId: string,
   code: string,
 ): Promise<StaffSession> {
@@ -104,30 +112,9 @@ export async function completeStaffLogin(
  * раньше сессия.
  */
 export async function getActiveStaff(
-  ctx: CoreContext,
+  ctx: CoreConfig,
   staffId: string,
 ): Promise<StaffSession> {
   const row = await findActive(ctx.db, staffId);
   return { staffId: row.id, role: row.role };
-}
-
-/**
- * Секрет второго фактора шифруется тем же ключом, что и реквизиты: оба
- * читаются только в админке, и заводить для них два разных ключа
- * значило бы удвоить число мест, где ключ можно потерять.
- */
-function requirePublicKey(ctx: CoreContext): string {
-  const key = ctx.requisites.publicKey;
-  if (!key) {
-    throw new Error('Не задан публичный ключ шифрования');
-  }
-  return key;
-}
-
-function requirePrivateKey(ctx: CoreContext): string {
-  const key = ctx.requisites.privateKey;
-  if (!key) {
-    throw new Error('Не задан приватный ключ расшифровки');
-  }
-  return key;
 }
