@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest';
+import { generateRequisiteKeyPair, lastFour, open, seal } from './index.js';
+
+const keys = generateRequisiteKeyPair();
+const CARD = '4276 3800 1234 4821';
+
+/** Портит один байт конверта, не трогая остальные. */
+function flipByte(envelope: Buffer, index: number): Buffer {
+  envelope.writeUInt8(envelope.readUInt8(index) ^ 0xff, index);
+  return envelope;
+}
+
+describe('шифрование реквизитов', () => {
+  it('расшифровывает то, что зашифровали', () => {
+    expect(open(keys.privateKey, seal(keys.publicKey, CARD))).toBe(CARD);
+  });
+
+  it('даёт разный шифротекст на одинаковый ввод', () => {
+    // Эфемерная пара на каждое сообщение: одинаковые карты не выглядят одинаково,
+    // иначе по базе было бы видно, у скольких клиентов совпадают реквизиты.
+    const a = seal(keys.publicKey, CARD);
+    const b = seal(keys.publicKey, CARD);
+    expect(a.equals(b)).toBe(false);
+  });
+
+  it('не расшифровывается чужим приватным ключом', () => {
+    const stranger = generateRequisiteKeyPair();
+    expect(() => open(stranger.privateKey, seal(keys.publicKey, CARD))).toThrow();
+  });
+
+  it('обнаруживает подмену шифротекста', () => {
+    const envelope = seal(keys.publicKey, CARD);
+    expect(() => open(keys.privateKey, flipByte(envelope, envelope.length - 1))).toThrow();
+  });
+
+  it('обнаруживает подмену эфемерного ключа', () => {
+    const envelope = seal(keys.publicKey, CARD);
+    expect(() => open(keys.privateKey, flipByte(envelope, 5))).toThrow();
+  });
+
+  it('отвергает конверт неизвестной версии', () => {
+    const envelope = seal(keys.publicKey, CARD);
+    envelope[0] = 99;
+    expect(() => open(keys.privateKey, envelope)).toThrow(RangeError);
+  });
+
+  it('отвергает слишком короткий конверт', () => {
+    expect(() => open(keys.privateKey, Buffer.of(1, 2, 3))).toThrow(RangeError);
+  });
+
+  it('держит юникод и длинные строки', () => {
+    const value = 'Сбербанк, счёт №40817810099910004312, получатель Иванов И. И.';
+    expect(open(keys.privateKey, seal(keys.publicKey, value))).toBe(value);
+  });
+});
+
+describe('lastFour', () => {
+  it('берёт последние четыре цифры, игнорируя пробелы', () => {
+    expect(lastFour(CARD)).toBe('4821');
+  });
+
+  it('бросает, если цифр меньше четырёх', () => {
+    expect(() => lastFour('12')).toThrow(RangeError);
+  });
+});
