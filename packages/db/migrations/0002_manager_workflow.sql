@@ -1,0 +1,2 @@
+ALTER TABLE "exchange_requests" ADD COLUMN "payment_instructions" text;--> statement-breakpoint
+ALTER TABLE "exchange_requests" ADD CONSTRAINT "exchange_requests_assigned_manager_id_staff_id_fk" FOREIGN KEY ("assigned_manager_id") REFERENCES "public"."staff"("id") ON DELETE no action ON UPDATE no action;

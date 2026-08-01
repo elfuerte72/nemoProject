@@ -1,8 +1,14 @@
 import type { NextConfig } from 'next';
 
 const config: NextConfig = {
-  transpilePackages: ['@nemo/db', '@nemo/types', '@nemo/crypto'],
+  transpilePackages: ['@nemo/core', '@nemo/db', '@nemo/types', '@nemo/crypto'],
   serverExternalPackages: ['postgres'],
+  webpack: (config) => {
+    // См. комментарий в apps/miniapp/next.config.ts: импорты пакетов
+    // монорепо указывают `.js` там, где на диске `.ts`.
+    config.resolve.extensionAlias = { '.js': ['.ts', '.tsx', '.js'] };
+    return config;
+  },
 };
 
 export default config;

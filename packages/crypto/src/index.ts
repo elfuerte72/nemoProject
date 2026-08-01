@@ -131,3 +131,5 @@ export function lastFour(cardNumber: string): string {
   }
   return digits.slice(-4);
 }
+
+export { generateTotpSecret, totpCode, verifyTotp, type TotpOptions } from './totp.js';

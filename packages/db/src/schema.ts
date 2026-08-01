@@ -217,8 +217,15 @@ export const exchangeRequests = pgTable(
     serviceIncome: money('service_income'),
     serviceIncomeCode: text('service_income_code'),
     status: exchangeRequestStatusEnum('status').default('new').notNull(),
-    assignedManagerId: uuid('assigned_manager_id'),
+    assignedManagerId: uuid('assigned_manager_id').references(() => staff.id),
     requisitesId: uuid('requisites_id').references(() => clientRequisites.id),
+    /**
+     * Куда клиенту платить. Диктуется менеджером вместе с финальным
+     * курсом и хранится в заявке, а не только в сообщении бота: клиент
+     * возвращается к ней через день и не должен искать сообщение в
+     * переписке.
+     */
+    paymentInstructions: text('payment_instructions'),
     cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

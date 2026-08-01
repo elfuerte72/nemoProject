@@ -18,7 +18,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ru">
       <head>
-        <script src="https://telegram.org/js/telegram-web-app.js" async />
+        {/*
+          Без `async`: данные запуска нужны первому же запросу к серверу,
+          и гидрация не должна их дожидаться.
+        */}
+        <script src="https://telegram.org/js/telegram-web-app.js" />
       </head>
       <body>{children}</body>
     </html>

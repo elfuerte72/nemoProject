@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import postgres from 'postgres';
 import { createDatabase, type Database } from './index.js';
 
 /**
@@ -18,8 +19,25 @@ import { createDatabase, type Database } from './index.js';
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL('../migrations', import.meta.url));
 
+const DEFAULT_TEST_DATABASE_URL = 'postgres://nemo:nemo@localhost:5432/nemo_test';
+
+/**
+ * У каждого пакета своя тестовая база: `nemo_test_core`, `nemo_test_db`.
+ *
+ * Turbo запускает пакеты параллельно, и общая база означала бы, что
+ * тесты вычищают данные друг у друга — падения при этом выглядят как
+ * ошибки в коде, хотя код ни при чём. Имя пакета даёт разделение
+ * автоматически, без ручного списка баз.
+ */
 export function testDatabaseUrl(): string {
-  return process.env.TEST_DATABASE_URL ?? 'postgres://nemo:nemo@localhost:5432/nemo_test';
+  const base = process.env.TEST_DATABASE_URL ?? DEFAULT_TEST_DATABASE_URL;
+  const packageName = process.env.npm_package_name?.replace(/^@nemo\//, '');
+  if (!packageName) {
+    return base;
+  }
+  const url = new URL(base);
+  url.pathname = `/${url.pathname.slice(1)}_${packageName.replace(/\W/g, '_')}`;
+  return url.toString();
 }
 
 let instance: Database | undefined;
@@ -41,12 +59,45 @@ export async function closeTestDatabase(): Promise<void> {
 
 /** Привести тестовую базу к схеме. Вызывается один раз перед прогоном. */
 export async function migrateTestDatabase(): Promise<void> {
-  const db = createDatabase(testDatabaseUrl());
+  const url = testDatabaseUrl();
+  await ensureDatabaseExists(url);
+
+  const db = createDatabase(url);
   try {
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
   } finally {
     await db.$client.end();
   }
+}
+
+/**
+ * Создать базу пакета, если её ещё нет. Раз имя выводится из имени
+ * пакета, требовать от разработчика заводить её руками означало бы
+ * ломать прогон при каждом новом пакете.
+ */
+async function ensureDatabaseExists(url: string): Promise<void> {
+  const target = new URL(url);
+  const name = decodeURIComponent(target.pathname.slice(1));
+
+  const maintenance = new URL(url);
+  maintenance.pathname = '/postgres';
+  const client = postgres(maintenance.toString(), { max: 1 });
+  try {
+    const existing = await client`select 1 from pg_database where datname = ${name}`;
+    if (existing.length === 0) {
+      // `create database` не принимает параметров, поэтому имя
+      // экранируется как идентификатор. Оно собрано из имени пакета и
+      // ниоткуда больше, но подставлять в SQL как есть — привычка,
+      // которая однажды доберётся до данных пользователя.
+      await client.unsafe(`create database ${escapeIdentifier(name)}`);
+    }
+  } finally {
+    await client.end();
+  }
+}
+
+function escapeIdentifier(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
 }
 
 /**
