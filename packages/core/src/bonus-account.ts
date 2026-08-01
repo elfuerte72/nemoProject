@@ -26,7 +26,7 @@ export interface BonusTransactionView {
   readonly line: ReferralLine | null;
   /** Ставка линии на момент начисления, в базисных пунктах. */
   readonly rateBps: number | null;
-  /** Сделка, за которую начислено. */
+  /** Заявка на обмен, за которую начислено. */
   readonly exchangeRequestId: string | null;
   readonly comment: string | null;
   readonly createdAt: Date;

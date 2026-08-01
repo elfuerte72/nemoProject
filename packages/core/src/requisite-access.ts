@@ -7,9 +7,8 @@ import {
   staff,
 } from '@nemo/db';
 import { requireAdmin, requireStaff, type Actor } from './actor.js';
-import { requirePrivateKey, type CoreConfig } from './context.js';
-import { NotFoundError } from './errors.js';
-import { requireOwnership } from './exchange-workflow.js';
+import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
+import { ForbiddenError, NotFoundError } from './errors.js';
 
 /**
  * Чтение полного номера карты менеджером и журнал таких чтений.
@@ -43,22 +42,48 @@ export interface RequisiteAccessEntry {
   readonly staffName: string;
   readonly clientId: bigint;
   readonly exchangeRequestId: string | null;
+  readonly withdrawalRequestId: string | null;
   readonly accessedAt: Date;
+}
+
+/**
+ * Записать обращение к реквизиту. Вызывается изнутри той же транзакции,
+ * в которой реквизит расшифровывается: вернуть открытое значение, не
+ * оставив следа, вызывающая сторона не может.
+ */
+export async function logRequisiteAccess(
+  executor: Executor,
+  entry: {
+    staffId: string;
+    clientId: bigint;
+    requisitesId?: string;
+    exchangeRequestId?: string;
+    withdrawalRequestId?: string;
+  },
+): Promise<void> {
+  await executor.insert(requisiteAccessLog).values({
+    staffId: entry.staffId,
+    clientId: entry.clientId,
+    requisitesId: entry.requisitesId ?? null,
+    exchangeRequestId: entry.exchangeRequestId ?? null,
+    withdrawalRequestId: entry.withdrawalRequestId ?? null,
+  });
 }
 
 /**
  * Реквизиты клиента по заявке на обмен, которую ведёт менеджер.
  *
- * Заявка обязательна: доступ к чужому номеру карты имеет смысл только
- * в связи с работой по конкретной сделке, и журнал должен отвечать не
- * только «кто смотрел», но и «зачем».
+ * Заявка обязательна, и она должна быть взята именно этим менеджером:
+ * «в момент работы с его заявкой» — это после того, как он её взял. У
+ * невзятой заявки владельца нет, и открытый по ней номер карты означал
+ * бы, что чужие реквизиты доступны всей смене просто по ссылке.
  */
 export async function revealRequisites(
   ctx: CoreConfig,
   actor: Actor,
   exchangeRequestId: string,
 ): Promise<RevealedRequisites> {
-  requireStaff(actor);
+  const staff = requireStaff(actor);
   const privateKey = requirePrivateKey(ctx);
 
   return ctx.db.transaction(async (tx) => {
@@ -70,7 +95,12 @@ export async function revealRequisites(
     if (!request) {
       throw new NotFoundError('Заявка на обмен не найдена');
     }
-    const staffId = requireOwnership(request, actor);
+    if (request.assignedManagerId !== staff.staffId) {
+      throw new ForbiddenError(
+        'Реквизиты открываются менеджеру, взявшему заявку на обмен в работу',
+      );
+    }
+    const staffId = staff.staffId;
 
     if (!request.requisitesId) {
       throw new NotFoundError('К заявке на обмен не приложены реквизиты');
@@ -85,8 +115,9 @@ export async function revealRequisites(
       throw new NotFoundError('Реквизиты не найдены');
     }
 
-    await tx.insert(requisiteAccessLog).values({
+    await logRequisiteAccess(tx, {
       staffId,
+      clientId: row.clientId,
       requisitesId: row.id,
       exchangeRequestId: request.id,
     });
@@ -117,23 +148,26 @@ export async function listRequisiteAccessLog(
   const conditions: SQL[] = [];
   if (filter.staffId) conditions.push(eq(requisiteAccessLog.staffId, filter.staffId));
   if (filter.clientId !== undefined) {
-    conditions.push(eq(clientRequisites.clientId, filter.clientId));
+    conditions.push(eq(requisiteAccessLog.clientId, filter.clientId));
   }
   if (filter.from) conditions.push(gte(requisiteAccessLog.accessedAt, filter.from));
   if (filter.to) conditions.push(lte(requisiteAccessLog.accessedAt, filter.to));
 
+  // Соединение только с сотрудником: клиент теперь записан в самой
+  // строке, а реквизит бывает двух родов — соединение с картой выкинуло
+  // бы из журнала обращения к реквизитам вывода.
   const rows = await ctx.db
     .select({
       id: requisiteAccessLog.id,
       staffId: requisiteAccessLog.staffId,
       staffName: staff.displayName,
-      clientId: clientRequisites.clientId,
+      clientId: requisiteAccessLog.clientId,
       exchangeRequestId: requisiteAccessLog.exchangeRequestId,
+      withdrawalRequestId: requisiteAccessLog.withdrawalRequestId,
       accessedAt: requisiteAccessLog.accessedAt,
     })
     .from(requisiteAccessLog)
     .innerJoin(staff, eq(staff.id, requisiteAccessLog.staffId))
-    .innerJoin(clientRequisites, eq(clientRequisites.id, requisiteAccessLog.requisitesId))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(requisiteAccessLog.accessedAt));
 

@@ -23,11 +23,11 @@ export async function POST(request: Request): Promise<Response> {
       throw new InvalidInputError('Не понят ответ о согласии на рассылку');
     }
 
-    const result = await getCore().setMarketingConsent(
+    const { marketingConsent } = await getCore().setMarketingConsent(
       { type: 'client', telegramUserId: initData.telegramUserId },
       parsed.data.consent,
     );
-    return json(result);
+    return json({ marketingConsent });
   } catch (error) {
     return errorResponse(error);
   }

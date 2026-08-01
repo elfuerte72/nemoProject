@@ -81,7 +81,7 @@ describe('электронный перевод', () => {
 });
 
 describe('наличные', () => {
-  it('котировку не запрашивают: ставку называет менеджер', async () => {
+  it('котировку не запрашивают: финальный курс называет менеджер', async () => {
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
     const source = givenRateSource('100');
     const core = createCore({ db, rateSource: source });

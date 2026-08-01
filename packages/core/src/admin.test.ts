@@ -15,7 +15,7 @@ import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
  *
  * Главная проверка здесь — что смена ставок не переписывает прошлое.
  * Начисление сделано на тех условиях, которые действовали в момент
- * исполнения заявки, и новая ставка к закрытой сделке отношения не
+ * исполнения заявки, и новая ставка линии к исполненной заявке отношения не
  * имеет.
  */
 
@@ -232,7 +232,7 @@ describe('прошлые начисления', () => {
     await core.updateServiceSettings(admin, { referralLine1Bps: 1000 });
     await completeRequest();
 
-    // Первая сделка закрыта на 5%, вторая — на 10%: 50 и 100.
+    // Первая заявка исполнена на 5%, вторая — на 10%: 50 и 100.
     const account = await core.getBonusAccount(asClient(1n));
     expect(account.history.map((one) => ({ amount: one.amount, rateBps: one.rateBps }))).toEqual(
       [

@@ -21,6 +21,12 @@ export interface ClientView {
   readonly referralCode: string;
   readonly referrerId: bigint | null;
   readonly marketingConsent: boolean;
+  /**
+   * Отвечал ли клиент на вопрос о рассылке. Ложь означает «спросить
+   * снова», а не «отказался»: закрывший приложение до ответа иначе не
+   * увидел бы вопроса больше никогда.
+   */
+  readonly marketingConsentAsked: boolean;
   readonly createdAt: Date;
 }
 
@@ -47,6 +53,7 @@ function toView(row: ClientRow): ClientView {
     referralCode: row.referralCode,
     referrerId: row.referrerId,
     marketingConsent: row.marketingConsent,
+    marketingConsentAsked: row.marketingConsentAskedAt !== null,
     createdAt: row.createdAt,
   };
 }

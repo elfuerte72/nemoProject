@@ -167,7 +167,7 @@ export async function submitExchangeRequest(
   // Котировка запрашивается до транзакции: это обращение к чужому API,
   // и держать открытой транзакцию на время сетевого запроса значило бы
   // отдавать соединение с базой в распоряжение чужого сервиса. У
-  // наличных курса нет вовсе — там ставку называет менеджер.
+  // наличных курса нет вовсе — там финальный курс называет менеджер.
   const preliminaryRate =
     input.kind === 'electronic'
       ? await quoteForSubmission(ctx, { fromCode: input.fromCode, toCode: input.toCode })

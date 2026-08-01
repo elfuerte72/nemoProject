@@ -17,9 +17,9 @@ import { readServiceSettings, type ServiceSettingsView } from './settings.js';
  * временем. Прошлые начисления от смены ставки не пересчитываются:
  * ставка, по которой начислено, хранится в самой строке движения
  * (`referral-accruals.ts`), и переписывать её задним числом означало бы
- * менять условия сделки, которая давно закрыта.
+ * менять условия заявки, исполненной давным-давно.
  *
- * Каждое изменение записывается в журнал. Вопрос «почему за эту сделку
+ * Каждое изменение записывается в журнал. Вопрос «почему за эту заявку
  * начислили столько» должен иметь ответ, а не догадку.
  */
 
@@ -83,7 +83,7 @@ function toStaffView(row: StaffRow): StaffView {
   };
 }
 
-async function record(
+async function recordSettingsChange(
   executor: Executor,
   staffId: string,
   subject: string,
@@ -141,7 +141,7 @@ export async function addStaff(
       throw new ConflictError('Сотрудник с таким Telegram уже заведён');
     }
 
-    await record(tx, admin.staffId, 'staff', row.id, {
+    await recordSettingsChange(tx, admin.staffId, 'staff', row.id, {
       action: 'added',
       displayName,
       role: row.role,
@@ -174,7 +174,7 @@ export async function updateStaffRole(
       .where(eq(staff.id, staffId))
       .returning();
 
-    await record(tx, admin.staffId, 'staff', staffId, {
+    await recordSettingsChange(tx, admin.staffId, 'staff', staffId, {
       action: 'role',
       from: current.role,
       to: role,
@@ -208,7 +208,7 @@ export async function setStaffActive(
       .where(eq(staff.id, staffId))
       .returning();
 
-    await record(tx, admin.staffId, 'staff', staffId, {
+    await recordSettingsChange(tx, admin.staffId, 'staff', staffId, {
       action: isActive ? 'enabled' : 'disabled',
     });
     return toStaffView(row!);
@@ -235,7 +235,7 @@ export async function resetStaffSecondFactor(
       .where(eq(staff.id, staffId))
       .returning();
 
-    await record(tx, admin.staffId, 'staff', staffId, { action: 'second-factor-reset' });
+    await recordSettingsChange(tx, admin.staffId, 'staff', staffId, { action: 'second-factor-reset' });
     return { staff: toStaffView(row!), enrollmentSecret: secret };
   });
 }
@@ -335,7 +335,7 @@ export async function updateServiceSettings(
       .where(eq(serviceSettings.id, 1));
 
     const after = await readServiceSettings(tx);
-    await record(tx, admin.staffId, 'service_settings', null, { before, after });
+    await recordSettingsChange(tx, admin.staffId, 'service_settings', null, { before, after });
     return after;
   });
 }
@@ -387,7 +387,7 @@ export async function updateCurrencyPairMarkup(
       .where(eq(currencyPairs.id, pairId))
       .returning();
 
-    await record(tx, admin.staffId, 'currency_pair', pairId, {
+    await recordSettingsChange(tx, admin.staffId, 'currency_pair', pairId, {
       direction: `${current.fromCode} → ${current.toCode} (${current.kind})`,
       from: current.markupBps,
       to: markupBps,

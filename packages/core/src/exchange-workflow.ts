@@ -145,7 +145,7 @@ async function lockRequest(
  * а не правом действовать поверх закрепления: иначе в истории окажется
  * два исполнителя, а закрепление останется за первым.
  */
-export function requireOwnership(row: ExchangeRequestRow, actor: Actor): string {
+function requireOwnership(row: ExchangeRequestRow, actor: Actor): string {
   const staff = requireStaff(actor);
   if (row.assignedManagerId !== null && row.assignedManagerId !== staff.staffId) {
     throw new ForbiddenError('Заявку на обмен ведёт другой менеджер');

@@ -54,23 +54,30 @@ function toView(row: BroadcastRow): BroadcastView {
 /**
  * Согласие на рассылку. Клиент отвечает на вопрос при первом входе и
  * может передумать в любой момент.
+ *
+ * Отметка о том, что вопрос задан, ставится вместе с ответом: без неё
+ * «отказался» и «не спрашивали» неразличимы, и клиент, закрывший
+ * приложение до ответа, не увидел бы вопроса больше никогда.
  */
 export async function setMarketingConsent(
   ctx: CoreConfig,
   actor: Actor,
   consent: boolean,
-): Promise<{ marketingConsent: boolean }> {
+): Promise<{ marketingConsent: boolean; asked: boolean }> {
   const clientId = requireClient(actor);
   const [row] = await ctx.db
     .update(clients)
-    .set({ marketingConsent: consent })
+    .set({ marketingConsent: consent, marketingConsentAskedAt: new Date() })
     .where(eq(clients.telegramUserId, clientId))
-    .returning({ marketingConsent: clients.marketingConsent });
+    .returning({
+      marketingConsent: clients.marketingConsent,
+      askedAt: clients.marketingConsentAskedAt,
+    });
 
   if (!row) {
     throw new NotFoundError('Клиент не найден');
   }
-  return row;
+  return { marketingConsent: row.marketingConsent, asked: row.askedAt !== null };
 }
 
 /**
@@ -114,8 +121,54 @@ export async function startBroadcast(
   });
 }
 
+export interface BroadcastProgress {
+  readonly delivered: number;
+  readonly failed: number;
+}
+
+async function saveProgress(
+  ctx: CoreConfig,
+  broadcastId: string,
+  progress: BroadcastProgress,
+  finished: boolean,
+): Promise<BroadcastView> {
+  const [row] = await ctx.db
+    .update(broadcasts)
+    .set({
+      delivered: Math.max(0, Math.trunc(progress.delivered)),
+      failed: Math.max(0, Math.trunc(progress.failed)),
+      ...(finished ? { finishedAt: new Date() } : {}),
+    })
+    .where(eq(broadcasts.id, broadcastId))
+    .returning();
+
+  if (!row) {
+    throw new NotFoundError('Рассылка не найдена');
+  }
+  return toView(row);
+}
+
 /**
- * Записать результат отправки: сколько дошло, сколько нет.
+ * Отметить, сколько разослано на текущий момент.
+ *
+ * Счётчики сохраняются по ходу отправки, а не только в конце: рассылка
+ * по большому списку идёт минутами, и запрос, который её запустил,
+ * может оборваться по таймауту раньше, чем она закончится. Тогда
+ * администратор увидит, сколько успело уйти, — вместо нулей и
+ * незавершённой рассылки, о которой ничего не известно.
+ */
+export async function recordBroadcastProgress(
+  ctx: CoreConfig,
+  actor: Actor,
+  broadcastId: string,
+  progress: BroadcastProgress,
+): Promise<BroadcastView> {
+  requireAdmin(actor);
+  return saveProgress(ctx, broadcastId, progress, false);
+}
+
+/**
+ * Записать итог отправки: сколько дошло, сколько нет.
  *
  * Хранится, а не только показывается: вопрос «дошло ли до людей письмо
  * на прошлой неделе» возникает тогда, когда экран отправки давно
@@ -125,23 +178,10 @@ export async function finishBroadcast(
   ctx: CoreConfig,
   actor: Actor,
   broadcastId: string,
-  result: { delivered: number; failed: number },
+  result: BroadcastProgress,
 ): Promise<BroadcastView> {
   requireAdmin(actor);
-  const [row] = await ctx.db
-    .update(broadcasts)
-    .set({
-      delivered: Math.max(0, Math.trunc(result.delivered)),
-      failed: Math.max(0, Math.trunc(result.failed)),
-      finishedAt: new Date(),
-    })
-    .where(eq(broadcasts.id, broadcastId))
-    .returning();
-
-  if (!row) {
-    throw new NotFoundError('Рассылка не найдена');
-  }
-  return toView(row);
+  return saveProgress(ctx, broadcastId, result, true);
 }
 
 export async function listBroadcasts(

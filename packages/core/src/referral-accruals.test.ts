@@ -85,7 +85,7 @@ describe('начисление первой линии', () => {
     expect(account.balance).toBe('50');
   });
 
-  it('сохраняет ставку и сделку, за которую начислено', async () => {
+  it('сохраняет ставку линии и заявку, за которую начислено', async () => {
     const code = await givenClient(1n);
     await givenClient(2n, code);
 

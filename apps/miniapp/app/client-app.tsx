@@ -29,7 +29,6 @@ const TABS: readonly { id: Tab; label: string }[] = [
 export function ClientApp() {
   const [tab, setTab] = useState<Tab>('exchange');
   const [client, setClient] = useState<ClientView>();
-  const [firstLaunch, setFirstLaunch] = useState(false);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -39,9 +38,8 @@ export function ClientApp() {
 
     void (async () => {
       try {
-        const session = await post<{ client: ClientView; created: boolean }>('/api/session');
+        const session = await post<{ client: ClientView }>('/api/session');
         setClient(session.client);
-        setFirstLaunch(session.created);
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось открыть сервис');
       }
@@ -68,13 +66,17 @@ export function ClientApp() {
 
   return (
     <main style={styles.page}>
+      {/*
+        Вопрос висит, пока клиент на него не ответил, а не только при
+        первом запуске: закрывший приложение до ответа иначе не увидел
+        бы его больше никогда.
+      */}
       <MarketingConsent
-        askNow={firstLaunch}
+        askNow={!client.marketingConsentAsked}
         consent={client.marketingConsent}
-        onAnswered={(marketingConsent) => {
-          setClient({ ...client, marketingConsent });
-          setFirstLaunch(false);
-        }}
+        onAnswered={(marketingConsent) =>
+          setClient({ ...client, marketingConsent, marketingConsentAsked: true })
+        }
       />
 
       <nav style={styles.tabs}>

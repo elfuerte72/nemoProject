@@ -78,6 +78,13 @@ export interface BroadcastOptions extends DeliveryOptions {
   readonly perSecond?: number;
   /** Подменяется в тестах, чтобы не ждать по-настоящему. */
   readonly wait?: (ms: number) => Promise<void>;
+  /**
+   * Сколько разослано после очередной порции. Отправка по большому
+   * списку идёт минутами, и запрос, который её запустил, может
+   * оборваться раньше, чем она закончится: без промежуточных отметок от
+   * такой рассылки не осталось бы никаких следов.
+   */
+  readonly onProgress?: (progress: BroadcastResult) => Promise<void>;
 }
 
 const DEFAULT_PER_SECOND = 25;
@@ -114,6 +121,15 @@ export async function deliverBroadcast(
     for (const ok of results) {
       if (ok) delivered += 1;
       else failed += 1;
+    }
+
+    // Сбой сохранения отметки рассылку не прерывает: сообщения уже
+    // ушли, и обрывать оставшихся получателей из-за неудачной записи
+    // счётчика значило бы наказать их за чужую беду.
+    if (options.onProgress) {
+      await options.onProgress({ delivered, failed }).catch((error: unknown) => {
+        console.error('Не удалось отметить ход рассылки', error);
+      });
     }
 
     if (offset + perSecond < recipients.length) {

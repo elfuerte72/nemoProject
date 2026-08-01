@@ -19,8 +19,10 @@ import { getBonusAccount } from './bonus-account.js';
 import {
   finishBroadcast,
   listBroadcasts,
+  recordBroadcastProgress,
   setMarketingConsent,
   startBroadcast,
+  type BroadcastProgress,
 } from './broadcasts.js';
 import {
   listCardApplicationQueue,
@@ -195,11 +197,13 @@ export function createCore(ctx: CoreConfig) {
 
     startBroadcast: (actor: Actor, input: { body: string }) =>
       startBroadcast(ctx, actor, input),
-    finishBroadcast: (
+    recordBroadcastProgress: (
       actor: Actor,
       broadcastId: string,
-      result: { delivered: number; failed: number },
-    ) => finishBroadcast(ctx, actor, broadcastId, result),
+      progress: BroadcastProgress,
+    ) => recordBroadcastProgress(ctx, actor, broadcastId, progress),
+    finishBroadcast: (actor: Actor, broadcastId: string, result: BroadcastProgress) =>
+      finishBroadcast(ctx, actor, broadcastId, result),
     listBroadcasts: (actor: Actor, limit?: number) => listBroadcasts(ctx, actor, limit),
   };
 }
@@ -252,7 +256,7 @@ export type {
   RequisiteAccessFilter,
   RevealedRequisites,
 } from './requisite-access.js';
-export type { BroadcastView, StartedBroadcast } from './broadcasts.js';
+export type { BroadcastProgress, BroadcastView, StartedBroadcast } from './broadcasts.js';
 export type { StaffSession } from './staff.js';
 export type {
   AddStaffInput,

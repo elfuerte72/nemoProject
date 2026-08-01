@@ -39,7 +39,22 @@ describe('согласие клиента', () => {
 
     expect(await core.setMarketingConsent(asClient(100n), true)).toEqual({
       marketingConsent: true,
+      asked: true,
     });
+  });
+
+  it('спрашивается снова, пока клиент не ответил', async () => {
+    const first = await core.registerClient({ telegramUserId: 100n });
+    expect(first.client.marketingConsentAsked).toBe(false);
+
+    // Закрыл приложение, не ответив, и открыл заново: вопрос остаётся.
+    const second = await core.registerClient({ telegramUserId: 100n });
+    expect(second.client.marketingConsentAsked).toBe(false);
+
+    await core.setMarketingConsent(asClient(100n), false);
+
+    const third = await core.registerClient({ telegramUserId: 100n });
+    expect(third.client.marketingConsentAsked).toBe(true);
   });
 
   it('снимается немедленно', async () => {

@@ -97,7 +97,7 @@ describe('размер сети', () => {
     const account = await core.getBonusAccount(asClient(1n));
 
     // Ни идентификатора реферала, ни его имени: начисление говорит,
-    // за какую сделку начислено, но не за кого именно.
+    // за какую заявку начислено, но не за кого именно.
     expect(JSON.stringify(account)).not.toContain('user2');
     expect(JSON.stringify(account)).not.toContain('"2"');
   });

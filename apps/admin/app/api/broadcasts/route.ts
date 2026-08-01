@@ -29,8 +29,16 @@ export async function POST(request: Request): Promise<Response> {
 
     const core = getCore();
     const { broadcast, recipients } = await core.startBroadcast(actor, parsed.data);
+
+    // Счётчики сохраняются по ходу отправки: на большом списке она идёт
+    // минутами, и этот запрос может оборваться по таймауту раньше, чем
+    // она закончится. Тогда рассылка останется незавершённой, но видно
+    // будет, сколько успело уйти, — а не нули без объяснений.
     const result = await deliverBroadcast(recipients, broadcast.body, {
       botToken: botToken(),
+      onProgress: async (progress) => {
+        await core.recordBroadcastProgress(actor, broadcast.id, progress);
+      },
     });
 
     return json({ broadcast: await core.finishBroadcast(actor, broadcast.id, result) });

@@ -21,6 +21,7 @@ import {
 } from './context.js';
 import { InvalidInputError, NotFoundError, TransitionNotAllowedError } from './errors.js';
 import type { Notification } from './notifications.js';
+import { logRequisiteAccess } from './requisite-access.js';
 import { readServiceSettings } from './settings.js';
 
 /**
@@ -330,24 +331,43 @@ export async function rejectWithdrawalRequest(
  * Отдельной операцией, а не полем в списке заявок: расшифрованный
  * реквизит не должен уезжать на экран очереди просто потому, что
  * менеджер её открыл.
+ *
+ * Обращение попадает в тот же журнал, что и чтение номера карты
+ * (docs/adr/0002), и в той же транзакции: счёт, на который клиент
+ * просит выплату, — такой же его реквизит, и след от чтения нужен по
+ * той же причине.
  */
 export async function revealWithdrawalDestination(
   ctx: CoreConfig,
   actor: Actor,
   requestId: string,
 ): Promise<string> {
-  requireStaff(actor);
-  const [row] = await ctx.db
-    .select({ destinationSealed: withdrawalRequests.destinationSealed })
-    .from(withdrawalRequests)
-    .where(eq(withdrawalRequests.id, requestId))
-    .limit(1);
+  const staff = requireStaff(actor);
+  const privateKey = requirePrivateKey(ctx);
 
-  if (!row) {
-    throw new NotFoundError('Заявка на вывод не найдена');
-  }
-  if (!row.destinationSealed) {
-    throw new NotFoundError('У заявки на вывод не сохранены реквизиты получения');
-  }
-  return open(requirePrivateKey(ctx), row.destinationSealed);
+  return ctx.db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        clientId: withdrawalRequests.clientId,
+        destinationSealed: withdrawalRequests.destinationSealed,
+      })
+      .from(withdrawalRequests)
+      .where(eq(withdrawalRequests.id, requestId))
+      .limit(1);
+
+    if (!row) {
+      throw new NotFoundError('Заявка на вывод не найдена');
+    }
+    if (!row.destinationSealed) {
+      throw new NotFoundError('У заявки на вывод не сохранены реквизиты получения');
+    }
+
+    await logRequisiteAccess(tx, {
+      staffId: staff.staffId,
+      clientId: row.clientId,
+      withdrawalRequestId: requestId,
+    });
+
+    return open(privateKey, row.destinationSealed);
+  });
 }

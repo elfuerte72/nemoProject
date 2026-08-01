@@ -103,7 +103,7 @@ export function BonusSection() {
         <p style={styles.balance}>{account?.balance ?? '—'}</p>
         <p style={styles.muted}>
           Баллы начисляются, когда приведённый вами клиент совершает обмен: процент от
-          того, что сервис на этой сделке заработал.
+          того, что сервис на этой заявке заработал.
         </p>
       </section>
 
@@ -210,7 +210,7 @@ export function BonusSection() {
                 <div style={styles.muted}>
                   {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString('ru-RU') : ''}
                   {entry.exchangeRequestId
-                    ? ` · за сделку ${entry.exchangeRequestId.slice(0, 8)}`
+                    ? ` · за заявку ${entry.exchangeRequestId.slice(0, 8)}`
                     : ''}
                 </div>
               </li>
