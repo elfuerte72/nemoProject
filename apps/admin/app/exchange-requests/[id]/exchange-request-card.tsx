@@ -2,7 +2,11 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import type { ExchangeRequestEventView, ManagerExchangeRequestView } from '@nemo/core';
+import type {
+  ExchangeRequestEventView,
+  ManagerExchangeRequestView,
+  RevealedRequisites,
+} from '@nemo/core';
 import { canTransition, type ExchangeRequestStatus } from '@nemo/types';
 import { KIND_LABELS, STATUS_LABELS } from '@/lib/exchange-request-labels';
 
@@ -35,6 +39,7 @@ export function ExchangeRequestCard({
   const [serviceIncome, setServiceIncome] = useState('');
   const [serviceIncomeCode, setServiceIncomeCode] = useState(request.toCode);
   const [reason, setReason] = useState('');
+  const [requisites, setRequisites] = useState<RevealedRequisites>();
 
   /**
    * Что можно сделать с заявкой на обмен прямо сейчас.
@@ -79,6 +84,34 @@ export function ExchangeRequestCard({
     }
   }
 
+  /**
+   * Реквизиты открываются по отдельному нажатию, а не показываются
+   * сразу: каждое такое обращение попадает в журнал, и открывать чужой
+   * номер карты «просто потому что заявка открыта» незачем.
+   */
+  async function reveal() {
+    setError(undefined);
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/exchange-requests/${request.id}/requisites`, {
+        method: 'POST',
+      });
+      const payload = (await response.json()) as {
+        requisites?: RevealedRequisites;
+        error?: string;
+      };
+      if (!response.ok || !payload.requisites) {
+        setError(payload.error ?? 'Реквизиты не открылись');
+        return;
+      }
+      setRequisites(payload.requisites);
+    } catch {
+      setError('Не удалось связаться с сервером. Повторите попытку.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main style={styles.page}>
       <header>
@@ -113,6 +146,27 @@ export function ExchangeRequestCard({
       </header>
 
       {error ? <p style={styles.error}>{error}</p> : undefined}
+
+      <section style={styles.form}>
+        <h2 style={styles.subheading}>Реквизиты клиента</h2>
+        {requisites ? (
+          <div style={styles.muted}>
+            <div>Банк: {requisites.bankName ?? '—'}</div>
+            <div>Телефон: {requisites.phone ?? '—'}</div>
+            <div>Карта: {requisites.cardNumber ?? '—'}</div>
+          </div>
+        ) : (
+          <>
+            <p style={styles.muted}>
+              Открытие номера карты записывается в журнал: администратор увидит, кто и
+              когда его смотрел.
+            </p>
+            <button type="button" onClick={reveal} disabled={busy || !mine} style={styles.button}>
+              Показать реквизиты
+            </button>
+          </>
+        )}
+      </section>
 
       {can.claim ? (
         <button

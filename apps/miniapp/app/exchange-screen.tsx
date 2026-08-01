@@ -1,21 +1,28 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { CurrencyPairView, ExchangeRequestView, RequisitesView } from '@nemo/core';
+import type {
+  CurrencyPairView,
+  ExchangeRequestView,
+  PreliminaryQuoteView,
+  RequisitesView,
+} from '@nemo/core';
 import type { ExchangeKind } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
-import { getWebApp } from '@/lib/telegram/webapp';
 import { KIND_LABELS, STATUS_LABELS } from '@/lib/exchange-request-labels';
 import { RequisitesSection } from './requisites-section';
 
 /**
  * Экран обмена: что отдаю, что получаю, сколько.
  *
- * Курс здесь не показывается и показываться не должен: у наличных его
- * до разговора с менеджером нет, а у электронных переводов он
- * справочный. Экран говорит об этом прямо — обещание курса, которое
- * сервис не сможет сдержать, дороже неудобства.
+ * По электронному переводу показывается предварительный курс — с явной
+ * пометкой, что он справочный. У наличных курса нет вовсе: там ставку
+ * называет менеджер, и обещать её в приложении означало бы обещать то,
+ * чем сервис не управляет.
  */
+
+/** Пауза перед запросом курса: иначе он уходит на каждое нажатие клавиши. */
+const QUOTE_DEBOUNCE_MS = 400;
 
 export function ExchangeScreen() {
   const [pairs, setPairs] = useState<CurrencyPairView[]>([]);
@@ -25,20 +32,14 @@ export function ExchangeScreen() {
   const [toCode, setToCode] = useState('');
   const [kind, setKind] = useState<ExchangeKind>('electronic');
   const [amount, setAmount] = useState('');
+  const [quote, setQuote] = useState<PreliminaryQuoteView | null>(null);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(true);
 
   useEffect(() => {
-    const webApp = getWebApp();
-    webApp?.ready();
-    webApp?.expand();
-
     void (async () => {
       try {
-        // Порядок важен: клиент должен существовать до того, как его
-        // заявки и справочник будут запрошены от его имени.
-        await post('/api/session');
         const [directions, mine, saved] = await Promise.all([
           get<{ pairs: CurrencyPairView[] }>('/api/currency-pairs'),
           get<{ requests: ExchangeRequestView[] }>('/api/exchange-requests'),
@@ -79,6 +80,38 @@ export function ExchangeScreen() {
   useEffect(() => {
     if (kinds.length > 0 && !kinds.includes(kind)) setKind(kinds[0]!);
   }, [kinds, kind]);
+
+  useEffect(() => {
+    // У наличных курса нет: там ставку называет менеджер, и спрашивать
+    // провайдера незачем.
+    if (kind !== 'electronic' || !fromCode || !toCode) {
+      setQuote(null);
+      return;
+    }
+
+    const params = new URLSearchParams({ fromCode, toCode });
+    const parsed = amount.replace(',', '.').trim();
+    if (parsed) params.set('fromAmount', parsed);
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void get<{ quote: PreliminaryQuoteView | null }>(`/api/quote?${params.toString()}`)
+        .then((result) => {
+          if (!cancelled) setQuote(result.quote);
+        })
+        // Отсутствие курса — не ошибка экрана: заявку можно подать и
+        // без него, а сказать клиенту нужно то же самое, что при
+        // наличных.
+        .catch(() => {
+          if (!cancelled) setQuote(null);
+        });
+    }, QUOTE_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [kind, fromCode, toCode, amount]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -125,7 +158,7 @@ export function ExchangeScreen() {
   }
 
   return (
-    <main style={styles.page}>
+    <div>
       <h1 style={styles.heading}>Обмен валют</h1>
 
       {pairs.length === 0 && !busy ? (
@@ -193,10 +226,32 @@ export function ExchangeScreen() {
             <RequisitesSection current={requisites} onSaved={setRequisites} />
           ) : undefined}
 
-          <p style={styles.muted}>
-            Курс подтвердит менеджер после подачи заявки. До этого момента любая
-            названная сумма — ориентировочная.
-          </p>
+          {/*
+            Предварительный курс — справочный, и пометка об этом стоит
+            рядом с самим числом, а не внизу экрана: клиент читает
+            цифру, а не абзац под ней.
+          */}
+          {quote ? (
+            <div style={styles.quote}>
+              <div>
+                Предварительно: 1 {fromCode} ≈ {quote.rate} {toCode}
+              </div>
+              {quote.toAmount ? (
+                <div style={styles.quoteAmount}>
+                  Вы получите ≈ {quote.toAmount} {toCode}
+                </div>
+              ) : undefined}
+              <div style={styles.muted}>
+                Курс предварительный: финальный подтвердит менеджер после подачи заявки.
+              </div>
+            </div>
+          ) : (
+            <p style={styles.muted}>
+              {kind === 'cash'
+                ? 'По наличным ставку называет менеджер после подачи заявки.'
+                : 'Курс сейчас недоступен — его назовёт менеджер после подачи заявки.'}
+            </p>
+          )}
 
           <button
             type="submit"
@@ -264,18 +319,21 @@ export function ExchangeScreen() {
           </ul>
         )}
       </section>
-    </main>
+    </div>
   );
 }
 
 const styles = {
-  page: {
-    fontFamily: 'system-ui, sans-serif',
-    padding: '1.5rem 1.25rem 3rem',
-    maxWidth: 480,
-    margin: '0 auto',
-  },
   heading: { fontSize: '1.25rem', marginBottom: '1rem' },
+  quote: {
+    border: '1px solid rgba(128,128,128,0.35)',
+    padding: '0.7rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.3rem',
+    fontSize: '0.95rem',
+  },
+  quoteAmount: { fontWeight: 600 },
   subheading: { fontSize: '1rem', marginBottom: '0.5rem' },
   form: { display: 'flex', flexDirection: 'column', gap: '1rem' },
   field: { display: 'flex', flexDirection: 'column', gap: '0.35rem' },
