@@ -25,9 +25,9 @@ import {
   parseAmount,
   shortId,
 } from '@/lib/format';
-import { RatesPanel } from './rates-panel';
 import { RequisitesForm } from './requisites-section';
 import { CardIcon, ChevronDown, ChevronRight, SwapIcon } from './ui/icons';
+import { Popover } from './ui/popover';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
 /**
@@ -42,15 +42,16 @@ import { NoticeSheet, Sheet } from './ui/sheet';
 /** Пауза перед запросом курса: иначе он уходит на каждое нажатие клавиши. */
 const QUOTE_DEBOUNCE_MS = 400;
 
+/** С чего открывается экран, если такое направление заведено. */
+const PREFERRED_FROM = 'USDT';
+
 const SUBMITTED = {
   title: 'Заявка принята',
   body: 'Менеджер возьмёт её в ближайшие минуты. Бот напишет на каждом шаге — приложение можно закрыть.',
 };
 
-/** Выбор валюты и ввод реквизитов уводятся в лист: на экране им места нет. */
+/** Ввод реквизитов и подтверждения уводятся в лист: на экране им места нет. */
 type SheetState =
-  | { readonly kind: 'from' }
-  | { readonly kind: 'to' }
   | { readonly kind: 'requisites' }
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
@@ -64,6 +65,8 @@ export function ExchangeScreen() {
   const [amount, setAmount] = useState('');
   const [quote, setQuote] = useState<PreliminaryQuoteView | null>(null);
   const [sheet, setSheet] = useState<SheetState>();
+  /** Какой из двух списков валют сейчас раскрыт. */
+  const [picker, setPicker] = useState<'from' | 'to'>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -81,7 +84,11 @@ export function ExchangeScreen() {
         setPairs(directions.pairs);
         setRequests(mine.requests);
         setRequisites(saved.requisites);
-        setFromCode(directions.pairs[0]?.fromCode ?? '');
+        // USDT — направление, за которым приходят чаще всего; открывать
+        // экран на нём короче, чем перещёлкивать с того, что оказалось
+        // первым в справочнике.
+        const codes = directions.pairs.map((pair) => pair.fromCode);
+        setFromCode(codes.includes(PREFERRED_FROM) ? PREFERRED_FROM : (codes[0] ?? ''));
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить данные');
       } finally {
@@ -240,10 +247,6 @@ export function ExchangeScreen() {
 
   return (
     <>
-      {pairs.length > 0 ? (
-        <RatesPanel pairs={pairs} />
-      ) : undefined}
-
 
       {pairs.length === 0 ? (
         <p className="empty">
@@ -267,18 +270,17 @@ export function ExchangeScreen() {
                   aria-label="Сумма к обмену"
                   className="calc__amount"
                 />
-                <button
-                  type="button"
-                  onClick={() => setSheet({ kind: 'from' })}
-                  disabled={fromCodes.length < 2}
-                  className="chip"
-                  aria-label={
-                    fromCodes.length > 1 ? `Отдаю ${fromCode}. Выбрать другую валюту` : `Отдаю ${fromCode}`
-                  }
-                >
-                  {fromCode}
-                  {fromCodes.length > 1 ? <ChevronDown /> : undefined}
-                </button>
+                <CodePicker
+                  label="Что отдаёте"
+                  codes={fromCodes}
+                  selected={fromCode}
+                  open={picker === 'from'}
+                  onToggle={() => setPicker(picker === 'from' ? undefined : 'from')}
+                  onPick={(code) => {
+                    setFromCode(code);
+                    setPicker(undefined);
+                  }}
+                />
               </div>
             </div>
 
@@ -305,18 +307,17 @@ export function ExchangeScreen() {
                 >
                   {quote?.toAmount ? formatAmount(quote.toAmount) : '0'}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSheet({ kind: 'to' })}
-                  disabled={toCodes.length < 2}
-                  className="chip"
-                  aria-label={
-                    toCodes.length > 1 ? `Получаю ${toCode}. Выбрать другую валюту` : `Получаю ${toCode}`
-                  }
-                >
-                  {toCode}
-                  {toCodes.length > 1 ? <ChevronDown /> : undefined}
-                </button>
+                <CodePicker
+                  label="Что хотите получить"
+                  codes={toCodes}
+                  selected={toCode}
+                  open={picker === 'to'}
+                  onToggle={() => setPicker(picker === 'to' ? undefined : 'to')}
+                  onPick={(code) => {
+                    setToCode(code);
+                    setPicker(undefined);
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -474,32 +475,6 @@ export function ExchangeScreen() {
         </ul>
       )}
 
-      {sheet?.kind === 'from' ? (
-        <CodeSheet
-          title="Что отдаёте"
-          codes={fromCodes}
-          selected={fromCode}
-          onPick={(code) => {
-            setFromCode(code);
-            setSheet(undefined);
-          }}
-          onClose={() => setSheet(undefined)}
-        />
-      ) : undefined}
-
-      {sheet?.kind === 'to' ? (
-        <CodeSheet
-          title="Что хотите получить"
-          codes={toCodes}
-          selected={toCode}
-          onPick={(code) => {
-            setToCode(code);
-            setSheet(undefined);
-          }}
-          onClose={() => setSheet(undefined)}
-        />
-      ) : undefined}
-
       {sheet?.kind === 'requisites' ? (
         <Sheet title="Куда отправить деньги" onClose={() => setSheet(undefined)}>
           <RequisitesForm
@@ -519,37 +494,65 @@ export function ExchangeScreen() {
   );
 }
 
-/** Список валют одного направления. */
-function CodeSheet({
-  title,
+/**
+ * Валюта направления. Список раскрывается у самой кнопки, а не листом
+ * снизу: выбор из трёх строк не стоит того, чтобы уводить взгляд в
+ * другой конец экрана.
+ *
+ * Когда выбирать не из чего, кнопки нет вовсе — вместо неё та же
+ * пилюля, но неподвижная: нажатие, за которым ничего не происходит,
+ * читается как поломка.
+ */
+function CodePicker({
+  label,
   codes,
   selected,
+  open,
+  onToggle,
   onPick,
-  onClose,
 }: {
-  readonly title: string;
+  readonly label: string;
   readonly codes: readonly string[];
   readonly selected: string;
+  readonly open: boolean;
+  readonly onToggle: () => void;
   readonly onPick: (code: string) => void;
-  readonly onClose: () => void;
 }) {
+  if (codes.length < 2) {
+    return <span className="chip chip--static">{selected}</span>;
+  }
+
   return (
-    <Sheet title={title} onClose={onClose}>
-      <div className="options">
-        {codes.map((code) => (
-          <button
-            key={code}
-            type="button"
-            onClick={() => onPick(code)}
-            aria-pressed={code === selected}
-            className="option"
-          >
-            {code}
-            {code === selected ? <span className="option__note">выбрано</span> : undefined}
-          </button>
-        ))}
-      </div>
-    </Sheet>
+    <span className="popover-anchor">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="chip"
+        aria-expanded={open}
+        aria-label={`${label}: ${selected}`}
+      >
+        {selected}
+        <ChevronDown />
+      </button>
+
+      {open ? (
+        <Popover label={label} onClose={onToggle} menu>
+          <div className="popover__menu">
+            {codes.map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => onPick(code)}
+                aria-pressed={code === selected}
+                className="popover__item"
+              >
+                {code}
+              </button>
+            ))}
+          </div>
+        </Popover>
+      ) : undefined}
+    </span>
   );
 }
 

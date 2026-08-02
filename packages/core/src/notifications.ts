@@ -136,6 +136,8 @@ function renderCardApplicationStatus(status: CardApplicationStatus): string {
   switch (status) {
     case 'submitted':
       return 'Заявка на карту принята. Мы сообщим, когда она сдвинется.';
+    case 'cancelled':
+      return 'Заявка на карту отозвана. Подать новую можно в любой момент.';
     case 'processing':
       return 'Заявка на карту в обработке у провайдера.';
     case 'active':

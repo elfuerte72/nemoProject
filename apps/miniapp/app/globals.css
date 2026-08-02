@@ -225,17 +225,6 @@ button {
   padding-bottom: 24px;
 }
 
-/* Растворяет содержимое под нижней панелью, а не обрезает его. */
-.app__fade {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(92px + env(safe-area-inset-bottom));
-  height: 30px;
-  background: linear-gradient(to top, var(--bg), rgba(10, 10, 12, 0));
-  pointer-events: none;
-}
-
 .app__screen {
   animation: nm-from-right 0.34s var(--ease) both;
 }
@@ -309,10 +298,14 @@ button {
   z-index: 25;
 }
 
+.popover-anchor {
+  position: relative;
+}
+
 .popover {
   position: absolute;
   top: calc(100% + 10px);
-  right: var(--gutter);
+  right: 0;
   z-index: 26;
   width: min(300px, calc(100vw - 2 * var(--gutter)));
   padding: 16px;
@@ -342,6 +335,44 @@ button {
   background: var(--surface);
   transform: rotate(45deg);
   border-radius: 2px;
+}
+
+.popover__menu {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.popover__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 44px;
+  padding: 10px 4px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.popover__item + .popover__item {
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.popover__item:hover,
+.popover__item[aria-pressed='true'] {
+  color: var(--gold-light);
+}
+
+.popover--menu {
+  width: max-content;
+  min-width: 150px;
+  padding: 6px 14px;
 }
 
 .popover__text {
@@ -849,6 +880,20 @@ button.rates__head:hover {
 
 .chip:disabled {
   cursor: default;
+}
+
+/* Та же пилюля, но без обещания, что на неё нажимают. */
+.chip--static {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 15px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  box-shadow: var(--lift-strong);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
 }
 
 /* ── Переключатель способа ───────────────────────────────────────── */

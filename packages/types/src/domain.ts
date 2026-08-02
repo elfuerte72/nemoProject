@@ -121,7 +121,8 @@ export const cardApplicationStatuses = [
   'submitted', // подана
   'processing', // в обработке
   'active', // активна
-  'rejected', // отклонена
+  'rejected', // отклонена провайдером
+  'cancelled', // отозвана клиентом, пока провайдер за неё не взялся
 ] as const;
 export const cardApplicationStatusSchema = z.enum(cardApplicationStatuses);
 export type CardApplicationStatus = z.infer<typeof cardApplicationStatusSchema>;
@@ -139,6 +140,9 @@ export const cardApplicationTransitions: Record<
   processing: ['active', 'rejected'],
   active: [],
   rejected: [],
+  // Отзыв клиентом — не переход менеджера: сюда заявку уводит сам
+  // клиент, и обратной дороги из этого состояния нет.
+  cancelled: [],
 };
 
 export function canTransitionCardApplication(
