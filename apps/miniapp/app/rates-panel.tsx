@@ -22,18 +22,17 @@ import { ChevronDown } from './ui/icons';
 /** Валюта, в которой клиент считает: сервис работает с рублём. */
 const BASE = 'RUB';
 
+/**
+ * Курс, стоящий свёрнутой строкой. Не валюта выбранного направления:
+ * USDT/RUB — то, с чем сверяют остальные цены, и прыгать вместе с
+ * выбором ему незачем.
+ */
+const HEADLINE = 'USDT';
+
 /** Сколько валют показывать. Табло — справка, а не витрина биржи. */
 const MAX_ROWS = 8;
 
-export function RatesPanel({
-  fromCode,
-  toCode,
-  pairs,
-}: {
-  readonly fromCode: string;
-  readonly toCode: string;
-  readonly pairs: readonly CurrencyPairView[];
-}) {
+export function RatesPanel({ pairs }: { readonly pairs: readonly CurrencyPairView[] }) {
   const [open, setOpen] = useState(false);
   const [rates, setRates] = useState<Readonly<Record<string, string | null>>>({});
 
@@ -49,10 +48,7 @@ export function RatesPanel({
     [pairs],
   );
 
-  // Валюта выбранного направления показывается свёрнутой строкой: она и
-  // есть та, о которой человек спрашивает прямо сейчас.
-  const current = fromCode === BASE ? toCode : fromCode;
-  const shown = codes.includes(current) ? current : codes[0];
+  const shown = codes.includes(HEADLINE) ? HEADLINE : codes[0];
   const rest = codes.filter((code) => code !== shown).slice(0, MAX_ROWS);
 
   // Свёрнутое табло стоит одной котировки, развёрнутое — остальных.
