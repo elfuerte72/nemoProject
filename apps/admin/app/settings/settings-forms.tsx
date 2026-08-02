@@ -5,7 +5,6 @@ import { useState } from 'react';
 import type {
   CurrencyPairAdminView,
   ServiceSettingsView,
-  StaffEnrollment,
   StaffView,
 } from '@nemo/core';
 import type { StaffRole } from '@nemo/types';
@@ -35,7 +34,11 @@ export function SettingsForms({
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [secret, setSecret] = useState<{ name: string; value: string }>();
+  const [secret, setSecret] = useState<{
+    name: string;
+    value: string;
+    qr?: string | undefined;
+  }>();
 
   const [line1, setLine1] = useState(String(settings.referralLine1Bps));
   const [line2, setLine2] = useState(String(settings.referralLine2Bps));
@@ -51,7 +54,7 @@ export function SettingsForms({
   async function send(
     path: string,
     body: unknown,
-  ): Promise<{ enrollmentSecret?: string; staff?: StaffView } | undefined> {
+  ): Promise<{ enrollmentSecret?: string; qr?: string; staff?: StaffView } | undefined> {
     setError(undefined);
     setBusy(true);
     try {
@@ -63,6 +66,7 @@ export function SettingsForms({
       const payload = (await response.json()) as {
         error?: string;
         enrollmentSecret?: string;
+        qr?: string;
         staff?: StaffView;
       };
       if (!response.ok) {
@@ -80,9 +84,9 @@ export function SettingsForms({
   }
 
   async function enroll(body: unknown, name: string) {
-    const result = (await send('/api/staff', body)) as StaffEnrollment | undefined;
+    const result = await send('/api/staff', body);
     if (result?.enrollmentSecret) {
-      setSecret({ name, value: result.enrollmentSecret });
+      setSecret({ name, value: result.enrollmentSecret, qr: result.qr });
     }
   }
 
@@ -92,13 +96,22 @@ export function SettingsForms({
 
       {secret ? (
         <section style={styles.secretBox}>
-          <p>
-            Второй фактор для «{secret.name}». Передайте его сотруднику лично — второй раз
-            он показан не будет:
+          <h2 style={styles.heading}>Второй фактор для «{secret.name}»</h2>
+          <p style={styles.muted}>
+            Наведите камеру приложения-аутентификатора — Google Authenticator, Яндекс
+            Ключ, 1Password. Показывается один раз: закроете — придётся выдавать заново.
+          </p>
+          {secret.qr ? (
+            // Разметка кода приходит с сервера и содержит только фигуры,
+            // собранные из ключа, — ни ввода пользователя, ни ссылок.
+            <div style={styles.qr} dangerouslySetInnerHTML={{ __html: secret.qr }} />
+          ) : undefined}
+          <p style={styles.muted}>
+            Если камеры под рукой нет — добавьте вручную этот ключ:
           </p>
           <code style={styles.secret}>{secret.value}</code>
           <button type="button" onClick={() => setSecret(undefined)} style={styles.link}>
-            Я передал, скрыть
+            Готово, скрыть
           </button>
         </section>
       ) : undefined}
@@ -315,11 +328,21 @@ const styles = {
   list: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' },
   secretBox: {
     border: '1px solid currentColor',
-    padding: '0.9rem',
+    padding: '1.1rem',
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.5rem',
+    gap: '0.6rem',
     fontSize: '0.9rem',
+    maxWidth: '26rem',
+  },
+  // Белая подложка обязательна: код читается по контрасту, а на тёмной
+  // теме чёрные фигуры на тёмном камера не различит.
+  qr: {
+    background: '#fff',
+    padding: '0.6rem',
+    width: 'fit-content',
+    alignSelf: 'center',
+    lineHeight: 0,
   },
   secret: { fontSize: '1rem', wordBreak: 'break-all', userSelect: 'all' },
   link: {
