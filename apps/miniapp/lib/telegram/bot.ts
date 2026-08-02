@@ -101,7 +101,9 @@ export function getBot(): Bot {
   bot.catch(async ({ ctx, error }) => {
     console.error('Бот не смог ответить:', error);
     await ctx
-      .reply('Не получилось ответить прямо сейчас. Попробуйте ещё раз через минуту.')
+      .reply('Не получилось ответить прямо сейчас. Попробуйте ещё раз через минуту.', {
+        reply_markup: menu,
+      })
       .catch(() => undefined);
   });
 
