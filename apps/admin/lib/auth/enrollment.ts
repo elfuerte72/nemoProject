@@ -42,5 +42,10 @@ export async function enrollmentQr(displayName: string, secret: string): Promise
     type: 'svg',
     margin: 1,
     errorCorrectionLevel: 'M',
+    // Ширина обязательна. Без неё в разметке остаётся один `viewBox`,
+    // собственного размера у картинки нет, и в контейнере, который
+    // подстраивается под содержимое, она схлопывается в ноль: рамка на
+    // месте, кода не видно.
+    width: 220,
   });
 }
