@@ -21,7 +21,10 @@ const actionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('claim') }),
   z.object({
     action: z.literal('confirm-rate'),
-    finalRate: z.string(),
+    // Курс необязателен: у безналичной заявки он назван при подаче и
+    // менеджером не меняется. Правило о том, когда он всё-таки нужен,
+    // принадлежит операции, а не разбору запроса.
+    finalRate: z.string().optional(),
     toAmount: z.string().optional(),
     paymentInstructions: z.string(),
   }),

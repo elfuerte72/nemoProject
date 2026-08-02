@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Предварительный курс по направлению.
+ * Котировка по направлению — с наценкой сервиса.
  *
  * Пустой ответ — рабочее состояние, а не ошибка: у наличных курса нет
  * вовсе, а провайдер котировок может лежать. Экран в обоих случаях
@@ -21,7 +21,7 @@ export async function GET(request: Request): Promise<Response> {
       return json({ quote: null });
     }
 
-    const quote = await getCore().getPreliminaryQuote({
+    const quote = await getCore().getQuote({
       fromCode,
       toCode,
       fromAmount: url.searchParams.get('fromAmount') ?? undefined,

@@ -22,6 +22,7 @@ import {
 import { toExchangeRequestView, type ExchangeRequestView } from './exchange-requests.js';
 import type { Notification } from './notifications.js';
 import { accrueReferralBonuses } from './referral-accruals.js';
+import { readServiceSettings } from './settings.js';
 
 /**
  * Путь заявки на обмен от очереди до исполнения.
@@ -98,7 +99,10 @@ export function toManagerView(row: ExchangeRequestRow): ManagerExchangeRequestVi
  * Уведомление — следствие перехода, а не отдельное действие: так его
  * нельзя забыть, добавив новый переход.
  */
-function notificationFor(row: ExchangeRequestRow): Notification {
+function notificationFor(
+  row: ExchangeRequestRow,
+  payWithinMinutes?: number,
+): Notification {
   return {
     kind: 'exchange-request-status',
     to: row.clientId,
@@ -108,6 +112,11 @@ function notificationFor(row: ExchangeRequestRow): Notification {
     ...(row.paymentInstructions === null
       ? {}
       : { paymentInstructions: row.paymentInstructions }),
+    // Срок называется там же, где реквизиты: до этого момента платить
+    // некуда, и отсчёт не идёт.
+    ...(row.status === 'rate_confirmed' && payWithinMinutes !== undefined
+      ? { payWithinMinutes }
+      : {}),
     ...(row.cancelReason === null ? {} : { cancelReason: row.cancelReason }),
   };
 }
@@ -165,6 +174,7 @@ type ExchangeRequestPatch = Partial<
     | 'finalRate'
     | 'toAmount'
     | 'paymentInstructions'
+    | 'requisitesIssuedAt'
     | 'serviceIncome'
     | 'serviceIncomeCode'
     | 'cancelReason'
@@ -177,6 +187,8 @@ interface TransitionInput {
   readonly actorStaffId?: string | undefined;
   readonly comment?: string | undefined;
   readonly patch?: ExchangeRequestPatch | undefined;
+  /** Срок оплаты, если этот переход его открывает. */
+  readonly payWithinMinutes?: number | undefined;
 }
 
 async function applyTransition(
@@ -210,7 +222,10 @@ async function applyTransition(
     comment: input.comment ?? null,
   });
 
-  return { row: updated!, notifications: [notificationFor(updated!)] };
+  return {
+    row: updated!,
+    notifications: [notificationFor(updated!, input.payWithinMinutes)],
+  };
 }
 
 /** Переход, выполненный сотрудником: наружу уходит его представление. */
@@ -324,11 +339,55 @@ export async function claimExchangeRequest(
 }
 
 export interface ConfirmExchangeRateInput {
-  readonly finalRate: string;
+  /**
+   * Курс, который называет менеджер. Только у заявки без курса подачи —
+   * наличной или поданной при молчащем источнике котировок. У
+   * безналичной заявки курс уже назван при подаче, и менять его
+   * менеджер не может.
+   */
+  readonly finalRate?: string | undefined;
   /** Сколько клиент получит по названному курсу. */
   readonly toAmount?: string | undefined;
   /** Куда клиенту платить. */
   readonly paymentInstructions: string;
+}
+
+/**
+ * Курс, по которому пойдёт сделка.
+ *
+ * Курс подачи — обязательство сервиса (docs/adr/0006): подтверждение
+ * его не меняет. Менеджер называет свой только там, где курса нет
+ * вовсе, — у наличных и у заявки, поданной при молчащем источнике.
+ *
+ * Присланный поверх курса подачи отвергается, а не игнорируется молча:
+ * менеджер, набравший другое число, должен узнать, что сделка пойдёт не
+ * по нему, — иначе он назовёт клиенту цену, которой не будет.
+ */
+function rateForConfirmation(
+  row: ExchangeRequestRow,
+  input: ConfirmExchangeRateInput,
+): Amount {
+  const named =
+    input.finalRate === undefined
+      ? undefined
+      : requirePositiveAmount(input.finalRate, 'Курс');
+
+  if (row.requestRate === null) {
+    if (named === undefined) {
+      throw new InvalidInputError(
+        'У этой заявки нет курса подачи: назовите курс, по которому исполняете',
+      );
+    }
+    return named;
+  }
+
+  const requestRate = Money.toAmount(row.requestRate);
+  if (named !== undefined && Money.compare(named, requestRate) !== 0) {
+    throw new InvalidInputError(
+      `Курс заявки — обязательство сервиса и не меняется: ${requestRate}`,
+    );
+  }
+  return requestRate;
 }
 
 export async function confirmExchangeRate(
@@ -337,8 +396,7 @@ export async function confirmExchangeRate(
   requestId: string,
   input: ConfirmExchangeRateInput,
 ): Promise<TransitionResult> {
-  const finalRate = requirePositiveAmount(input.finalRate, 'Курс');
-  const toAmount =
+  const named =
     input.toAmount === undefined
       ? undefined
       : requirePositiveAmount(input.toAmount, 'Сумма к выдаче');
@@ -350,14 +408,30 @@ export async function confirmExchangeRate(
   return ctx.db.transaction(async (tx) => {
     const row = await lockRequest(tx, requestId);
     const staffId = requireOwnership(row, actor);
+    const finalRate = rateForConfirmation(row, input);
+    // У заявки с курсом подачи сумма к выдаче посчитана при подаче —
+    // клиент видел её в калькуляторе. Присланная поверх отвергается по
+    // той же причине, что и чужой курс: менеджер должен узнать, что
+    // сделка пойдёт не по названной им сумме, раньше клиента.
+    if (row.requestRate !== null && named !== undefined) {
+      throw new InvalidInputError(
+        'Сумма к выдаче посчитана по курсу заявки и не меняется',
+      );
+    }
+    const toAmount = row.requestRate === null ? named : undefined;
+    const { unpaidExchangeRequestTtlMinutes } = await readServiceSettings(tx);
 
     return staffTransition(tx, row, {
       to: 'rate_confirmed',
+      payWithinMinutes: unpaidExchangeRequestTtlMinutes,
       actorType: 'manager',
       actorStaffId: staffId,
       patch: {
         finalRate,
         paymentInstructions,
+        // Момент, с которого клиент впервые мог заплатить: от него и
+        // считается срок жизни неоплаченной заявки.
+        requisitesIssuedAt: new Date(),
         ...(toAmount === undefined ? {} : { toAmount }),
       },
     });

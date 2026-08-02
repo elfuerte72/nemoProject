@@ -4,12 +4,13 @@ import { createCore, type RatePair, type RateQuote, type RateSource } from './in
 import { asClient, givenCurrencyPair, givenServiceSettings } from './test-support.js';
 
 /**
- * Предварительный курс для электронных переводов.
+ * Котировка для электронных переводов и курс, с которым уходит заявка.
  *
- * Курс справочный: он показывает клиенту порядок суммы, а финальный
- * называет менеджер (docs/adr/0004). Поэтому ни одна проверка здесь не
- * требует, чтобы заявка исполнилась по показанному курсу, — зато
- * требует, чтобы отсутствие курса не мешало её подать.
+ * Котировка до подачи ни к чему не обязывает, но подача по ней —
+ * обязательство сервиса (docs/adr/0006): курс записывается в заявку и
+ * дальше не меняется. Поэтому проверки здесь требуют двух вещей —
+ * чтобы курс попадал в заявку и чтобы его отсутствие не мешало её
+ * подать.
  */
 
 /** Источник, отвечающий заданной котировкой. Считает обращения к себе. */
@@ -41,7 +42,7 @@ describe('электронный перевод', () => {
     await givenServiceSettings({ markupBps: 200 });
     const core = createCore({ db, rateSource: givenRateSource('100') });
 
-    const quote = await core.getPreliminaryQuote({
+    const quote = await core.getQuote({
       fromCode: 'USDT',
       toCode: 'RUB',
       fromAmount: '10',
@@ -57,7 +58,7 @@ describe('электронный перевод', () => {
     await givenServiceSettings({ markupBps: 1000 });
     const core = createCore({ db, rateSource: givenRateSource('100') });
 
-    const quote = await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' });
+    const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' });
 
     expect(quote?.rate).toBe('90');
   });
@@ -68,8 +69,8 @@ describe('электронный перевод', () => {
     await givenServiceSettings({ markupBps: 500 });
     const core = createCore({ db, rateSource: givenRateSource('100') });
 
-    const forward = await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' });
-    const backward = await core.getPreliminaryQuote({ fromCode: 'RUB', toCode: 'USDT' });
+    const forward = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' });
+    const backward = await core.getQuote({ fromCode: 'RUB', toCode: 'USDT' });
 
     // 5% с котировки 100 — курс 95 в обе стороны: асимметричный спред
     // сознательно не делается.
@@ -82,7 +83,7 @@ describe('электронный перевод', () => {
     await givenServiceSettings({ markupBps: 0 });
     const core = createCore({ db, rateSource: givenRateSource('95.5') });
 
-    const quote = await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' });
+    const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' });
 
     expect(quote).toMatchObject({ rate: '95.5', toAmount: null });
   });
@@ -94,7 +95,7 @@ describe('наличные', () => {
     const source = givenRateSource('100');
     const core = createCore({ db, rateSource: source });
 
-    const quote = await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' });
+    const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' });
 
     expect(quote).toBeNull();
     expect(source.calls).toEqual([]);
@@ -112,7 +113,7 @@ describe('недоступность провайдера', () => {
       phone: '+79990000000',
     });
 
-    expect(await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
+    expect(await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
 
     const { request } = await core.submitExchangeRequest(asClient(100n), {
       kind: 'electronic',
@@ -122,14 +123,14 @@ describe('недоступность провайдера', () => {
       requisitesId: requisites.id,
     });
     expect(request.status).toBe('new');
-    expect(request.preliminaryRate).toBeNull();
+    expect(request.requestRate).toBeNull();
   });
 
   it('то же, когда источник курса вовсе не настроен', async () => {
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
     const core = createCore({ db });
 
-    expect(await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
+    expect(await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
   });
 });
 
@@ -143,7 +144,7 @@ describe('неактивное направление', () => {
     });
     const core = createCore({ db, rateSource: givenRateSource('100') });
 
-    expect(await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
+    expect(await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
   });
 });
 
@@ -169,7 +170,7 @@ describe('поданная заявка', () => {
       requisitesId: requisites.id,
     });
 
-    expect(request.preliminaryRate).toBe('98');
+    expect(request.requestRate).toBe('98');
   });
 
   it('наличными идёт без курса вовсе', async () => {
@@ -185,7 +186,7 @@ describe('поданная заявка', () => {
       fromAmount: '10',
     });
 
-    expect(request.preliminaryRate).toBeNull();
+    expect(request.requestRate).toBeNull();
     expect(source.calls).toEqual([]);
   });
 });

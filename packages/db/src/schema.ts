@@ -343,7 +343,16 @@ export const exchangeRequests = pgTable(
     toCode: text('to_code').notNull(),
     fromAmount: money('from_amount').notNull(),
     toAmount: money('to_amount'),
-    preliminaryRate: money('preliminary_rate'),
+    /**
+     * Курс, по которому клиент подал заявку, — обязательство сервиса, а
+     * не справка. Называлось предварительным курсом, пока курс им и был;
+     * название, которое врёт, хуже отсутствующего.
+     *
+     * Пусто у наличной заявки — котировок наличного рынка у сервиса нет
+     * — и у безналичной, поданной при молчащем источнике котировок:
+     * такая ведёт себя как наличная, курс ей назовёт менеджер.
+     */
+    requestRate: money('request_rate'),
     finalRate: money('final_rate'),
     serviceIncome: money('service_income'),
     serviceIncomeCode: text('service_income_code'),
@@ -351,12 +360,27 @@ export const exchangeRequests = pgTable(
     assignedManagerId: uuid('assigned_manager_id').references(() => staff.id),
     requisitesId: uuid('requisites_id').references(() => clientRequisites.id),
     /**
-     * Куда клиенту платить. Диктуется менеджером вместе с финальным
-     * курсом и хранится в заявке, а не только в сообщении бота: клиент
-     * возвращается к ней через день и не должен искать сообщение в
-     * переписке.
+     * Куда клиенту платить. Называется менеджером и хранится в заявке,
+     * а не только в сообщении бота: клиент возвращается к ней через
+     * день и не должен искать сообщение в переписке.
      */
     paymentInstructions: text('payment_instructions'),
+    /**
+     * Когда менеджер выдал реквизиты — то есть когда клиент впервые мог
+     * заплатить. От этого момента считается срок жизни неоплаченной
+     * заявки.
+     *
+     * Отдельным полем, а не вычислением из истории переходов: истечение
+     * обязательства не должно зависеть от полноты журнала. Отсчёт от
+     * подачи был бы наказанием клиента за то, что смена спала.
+     */
+    requisitesIssuedAt: timestamp('requisites_issued_at', { withTimezone: true }),
+    /**
+     * Когда клиенту ушло предупреждение о скором истечении. Хранится
+     * ради однократности: без отметки каждый прогон присылал бы его
+     * заново.
+     */
+    expiryWarnedAt: timestamp('expiry_warned_at', { withTimezone: true }),
     cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

@@ -34,6 +34,10 @@ import {
 import { getClient, registerClient, type RegisterClientInput } from './clients.js';
 import type { CoreConfig } from './context.js';
 import {
+  expireUnpaidExchangeRequests,
+  warnAboutExpiringExchangeRequests,
+} from './expiry.js';
+import {
   getExchangeRequest,
   getExchangeTerms,
   listExchangeRequests,
@@ -45,7 +49,7 @@ import {
   listNetworks,
   setNetworkActive,
 } from './networks.js';
-import { getPreliminaryQuote, type PreliminaryQuoteInput } from './rates.js';
+import { getQuote, type QuoteInput } from './rates.js';
 import {
   listRequisiteAccessLog,
   revealRequisites,
@@ -115,7 +119,7 @@ export function createCore(ctx: CoreConfig) {
     getClient: (actor: Actor) => getClient(ctx, actor),
 
     getExchangeTerms: () => getExchangeTerms(ctx),
-    getPreliminaryQuote: (input: PreliminaryQuoteInput) => getPreliminaryQuote(ctx, input),
+    getQuote: (input: QuoteInput) => getQuote(ctx, input),
     submitExchangeRequest: (actor: Actor, input: SubmitExchangeRequestInput) =>
       submitExchangeRequest(ctx, actor, input),
     listExchangeRequests: (actor: Actor) => listExchangeRequests(ctx, actor),
@@ -163,6 +167,14 @@ export function createCore(ctx: CoreConfig) {
       cancelOwnExchangeRequest(ctx, actor, requestId),
     cancelExchangeRequest: (actor: Actor, requestId: string, input?: { reason?: string }) =>
       cancelExchangeRequest(ctx, actor, requestId, input),
+
+    /*
+     * Истечение срока оплаты. Без актора: действует система, а момент
+     * передаётся параметром — планировщик и тест вызывают одно и то же.
+     */
+    warnAboutExpiringExchangeRequests: (at: Date) =>
+      warnAboutExpiringExchangeRequests(ctx, at),
+    expireUnpaidExchangeRequests: (at: Date) => expireUnpaidExchangeRequests(ctx, at),
 
     listExchangeRequestQueue: (actor: Actor) => listExchangeRequestQueue(ctx, actor),
     listExchangeRequestsInProgress: (actor: Actor) =>
@@ -264,13 +276,7 @@ export { textTemplateKeys } from './text-templates.js';
 export type { TextTemplateKey, TextTemplateView } from './text-templates.js';
 export type { BonusAccountView, BonusTransactionView } from './bonus-account.js';
 export type { ServiceSettingsView } from './settings.js';
-export type {
-  PreliminaryQuoteInput,
-  PreliminaryQuoteView,
-  RatePair,
-  RateQuote,
-  RateSource,
-} from './rates.js';
+export type { QuoteInput, QuoteView, RatePair, RateQuote, RateSource } from './rates.js';
 export type {
   SubmitWithdrawalInput,
   WithdrawalRequestView,
