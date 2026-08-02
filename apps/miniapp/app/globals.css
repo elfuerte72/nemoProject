@@ -213,6 +213,11 @@ button {
   height: 0;
 }
 
+/* Нижней панели нет — незачем и место под неё. */
+.app__scroll--bare {
+  padding-bottom: 24px;
+}
+
 /* Растворяет содержимое под нижней панелью, а не обрезает его. */
 .app__fade {
   position: absolute;

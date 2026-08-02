@@ -64,6 +64,21 @@ export function formatRate(rate: string, fromCode: string, toCode: string): stri
   return `1 ${fromCode} ≈ ${formatAmount(rate)} ${toCode}`;
 }
 
+/**
+ * Курс на табло: чем крупнее число, тем меньше смысла в его дробной
+ * части. Пять миллионов рублей за биткойн с копейками читаются хуже, чем
+ * без них; у дешёвых монет, наоборот, вся цена в долях единицы.
+ *
+ * Лишние знаки отбрасываются, а не округляются: курс справочный
+ * (docs/adr/0004), и подтянутая вверх цифра обещала бы точность, которой
+ * здесь нет.
+ */
+export function formatRateValue(value: string): string {
+  const [whole = '0', fraction = ''] = value.split('.');
+  const digits = whole.replace('-', '').length >= 4 ? 0 : whole === '0' ? 8 : 2;
+  return formatAmount(digits === 0 ? whole : `${whole}.${fraction.slice(0, digits)}`);
+}
+
 const DATE_FORMAT = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
 
 /**

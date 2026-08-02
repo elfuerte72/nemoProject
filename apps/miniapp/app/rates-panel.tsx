@@ -3,95 +3,100 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CurrencyPairView, PreliminaryQuoteView } from '@nemo/core';
 import { get } from '@/lib/client-api';
-import { formatAmount } from '@/lib/format';
+import { formatRateValue } from '@/lib/format';
 import { ChevronDown } from './ui/icons';
 
 /**
- * Курс выбранного направления и, по нажатию, остальные направления.
+ * Табло курсов: сколько рублей стоит единица каждой валюты.
+ *
+ * Только в эту сторону. Обратный курс — «за рубль дают 0,0118 USDT» —
+ * формально та же цена, но прочитать её нельзя: у ноля с шестью знаками
+ * нет масштаба, с которым человек сравнивает. Направление обмена от
+ * этого не зависит: меняют в обе стороны, а показывают одну.
  *
  * Никакой динамики — ни изменения за сутки, ни стрелок роста: источник
  * отдаёт текущую цену, и нарисовать «+0,34 %» означало бы придумать
- * число. Курс здесь справочный (docs/adr/0004), и лишняя точность
- * читалась бы как обещание.
- *
- * Соседние направления запрашиваются только при раскрытии: клиент, чей
- * вопрос — «сколько дадут за мои», не должен оплачивать своим ожиданием
- * котировки, о которых он не спрашивал.
+ * число. Курс справочный (docs/adr/0004).
  */
 
-/** Сколько соседних направлений показывать. Список — справка, а не витрина. */
-const MAX_ROWS = 6;
+/** Валюта, в которой клиент считает: сервис работает с рублём. */
+const BASE = 'RUB';
 
-interface Row {
-  readonly fromCode: string;
-  readonly toCode: string;
-  readonly rate: string | null;
-}
+/**
+ * Курс, стоящий свёрнутой строкой. Не валюта выбранного направления:
+ * USDT/RUB — то, с чем сверяют остальные цены, и прыгать вместе с
+ * выбором ему незачем.
+ */
+const HEADLINE = 'USDT';
 
-export function RatesPanel({
-  fromCode,
-  toCode,
-  quote,
-  pairs,
-}: {
-  readonly fromCode: string;
-  readonly toCode: string;
-  readonly quote: PreliminaryQuoteView | null;
-  readonly pairs: readonly CurrencyPairView[];
-}) {
+/** Сколько валют показывать. Табло — справка, а не витрина биржи. */
+const MAX_ROWS = 8;
+
+export function RatesPanel({ pairs }: { readonly pairs: readonly CurrencyPairView[] }) {
   const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<readonly Row[]>();
+  const [rates, setRates] = useState<Readonly<Record<string, string | null>>>({});
 
-  const others = useMemo(
-    () =>
-      pairs
-        .filter(
-          (pair) =>
-            pair.kind === 'electronic' && !(pair.fromCode === fromCode && pair.toCode === toCode),
-        )
-        .slice(0, MAX_ROWS),
-    [pairs, fromCode, toCode],
+  /** Валюты, которые сервис меняет на рубли, — их и котируем. */
+  const codes = useMemo(
+    () => [
+      ...new Set(
+        pairs
+          .filter((pair) => pair.kind === 'electronic' && pair.toCode === BASE)
+          .map((pair) => pair.fromCode),
+      ),
+    ],
+    [pairs],
   );
 
+  const shown = codes.includes(HEADLINE) ? HEADLINE : codes[0];
+  const rest = codes.filter((code) => code !== shown).slice(0, MAX_ROWS);
+
+  // Свёрнутое табло стоит одной котировки, развёрнутое — остальных.
+  // Спрашивать все сразу значило бы задержать экран ради строк, которые
+  // никто не раскрывал.
+  //
+  // Строкой, а не списком: список пересобирается на каждый рендер, и
+  // эффект уходил бы за курсами по кругу.
+  const wanted = (open ? [shown, ...rest] : [shown]).filter(Boolean).join(',');
+
   useEffect(() => {
-    if (!open || others.length === 0) return;
+    const missing = wanted.split(',').filter((code) => code && !(code in rates));
+    if (missing.length === 0) return;
 
     let cancelled = false;
     void Promise.all(
-      others.map(async (pair) => {
-        const params = new URLSearchParams({ fromCode: pair.fromCode, toCode: pair.toCode });
+      missing.map(async (code) => {
+        const params = new URLSearchParams({ fromCode: code, toCode: BASE });
         // Отсутствие котировки — рабочее состояние: строка останется, но
-        // без числа. Молча выкидывать направление нельзя — клиент решил
-        // бы, что его не обменивают.
+        // без числа. Убирать валюту из списка нельзя — клиент решил бы,
+        // что её не меняют.
         const result = await get<{ quote: PreliminaryQuoteView | null }>(
           `/api/quote?${params.toString()}`,
         ).catch(() => ({ quote: null }));
-        return { fromCode: pair.fromCode, toCode: pair.toCode, rate: result.quote?.rate ?? null };
+        return [code, result.quote?.rate ?? null] as const;
       }),
     ).then((loaded) => {
-      if (!cancelled) setRows(loaded);
+      if (!cancelled) setRates((known) => ({ ...known, ...Object.fromEntries(loaded) }));
     });
 
     return () => {
       cancelled = true;
     };
-  }, [open, others]);
+  }, [wanted, rates]);
+
+  if (!shown) return null;
 
   const head = (
     <>
       <span className="rates__pair">
-        {fromCode} / {toCode}
+        {shown} / {BASE}
       </span>
       <span className="rates__rule" />
-      {quote ? (
-        <span className="rates__value">{formatAmount(quote.rate)}</span>
-      ) : (
-        <span className="rates__value rates__value--absent">Курс назовёт менеджер</span>
-      )}
+      <Rate value={rates[shown]} />
     </>
   );
 
-  if (others.length === 0) {
+  if (rest.length === 0) {
     return (
       <div className="rates">
         <div className="rates__head">{head}</div>
@@ -106,7 +111,7 @@ export function RatesPanel({
         onClick={() => setOpen(!open)}
         className="rates__head"
         aria-expanded={open}
-        aria-label={open ? 'Скрыть другие направления' : 'Показать другие направления'}
+        aria-label={open ? 'Скрыть остальные курсы' : 'Показать остальные курсы'}
       >
         {head}
         <span className={open ? 'rates__chevron rates__chevron--open' : 'rates__chevron'}>
@@ -116,26 +121,40 @@ export function RatesPanel({
 
       {open ? (
         <div className="rates__list">
-          {rows === undefined ? (
-            <div className="rates__row">
-              <span className="rates__row-value--absent">Спрашиваем курсы…</span>
+          {rest.map((code) => (
+            <div key={code} className="rates__row">
+              <span className="rates__row-pair">
+                {code} / {BASE}
+              </span>
+              <Rate value={rates[code]} row />
             </div>
-          ) : (
-            rows.map((row) => (
-              <div key={`${row.fromCode}>${row.toCode}`} className="rates__row">
-                <span className="rates__row-pair">
-                  {row.fromCode} → {row.toCode}
-                </span>
-                {row.rate ? (
-                  <span className="rates__row-value">{formatAmount(row.rate)}</span>
-                ) : (
-                  <span className="rates__row-value rates__row-value--absent">по запросу</span>
-                )}
-              </div>
-            ))
-          )}
+          ))}
         </div>
       ) : undefined}
     </div>
   );
+}
+
+/**
+ * Курс или его отсутствие. Неизвестный и отсутствующий различаются: пока
+ * ответ не пришёл, сказать «курс назовёт менеджер» — соврать раньше
+ * времени.
+ */
+function Rate({
+  value,
+  row = false,
+}: {
+  readonly value: string | null | undefined;
+  readonly row?: boolean;
+}) {
+  const base = row ? 'rates__row-value' : 'rates__value';
+  if (value === undefined) return <span className={`${base} ${base}--absent`}>…</span>;
+  if (value === null) {
+    return (
+      <span className={`${base} ${base}--absent`}>
+        {row ? 'по запросу' : 'Курс назовёт менеджер'}
+      </span>
+    );
+  }
+  return <span className={base}>{formatRateValue(value)}</span>;
 }
