@@ -7,7 +7,7 @@ import {
   SESSION_COOKIE,
   sessionSecret,
 } from '@/lib/auth/session';
-import { botToken } from '@nemo/telegram';
+import { loginBotToken } from '@/lib/auth/login-bot';
 import { parseLoginPayload, verifyTelegramLogin } from '@/lib/auth/telegram-login';
 
 export const runtime = 'nodejs';
@@ -24,7 +24,9 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request): Promise<Response> {
   try {
     const payload = parseLoginPayload(await request.json());
-    const login = verifyTelegramLogin(payload, botToken());
+    // Токен бота с кнопкой входа, а не клиентского: подпись строит тот
+    // бот, чей виджет нажали.
+    const login = verifyTelegramLogin(payload, loginBotToken());
     const { staffId } = await getCore().beginStaffLogin(login.telegramUserId);
 
     const store = await cookies();
