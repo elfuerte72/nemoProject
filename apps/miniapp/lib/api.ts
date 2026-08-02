@@ -36,6 +36,12 @@ export function requireInitData(request: Request): InitData {
 
 export function errorResponse(error: unknown): Response {
   if (error instanceof InitDataError) {
+    // Клиенту — нейтральный отказ: подробности помогли бы подбирать
+    // подпись. В журнал — причина: без неё «не удалось подтвердить
+    // запуск» неотличимо от просроченной подписи, чужого бота и
+    // отсутствующего заголовка, а различать их приходится как раз
+    // тогда, когда приложение не открывается ни у кого.
+    console.error('Данные запуска отвергнуты:', error.message);
     return unauthorizedResponse('Не удалось подтвердить запуск');
   }
   return coreErrorResponse(error) ?? unexpectedErrorResponse(error);

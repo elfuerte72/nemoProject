@@ -49,9 +49,14 @@ export function verifyInitData(
   // signature относится к сторонней проверке через Ed25519 и в строку не входит.
   params.delete('signature');
 
+  // Сортировка по ключу, а не по готовой строке «ключ=значение»: когда
+  // один ключ — начало другого (`chat` и `chat_type` приходят вместе при
+  // запуске из меню вложений), порядок расходится, потому что сравнение
+  // упирается в `=` против следующей буквы ключа. Расхождение отвергает
+  // подпись целиком, и только у части способов запуска.
   const dataCheckString = [...params.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([key, value]) => `${key}=${value}`)
-    .sort()
     .join('\n');
 
   const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
