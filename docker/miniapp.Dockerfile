@@ -22,6 +22,14 @@ COPY --chown=node:node . .
 USER node
 
 RUN pnpm install --frozen-lockfile
+
+# Имя бота нужно на сборке, а не в запуске: из него собирается
+# реферальная ссылка в браузере, а всё `NEXT_PUBLIC_*` Next подставляет
+# в клиентский код в момент сборки. Переданное только переменной
+# окружения контейнера сюда уже не попадёт.
+ARG NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
+ENV NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=$NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
+
 RUN pnpm --filter @nemo/miniapp build
 
 # После сборки: до неё Next и TypeScript нужны как есть, а `production`

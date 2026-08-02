@@ -19,6 +19,13 @@ COPY --chown=node:node . .
 USER node
 
 RUN pnpm install --frozen-lockfile
+
+# Имя бота нужно на сборке: из него виджет Telegram Login собирает
+# кнопку входа, а всё `NEXT_PUBLIC_*` Next подставляет в клиентский код
+# в момент сборки.
+ARG NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
+ENV NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=$NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
+
 RUN pnpm --filter @nemo/admin build
 
 ENV NODE_ENV=production
