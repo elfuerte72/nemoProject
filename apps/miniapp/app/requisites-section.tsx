@@ -12,14 +12,13 @@ import { ApiError, post } from '@/lib/client-api';
  * (docs/adr/0002). Поэтому «изменить» здесь означает «ввести заново», а
  * не «поправить существующий»: править нечего, показать нечего.
  */
-export function RequisitesSection({
+export function RequisitesForm({
   current,
   onSaved,
 }: {
-  current: RequisitesView | null;
-  onSaved: (requisites: RequisitesView) => void;
+  readonly current: RequisitesView | null;
+  readonly onSaved: (requisites: RequisitesView) => void;
 }) {
-  const [editing, setEditing] = useState(current === null);
   const [bankName, setBankName] = useState('');
   const [phone, setPhone] = useState('');
   const [cardNumber, setCardNumber] = useState('');
@@ -36,92 +35,66 @@ export function RequisitesSection({
         cardNumber: cardNumber.trim() || undefined,
       });
       onSaved(saved.requisites);
-      setCardNumber('');
-      setEditing(false);
     } catch (failure) {
-      setError(
-        failure instanceof ApiError ? failure.message : 'Не удалось сохранить реквизиты',
-      );
+      setError(failure instanceof ApiError ? failure.message : 'Не удалось сохранить реквизиты');
     } finally {
       setBusy(false);
     }
   }
 
-  if (!editing && current) {
-    return (
-      <div style={styles.saved}>
-        <span style={styles.label}>Деньги придут на</span>
-        <div>
-          {current.bankName ? `${current.bankName}, ` : ''}
-          {current.cardLast4 ? `карта •••• ${current.cardLast4}` : (current.phone ?? '—')}
-        </div>
-        <button type="button" onClick={() => setEditing(true)} style={styles.link}>
-          Указать другие
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div style={styles.form}>
-      <span style={styles.label}>Куда отправить деньги</span>
-      <input
-        value={bankName}
-        onChange={(event) => setBankName(event.target.value)}
-        placeholder="Банк"
-        style={styles.input}
-      />
-      <input
-        value={phone}
-        onChange={(event) => setPhone(event.target.value)}
-        placeholder="Телефон для перевода"
-        inputMode="tel"
-        style={styles.input}
-      />
-      <input
-        value={cardNumber}
-        onChange={(event) => setCardNumber(event.target.value)}
-        placeholder="Номер карты"
-        inputMode="numeric"
-        autoComplete="cc-number"
-        style={styles.input}
-      />
-      <p style={styles.muted}>
-        Номер карты сохраняется в зашифрованном виде. Дальше вы будете видеть только
-        последние четыре цифры — их достаточно, чтобы узнать свою карту.
+    <>
+      <p className="sheet__body">
+        {current
+          ? 'Сейчас деньги уходят на сохранённые реквизиты. Новые заменят их: править старые нечего — номер хранится зашифрованным.'
+          : 'Номер карты сохраняется в зашифрованном виде. Дальше вы будете видеть только последние четыре цифры — их достаточно, чтобы узнать свою карту.'}
       </p>
-      {error ? <p style={styles.error}>{error}</p> : undefined}
-      <div style={styles.row}>
-        <button type="button" onClick={save} disabled={busy} style={styles.button}>
+
+      <div className="form">
+        <label className="field">
+          <span className="field__label">Банк</span>
+          <input
+            value={bankName}
+            onChange={(event) => setBankName(event.target.value)}
+            placeholder="Например, Сбербанк"
+            className="input"
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Телефон для перевода</span>
+          <input
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            placeholder="+7"
+            inputMode="tel"
+            className="input"
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Номер карты</span>
+          <input
+            value={cardNumber}
+            onChange={(event) => setCardNumber(event.target.value)}
+            placeholder="0000 0000 0000 0000"
+            inputMode="numeric"
+            autoComplete="cc-number"
+            className="input"
+          />
+        </label>
+      </div>
+
+      {error ? <p className="error">{error}</p> : undefined}
+
+      <div className="sheet__actions">
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={busy}
+          className="btn btn--gold"
+        >
           Сохранить реквизиты
         </button>
-        {current ? (
-          <button type="button" onClick={() => setEditing(false)} style={styles.link}>
-            Отмена
-          </button>
-        ) : undefined}
       </div>
-    </div>
+    </>
   );
 }
-
-const styles = {
-  saved: { display: 'flex', flexDirection: 'column', gap: '0.25rem' },
-  form: { display: 'flex', flexDirection: 'column', gap: '0.5rem' },
-  label: { fontSize: '0.8rem', opacity: 0.7 },
-  input: { padding: '0.6rem', fontSize: '1rem' },
-  row: { display: 'flex', gap: '0.75rem', alignItems: 'center' },
-  button: { padding: '0.6rem 0.9rem', fontSize: '0.95rem' },
-  link: {
-    background: 'none',
-    border: 'none',
-    padding: 0,
-    fontSize: '0.85rem',
-    textDecoration: 'underline',
-    cursor: 'pointer',
-    color: 'inherit',
-    alignSelf: 'flex-start',
-  },
-  muted: { opacity: 0.7, fontSize: '0.8rem', lineHeight: 1.45 },
-  error: { color: '#c0392b', fontSize: '0.9rem' },
-} satisfies Record<string, React.CSSProperties>;

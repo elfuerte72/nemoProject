@@ -4,12 +4,16 @@ import { useEffect, useState } from 'react';
 import type { BonusAccountView, WithdrawalRequestView } from '@nemo/core';
 import type { WithdrawalMethod } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
+import { formatAmount, formatDate, parseAmount, shortId } from '@/lib/format';
 import {
   BONUS_KIND_LABELS,
   WITHDRAWAL_METHOD_LABELS,
   WITHDRAWAL_STATUS_LABELS,
 } from '@/lib/labels';
 import { getWebApp } from '@/lib/telegram/webapp';
+import type { BonusIntent } from './client-app';
+import { InviteIcon, WithdrawIcon } from './ui/icons';
+import { NoticeSheet, Sheet } from './ui/sheet';
 
 /**
  * Реферальный кабинет: сколько заработал, скольких привёл и как это
@@ -30,15 +34,32 @@ function referralLink(code: string): string | undefined {
   return bot ? `https://t.me/${bot}?startapp=${code}` : undefined;
 }
 
-export function BonusSection() {
+/** Сколько «Скопировано» держится на месте кнопки. */
+const COPIED_MS = 1600;
+
+const SUBMITTED = {
+  title: 'Заявка на вывод принята',
+  body: 'Менеджер её рассмотрит и исполнит выплату вручную. Бот сообщит, когда деньги уйдут.',
+};
+
+type SheetState =
+  | { readonly kind: 'withdraw' }
+  | { readonly kind: 'invite' }
+  | { readonly kind: 'notice'; readonly title: string; readonly body: string };
+
+export function BonusSection({
+  intent,
+  onIntentShown,
+}: {
+  readonly intent: BonusIntent | undefined;
+  readonly onIntentShown: () => void;
+}) {
   const [account, setAccount] = useState<BonusAccountView>();
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequestView[]>([]);
-  const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<WithdrawalMethod>('bank');
-  const [destination, setDestination] = useState('');
+  const [sheet, setSheet] = useState<SheetState>();
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
-  const [busy, setBusy] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void (async () => {
@@ -50,40 +71,29 @@ export function BonusSection() {
         setAccount(bonus.account);
         setWithdrawals(mine.requests);
       } catch (failure) {
-        setError(
-          failure instanceof ApiError ? failure.message : 'Не удалось загрузить кабинет',
-        );
+        setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить кабинет');
       } finally {
-        setBusy(false);
+        setLoading(false);
       }
     })();
   }, []);
 
-  async function requestWithdrawal(event: React.FormEvent) {
-    event.preventDefault();
-    setError(undefined);
-    setNotice(undefined);
-    setBusy(true);
-    try {
-      const created = await post<{ request: WithdrawalRequestView }>('/api/withdrawals', {
-        amount: amount.replace(',', '.').trim(),
-        method,
-        destination: destination.trim(),
-      });
-      setWithdrawals((current) => [created.request, ...current]);
-      setAmount('');
-      setDestination('');
-      setNotice('Заявка на вывод принята. Менеджер её рассмотрит.');
-    } catch (failure) {
-      setError(
-        failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на вывод',
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
+  // Кнопки «Вывести» и «Пригласить» есть и на экране обмена: оттуда
+  // раздел открывается сразу нужным листом, а не на полшага раньше.
+  useEffect(() => {
+    if (!intent) return;
+    setSheet({ kind: intent });
+    onIntentShown();
+  }, [intent, onIntentShown]);
 
   const link = account ? referralLink(account.referralCode) : undefined;
+
+  function copy() {
+    if (!link) return;
+    void navigator.clipboard?.writeText(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), COPIED_MS);
+  }
 
   function share() {
     if (!link) return;
@@ -96,145 +106,261 @@ export function BonusSection() {
     }
   }
 
+  if (loading) {
+    return <p className="empty">Загружаем кабинет…</p>;
+  }
+
+  if (!account) {
+    return <p className="error">{error ?? 'Не удалось загрузить кабинет'}</p>;
+  }
+
   return (
-    <div style={styles.page}>
-      <section>
-        <h2 style={styles.heading}>Бонусный баланс</h2>
-        <p style={styles.balance}>{account?.balance ?? '—'}</p>
-        <p style={styles.muted}>
-          Баллы начисляются, когда приведённый вами клиент совершает обмен: процент от
-          того, что сервис на этой заявке заработал.
+    <>
+      <div className="balance">
+        <div className="eyebrow">Бонусный баланс</div>
+        <div className="balance__value">
+          <span className="balance__number">{formatAmount(account.balance)}</span>
+          <span className="balance__unit">баллов</span>
+        </div>
+        <p className="balance__note">
+          Процент от того, что сервис заработал на сделках приглашённых.
         </p>
-      </section>
+      </div>
 
-      <section>
-        <h2 style={styles.heading}>Моя сеть</h2>
-        <p>
-          Первая линия — {account?.line1Count ?? 0}, вторая — {account?.line2Count ?? 0}
-        </p>
-        {link ? (
-          <div style={styles.linkBlock}>
-            <code style={styles.link}>{link}</code>
-            <div style={styles.row}>
-              <button
-                type="button"
-                onClick={() => void navigator.clipboard?.writeText(link)}
-                style={styles.secondary}
+      <div className="quick-row">
+        <button type="button" onClick={() => setSheet({ kind: 'withdraw' })} className="quick">
+          <span className="quick__circle">
+            <WithdrawIcon />
+          </span>
+          <span className="quick__label">Вывести</span>
+        </button>
+        <button type="button" onClick={() => setSheet({ kind: 'invite' })} className="quick">
+          <span className="quick__circle">
+            <InviteIcon />
+          </span>
+          <span className="quick__label">Пригласить</span>
+        </button>
+      </div>
+
+      <div className="split">
+        <div className="split__cell">
+          <div className="split__value">{account.line1Count}</div>
+          <div className="split__label">первая линия</div>
+        </div>
+        <div className="split__rule" />
+        <div className="split__cell">
+          <div className="split__value">{account.line2Count}</div>
+          <div className="split__label">вторая линия</div>
+        </div>
+      </div>
+
+      {link ? (
+        <button type="button" onClick={copy} className="tile bonus__link">
+          <span className="tile__body">
+            <span className="tile__label">Ваша ссылка</span>
+            <span className="tile__value">{link.replace('https://', '')}</span>
+          </span>
+          <span className="link">{copied ? 'Скопировано' : 'Копировать'}</span>
+        </button>
+      ) : (
+        <p className="empty">Реферальная ссылка появится, когда бот будет настроен.</p>
+      )}
+
+      {error ? <p className="error">{error}</p> : undefined}
+
+      {withdrawals.length > 0 ? (
+        <>
+          <div className="section-title">Заявки на вывод</div>
+          <ul className="rows">
+            {withdrawals.map((request) => (
+              <li key={request.id} className="row">
+                <span className="row__body">
+                  <span className="row__title">
+                    {formatAmount(request.amount)} баллов ·{' '}
+                    {WITHDRAWAL_METHOD_LABELS[request.method]}
+                  </span>
+                  <span className="row__sub">
+                    {formatDate(request.createdAt)}
+                    {request.destinationHint ? ` · ${request.destinationHint}` : ''}
+                    {request.rejectReason ? ` · ${request.rejectReason}` : ''}
+                  </span>
+                </span>
+                <span className="row__state">{WITHDRAWAL_STATUS_LABELS[request.status]}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : undefined}
+
+      <div className="section-title">Движение баллов</div>
+      {account.history.length === 0 ? (
+        <p className="empty">Движений по баллам пока нет.</p>
+      ) : (
+        <ul className="rows">
+          {account.history.map((entry) => (
+            <li key={entry.id} className="row">
+              <span className="row__body">
+                <span className="row__title">
+                  {entry.line
+                    ? `${entry.line === 1 ? 'Первая' : 'Вторая'} линия`
+                    : BONUS_KIND_LABELS[entry.kind]}
+                </span>
+                <span className="row__sub">
+                  {entry.exchangeRequestId ? `Заявка ${shortId(entry.exchangeRequestId)} · ` : ''}
+                  {formatDate(entry.createdAt)}
+                  {entry.comment ? ` · ${entry.comment}` : ''}
+                </span>
+              </span>
+              <span
+                className={
+                  entry.amount.startsWith('-') ? 'row__amount row__amount--out' : 'row__amount'
+                }
               >
-                Скопировать
-              </button>
-              <button type="button" onClick={share} style={styles.secondary}>
-                Переслать
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p style={styles.muted}>Реферальная ссылка появится, когда бот будет настроен.</p>
-        )}
-      </section>
+                {entry.amount.startsWith('-') ? '' : '+'}
+                {formatAmount(entry.amount)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
 
-      <section>
-        <h2 style={styles.heading}>Вывод баллов</h2>
-        <form onSubmit={requestWithdrawal} style={styles.form}>
+      {sheet?.kind === 'withdraw' ? (
+        <WithdrawSheet
+          balance={account.balance}
+          onClose={() => setSheet(undefined)}
+          onSubmitted={(request) => {
+            setWithdrawals((current) => [request, ...current]);
+            setSheet({ kind: 'notice', ...SUBMITTED });
+          }}
+        />
+      ) : undefined}
+
+      {sheet?.kind === 'invite' ? (
+        <Sheet title="Пригласить" onClose={() => setSheet(undefined)}>
+          <p className="sheet__body">
+            Отправьте свою ссылку в любой чат. Как только приглашённый сделает первый обмен, вам
+            начислятся баллы — и половина этого же процента пойдёт с обменов тех, кого приведёт
+            он.
+          </p>
+          {link ? (
+            <>
+              <div className="tile sheet__tile">
+                <span className="tile__body">
+                  <span className="tile__value">{link.replace('https://', '')}</span>
+                </span>
+              </div>
+              <div className="sheet__actions">
+                <button type="button" onClick={share} className="btn btn--gold">
+                  Переслать
+                </button>
+                <button type="button" onClick={copy} className="btn btn--soft">
+                  {copied ? 'Скопировано' : 'Копировать'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="empty">Реферальная ссылка появится, когда бот будет настроен.</p>
+          )}
+        </Sheet>
+      ) : undefined}
+
+      {sheet?.kind === 'notice' ? (
+        <NoticeSheet title={sheet.title} body={sheet.body} onClose={() => setSheet(undefined)} />
+      ) : undefined}
+    </>
+  );
+}
+
+/** Заявка на вывод: сколько и куда. */
+function WithdrawSheet({
+  balance,
+  onClose,
+  onSubmitted,
+}: {
+  readonly balance: string;
+  readonly onClose: () => void;
+  readonly onSubmitted: (request: WithdrawalRequestView) => void;
+}) {
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState<WithdrawalMethod>('bank');
+  const [destination, setDestination] = useState('');
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setError(undefined);
+    setBusy(true);
+    try {
+      const created = await post<{ request: WithdrawalRequestView }>('/api/withdrawals', {
+        amount: parseAmount(amount),
+        method,
+        destination: destination.trim(),
+      });
+      onSubmitted(created.request);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на вывод');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet title="Вывод баллов" onClose={onClose}>
+      <p className="sheet__body">
+        Доступно {formatAmount(balance)} баллов. Реквизиты сохранятся зашифрованными — дальше
+        видны будут только последние знаки, а выплату исполнит менеджер.
+      </p>
+
+      <div className="segment">
+        {(Object.keys(WITHDRAWAL_METHOD_LABELS) as WithdrawalMethod[]).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setMethod(value)}
+            aria-pressed={method === value}
+            className="segment__item"
+          >
+            {value === 'bank' ? 'На счёт' : 'В криптовалюте'}
+          </button>
+        ))}
+      </div>
+
+      <div className="form">
+        <label className="field">
+          <span className="field__label">Сколько вывести</span>
           <input
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             inputMode="decimal"
-            placeholder="Сколько вывести"
-            style={styles.input}
+            placeholder="0"
+            className="input"
           />
-          <select
-            value={method}
-            onChange={(event) => setMethod(event.target.value as WithdrawalMethod)}
-            style={styles.input}
-          >
-            {Object.entries(WITHDRAWAL_METHOD_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+        </label>
+        <label className="field">
+          <span className="field__label">
+            {method === 'bank' ? 'Счёт или карта' : 'Адрес кошелька'}
+          </span>
           <input
             value={destination}
             onChange={(event) => setDestination(event.target.value)}
-            placeholder={method === 'bank' ? 'Номер счёта или карты' : 'Адрес кошелька'}
-            style={styles.input}
+            placeholder={method === 'bank' ? '0000 0000 0000 0000' : 'Адрес сети'}
+            className="input"
           />
-          <p style={styles.muted}>
-            Реквизиты сохраняются в зашифрованном виде: дальше вы будете видеть только их
-            последние знаки. Выплату исполняет менеджер вручную.
-          </p>
-          <button type="submit" disabled={busy} style={styles.button}>
-            Подать заявку на вывод
-          </button>
-        </form>
-      </section>
+        </label>
+      </div>
 
-      {error ? <p style={styles.error}>{error}</p> : undefined}
-      {notice ? <p>{notice}</p> : undefined}
+      {error ? <p className="error">{error}</p> : undefined}
 
-      <section>
-        <h2 style={styles.heading}>Мои заявки на вывод</h2>
-        {withdrawals.length === 0 ? (
-          <p style={styles.muted}>Заявок на вывод пока нет.</p>
-        ) : (
-          <ul style={styles.list}>
-            {withdrawals.map((request) => (
-              <li key={request.id} style={styles.item}>
-                <div>
-                  {request.amount} баллов · {WITHDRAWAL_METHOD_LABELS[request.method]}
-                  {request.destinationHint ? ` ${request.destinationHint}` : ''}
-                </div>
-                <div style={styles.muted}>
-                  {WITHDRAWAL_STATUS_LABELS[request.status]}
-                  {request.rejectReason ? ` — ${request.rejectReason}` : ''}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 style={styles.heading}>История баллов</h2>
-        {!account || account.history.length === 0 ? (
-          <p style={styles.muted}>Движений по баллам пока нет.</p>
-        ) : (
-          <ul style={styles.list}>
-            {account.history.map((entry) => (
-              <li key={entry.id} style={styles.item}>
-                <div>
-                  {entry.amount} · {BONUS_KIND_LABELS[entry.kind]}
-                  {entry.line ? ` (${entry.line === 1 ? 'первая' : 'вторая'} линия)` : ''}
-                </div>
-                <div style={styles.muted}>
-                  {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString('ru-RU') : ''}
-                  {entry.exchangeRequestId
-                    ? ` · за заявку ${entry.exchangeRequestId.slice(0, 8)}`
-                    : ''}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
+      <div className="sheet__actions">
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={busy || !amount.trim() || !destination.trim()}
+          className="btn btn--gold"
+        >
+          Подать заявку на вывод
+        </button>
+      </div>
+    </Sheet>
   );
 }
-
-const styles = {
-  page: { display: 'flex', flexDirection: 'column', gap: '2rem' },
-  heading: { fontSize: '1rem', marginBottom: '0.5rem' },
-  balance: { fontSize: '1.8rem', fontWeight: 600 },
-  form: { display: 'flex', flexDirection: 'column', gap: '0.6rem' },
-  input: { padding: '0.6rem', fontSize: '1rem' },
-  button: { padding: '0.75rem', fontSize: '1rem', fontWeight: 600 },
-  secondary: { padding: '0.5rem 0.8rem', fontSize: '0.9rem' },
-  row: { display: 'flex', gap: '0.5rem' },
-  linkBlock: { display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' },
-  link: { fontSize: '0.85rem', wordBreak: 'break-all', userSelect: 'all' },
-  muted: { opacity: 0.7, fontSize: '0.85rem', lineHeight: 1.45 },
-  error: { color: '#c0392b', fontSize: '0.9rem' },
-  list: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' },
-  item: { borderTop: '1px solid rgba(128,128,128,0.25)', paddingTop: '0.6rem' },
-} satisfies Record<string, React.CSSProperties>;

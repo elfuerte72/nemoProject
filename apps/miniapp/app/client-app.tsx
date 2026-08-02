@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import type { ClientView } from '@nemo/core';
 import { ApiError, post } from '@/lib/client-api';
 import { getWebApp } from '@/lib/telegram/webapp';
@@ -8,6 +8,14 @@ import { BonusSection } from './bonus-section';
 import { CardSection } from './card-section';
 import { ExchangeScreen } from './exchange-screen';
 import { MarketingConsent } from './marketing-consent';
+import {
+  NemoMark,
+  QuestionIcon,
+  TabBonusIcon,
+  TabCardIcon,
+  TabExchangeIcon,
+} from './ui/icons';
+import { NoticeSheet } from './ui/sheet';
 
 /**
  * Оболочка клиентского приложения: разделы и первый запуск.
@@ -16,19 +24,40 @@ import { MarketingConsent } from './marketing-consent';
  * порядок важен — заявки и баллы принадлежат клиенту, которого ещё
  * может не быть. Реферальная привязка тоже выполняется здесь, потому
  * что только тут `telegram_user_id` подтверждён подписью.
+ *
+ * Разделы переключаются нижней панелью и размонтируются при уходе:
+ * каждый спрашивает своё у сервера сам, и держать все три в памяти
+ * значило бы грузить при запуске то, за чем клиент не пришёл.
  */
 
 type Tab = 'exchange' | 'bonus' | 'card';
 
-const TABS: readonly { id: Tab; label: string }[] = [
-  { id: 'exchange', label: 'Обмен' },
-  { id: 'bonus', label: 'Бонусы' },
-  { id: 'card', label: 'Карта' },
+/** Что открыть в разделе бонусов, когда туда ведёт кнопка с другого экрана. */
+export type BonusIntent = 'withdraw' | 'invite';
+
+const TABS: readonly {
+  id: Tab;
+  label: string;
+  Icon: (props: { filled: boolean }) => ReactElement;
+}[] = [
+  { id: 'exchange', label: 'Обмен', Icon: TabExchangeIcon },
+  { id: 'bonus', label: 'Бонусы', Icon: TabBonusIcon },
+  { id: 'card', label: 'Карта', Icon: TabCardIcon },
 ];
+
+const SUPPORT = {
+  title: 'Поддержка',
+  body: 'Менеджер отвечает в чате бота — обычно за несколько минут. Закройте приложение, чтобы вернуться в переписку, и напишите свой вопрос.',
+};
 
 export function ClientApp() {
   const [tab, setTab] = useState<Tab>('exchange');
+  // Направление перехода: экраны в панели лежат слева направо, и лист
+  // должен въезжать с той стороны, куда клиент двинулся.
+  const [back, setBack] = useState(false);
+  const [bonusIntent, setBonusIntent] = useState<BonusIntent>();
   const [client, setClient] = useState<ClientView>();
+  const [support, setSupport] = useState(false);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -46,86 +75,93 @@ export function ClientApp() {
     })();
   }, []);
 
-  if (error) {
-    return (
-      <main style={styles.page}>
-        <p style={styles.error}>{error}</p>
-      </main>
-    );
-  }
+  const go = useCallback(
+    (next: Tab, intent?: BonusIntent) => {
+      setBack(TABS.findIndex((one) => one.id === next) < TABS.findIndex((one) => one.id === tab));
+      setTab(next);
+      setBonusIntent(intent);
+    },
+    [tab],
+  );
 
-  // Пока клиента нет, разделы не показываются: они спрашивают у сервера
-  // то, что принадлежит клиенту, и получили бы отказ.
-  if (!client) {
-    return (
-      <main style={styles.page}>
-        <p style={styles.muted}>Загружаем…</p>
-      </main>
-    );
-  }
+  const openBonus = useCallback((intent: BonusIntent) => go('bonus', intent), [go]);
+  const clearIntent = useCallback(() => setBonusIntent(undefined), []);
 
   return (
-    <main style={styles.page}>
-      {/*
-        Вопрос висит, пока клиент на него не ответил, а не только при
-        первом запуске: закрывший приложение до ответа иначе не увидел
-        бы его больше никогда.
-      */}
-      <MarketingConsent
-        askNow={!client.marketingConsentAsked}
-        consent={client.marketingConsent}
-        onAnswered={(marketingConsent) =>
-          setClient({ ...client, marketingConsent, marketingConsentAsked: true })
-        }
-      />
+    <div className="app">
+      <div className="app__glow" />
 
-      <nav style={styles.tabs}>
-        {TABS.map((one) => (
+      <header className="app__header">
+        <span className="app__brand">
+          <NemoMark />
+          Nemo
+        </span>
+        <button
+          type="button"
+          onClick={() => setSupport(true)}
+          className="icon-btn"
+          aria-label="Поддержка"
+        >
+          <QuestionIcon />
+        </button>
+      </header>
+
+      {error ? (
+        <div className="app__center">
+          <p className="error">{error}</p>
+        </div>
+      ) : !client ? (
+        // Пока клиента нет, разделы не показываются: они спрашивают у
+        // сервера то, что принадлежит клиенту, и получили бы отказ.
+        <div className="app__center">
+          <p className="muted">Загружаем…</p>
+        </div>
+      ) : (
+        <div className="app__scroll">
+          <div key={tab} className={back ? 'app__screen app__screen--back' : 'app__screen'}>
+            {tab === 'exchange' ? <ExchangeScreen onBonus={openBonus} /> : undefined}
+            {tab === 'bonus' ? (
+              <BonusSection intent={bonusIntent} onIntentShown={clearIntent} />
+            ) : undefined}
+            {tab === 'card' ? <CardSection /> : undefined}
+          </div>
+
+          {/*
+            Вопрос висит, пока клиент на него не ответил, а не только при
+            первом запуске: закрывший приложение до ответа иначе не увидел
+            бы его больше никогда. Отписка потом остаётся здесь же — внизу
+            любого экрана, а не в настройках, которых у приложения нет.
+          */}
+          <MarketingConsent
+            askNow={!client.marketingConsentAsked}
+            consent={client.marketingConsent}
+            onAnswered={(marketingConsent) =>
+              setClient({ ...client, marketingConsent, marketingConsentAsked: true })
+            }
+          />
+        </div>
+      )}
+
+      <div className="app__fade" />
+
+      <nav className="tabbar">
+        {TABS.map(({ id, label, Icon }) => (
           <button
-            key={one.id}
+            key={id}
             type="button"
-            onClick={() => setTab(one.id)}
-            style={tab === one.id ? styles.tabActive : styles.tab}
+            onClick={() => go(id)}
+            className="tabbar__item"
+            aria-current={tab === id ? 'page' : undefined}
           >
-            {one.label}
+            <Icon filled={tab === id} />
+            <span>{label}</span>
           </button>
         ))}
       </nav>
 
-      {tab === 'exchange' ? <ExchangeScreen /> : undefined}
-      {tab === 'bonus' ? <BonusSection /> : undefined}
-      {tab === 'card' ? <CardSection /> : undefined}
-    </main>
+      {support ? (
+        <NoticeSheet title={SUPPORT.title} body={SUPPORT.body} onClose={() => setSupport(false)} />
+      ) : undefined}
+    </div>
   );
 }
-
-const styles = {
-  page: {
-    fontFamily: 'system-ui, sans-serif',
-    padding: '1.25rem 1.25rem 3rem',
-    maxWidth: 480,
-    margin: '0 auto',
-  },
-  tabs: { display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' },
-  tab: {
-    flex: 1,
-    padding: '0.55rem',
-    fontSize: '0.95rem',
-    background: 'none',
-    border: '1px solid rgba(128,128,128,0.35)',
-    color: 'inherit',
-    cursor: 'pointer',
-  },
-  tabActive: {
-    flex: 1,
-    padding: '0.55rem',
-    fontSize: '0.95rem',
-    fontWeight: 600,
-    border: '1px solid currentColor',
-    background: 'rgba(128,128,128,0.15)',
-    color: 'inherit',
-    cursor: 'pointer',
-  },
-  muted: { opacity: 0.7, fontSize: '0.85rem' },
-  error: { color: '#c0392b', fontSize: '0.9rem' },
-} satisfies Record<string, React.CSSProperties>;

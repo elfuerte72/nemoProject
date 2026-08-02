@@ -2,22 +2,24 @@
 
 import { useState } from 'react';
 import { ApiError, post } from '@/lib/client-api';
+import { Sheet } from './ui/sheet';
 
 /**
  * Согласие на рассылку.
  *
- * При первом входе клиента спрашивают прямо; дальше отписка остаётся
- * одной кнопкой на виду. Отписка, спрятанная в настройках, — это способ
- * не получить её вовсе.
+ * При первом входе клиента спрашивают прямо — листом поверх экрана,
+ * который не даёт пройти мимо. Дальше отписка остаётся одной кнопкой на
+ * виду, внизу любого раздела: спрятанная в настройках отписка — это
+ * способ не получить её вовсе.
  */
 export function MarketingConsent({
   askNow,
   consent,
   onAnswered,
 }: {
-  askNow: boolean;
-  consent: boolean;
-  onAnswered: (consent: boolean) => void;
+  readonly askNow: boolean;
+  readonly consent: boolean;
+  readonly onAnswered: (consent: boolean) => void;
 }) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -39,57 +41,50 @@ export function MarketingConsent({
 
   if (askNow) {
     return (
-      <div style={styles.ask}>
-        <p style={styles.text}>
-          Присылать вам предложения и новости сервиса? Заявок и их статусов это не
-          касается — о них бот сообщает всегда.
+      // Лист закрывается только ответом: `onClose` здесь — «не нужно».
+      // Вопрос задан один раз, и уход от него молчанием вернул бы его
+      // при следующем запуске.
+      <Sheet title="Присылать новости?" onClose={() => void answer(false)}>
+        <p className="sheet__body">
+          Предложения и новости сервиса. Заявок и их статусов это не касается — о них бот
+          сообщает всегда.
         </p>
-        <div style={styles.row}>
-          <button type="button" onClick={() => answer(true)} disabled={busy} style={styles.button}>
+        {error ? <p className="error">{error}</p> : undefined}
+        <div className="sheet__actions">
+          <button
+            type="button"
+            onClick={() => void answer(true)}
+            disabled={busy}
+            className="btn btn--gold"
+          >
             Присылать
           </button>
-          <button type="button" onClick={() => answer(false)} disabled={busy} style={styles.link}>
+          <button
+            type="button"
+            onClick={() => void answer(false)}
+            disabled={busy}
+            className="btn btn--soft"
+          >
             Не нужно
           </button>
         </div>
-        {error ? <p style={styles.error}>{error}</p> : undefined}
-      </div>
+      </Sheet>
     );
   }
 
   if (!consent) return null;
 
   return (
-    <div style={styles.row}>
-      <button type="button" onClick={() => answer(false)} disabled={busy} style={styles.link}>
+    <p className="hint">
+      <button
+        type="button"
+        onClick={() => void answer(false)}
+        disabled={busy}
+        className="link link--muted"
+      >
         Отписаться от рассылки
       </button>
-      {error ? <span style={styles.error}>{error}</span> : undefined}
-    </div>
+      {error ? <span className="error"> {error}</span> : undefined}
+    </p>
   );
 }
-
-const styles = {
-  ask: {
-    border: '1px solid rgba(128,128,128,0.35)',
-    padding: '0.9rem',
-    marginBottom: '1.25rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.6rem',
-  },
-  text: { fontSize: '0.9rem', lineHeight: 1.45 },
-  row: { display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem' },
-  button: { padding: '0.5rem 0.9rem', fontSize: '0.9rem', fontWeight: 600 },
-  link: {
-    background: 'none',
-    border: 'none',
-    padding: 0,
-    fontSize: '0.8rem',
-    textDecoration: 'underline',
-    cursor: 'pointer',
-    color: 'inherit',
-    opacity: 0.7,
-  },
-  error: { color: '#c0392b', fontSize: '0.85rem' },
-} satisfies Record<string, React.CSSProperties>;
