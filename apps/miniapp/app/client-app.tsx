@@ -7,7 +7,7 @@ import { getWebApp } from '@/lib/telegram/webapp';
 import { BonusSection } from './bonus-section';
 import { CardSection } from './card-section';
 import { ExchangeScreen } from './exchange-screen';
-import { MarketingConsent } from './marketing-consent';
+import { MarketingConsentAsk } from './marketing-consent';
 import {
   NemoMark,
   QuestionIcon,
@@ -157,23 +157,15 @@ export function ClientApp() {
         <div className={keyboard ? 'app__scroll app__scroll--bare' : 'app__scroll'}>
           <div key={tab} className={back ? 'app__screen app__screen--back' : 'app__screen'}>
             {tab === 'exchange' ? <ExchangeScreen /> : undefined}
-            {tab === 'bonus' ? <BonusSection /> : undefined}
+            {tab === 'bonus' ? (
+              <BonusSection
+                consent={client.marketingConsent}
+                onConsentChanged={(marketingConsent) => setClient({ ...client, marketingConsent })}
+              />
+            ) : undefined}
             {tab === 'card' ? <CardSection /> : undefined}
           </div>
 
-          {/*
-            Вопрос висит, пока клиент на него не ответил, а не только при
-            первом запуске: закрывший приложение до ответа иначе не увидел
-            бы его больше никогда. Отписка потом остаётся здесь же — внизу
-            любого экрана, а не в настройках, которых у приложения нет.
-          */}
-          <MarketingConsent
-            askNow={!client.marketingConsentAsked}
-            consent={client.marketingConsent}
-            onAnswered={(marketingConsent) =>
-              setClient({ ...client, marketingConsent, marketingConsentAsked: true })
-            }
-          />
         </div>
       )}
 
@@ -200,6 +192,19 @@ export function ClientApp() {
           </nav>
         </>
       )}
+
+      {/*
+        Вопрос висит, пока клиент на него не ответил, и поверх любого
+        раздела: закрывший приложение до ответа иначе не увидел бы его
+        больше никогда.
+      */}
+      {client && !client.marketingConsentAsked ? (
+        <MarketingConsentAsk
+          onAnswered={(marketingConsent) =>
+            setClient({ ...client, marketingConsent, marketingConsentAsked: true })
+          }
+        />
+      ) : undefined}
     </div>
   );
 }

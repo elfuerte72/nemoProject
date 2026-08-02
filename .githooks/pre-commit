@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# Напоминание про CHANGELOG.md.
+#
+# Предупреждает, а не запрещает: заметное снаружи изменение и правка
+# внутренностей выглядят для скрипта одинаково, и отличить их он не
+# может. Хук, отклоняющий коммит по такому признаку, отключат в тот же
+# день — а напоминание переживёт и рефакторинг, и спешку.
+
+changed=$(git diff --cached --name-only --diff-filter=ACMR)
+
+touches_code=$(printf '%s\n' "$changed" | grep -E '^(apps|packages)/' | grep -vE '\.test\.(ts|tsx)$')
+touches_changelog=$(printf '%s\n' "$changed" | grep -x 'CHANGELOG.md')
+
+if [ -n "$touches_code" ] && [ -z "$touches_changelog" ]; then
+  printf '\n\033[33mCHANGELOG.md не тронут.\033[0m '
+  printf 'Если это изменение видно клиенту, менеджеру или тому,\n'
+  printf 'кто разворачивает сервис, — впишите его туда тем же коммитом.\n\n'
+fi
+
+exit 0
