@@ -59,7 +59,10 @@ export function CardList({
     <>
       {error ? <p className="error">{error}</p> : undefined}
       <ul className="rows">
-        {applications.map((application) => (
+        {applications.map((application) => {
+          const transitions = cardApplicationTransitions[application.status];
+
+          return (
           <li key={application.id} className="row row--stack">
             <div className="row__side" style={{ justifyContent: 'space-between' }}>
               <div className="row__main">
@@ -77,24 +80,33 @@ export function CardList({
             </div>
 
             <div className="row__actions">
-              <input
-                className="input"
-                style={{ flex: 1, minWidth: '14rem' }}
-                value={references[application.id] ?? application.providerReference ?? ''}
-                onChange={(event) =>
-                  setReferences((current) => ({
-                    ...current,
-                    [application.id]: event.target.value,
-                  }))
-                }
-                placeholder="Номер заявки у провайдера"
-              />
+              {/*
+                Номер у провайдера сохраняется вместе с переходом, и на
+                заявке, которой переходить некуда, сохранить его нечем:
+                поле, из которого набранное пропадает при обновлении
+                страницы, хуже отсутствующего. Проставленный номер при
+                этом виден строкой выше.
+              */}
+              {transitions.length > 0 ? (
+                <input
+                  className="input"
+                  style={{ flex: 1, minWidth: '14rem' }}
+                  value={references[application.id] ?? application.providerReference ?? ''}
+                  onChange={(event) =>
+                    setReferences((current) => ({
+                      ...current,
+                      [application.id]: event.target.value,
+                    }))
+                  }
+                  placeholder="Номер заявки у провайдера"
+                />
+              ) : undefined}
               {/*
                 Кнопка на каждый доступный переход: состояние заявки
                 приходит от провайдера, и менеджер переносит сюда то, что
                 тот сообщил, — выбирать из полного списка ему незачем.
               */}
-              {cardApplicationTransitions[application.status].map((next) => (
+              {transitions.map((next) => (
                 <button
                   key={next}
                   type="button"
@@ -107,7 +119,8 @@ export function CardList({
               ))}
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </>
   );

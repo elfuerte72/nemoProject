@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type {
   ExchangeRequestEventView,
   ManagerExchangeRequestView,
@@ -254,9 +254,15 @@ export function ExchangeRequestCard({
             />
           </label>
           <div className="row__actions">
+            {/*
+              Курс и реквизиты обязательны — операция без них откажет.
+              Погашенная кнопка говорит об этом до нажатия, а не отказом
+              после: сообщение об ошибке на пустой форме читается как
+              поломка, а не как «заполните поля».
+            */}
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !finalRate.trim() || !paymentInstructions.trim()}
               className="btn btn--gold"
               onClick={() =>
                 act({
@@ -313,7 +319,7 @@ export function ExchangeRequestCard({
           <div className="row__actions">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !serviceIncome.trim() || !serviceIncomeCode.trim()}
               className="btn btn--gold"
               onClick={() => act({ action: 'complete', serviceIncome, serviceIncomeCode })}
             >
@@ -337,7 +343,7 @@ export function ExchangeRequestCard({
             </label>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !reason.trim()}
               className="btn btn--danger"
               onClick={() => act({ action: 'cancel', reason })}
             >
@@ -383,7 +389,7 @@ function Fact({
   quiet,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
   mono?: boolean;
   quiet?: boolean;
 }) {

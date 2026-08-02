@@ -37,12 +37,20 @@ export default async function RequisiteAccessPage({
   const from = single('from');
   const to = single('to');
 
+  /*
+   * Отбор приходит из адреса, а его правит кто угодно — руками, из
+   * закладки, из чужой ссылки. Нечисловой Telegram клиента уронил бы
+   * `BigInt` и показал бы страницу аварии вместо журнала; здесь он
+   * просто не отбирает.
+   */
+  const clientFilter = clientId && /^\d+$/.test(clientId) ? BigInt(clientId) : undefined;
+
   try {
     const core = getCore();
     const [entries, staff] = await Promise.all([
       core.listRequisiteAccessLog(actor, {
         staffId: staffId || undefined,
-        clientId: clientId ? BigInt(clientId) : undefined,
+        clientId: clientFilter,
         from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
         // Конец дня, а не его начало: поле даёт дату, а обращения в
         // выбранный день произошли уже после полуночи, и граница по ней
