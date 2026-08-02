@@ -28,7 +28,7 @@ export interface ServiceSettingsView {
   /** Минимальная сумма обмена в рублях (`MIN_EXCHANGE_CODE`). */
   readonly minExchangeAmount: Amount;
   /** Сколько заявка ждёт оплаты после выдачи реквизитов, в минутах. */
-  readonly unpaidRequestTtlMinutes: number;
+  readonly unpaidExchangeRequestTtlMinutes: number;
   readonly updatedAt: Date;
 }
 
@@ -61,7 +61,7 @@ export async function readServiceSettings(
     minWithdrawalAmount: Money.toAmount(row.minWithdrawalAmount),
     markupBps: row.markupBps,
     minExchangeAmount: Money.toAmount(row.minExchangeAmount),
-    unpaidRequestTtlMinutes: row.unpaidRequestTtlMinutes,
+    unpaidExchangeRequestTtlMinutes: row.unpaidExchangeRequestTtlMinutes,
     updatedAt: row.updatedAt,
   };
 }

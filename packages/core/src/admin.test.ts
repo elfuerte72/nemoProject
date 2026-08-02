@@ -224,13 +224,13 @@ describe('экономика сервиса', () => {
     const updated = await core.updateServiceSettings(admin, {
       markupBps: 350,
       minExchangeAmount: '5000',
-      unpaidRequestTtlMinutes: 90,
+      unpaidExchangeRequestTtlMinutes: 90,
     });
 
     expect(updated).toMatchObject({
       markupBps: 350,
       minExchangeAmount: '5000',
-      unpaidRequestTtlMinutes: 90,
+      unpaidExchangeRequestTtlMinutes: 90,
     });
   });
 
@@ -248,7 +248,7 @@ describe('экономика сервиса', () => {
 
   it('не принимает нулевой срок жизни заявки: он отменял бы её сразу', async () => {
     await expect(
-      core.updateServiceSettings(admin, { unpaidRequestTtlMinutes: 0 }),
+      core.updateServiceSettings(admin, { unpaidExchangeRequestTtlMinutes: 0 }),
     ).rejects.toThrow(InvalidInputError);
   });
 

@@ -20,14 +20,13 @@ export const dynamic = 'force-dynamic';
  * когда-нибудь разошлось бы с тем, что в ядре.
  */
 const settingsSchema = z.object({
-  subject: z.literal('service'),
   referralLine1Bps: z.number().optional(),
   referralLine2Bps: z.number().optional(),
   // Строкой: денежная величина через `number` теряет точность.
   minWithdrawalAmount: z.string().optional(),
   markupBps: z.number().optional(),
   minExchangeAmount: z.string().optional(),
-  unpaidRequestTtlMinutes: z.number().optional(),
+  unpaidExchangeRequestTtlMinutes: z.number().optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {
@@ -44,7 +43,7 @@ export async function POST(request: Request): Promise<Response> {
       minWithdrawalAmount: parsed.data.minWithdrawalAmount,
       markupBps: parsed.data.markupBps,
       minExchangeAmount: parsed.data.minExchangeAmount,
-      unpaidRequestTtlMinutes: parsed.data.unpaidRequestTtlMinutes,
+      unpaidExchangeRequestTtlMinutes: parsed.data.unpaidExchangeRequestTtlMinutes,
     });
     return json({ settings });
   } catch (error) {

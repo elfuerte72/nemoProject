@@ -342,7 +342,7 @@ export interface UpdateServiceSettingsInput {
   readonly minWithdrawalAmount?: string | undefined;
   readonly markupBps?: number | undefined;
   readonly minExchangeAmount?: string | undefined;
-  readonly unpaidRequestTtlMinutes?: number | undefined;
+  readonly unpaidExchangeRequestTtlMinutes?: number | undefined;
 }
 
 /** Ставка выше 100% отдавала бы рефереру больше, чем сервис заработал. */
@@ -392,16 +392,16 @@ export async function updateServiceSettings(
       'Минимальная сумма обмена',
     );
   }
-  if (input.unpaidRequestTtlMinutes !== undefined) {
+  if (input.unpaidExchangeRequestTtlMinutes !== undefined) {
     // Нулевой срок отменял бы заявку в тот же миг, когда менеджер выдал
     // реквизиты: клиент не успел бы даже открыть банк.
-    const minutes = input.unpaidRequestTtlMinutes;
+    const minutes = input.unpaidExchangeRequestTtlMinutes;
     if (!Number.isInteger(minutes) || minutes <= 0) {
       throw new InvalidInputError(
         'Срок жизни неоплаченной заявки: ожидается целое число минут больше нуля',
       );
     }
-    patch.unpaidRequestTtlMinutes = minutes;
+    patch.unpaidExchangeRequestTtlMinutes = minutes;
   }
   if (Object.keys(patch).length === 0) {
     throw new InvalidInputError('Нечего менять');

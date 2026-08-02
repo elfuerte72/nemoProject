@@ -1,5 +1,5 @@
 {
-  "id": "b9614f48-a9bd-4d58-9950-6ea5110cb4f3",
+  "id": "37505b91-b2d9-47a9-8426-0dcd4caba482",
   "prevId": "9cd82bec-e9b6-4142-8d01-8feb303f1f4b",
   "version": "7",
   "dialect": "postgresql",
@@ -1247,8 +1247,8 @@
           "notNull": true,
           "default": "'3000'"
         },
-        "unpaid_request_ttl_minutes": {
-          "name": "unpaid_request_ttl_minutes",
+        "unpaid_exchange_request_ttl_minutes": {
+          "name": "unpaid_exchange_request_ttl_minutes",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -1294,7 +1294,7 @@
         },
         "service_settings_ttl_positive": {
           "name": "service_settings_ttl_positive",
-          "value": "\"service_settings\".\"unpaid_request_ttl_minutes\" > 0"
+          "value": "\"service_settings\".\"unpaid_exchange_request_ttl_minutes\" > 0"
         }
       },
       "isRLSEnabled": false

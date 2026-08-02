@@ -134,7 +134,7 @@ export const serviceSettings = pgTable(
      * быть не может: клиент вернулся бы к нему тогда, когда рынок ушёл
      * в его пользу.
      */
-    unpaidRequestTtlMinutes: integer('unpaid_request_ttl_minutes').default(120).notNull(),
+    unpaidExchangeRequestTtlMinutes: integer('unpaid_exchange_request_ttl_minutes').default(120).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -155,7 +155,7 @@ export const serviceSettings = pgTable(
     check('service_settings_min_exchange_non_negative', sql`${table.minExchangeAmount} >= 0`),
     // Нулевой срок отменял бы заявку в тот же миг, когда менеджер выдал
     // реквизиты, — то есть закрывал бы сервис.
-    check('service_settings_ttl_positive', sql`${table.unpaidRequestTtlMinutes} > 0`),
+    check('service_settings_ttl_positive', sql`${table.unpaidExchangeRequestTtlMinutes} > 0`),
   ],
 );
 

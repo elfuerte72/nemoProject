@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount, formatRateValue, isBelow, normalizeTyped, parseAmount } from './format';
+import { formatAmount, formatRateValue, normalizeTyped, parseAmount } from './format';
 
 /**
  * Суммы приходят десятичными строками произвольной точности, и путь
@@ -58,35 +58,6 @@ describe('parseAmount', () => {
   it('возвращает то, что примет сервер', () => {
     expect(parseAmount(`50${NBSP}000`)).toBe('50000');
     expect(parseAmount(`50${NBSP}000,5`)).toBe('50000.5');
-  });
-});
-
-describe('isBelow', () => {
-  it('сравнивает числа, а не строки: порядок важнее первой цифры', () => {
-    expect(isBelow('900', '3000')).toBe(true);
-    expect(isBelow('9000', '3000')).toBe(false);
-  });
-
-  it('пропускает сумму, равную порогу: минимальная — значит достаточная', () => {
-    expect(isBelow('3000', '3000')).toBe(false);
-    expect(isBelow('2999.99', '3000')).toBe(true);
-  });
-
-  it('не спотыкается о ведущие нули, которые человек мог набрать', () => {
-    expect(isBelow('0000007', '3000')).toBe(true);
-    expect(isBelow('03000', '3000')).toBe(false);
-  });
-
-  it('сравнивает дробные части разной длины', () => {
-    expect(isBelow('3000.1', '3000.05')).toBe(false);
-    expect(isBelow('3000.05', '3000.1')).toBe(true);
-    expect(isBelow('3000', '3000.00000000000000001')).toBe(true);
-  });
-
-  it('не портит точность на числах, которых не выдерживает double', () => {
-    // Соседние целые за пределом безопасного диапазона: через `Number`
-    // оба стали бы одним и тем же значением.
-    expect(isBelow('9007199254740993', '9007199254740994')).toBe(true);
   });
 });
 

@@ -58,7 +58,7 @@ export async function givenCurrencyPair(options: {
 export async function givenServiceSettings(options: {
   markupBps?: number;
   minExchangeAmount?: string;
-  unpaidRequestTtlMinutes?: number;
+  unpaidExchangeRequestTtlMinutes?: number;
 }): Promise<void> {
   await db.update(serviceSettings).set(options).where(eq(serviceSettings.id, 1));
 }

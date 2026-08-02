@@ -7,7 +7,7 @@ import type {
   PreliminaryQuoteView,
   RequisitesView,
 } from '@nemo/core';
-import type { ExchangeKind, ExchangeRequestStatus } from '@nemo/types';
+import { Money, type Amount, type ExchangeKind, type ExchangeRequestStatus } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import {
   KIND_LABELS,
@@ -21,7 +21,6 @@ import {
   formatDate,
   formatMoney,
   formatRate,
-  isBelow,
   normalizeTyped,
   parseAmount,
   shortId,
@@ -251,20 +250,23 @@ export function ExchangeScreen() {
   const electronic = kind === 'electronic';
 
   /**
-   * Рублёвая сторона заявки — с ней сравнивается минимальная сумма
-   * обмена. Рубли клиент либо отдаёт, и тогда это введённая сумма, либо
-   * получает — и тогда её называет курс. Без курса стороны нет, и
-   * порога экран не показывает: ядро его в этом случае тоже не
-   * проверяет.
+   * Действует ли минимальная сумма на эту заявку. Рубли клиент либо
+   * отдаёт — тогда рублёвая сторона это введённая сумма, — либо
+   * получает, и тогда её называет курс. Без курса стороны нет, и ядро
+   * порога не проверяет; экран о нём тогда молчит, потому что число, ни
+   * на что не влияющее, читается как обещание.
    */
-  const rubles = !terms
-    ? null
-    : fromCode === terms.minAmountCode
-      ? (parseAmount(amount) || null)
-      : toCode === terms.minAmountCode
-        ? quote?.toAmount ?? null
-        : null;
-  const belowMinimum = Boolean(terms && rubles && isBelow(rubles, terms.minAmount));
+  const minimumApplies = Boolean(
+    terms &&
+      (fromCode === terms.minAmountCode ||
+        (toCode === terms.minAmountCode && quote !== null)),
+  );
+  const rubles = terms
+    ? rubleSide(terms.minAmountCode, { fromCode, toCode }, amount, quote)
+    : null;
+  const belowMinimum = Boolean(
+    terms && rubles && Money.compare(rubles, terms.minAmount) < 0,
+  );
 
   const ready =
     !busy &&
@@ -422,7 +424,7 @@ export function ExchangeScreen() {
               заявку, которую сервис заведомо не примет, клиент не должен
               успеть подать.
             */}
-            {terms
+            {terms && minimumApplies
               ? ` Минимальная сумма обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
               : ''}
             {electronic && !requisites
@@ -599,6 +601,30 @@ function CodePicker({
       ) : undefined}
     </span>
   );
+}
+
+/**
+ * Рублёвая сторона заявки — та, с которой сравнивается минимальная
+ * сумма обмена.
+ *
+ * Зеркалит правило ядра (`rubleSideOf` в `exchange-requests.ts`):
+ * отказывает всё равно операция, а экран лишь не даёт подать заявку,
+ * про которую уже известно, что её отвергнут.
+ */
+function rubleSide(
+  rubleCode: string,
+  direction: { fromCode: string; toCode: string },
+  amount: string,
+  quote: PreliminaryQuoteView | null,
+): Amount | null {
+  if (direction.fromCode === rubleCode) {
+    // Введённое человеком проверяется той же схемой, что и на сервере:
+    // до первой цифры и на полпути к ней в поле лежит не число.
+    const typed = Money.amountSchema.safeParse(parseAmount(amount));
+    return typed.success ? typed.data : null;
+  }
+  if (direction.toCode === rubleCode) return quote?.toAmount ?? null;
+  return null;
 }
 
 /**

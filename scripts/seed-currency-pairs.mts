@@ -1,4 +1,4 @@
-import { notInArray } from 'drizzle-orm';
+import { notInArray, or } from 'drizzle-orm';
 import { createDatabase } from '@nemo/core';
 import { currencies, currencyPairs } from '@nemo/db';
 
@@ -72,24 +72,23 @@ async function main(): Promise<void> {
     }
 
     // Направления удаляются раньше валют: справочник валют они держат
-    // ссылкой, и обратный порядок упёрся бы в неё.
+    // ссылкой, и обратный порядок упёрся бы в неё. Направление лишнее,
+    // если чужая хотя бы одна его сторона.
     const droppedPairs = await db
       .delete(currencyPairs)
-      .where(notInArray(currencyPairs.fromCode, codes))
-      .returning({ id: currencyPairs.id });
-    const droppedReverse = await db
-      .delete(currencyPairs)
-      .where(notInArray(currencyPairs.toCode, codes))
+      .where(
+        or(notInArray(currencyPairs.fromCode, codes), notInArray(currencyPairs.toCode, codes)),
+      )
       .returning({ id: currencyPairs.id });
     const droppedCurrencies = await db
       .delete(currencies)
       .where(notInArray(currencies.code, codes))
       .returning({ code: currencies.code });
 
-    const removed = droppedPairs.length + droppedReverse.length;
-    if (removed > 0 || droppedCurrencies.length > 0) {
+    if (droppedPairs.length > 0 || droppedCurrencies.length > 0) {
       console.log(
-        `Убрано лишнего: направлений ${removed}, валют ${droppedCurrencies.length} ` +
+        `Убрано лишнего: направлений ${droppedPairs.length}, ` +
+          `валют ${droppedCurrencies.length} ` +
           `(${droppedCurrencies.map((one) => one.code).join(', ')})`,
       );
     }

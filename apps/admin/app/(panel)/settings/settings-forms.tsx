@@ -42,7 +42,7 @@ export function SettingsForms({
   const [minWithdrawal, setMinWithdrawal] = useState<string>(settings.minWithdrawalAmount);
   const [markup, setMarkup] = useState(String(settings.markupBps));
   const [minExchange, setMinExchange] = useState<string>(settings.minExchangeAmount);
-  const [ttlMinutes, setTtlMinutes] = useState(String(settings.unpaidRequestTtlMinutes));
+  const [ttlMinutes, setTtlMinutes] = useState(String(settings.unpaidExchangeRequestTtlMinutes));
 
   const [newTelegram, setNewTelegram] = useState('');
   const [newName, setNewName] = useState('');
@@ -159,7 +159,6 @@ export function SettingsForms({
             className="btn btn--gold"
             onClick={() =>
               send('/api/settings', {
-                subject: 'service',
                 referralLine1Bps: Number(line1),
                 referralLine2Bps: Number(line2),
                 minWithdrawalAmount: minWithdrawal.replace(',', '.').trim(),
@@ -215,10 +214,9 @@ export function SettingsForms({
             className="btn btn--gold"
             onClick={() =>
               send('/api/settings', {
-                subject: 'service',
                 markupBps: Number(markup),
                 minExchangeAmount: minExchange.replace(',', '.').trim(),
-                unpaidRequestTtlMinutes: Number(ttlMinutes),
+                unpaidExchangeRequestTtlMinutes: Number(ttlMinutes),
               })
             }
           >

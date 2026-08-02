@@ -54,37 +54,6 @@ export function normalizeTyped(input: string): string {
   return TYPED_AMOUNT.test(cleaned) ? formatAmount(cleaned.replace(',', '.')) : input;
 }
 
-/**
- * Меньше ли сумма порога. Обе величины — неотрицательные десятичные
- * строки: экран сравнивает введённое с минимальной суммой обмена, и
- * отрицательных среди них нет.
- *
- * Сравнение посимвольное, а не через `Number`: то же правило, по
- * которому здесь сделано и форматирование. Тянуть в браузерный бандл
- * арифметику произвольной точности ради одного сравнения не стоит, а
- * терять на нём знаки — тем более.
- */
-export function isBelow(value: string, threshold: string): boolean {
-  const [valueWhole, valueFraction] = splitDecimal(value);
-  const [thresholdWhole, thresholdFraction] = splitDecimal(threshold);
-
-  // Без ведущих нулей длина целой части и есть порядок числа, а при
-  // равной длине строки сравниваются как числа — посимвольно.
-  if (valueWhole.length !== thresholdWhole.length) {
-    return valueWhole.length < thresholdWhole.length;
-  }
-  if (valueWhole !== thresholdWhole) return valueWhole < thresholdWhole;
-
-  const width = Math.max(valueFraction.length, thresholdFraction.length);
-  return valueFraction.padEnd(width, '0') < thresholdFraction.padEnd(width, '0');
-}
-
-/** Целая часть без ведущих нулей и дробная как есть. */
-function splitDecimal(value: string): [string, string] {
-  const [whole = '', fraction = ''] = value.split('.');
-  return [whole.replace(/^0+(?=\d)/, '') || '0', fraction];
-}
-
 /** Сумма с кодом валюты — так, как она читается вслух. */
 export function formatMoney(value: string, code: string): string {
   return `${formatAmount(value)} ${code}`;
