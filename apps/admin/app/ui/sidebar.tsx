@@ -21,12 +21,14 @@ export interface SidebarCounts {
   readonly exchange: number;
   readonly withdrawals: number;
   readonly cards: number;
+  /** Клиенты, ждущие ответа: столько же работы, сколько в очередях. */
+  readonly conversations: number;
 }
 
 interface Item {
   readonly href: string;
   readonly label: string;
-  readonly icon: 'exchange' | 'withdrawal' | 'card' | 'settings' | 'log';
+  readonly icon: 'exchange' | 'withdrawal' | 'card' | 'chat' | 'settings' | 'log';
   readonly count?: number | undefined;
 }
 
@@ -45,6 +47,12 @@ export function Sidebar({
     { href: '/', label: 'Обмен', icon: 'exchange', count: counts.exchange },
     { href: '/withdrawals', label: 'Вывод', icon: 'withdrawal', count: counts.withdrawals },
     { href: '/card-applications', label: 'Карты', icon: 'card', count: counts.cards },
+    {
+      href: '/conversations',
+      label: 'Обращения',
+      icon: 'chat',
+      count: counts.conversations,
+    },
   ];
   const admin: readonly Item[] = [
     { href: '/settings', label: 'Настройки', icon: 'settings' },
@@ -152,6 +160,13 @@ function Icon({ name }: { name: Item['icon'] }) {
         <svg {...common}>
           <rect x="3" y="5" width="18" height="14" rx="3" />
           <path d="M3 10h18M7 15h3" />
+        </svg>
+      );
+    case 'chat':
+      return (
+        <svg {...common}>
+          <path d="M4 5h16v11H9l-5 4z" />
+          <path d="M8 10h8" />
         </svg>
       );
     case 'settings':

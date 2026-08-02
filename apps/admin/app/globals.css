@@ -856,3 +856,67 @@ select.input {
     padding: 22px var(--gutter) 48px;
   }
 }
+
+/* ── Диалоговое окно переписки ───────────────────────────────────── */
+
+/*
+  Разговор читают, а не расшифровывают список строк: стороны разведены
+  по краям, и кто написал, видно до чтения текста.
+*/
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dialog__feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 76%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.bubble--in {
+  align-self: flex-start;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.06));
+  border-bottom-left-radius: 4px;
+}
+
+.bubble--out {
+  align-self: flex-end;
+  background: rgba(217, 190, 134, 0.16);
+  border-bottom-right-radius: 4px;
+}
+
+.bubble__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Вложение уже обрезано по ширине пузыря: чек читают, а не разглядывают. */
+.bubble__image {
+  max-width: 100%;
+  border-radius: 10px;
+}
+
+.bubble__meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.dialog__reply {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}

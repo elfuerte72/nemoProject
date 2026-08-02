@@ -51,7 +51,18 @@ import {
 } from './networks.js';
 import { getQuote, type QuoteInput } from './rates.js';
 import {
+  countUnansweredConversations,
+  listConversation,
+  listConversations,
+  receiveClientMessage,
+  replyToClient,
+  takeStaffNotifications,
+  type ReceiveMessageInput,
+  type ReplyInput,
+} from './conversations.js';
+import {
   listRequisiteAccessLog,
+  revealMessageAttachment,
   revealRequisites,
   type RequisiteAccessFilter,
 } from './requisite-access.js';
@@ -198,6 +209,18 @@ export function createCore(ctx: CoreConfig) {
 
     revealRequisites: (actor: Actor, exchangeRequestId: string) =>
       revealRequisites(ctx, actor, exchangeRequestId),
+    revealMessageAttachment: (actor: Actor, messageId: string) =>
+      revealMessageAttachment(ctx, actor, messageId),
+
+    // Приём сообщения — без актора: клиента подтверждает подпись
+    // вебхука Telegram, и он же им и является.
+    receiveClientMessage: (input: ReceiveMessageInput) => receiveClientMessage(ctx, input),
+    replyToClient: (actor: Actor, input: ReplyInput) => replyToClient(ctx, actor, input),
+    listConversation: (actor: Actor, clientId: bigint) =>
+      listConversation(ctx, actor, clientId),
+    listConversations: (actor: Actor) => listConversations(ctx, actor),
+    countUnansweredConversations: (actor: Actor) => countUnansweredConversations(ctx, actor),
+    takeStaffNotifications: (at: Date) => takeStaffNotifications(ctx, at),
     listRequisiteAccessLog: (actor: Actor, filter?: RequisiteAccessFilter) =>
       listRequisiteAccessLog(ctx, actor, filter),
 
@@ -302,6 +325,12 @@ export type {
   RequisiteAccessFilter,
   RevealedRequisites,
 } from './requisite-access.js';
+export type {
+  ConversationView,
+  MessageView,
+  ReceiveMessageInput,
+  ReplyInput,
+} from './conversations.js';
 export type { BroadcastProgress, BroadcastView, StartedBroadcast } from './broadcasts.js';
 export type { StaffSession } from './staff.js';
 export type {

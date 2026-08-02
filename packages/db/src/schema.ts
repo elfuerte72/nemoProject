@@ -1,5 +1,6 @@
 import {
   bigint,
+  bigserial,
   boolean,
   check,
   customType,
@@ -83,6 +84,9 @@ export const bonusTransactionKindEnum = pgEnum('bonus_transaction_kind', [
 ]);
 
 export const actorTypeEnum = pgEnum('actor_type', ['system', 'client', 'manager']);
+
+/** Кто кому написал. Лента одна на клиента, и направление — её единственная ось. */
+export const messageDirectionEnum = pgEnum('message_direction', ['incoming', 'outgoing']);
 
 /**
  * Настройки сервиса: единственная строка, `id` всегда 1.
@@ -609,6 +613,72 @@ export const broadcasts = pgTable('broadcasts', {
 });
 
 /**
+ * Переписка клиента с менеджером.
+ *
+ * Лента одна на клиента: тредов по заявкам нет, потому что у клиента в
+ * Telegram одно окно, и тред существовал бы только на стороне менеджера.
+ * Сообщение может ссылаться на заявку — так работает кнопка «написать»
+ * из карточки, — но лента остаётся общей.
+ *
+ * Клиент здесь ссылка на строку клиента, а не текст и не имя: по ней и
+ * собирается лента, и проверяется, чья она.
+ *
+ * Отдельного поля «клиент не отвечен» нет: неотвеченным считается тот,
+ * у кого последнее сообщение входящее. Поле состояния пришлось бы
+ * поддерживать в согласии с самой лентой, а расходится оно молча.
+ */
+export const clientMessages = pgTable(
+  'client_messages',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    /**
+     * Порядок в ленте. Время создания два сообщения, вставленные в одну
+     * миллисекунду, не разводит, а от порядка зависит, считается клиент
+     * отвеченным или нет.
+     */
+    seq: bigserial('seq', { mode: 'bigint' }).notNull().unique(),
+    clientId: bigint('client_id', { mode: 'bigint' })
+      .notNull()
+      .references(() => clients.telegramUserId, { onDelete: 'cascade' }),
+    direction: messageDirectionEnum('direction').notNull(),
+    body: text('body'),
+    /**
+     * Вложение — идентификатор файла у Telegram, а не сам файл. На
+     * дисках сервиса чужих номеров карт не появляется; панель
+     * подтягивает изображение по требованию.
+     */
+    attachmentFileId: text('attachment_file_id'),
+    /** Кто из сотрудников ответил. Только у исходящих. */
+    authorStaffId: uuid('author_staff_id').references(() => staff.id),
+    exchangeRequestId: uuid('exchange_request_id').references(() => exchangeRequests.id),
+    /**
+     * Когда клиенту ушло подтверждение приёма. Ставится условно и
+     * однажды на череду сообщений: два сообщения подряд не должны дать
+     * два одинаковых ответа.
+     */
+    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+    /** Когда об обращении сообщили сотрудникам. */
+    staffNotifiedAt: timestamp('staff_notified_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('client_messages_client_idx').on(table.clientId, table.seq),
+    // Автор есть ровно у исходящего: у входящего им был бы клиент, а он
+    // и так записан ссылкой.
+    check(
+      'client_messages_author_for_outgoing',
+      sql`(${table.direction} = 'outgoing') = (${table.authorStaffId} is not null)`,
+    ),
+    // Пустое сообщение не сообщение: в ленте оно выглядит потерянным
+    // текстом, и разбираться в нём будет менеджер.
+    check(
+      'client_messages_not_empty',
+      sql`${table.body} is not null or ${table.attachmentFileId} is not null`,
+    ),
+  ],
+);
+
+/**
  * Журнал доступа к расшифрованным реквизитам (docs/adr/0002). Только
  * добавление: восстановить задним числом, кто и когда видел номер карты,
  * иначе невозможно.
@@ -631,6 +701,11 @@ export const requisiteAccessLog = pgTable(
     withdrawalRequestId: uuid('withdrawal_request_id').references(
       () => withdrawalRequests.id,
     ),
+    /**
+     * Вложение, присланное клиентом. Такой же чувствительный документ,
+     * как номер карты: на скриншоте перевода видно и счёт, и имя.
+     */
+    messageId: uuid('message_id').references(() => clientMessages.id),
     /** Чьи реквизиты открывали. Хранится явно: ссылка бывает разной. */
     clientId: bigint('client_id', { mode: 'bigint' })
       .notNull()
@@ -642,10 +717,13 @@ export const requisiteAccessLog = pgTable(
     index('requisite_access_log_requisites_idx').on(table.requisitesId),
     index('requisite_access_log_client_idx').on(table.clientId),
     // Запись без предмета не отвечает на вопрос, ради которого журнал
-    // ведётся: что именно сотрудник открыл.
+    // ведётся: что именно сотрудник открыл. Предмет ровно один: две
+    // ссылки в одной строке означали бы два обращения, слитых в одно.
     check(
       'requisite_access_log_subject',
-      sql`(${table.requisitesId} is not null) <> (${table.withdrawalRequestId} is not null)`,
+      sql`(case when ${table.requisitesId} is not null then 1 else 0 end
+        + case when ${table.withdrawalRequestId} is not null then 1 else 0 end
+        + case when ${table.messageId} is not null then 1 else 0 end) = 1`,
     ),
   ],
 );

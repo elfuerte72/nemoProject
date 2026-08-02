@@ -16,6 +16,14 @@ import { renderNotification, type Notification } from '@nemo/core';
 
 export interface DeliveryOptions {
   readonly botToken: string;
+  /**
+   * Адрес панели. Задан — под уведомлением сотруднику появляется кнопка
+   * перехода: разбирать обращение он всё равно идёт туда, и заставлять
+   * его искать вкладку значило бы терять минуты на каждом вопросе.
+   *
+   * Знает его адаптер, а не ядро: адрес — свойство развёртывания.
+   */
+  readonly panelUrl?: string | undefined;
 }
 
 export async function deliverNotifications(
@@ -24,9 +32,7 @@ export async function deliverNotifications(
 ): Promise<void> {
   if (notifications.length === 0) return;
 
-  await Promise.all(
-    notifications.map((notification) => send(notification, options.botToken)),
-  );
+  await Promise.all(notifications.map((notification) => send(notification, options)));
 }
 
 /**
@@ -34,9 +40,11 @@ export async function deliverNotifications(
  * и деньги учтены независимо от того, дошло ли сообщение. Клиент,
  * заблокировавший бота, не должен ломать работу менеджера.
  */
-async function send(notification: Notification, botToken: string): Promise<void> {
+async function send(notification: Notification, options: DeliveryOptions): Promise<void> {
   try {
-    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    const response = await fetch(
+      `https://api.telegram.org/bot${options.botToken}/sendMessage`,
+      {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -44,6 +52,7 @@ async function send(notification: Notification, botToken: string): Promise<void>
         // приведении к `number` он однажды потеряет точность.
         chat_id: notification.to.toString(),
         text: renderNotification(notification),
+        ...panelButton(notification, options.panelUrl),
       }),
     });
     if (!response.ok) {
@@ -52,6 +61,21 @@ async function send(notification: Notification, botToken: string): Promise<void>
   } catch (error) {
     console.error('Не удалось отправить уведомление', notification.kind, error);
   }
+}
+
+/**
+ * Кнопка под уведомлением — только у обращений и только сотруднику:
+ * клиенту в панель нельзя, а по остальным поводам идти туда незачем.
+ */
+function panelButton(notification: Notification, panelUrl: string | undefined) {
+  if (notification.kind !== 'staff-client-message' || !panelUrl) return {};
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: 'Открыть в панели', url: `${panelUrl}/${notification.clientId}` }],
+      ],
+    },
+  };
 }
 
 /** Токен бота из окружения. Общий у обоих приложений — бот один. */

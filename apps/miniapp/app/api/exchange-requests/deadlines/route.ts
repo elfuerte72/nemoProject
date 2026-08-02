@@ -26,7 +26,7 @@ export const dynamic = 'force-dynamic';
  * «осталось несколько минут» — и следом отмену.
  */
 export async function POST(request: Request): Promise<Response> {
-  const expected = process.env.DEADLINES_SECRET;
+  const expected = process.env.SCHEDULER_SECRET;
   if (!expected) {
     return new Response('Проверка сроков не настроена', { status: 500 });
   }

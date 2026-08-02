@@ -69,6 +69,29 @@ export type Notification =
       readonly kind: 'card-application-status';
       readonly to: bigint;
       readonly status: CardApplicationStatus;
+    }
+  | {
+      /** Подтверждение приёма — однажды на череду сообщений клиента. */
+      readonly kind: 'client-message-received';
+      readonly to: bigint;
+    }
+  | {
+      /** Ответ менеджера. Доставляет его бот, которого клиент запускал. */
+      readonly kind: 'manager-message';
+      readonly to: bigint;
+      readonly body: string;
+    }
+  | {
+      /**
+       * Новое обращение — сотруднику. Уходит от бота входа в админку:
+       * он уже запущен у каждого, иначе тот не смог бы войти
+       * (docs/adr/0005).
+       */
+      readonly kind: 'staff-client-message';
+      readonly to: bigint;
+      readonly clientId: bigint;
+      readonly clientUsername: string | null;
+      readonly preview: string;
     };
 
 /**
@@ -102,6 +125,20 @@ export function renderNotification(notification: Notification): string {
       return renderWithdrawalRequestStatus(notification);
     case 'card-application-status':
       return renderCardApplicationStatus(notification.status);
+    case 'client-message-received':
+      return (
+        'Вопрос принят — менеджер ответит здесь же. ' +
+        'Можно закрыть приложение: ответ придёт в этот чат.'
+      );
+    case 'manager-message':
+      // Текст менеджера уходит как есть: обрамление вроде «менеджер
+      // пишет» превратило бы разговор в переписку с автоответчиком.
+      return notification.body;
+    case 'staff-client-message':
+      return (
+        `Новое обращение от клиента ${notification.clientUsername ?? notification.clientId}:\n` +
+        notification.preview
+      );
   }
 }
 

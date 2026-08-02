@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, lte, type SQL } from 'drizzle-orm';
 import { open } from '@nemo/crypto';
 import {
+  clientMessages,
   clientRequisites,
   exchangeRequests,
   requisiteAccessLog,
@@ -50,6 +51,8 @@ export interface RequisiteAccessEntry {
   readonly clientId: bigint;
   readonly exchangeRequestId: string | null;
   readonly withdrawalRequestId: string | null;
+  /** Вложение из переписки, если открывали его. */
+  readonly messageId: string | null;
   /** Что именно открывали. Пусто у реквизитов заявки на вывод: записи в справочнике нет. */
   readonly requisiteKind: RequisiteKind | null;
   readonly requisiteHint: string | null;
@@ -69,6 +72,7 @@ export async function logRequisiteAccess(
     requisitesId?: string;
     exchangeRequestId?: string;
     withdrawalRequestId?: string;
+    messageId?: string;
   },
 ): Promise<void> {
   await executor.insert(requisiteAccessLog).values({
@@ -77,6 +81,53 @@ export async function logRequisiteAccess(
     requisitesId: entry.requisitesId ?? null,
     exchangeRequestId: entry.exchangeRequestId ?? null,
     withdrawalRequestId: entry.withdrawalRequestId ?? null,
+    messageId: entry.messageId ?? null,
+  });
+}
+
+/**
+ * Вложение, присланное клиентом, — менеджеру, который его открывает.
+ *
+ * Возвращается идентификатор файла у Telegram: сам файл сервис не
+ * хранит, панель подтягивает изображение по нему клиентским токеном.
+ * Обращение попадает в тот же журнал, что и чтение номера карты, и в
+ * той же транзакции: на скриншоте перевода видно и счёт, и имя, и след
+ * от просмотра нужен по той же причине.
+ *
+ * Без открытия изображения записи не появляется: операцию зовёт ровно
+ * тот маршрут, который отдаёт файл.
+ */
+export async function revealMessageAttachment(
+  ctx: CoreConfig,
+  actor: Actor,
+  messageId: string,
+): Promise<string> {
+  const staffActor = requireStaff(actor);
+
+  return ctx.db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        clientId: clientMessages.clientId,
+        attachmentFileId: clientMessages.attachmentFileId,
+      })
+      .from(clientMessages)
+      .where(eq(clientMessages.id, messageId))
+      .limit(1);
+
+    if (!row) {
+      throw new NotFoundError('Сообщение не найдено');
+    }
+    if (!row.attachmentFileId) {
+      throw new NotFoundError('К сообщению не приложено изображение');
+    }
+
+    await logRequisiteAccess(tx, {
+      staffId: staffActor.staffId,
+      clientId: row.clientId,
+      messageId,
+    });
+
+    return row.attachmentFileId;
   });
 }
 
@@ -177,6 +228,7 @@ export async function listRequisiteAccessLog(
       clientId: requisiteAccessLog.clientId,
       exchangeRequestId: requisiteAccessLog.exchangeRequestId,
       withdrawalRequestId: requisiteAccessLog.withdrawalRequestId,
+      messageId: requisiteAccessLog.messageId,
       accessedAt: requisiteAccessLog.accessedAt,
       requisites: clientRequisites,
     })
