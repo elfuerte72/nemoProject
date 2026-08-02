@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { BonusAccountView, WithdrawalRequestView } from '@nemo/core';
-import { withdrawalNetworks, type WithdrawalMethod, type WithdrawalNetwork } from '@nemo/types';
+import type { WithdrawalMethod } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { formatAmount, formatDate, parseAmount, shortId } from '@/lib/format';
 import {
@@ -13,6 +13,7 @@ import {
 import { getWebApp } from '@/lib/telegram/webapp';
 import { InviteIcon, WithdrawIcon } from './ui/icons';
 import { MarketingConsentToggle } from './marketing-consent';
+import { addressLabel, NetworkPicker } from './ui/network-picker';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
 /**
@@ -282,10 +283,28 @@ function WithdrawSheet({
 }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<WithdrawalMethod>('bank');
-  const [network, setNetwork] = useState<WithdrawalNetwork>(withdrawalNetworks[0]);
+  const [network, setNetwork] = useState('');
   const [destination, setDestination] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+
+  /*
+   * Сети берутся из справочника, а не из перечисления в коде: сеть, в
+   * которой кошелёк сервиса временно недоступен, администратор гасит из
+   * панели, и предлагать её клиенту после этого нельзя.
+   */
+  const [networks, setNetworks] = useState<string[]>([]);
+
+  useEffect(() => {
+    void get<{ networks: string[] }>('/api/networks')
+      .then((result) => {
+        setNetworks(result.networks);
+        setNetwork((current) => current || (result.networks[0] ?? ''));
+      })
+      // Молчание справочника — не поломка формы: выплату на счёт оно не
+      // трогает, а про криптовалюту скажет пустой список сетей.
+      .catch(() => setNetworks([]));
+  }, []);
 
   async function submit() {
     setError(undefined);
@@ -337,31 +356,17 @@ function WithdrawSheet({
             className="input"
           />
         </label>
-        {/*
-          Сеть спрашивается до адреса: он в разных сетях выглядит
-          одинаково, и перевод не в ту не возвращается.
-        */}
         {method === 'crypto' ? (
-          <div className="field">
-            <span className="field__label">Сеть</span>
-            <div className="chips">
-              {withdrawalNetworks.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setNetwork(value)}
-                  aria-pressed={network === value}
-                  className="chips__item"
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </div>
+          <NetworkPicker
+            networks={networks}
+            selected={network}
+            empty="Сети временно недоступны — выплату можно получить на счёт или спросить менеджера."
+            onPick={setNetwork}
+          />
         ) : undefined}
         <label className="field">
           <span className="field__label">
-            {method === 'bank' ? 'Счёт или карта' : `Адрес кошелька в сети ${network}`}
+            {method === 'bank' ? 'Счёт или карта' : addressLabel(network)}
           </span>
           <input
             value={destination}
@@ -378,7 +383,14 @@ function WithdrawSheet({
         <button
           type="button"
           onClick={() => void submit()}
-          disabled={busy || !amount.trim() || !destination.trim()}
+          disabled={
+            busy ||
+            !amount.trim() ||
+            !destination.trim() ||
+            // Криптоперевод без сети отправить некуда: тот же адрес
+            // живёт в нескольких, и выбор наугад — потерянные деньги.
+            (method === 'crypto' && !network)
+          }
           className="btn btn--gold"
         >
           Подать заявку на вывод

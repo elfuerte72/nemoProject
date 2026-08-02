@@ -30,9 +30,10 @@ export default async function RequestPage({
    * стоило бы. Всё остальное пробрасывается: отказавшая база — как раз
    * авария, и прятать её за «не найдено» значит её потерять.
    */
-  const [request, events] = await Promise.all([
+  const [request, events, templates] = await Promise.all([
     core.getExchangeRequestForStaff(actor, id),
     core.listExchangeRequestEvents(actor, id),
+    core.listTextTemplates(actor),
   ]).catch((error: unknown) => {
     if (error instanceof CoreError && error.code === 'not-found') {
       notFound();
@@ -44,6 +45,7 @@ export default async function RequestPage({
     <ExchangeRequestCard
       request={{ ...request, clientId: request.clientId.toString() }}
       events={events}
+      templates={templates}
       viewerStaffId={actor.staffId}
     />
   );

@@ -6,9 +6,11 @@ import {
   requisiteAccessLog,
   staff,
 } from '@nemo/db';
+import type { RequisiteKind } from '@nemo/types';
 import { requireAdmin, requireStaff, type Actor } from './actor.js';
 import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
 import { ForbiddenError, NotFoundError } from './errors.js';
+import { describeRequisites } from './requisites.js';
 
 /**
  * Чтение полного номера карты менеджером и журнал таких чтений.
@@ -29,11 +31,16 @@ import { ForbiddenError, NotFoundError } from './errors.js';
  */
 
 export interface RevealedRequisites {
+  /** Способ получения. Менеджер читает его словами, а не по заполненным полям. */
+  readonly kind: RequisiteKind;
   readonly bankName: string | null;
   readonly phone: string | null;
   /** Полный номер карты. Показывается менеджеру и нигде не хранится. */
   readonly cardNumber: string | null;
   readonly cardLast4: string | null;
+  /** Сеть кошелька. Ошибка сети необратима, поэтому она идёт рядом с адресом. */
+  readonly network: string | null;
+  readonly address: string | null;
 }
 
 export interface RequisiteAccessEntry {
@@ -43,6 +50,9 @@ export interface RequisiteAccessEntry {
   readonly clientId: bigint;
   readonly exchangeRequestId: string | null;
   readonly withdrawalRequestId: string | null;
+  /** Что именно открывали. Пусто у реквизитов заявки на вывод: записи в справочнике нет. */
+  readonly requisiteKind: RequisiteKind | null;
+  readonly requisiteHint: string | null;
   readonly accessedAt: Date;
 }
 
@@ -123,10 +133,13 @@ export async function revealRequisites(
     });
 
     return {
+      kind: row.kind,
       bankName: row.bankName,
       phone: row.phone,
       cardNumber: row.cardSealed ? open(privateKey, row.cardSealed) : null,
       cardLast4: row.cardLast4,
+      network: row.network,
+      address: row.addressSealed ? open(privateKey, row.addressSealed) : null,
     };
   });
 }
@@ -153,9 +166,9 @@ export async function listRequisiteAccessLog(
   if (filter.from) conditions.push(gte(requisiteAccessLog.accessedAt, filter.from));
   if (filter.to) conditions.push(lte(requisiteAccessLog.accessedAt, filter.to));
 
-  // Соединение только с сотрудником: клиент теперь записан в самой
-  // строке, а реквизит бывает двух родов — соединение с картой выкинуло
-  // бы из журнала обращения к реквизитам вывода.
+  // С сотрудником — обязательно, с реквизитом — по возможности: реквизит
+  // бывает двух родов, и обязательное соединение с сохранённой записью
+  // выкинуло бы из журнала обращения к реквизитам вывода.
   const rows = await ctx.db
     .select({
       id: requisiteAccessLog.id,
@@ -165,11 +178,20 @@ export async function listRequisiteAccessLog(
       exchangeRequestId: requisiteAccessLog.exchangeRequestId,
       withdrawalRequestId: requisiteAccessLog.withdrawalRequestId,
       accessedAt: requisiteAccessLog.accessedAt,
+      requisites: clientRequisites,
     })
     .from(requisiteAccessLog)
     .innerJoin(staff, eq(staff.id, requisiteAccessLog.staffId))
+    .leftJoin(clientRequisites, eq(clientRequisites.id, requisiteAccessLog.requisitesId))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(requisiteAccessLog.accessedAt));
 
-  return rows;
+  // Что именно открывали — той же подписью, по которой запись называется
+  // клиенту в приложении: администратор и клиент говорят про один
+  // реквизит и должны узнавать его одинаково.
+  return rows.map(({ requisites, ...entry }) => ({
+    ...entry,
+    requisiteKind: requisites?.kind ?? null,
+    requisiteHint: requisites === null ? null : describeRequisites(requisites),
+  }));
 }

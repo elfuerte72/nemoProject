@@ -3,15 +3,16 @@ import { generateRequisiteKeyPair } from '@nemo/crypto';
 import { clientRequisites } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, InvalidInputError, NotFoundError } from './index.js';
-import { asClient, givenCurrencyPair } from './test-support.js';
+import { asClient, givenCurrencyPair, givenNetwork } from './test-support.js';
 
 /**
  * Реквизиты клиента — куда сервис отправляет деньги.
  *
- * Номер карты в системе есть, но прочитать его клиентское приложение не
- * может: там нет приватного ключа (docs/adr/0002). Проверяется здесь
- * именно это — не «шифрование вызвано», а «открытого номера в базе
- * нет», потому что защищает клиента только второе.
+ * Запись описывает один способ получения целиком: перевод по телефону,
+ * на карту или на кошелёк. Проверяется здесь именно это — что неполной
+ * записи не существует и что открытого номера в базе нет, — потому что
+ * защищает клиента только второе, а первое защищает его деньги от
+ * заявки, которую нельзя исполнить.
  */
 
 const keys = generateRequisiteKeyPair();
@@ -19,20 +20,24 @@ const db = testDatabase();
 const core = createCore({ db, requisites: { publicKey: keys.publicKey } });
 
 const CARD = '4276 3800 1234 5678';
+const ADDRESS = 'TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e';
 
 beforeEach(async () => {
   await resetDatabase();
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
+  await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USDT', kind: 'electronic' });
+  await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
+  await givenNetwork('TRC20');
   await core.registerClient({ telegramUserId: 100n });
 });
 
 afterAll(() => closeTestDatabase());
 
-describe('сохранённые реквизиты', () => {
-  it('показывают клиенту только последние четыре цифры', async () => {
+describe('перевод на карту', () => {
+  it('показывает клиенту только последние четыре цифры', async () => {
     const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
       bankName: 'Тинькофф',
-      phone: '+79990000000',
       cardNumber: CARD,
     });
 
@@ -40,8 +45,12 @@ describe('сохранённые реквизиты', () => {
     expect(JSON.stringify(saved)).not.toContain('4276');
   });
 
-  it('не оставляют открытого номера в базе', async () => {
-    await core.saveRequisites(asClient(100n), { cardNumber: CARD });
+  it('не оставляет открытого номера в базе', async () => {
+    await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
+      cardNumber: CARD,
+    });
 
     const [row] = await db.select().from(clientRequisites);
 
@@ -50,80 +59,348 @@ describe('сохранённые реквизиты', () => {
     expect(row!.cardSealed!.toString('utf8')).not.toContain('12345678');
   });
 
-  it('отдаются клиенту как текущие', async () => {
-    await core.saveRequisites(asClient(100n), { bankName: 'Тинькофф', cardNumber: CARD });
-
-    const current = await core.getRequisites(asClient(100n));
-
-    expect(current?.bankName).toBe('Тинькофф');
-    expect(current?.cardLast4).toBe('5678');
+  it('не сохраняется без банка', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'card',
+        bankName: '  ',
+        cardNumber: CARD,
+      }),
+    ).rejects.toThrow(InvalidInputError);
   });
 
-  it('отсутствуют, пока клиент их не сохранил', async () => {
-    expect(await core.getRequisites(asClient(100n))).toBeNull();
+  it('отвергает номер короче четырёх цифр', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'card',
+        bankName: 'Тинькофф',
+        cardNumber: '123',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не сохраняется там, где нет ключа шифрования', async () => {
+    const withoutKey = createCore({ db });
+
+    await expect(
+      withoutKey.saveRequisites(asClient(100n), {
+        kind: 'card',
+        bankName: 'Тинькофф',
+        cardNumber: CARD,
+      }),
+    ).rejects.toThrow(/ключ/i);
   });
 });
 
-describe('замена реквизитов', () => {
-  it('делает текущими новые, а не прежние', async () => {
-    await core.saveRequisites(asClient(100n), { cardNumber: '4276380012345678' });
-
-    const replaced = await core.saveRequisites(asClient(100n), {
-      cardNumber: '5536910011112222',
-    });
-    const current = await core.getRequisites(asClient(100n));
-
-    expect(current?.id).toBe(replaced.id);
-    expect(current?.cardLast4).toBe('2222');
+describe('перевод по номеру телефона', () => {
+  it('требует банк и телефон', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), { kind: 'phone', bankName: 'Сбербанк', phone: '' }),
+    ).rejects.toThrow(InvalidInputError);
   });
 
-  it('не теряет то, что клиент не вводил заново', async () => {
-    await core.saveRequisites(asClient(100n), {
-      bankName: 'Тинькофф',
+  it('оставляет телефон открытым: по нему менеджер и отправляет перевод', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'phone',
+      bankName: 'Сбербанк',
       phone: '+79990000000',
+    });
+
+    expect(saved.phone).toBe('+79990000000');
+    expect(saved.cardLast4).toBeNull();
+  });
+});
+
+describe('перевод на кошелёк', () => {
+  it('показывает клиенту только края адреса', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'wallet',
+      network: 'TRC20',
+      address: ADDRESS,
+    });
+
+    expect(saved.network).toBe('TRC20');
+    // Четыре знака с начала и четыре с конца — посчитано по самой
+    // строке выше, а не тем же кодом, что собирает подсказку.
+    expect(saved.addressHint).toBe('TQmX…aU6e');
+    expect(JSON.stringify(saved)).not.toContain(ADDRESS);
+  });
+
+  it('не оставляет открытого адреса в базе', async () => {
+    await core.saveRequisites(asClient(100n), {
+      kind: 'wallet',
+      network: 'TRC20',
+      address: ADDRESS,
+    });
+
+    const [row] = await db.select().from(clientRequisites);
+
+    expect(row!.addressSealed).toBeInstanceOf(Buffer);
+    expect(row!.addressSealed!.toString('utf8')).not.toContain(ADDRESS);
+  });
+
+  it('не сохраняется без адреса', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), { kind: 'wallet', network: 'TRC20', address: ' ' }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не сохраняется в сети, которой сервис не знает', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'wallet',
+        network: 'ERC20',
+        address: ADDRESS,
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не сохраняется в сети, выключенной администратором', async () => {
+    await givenNetwork('TON', { isActive: false });
+
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'wallet',
+        network: 'TON',
+        address: ADDRESS,
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+});
+
+describe('список реквизитов', () => {
+  it('хранит столько записей, сколько клиенту нужно', async () => {
+    await core.saveRequisites(asClient(100n), {
+      kind: 'phone',
+      bankName: 'Сбербанк',
+      phone: '+79990000000',
+    });
+    await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
+      cardNumber: CARD,
+    });
+    await core.saveRequisites(asClient(100n), {
+      kind: 'wallet',
+      network: 'TRC20',
+      address: ADDRESS,
+    });
+
+    const saved = await core.listRequisites(asClient(100n));
+
+    expect(saved.map((one) => one.kind).sort()).toEqual(['card', 'phone', 'wallet']);
+  });
+
+  it('пуст, пока клиент ничего не сохранил', async () => {
+    expect(await core.listRequisites(asClient(100n))).toEqual([]);
+  });
+
+  it('помечает кошелёк в погашенной сети недоступным, но не прячет его', async () => {
+    // Убрать запись совсем значило бы, что она пропала сама: сеть
+    // включат обратно, а до тех пор клиент может её удалить.
+    await core.saveRequisites(asClient(100n), {
+      kind: 'wallet',
+      network: 'TRC20',
+      address: ADDRESS,
+    });
+    await givenNetwork('TRC20', { isActive: false });
+
+    const [wallet] = await core.listRequisites(asClient(100n));
+
+    expect(wallet?.network).toBe('TRC20');
+    expect(wallet?.isAvailable).toBe(false);
+  });
+
+  it('оставляет доступными карту и телефон: сети у них нет', async () => {
+    await core.saveRequisites(asClient(100n), {
+      kind: 'phone',
+      bankName: 'Сбербанк',
+      phone: '+79990000000',
+    });
+
+    const [saved] = await core.listRequisites(asClient(100n));
+
+    expect(saved?.isAvailable).toBe(true);
+  });
+
+  it('не отдаёт записи другого клиента', async () => {
+    await core.registerClient({ telegramUserId: 200n });
+    await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
       cardNumber: CARD,
     });
 
-    // Клиент меняет только карту. Телефон, по которому менеджер
-    // отправляет перевод, при этом никуда не девается.
-    const replaced = await core.saveRequisites(asClient(100n), {
-      cardNumber: '5536910011112222',
-    });
-
-    expect(replaced.cardLast4).toBe('2222');
-    expect(replaced.phone).toBe('+79990000000');
-    expect(replaced.bankName).toBe('Тинькофф');
+    expect(await core.listRequisites(asClient(200n))).toEqual([]);
   });
 
-  it('сохраняет прежние в архиве: на них ссылаются прошлые заявки', async () => {
-    const first = await core.saveRequisites(asClient(100n), { cardNumber: CARD });
+  it('не возвращает ни номера карты, ни адреса целиком', async () => {
+    await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
+      cardNumber: CARD,
+    });
+    await core.saveRequisites(asClient(100n), {
+      kind: 'wallet',
+      network: 'TRC20',
+      address: ADDRESS,
+    });
+
+    const dump = JSON.stringify(await core.listRequisites(asClient(100n)));
+
+    expect(dump).not.toContain('42763800');
+    expect(dump).not.toContain(ADDRESS);
+  });
+});
+
+describe('удаление реквизита', () => {
+  it('убирает запись из списка', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
+      cardNumber: CARD,
+    });
+
+    await core.archiveRequisites(asClient(100n), saved.id);
+
+    expect(await core.listRequisites(asClient(100n))).toEqual([]);
+  });
+
+  it('оставляет её в ранее поданной заявке: куда ушли деньги, видно и потом', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
+      cardNumber: CARD,
+    });
     const { request } = await core.submitExchangeRequest(asClient(100n), {
       kind: 'electronic',
       fromCode: 'USDT',
       toCode: 'RUB',
       fromAmount: '100',
-      requisitesId: first.id,
+      requisitesId: saved.id,
     });
 
-    await core.saveRequisites(asClient(100n), { cardNumber: '5536910011112222' });
+    await core.archiveRequisites(asClient(100n), saved.id);
 
     const stored = await core.getExchangeRequest(asClient(100n), request.id);
     expect(stored.id).toBe(request.id);
-    expect(await db.select().from(clientRequisites)).toHaveLength(2);
+    expect(await db.select().from(clientRequisites)).toHaveLength(1);
+  });
+
+  it('не даётся чужому клиенту', async () => {
+    await core.registerClient({ telegramUserId: 200n });
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
+      cardNumber: CARD,
+    });
+
+    await expect(core.archiveRequisites(asClient(200n), saved.id)).rejects.toThrow(
+      NotFoundError,
+    );
   });
 });
 
-describe('чужие реквизиты', () => {
-  it('не отдаются другому клиенту', async () => {
-    await core.registerClient({ telegramUserId: 200n });
-    await core.saveRequisites(asClient(100n), { cardNumber: CARD });
+describe('подбор реквизита при подаче заявки', () => {
+  async function givenCard(): Promise<string> {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
+      cardNumber: CARD,
+    });
+    return saved.id;
+  }
 
-    expect(await core.getRequisites(asClient(200n))).toBeNull();
+  async function givenWallet(network = 'TRC20'): Promise<string> {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'wallet',
+      network,
+      address: ADDRESS,
+    });
+    return saved.id;
+  }
+
+  it('принимает карту, когда клиент получает рубли', async () => {
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      requisitesId: await givenCard(),
+    });
+
+    expect(request.status).toBe('new');
   });
 
-  it('не принимаются в чужую заявку', async () => {
+  it('отвергает карту, когда клиент получает USDT', async () => {
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'RUB',
+        toCode: 'USDT',
+        fromAmount: '10000',
+        requisitesId: await givenCard(),
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('принимает кошелёк, когда клиент получает USDT', async () => {
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'RUB',
+      toCode: 'USDT',
+      fromAmount: '10000',
+      requisitesId: await givenWallet(),
+    });
+
+    expect(request.status).toBe('new');
+  });
+
+  it('отвергает кошелёк, когда клиент получает рубли', async () => {
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+        requisitesId: await givenWallet(),
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('отвергает кошелёк в сети, выключенной после сохранения записи', async () => {
+    const wallet = await givenWallet();
+    await givenNetwork('TRC20', { isActive: false });
+
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'RUB',
+        toCode: 'USDT',
+        fromAmount: '10000',
+        requisitesId: wallet,
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('отвергает удалённую запись', async () => {
+    const card = await givenCard();
+    await core.archiveRequisites(asClient(100n), card);
+
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+        requisitesId: card,
+      }),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it('отвергает чужую запись', async () => {
     await core.registerClient({ telegramUserId: 200n });
-    const foreign = await core.saveRequisites(asClient(100n), { cardNumber: CARD });
+    const foreign = await givenCard();
 
     await expect(
       core.submitExchangeRequest(asClient(200n), {
@@ -131,28 +408,31 @@ describe('чужие реквизиты', () => {
         fromCode: 'USDT',
         toCode: 'RUB',
         fromAmount: '100',
-        requisitesId: foreign.id,
+        requisitesId: foreign,
       }),
     ).rejects.toThrow(NotFoundError);
   });
-});
 
-describe('проверка реквизитов', () => {
-  it('отвергает номер карты короче четырёх цифр', async () => {
+  it('не спрашивает реквизитов у наличной заявки', async () => {
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'cash',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+    });
+
+    expect(request.status).toBe('new');
+  });
+
+  it('не принимает реквизитов у наличной заявки: деньги выдаются на руки', async () => {
     await expect(
-      core.saveRequisites(asClient(100n), { cardNumber: '123' }),
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'cash',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+        requisitesId: await givenCard(),
+      }),
     ).rejects.toThrow(InvalidInputError);
-  });
-
-  it('отвергает реквизиты, в которых нечего сохранять', async () => {
-    await expect(core.saveRequisites(asClient(100n), {})).rejects.toThrow(InvalidInputError);
-  });
-
-  it('не сохраняет карту там, где нет ключа шифрования', async () => {
-    const withoutKey = createCore({ db });
-
-    await expect(
-      withoutKey.saveRequisites(asClient(100n), { cardNumber: CARD }),
-    ).rejects.toThrow(/ключ/i);
   });
 });

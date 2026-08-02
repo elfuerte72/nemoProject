@@ -155,4 +155,25 @@ export function lastFour(cardNumber: string): string {
   return digits.slice(-4);
 }
 
+/**
+ * Края адреса кошелька — то же, что последние четыре цифры для карты:
+ * узнать свою запись в списке можно, восстановить адрес — нет.
+ *
+ * Начало и конец, а не только хвост: адреса одной сети начинаются
+ * одинаково, и по хвосту клиент их различит, а по началу убедится, что
+ * это адрес той сети, которую он выбирал.
+ *
+ * Короткий адрес не прячется вовсе: скрывать нечего, а многоточие на
+ * месте двух знаков читалось бы как обрезанные данные.
+ */
+export function addressEdges(address: string): string {
+  const value = address.trim();
+  if (value.length <= EDGE_LENGTH * 2 + 1) {
+    return value;
+  }
+  return `${value.slice(0, EDGE_LENGTH)}…${value.slice(-EDGE_LENGTH)}`;
+}
+
+const EDGE_LENGTH = 4;
+
 export { generateTotpSecret, totpCode, verifyTotp, type TotpOptions } from './totp.js';

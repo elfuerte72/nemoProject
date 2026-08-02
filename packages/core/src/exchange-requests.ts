@@ -1,13 +1,19 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { currencies, currencyPairs, exchangeRequestEvents, exchangeRequests } from '@nemo/db';
-import { Money, type Amount, type ExchangeKind, type ExchangeRequestStatus } from '@nemo/types';
+import {
+  Money,
+  type Amount,
+  type CurrencyKind,
+  type ExchangeKind,
+  type ExchangeRequestStatus,
+} from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
 import { quoteForSubmission } from './rates.js';
-import { requireOwnRequisites } from './requisites.js';
+import { requireSuitableRequisites } from './requisites.js';
 import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
 
 /**
@@ -36,6 +42,12 @@ export interface ExchangeRequestView {
   readonly preliminaryRate: Amount | null;
   readonly finalRate: Amount | null;
   readonly status: ExchangeRequestStatus;
+  /**
+   * Куда ушли деньги по этой заявке. Клиенту он нужен, чтобы следующая
+   * заявка в ту же валюту открывалась на той же записи, а не заставляла
+   * выбирать заново.
+   */
+  readonly requisitesId: string | null;
   /**
    * Куда клиенту платить. Названы менеджером и показываются в самой
    * заявке, а не только в сообщении бота: клиент возвращается к ней
@@ -69,12 +81,24 @@ export interface CurrencyPairView {
 }
 
 /**
+ * Валюта направления с её родом. Род нужен экрану, а не только ядру: от
+ * него зависит, какой реквизит подходит заявке, и вычислять его по коду
+ * валюты приложение не должно — «USDT это криптовалюта» знает
+ * справочник.
+ */
+export interface TermsCurrencyView {
+  readonly code: string;
+  readonly kind: CurrencyKind;
+}
+
+/**
  * Условия обмена для экрана заявки: куда сервис меняет и от какой суммы
  * берётся. Минимум приходит вместе с направлениями, а не отдельным
  * запросом: клиент должен узнать его до подачи, а не из отказа.
  */
 export interface ExchangeTermsView {
   readonly pairs: readonly CurrencyPairView[];
+  readonly currencies: readonly TermsCurrencyView[];
   readonly minAmount: Amount;
   /** Валюта минимума: см. `MIN_EXCHANGE_CODE`. */
   readonly minAmountCode: string;
@@ -103,6 +127,7 @@ export function toExchangeRequestView(row: ExchangeRequestRow): ExchangeRequestV
     preliminaryRate: toDisplayAmount(row.preliminaryRate),
     finalRate: toDisplayAmount(row.finalRate),
     status: row.status,
+    requisitesId: row.requisitesId,
     paymentInstructions: row.paymentInstructions,
     cancelReason: row.cancelReason,
     createdAt: row.createdAt,
@@ -199,6 +224,14 @@ export async function submitExchangeRequest(
       'Для электронного перевода нужны реквизиты: укажите, куда отправить деньги',
     );
   }
+  // Наличные клиент получает на руки. Приложенный к такой заявке
+  // реквизит означал бы, что менеджер отправит перевод туда, куда клиент
+  // денег не ждёт: два способа получения у одной заявки не бывает.
+  if (input.kind === 'cash' && input.requisitesId !== undefined) {
+    throw new InvalidInputError(
+      'Наличные выдаются на руки: реквизиты для перевода к такой заявке не прикладываются',
+    );
+  }
 
   // Котировка запрашивается до транзакции: это обращение к чужому API,
   // и держать открытой транзакцию на время сетевого запроса значило бы
@@ -212,7 +245,7 @@ export async function submitExchangeRequest(
   return ctx.db.transaction(async (tx) => {
     await requireActivePair(tx, input);
     if (input.requisitesId !== undefined) {
-      await requireOwnRequisites(tx, clientId, input.requisitesId);
+      await requireSuitableRequisites(tx, clientId, input.requisitesId, input.toCode);
     }
 
     const settings = await readServiceSettings(tx);
@@ -308,6 +341,17 @@ export async function getExchangeTerms(ctx: CoreConfig): Promise<ExchangeTermsVi
     .where(eq(currencyPairs.isActive, true))
     .orderBy(asc(currencyPairs.fromCode), asc(currencyPairs.toCode), asc(currencyPairs.kind));
 
+  const active = await ctx.db
+    .select({ code: currencies.code, kind: currencies.kind })
+    .from(currencies)
+    .where(eq(currencies.isActive, true))
+    .orderBy(asc(currencies.code));
+
   const { minExchangeAmount } = await readServiceSettings(ctx.db);
-  return { pairs, minAmount: minExchangeAmount, minAmountCode: MIN_EXCHANGE_CODE };
+  return {
+    pairs,
+    currencies: active,
+    minAmount: minExchangeAmount,
+    minAmountCode: MIN_EXCHANGE_CODE,
+  };
 }

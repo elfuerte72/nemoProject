@@ -1,5 +1,6 @@
 import type {
   CardApplicationStatus,
+  RequisiteKind,
   StaffRole,
   WithdrawalMethod,
   WithdrawalRequestStatus,
@@ -30,6 +31,16 @@ export const CARD_STATUS_LABELS: Record<CardApplicationStatus, string> = {
   active: 'Активна',
   rejected: 'Отклонена',
   cancelled: 'Отозвана',
+};
+
+/**
+ * Способ получения денег — словами, а не набором заполненных полей.
+ * Менеджер не должен выбирать за клиента между телефоном и картой.
+ */
+export const REQUISITE_KIND_LABELS: Record<RequisiteKind, string> = {
+  phone: 'Перевод по номеру телефона',
+  card: 'Перевод на карту',
+  wallet: 'Перевод на криптокошелёк',
 };
 
 export const ROLE_LABELS: Record<StaffRole, string> = {

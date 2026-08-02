@@ -1,6 +1,7 @@
 import type {
   BonusTransactionKind,
   CardApplicationStatus,
+  RequisiteKind,
   WithdrawalMethod,
   WithdrawalRequestStatus,
 } from '@nemo/types';
@@ -33,6 +34,17 @@ export const CARD_STATUS_LABELS: Record<CardApplicationStatus, string> = {
   active: 'Активна',
   rejected: 'Отклонена',
   cancelled: 'Отозвана',
+};
+
+/**
+ * Способ получения денег — так, как клиент его выбирает. Не «тип
+ * реквизита»: слово «реквизит» в форме означало бы, что человек уже
+ * знает, чем они бывают.
+ */
+export const REQUISITE_KIND_LABELS: Record<RequisiteKind, string> = {
+  phone: 'По номеру телефона',
+  card: 'На карту',
+  wallet: 'На криптокошелёк',
 };
 
 export const BONUS_KIND_LABELS: Record<BonusTransactionKind, string> = {

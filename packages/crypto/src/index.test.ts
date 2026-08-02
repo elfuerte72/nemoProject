@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateRequisiteKeyPair, lastFour, open, seal } from './index.js';
+import { addressEdges, generateRequisiteKeyPair, lastFour, open, seal } from './index.js';
 
 const keys = generateRequisiteKeyPair();
 const CARD = '4276 3800 1234 4821';
@@ -61,6 +61,24 @@ describe('lastFour', () => {
 
   it('бросает, если цифр меньше четырёх', () => {
     expect(() => lastFour('12')).toThrow(RangeError);
+  });
+});
+
+describe('addressEdges', () => {
+  it('оставляет начало и конец адреса', () => {
+    // Начало нужно не меньше конца: по нему клиент убеждается, что это
+    // адрес той сети, которую он выбирал.
+    expect(addressEdges('TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e')).toBe('TQmX…aU6e');
+  });
+
+  it('не прячет короткую строку: скрывать в ней нечего', () => {
+    expect(addressEdges('TQmXk9s')).toBe('TQmXk9s');
+  });
+
+  it('не оставляет в подсказке середины адреса', () => {
+    const address = 'TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e';
+
+    expect(addressEdges(address)).not.toContain('R2vB7cH1');
   });
 });
 

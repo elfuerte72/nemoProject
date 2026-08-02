@@ -8,7 +8,6 @@ import {
   isWithdrawalOpen,
   type Amount,
   type WithdrawalMethod,
-  type WithdrawalNetwork,
   type WithdrawalRequestStatus,
 } from '@nemo/types';
 import { requireClient, requireStaff, type Actor } from './actor.js';
@@ -21,6 +20,7 @@ import {
   type Executor,
 } from './context.js';
 import { InvalidInputError, NotFoundError, TransitionNotAllowedError } from './errors.js';
+import { requireActiveNetwork } from './networks.js';
 import type { Notification } from './notifications.js';
 import { logRequisiteAccess } from './requisite-access.js';
 import { readServiceSettings } from './settings.js';
@@ -48,8 +48,8 @@ export interface WithdrawalRequestView {
   readonly clientId: bigint;
   readonly amount: Amount;
   readonly method: WithdrawalMethod;
-  /** Сеть перевода. У выплаты на банковский счёт её нет. */
-  readonly network: WithdrawalNetwork | null;
+  /** Сеть перевода из справочника. У выплаты на банковский счёт её нет. */
+  readonly network: string | null;
   /** Всё, что видно о реквизитах получения без расшифровки. */
   readonly destinationHint: string | null;
   readonly status: WithdrawalRequestStatus;
@@ -64,7 +64,7 @@ export interface SubmitWithdrawalInput {
   /** Счёт или адрес кошелька. Наружу больше не отдаётся. */
   readonly destination: string;
   /** Сеть перевода. Обязательна для криптовалюты и бессмысленна для счёта. */
-  readonly network?: WithdrawalNetwork | undefined;
+  readonly network?: string | undefined;
 }
 
 export interface WithdrawalTransitionResult {
@@ -83,7 +83,7 @@ function toView(row: WithdrawalRow): WithdrawalRequestView {
     clientId: row.clientId,
     amount: Money.toAmount(row.amount),
     method: row.method,
-    network: toNetwork(row.network),
+    network: row.network,
     destinationHint: row.destinationHint,
     status: row.status,
     rejectReason: row.rejectReason,
@@ -100,15 +100,6 @@ function notificationFor(row: WithdrawalRow): Notification {
     amount: Money.toAmount(row.amount),
     ...(row.rejectReason === null ? {} : { rejectReason: row.rejectReason }),
   };
-}
-
-/**
- * Сеть из базы. Колонка текстовая, а не перечислением: список сетей
- * меняется чаще, чем стоит гонять миграции, и хранимое значение уже
- * проверено при подаче.
- */
-function toNetwork(value: string | null): WithdrawalNetwork | null {
-  return value === null ? null : (value as WithdrawalNetwork);
 }
 
 /**
@@ -167,6 +158,12 @@ export async function submitWithdrawalRequest(
   const sealed = seal(requirePublicKey(ctx), destination);
 
   return ctx.db.transaction(async (tx) => {
+    // Сеть — из общего справочника, и выключенную администратором
+    // сервис не примет: заявку в неё некому исполнить.
+    if (input.method === 'crypto' && input.network) {
+      await requireActiveNetwork(tx, input.network);
+    }
+
     // Строка клиента блокируется на время подсчёта: две заявки,
     // поданные одновременно, иначе прочитали бы один и тот же остаток и
     // обе прошли бы проверку.

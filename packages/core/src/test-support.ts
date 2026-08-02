@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { currencies, currencyPairs, serviceSettings, staff } from '@nemo/db';
+import { currencies, currencyPairs, serviceSettings, staff, transferNetworks } from '@nemo/db';
 import { testDatabase } from '@nemo/db/testing';
 import type { ExchangeKind, StaffRole } from '@nemo/types';
 import type { Actor } from './actor.js';
@@ -16,16 +16,31 @@ import type { Actor } from './actor.js';
 
 const db = testDatabase();
 
+/**
+ * Что известно о валюте.
+ *
+ * Род валюты — не украшение фикстуры: от него зависит, какой реквизит
+ * подходит заявке, и объявлять рубль криптовалютой ради краткости
+ * значило бы проверять правило на данных, которых не бывает.
+ */
+const KNOWN_CURRENCIES: Record<string, { decimals: number; kind: 'fiat' | 'crypto' }> = {
+  RUB: { decimals: 2, kind: 'fiat' },
+  EUR: { decimals: 2, kind: 'fiat' },
+  USDT: { decimals: 6, kind: 'crypto' },
+  BTC: { decimals: 8, kind: 'crypto' },
+};
+
 export async function givenCurrency(
   code: string,
   options: { decimals?: number; kind?: 'fiat' | 'crypto'; isActive?: boolean } = {},
 ): Promise<void> {
+  const known = KNOWN_CURRENCIES[code] ?? { decimals: 2, kind: 'fiat' as const };
   await db
     .insert(currencies)
     .values({
       code,
-      decimals: options.decimals ?? 2,
-      kind: options.kind ?? 'fiat',
+      decimals: options.decimals ?? known.decimals,
+      kind: options.kind ?? known.kind,
       isActive: options.isActive ?? true,
     })
     .onConflictDoNothing();
@@ -37,7 +52,7 @@ export async function givenCurrencyPair(options: {
   kind?: ExchangeKind;
   isActive?: boolean;
 }): Promise<void> {
-  await givenCurrency(options.fromCode, { kind: 'crypto', decimals: 18 });
+  await givenCurrency(options.fromCode);
   await givenCurrency(options.toCode);
   await db.insert(currencyPairs).values({
     fromCode: options.fromCode,
@@ -45,6 +60,23 @@ export async function givenCurrencyPair(options: {
     kind: options.kind ?? 'electronic',
     isActive: options.isActive ?? true,
   });
+}
+
+/**
+ * Сеть перевода в справочнике. Наполняет его скрипт развёртывания, а не
+ * операция ядра, — фикстура делает то же самое напрямую.
+ */
+export async function givenNetwork(
+  code: string,
+  options: { isActive?: boolean } = {},
+): Promise<void> {
+  await db
+    .insert(transferNetworks)
+    .values({ code, isActive: options.isActive ?? true })
+    .onConflictDoUpdate({
+      target: transferNetworks.code,
+      set: { isActive: options.isActive ?? true },
+    });
 }
 
 /**

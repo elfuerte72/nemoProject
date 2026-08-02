@@ -40,6 +40,11 @@ import {
   submitExchangeRequest,
   type SubmitExchangeRequestInput,
 } from './exchange-requests.js';
+import {
+  listActiveNetworks,
+  listNetworks,
+  setNetworkActive,
+} from './networks.js';
 import { getPreliminaryQuote, type PreliminaryQuoteInput } from './rates.js';
 import {
   listRequisiteAccessLog,
@@ -47,10 +52,16 @@ import {
   type RequisiteAccessFilter,
 } from './requisite-access.js';
 import {
-  getRequisites,
+  archiveRequisites,
+  listRequisites,
   saveRequisites,
   type SaveRequisitesInput,
 } from './requisites.js';
+import {
+  listTextTemplates,
+  updateTextTemplate,
+  type TextTemplateKey,
+} from './text-templates.js';
 import { beginStaffLogin, completeStaffLogin, getActiveStaff } from './staff.js';
 import {
   approveWithdrawalRequest,
@@ -113,7 +124,12 @@ export function createCore(ctx: CoreConfig) {
 
     saveRequisites: (actor: Actor, input: SaveRequisitesInput) =>
       saveRequisites(ctx, actor, input),
-    getRequisites: (actor: Actor) => getRequisites(ctx, actor),
+    listRequisites: (actor: Actor) => listRequisites(ctx, actor),
+    archiveRequisites: (actor: Actor, requisitesId: string) =>
+      archiveRequisites(ctx, actor, requisitesId),
+    // Без исполнителя: сети нужны и клиенту в форме реквизитов, и
+    // менеджеру в панели, и секрета в списке нет.
+    listActiveNetworks: () => listActiveNetworks(ctx),
 
     setMarketingConsent: (actor: Actor, consent: boolean) =>
       setMarketingConsent(ctx, actor, consent),
@@ -197,6 +213,14 @@ export function createCore(ctx: CoreConfig) {
     listSettingsAuditLog: (actor: Actor, limit?: number) =>
       listSettingsAuditLog(ctx, actor, limit),
 
+    listNetworks: (actor: Actor) => listNetworks(ctx, actor),
+    setNetworkActive: (actor: Actor, code: string, isActive: boolean) =>
+      setNetworkActive(ctx, actor, code, isActive),
+
+    listTextTemplates: (actor: Actor) => listTextTemplates(ctx, actor),
+    updateTextTemplate: (actor: Actor, key: TextTemplateKey, body: string) =>
+      updateTextTemplate(ctx, actor, key, body),
+
     startBroadcast: (actor: Actor, input: { body: string }) =>
       startBroadcast(ctx, actor, input),
     recordBroadcastProgress: (
@@ -235,6 +259,9 @@ export type {
   SubmitExchangeRequestResult,
 } from './exchange-requests.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
+export type { NetworkView } from './networks.js';
+export { textTemplateKeys } from './text-templates.js';
+export type { TextTemplateKey, TextTemplateView } from './text-templates.js';
 export type { BonusAccountView, BonusTransactionView } from './bonus-account.js';
 export type { ServiceSettingsView } from './settings.js';
 export type {

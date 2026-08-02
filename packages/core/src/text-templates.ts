@@ -1,0 +1,155 @@
+import { asc, eq } from 'drizzle-orm';
+import { textTemplates } from '@nemo/db';
+import { requireAdmin, requireStaff, type Actor } from './actor.js';
+import type { CoreConfig, Executor } from './context.js';
+import { InvalidInputError } from './errors.js';
+import { recordSettingsChange } from './settings-audit.js';
+
+/**
+ * Заготовки текста: то, что менеджер вставляет в заявку, и то, что
+ * читает клиент.
+ *
+ * Справочник «ключ — текст», а не колонки в настройках: формулировки
+ * разнородны и меняются чаще, чем стоит гонять миграции.
+ *
+ * Значения по умолчанию лежат в коде, и пустой справочник ничего не
+ * ломает: развёрнутый сервис работает до первого захода администратора
+ * в настройки. Плата за правку без выкатки — тексты в базе не проходят
+ * ревью; значения в коде остаются образцом тона.
+ */
+
+/**
+ * Ключи заготовок. Перечислением, а не произвольной строкой: заготовка,
+ * которую никто не читает, — опечатка в ключе, и заметить её иначе можно
+ * только по жалобе клиента.
+ */
+export const textTemplateKeys = [
+  'payment_requisites_rub',
+  'payment_requisites_usdt',
+] as const;
+export type TextTemplateKey = (typeof textTemplateKeys)[number];
+
+interface TemplateDefault {
+  /** Как заготовка называется в панели: подпись, а не текст для клиента. */
+  readonly title: string;
+  readonly body: string;
+}
+
+/**
+ * Значения по умолчанию.
+ *
+ * Реквизиты сервиса здесь не выдуманы: правдоподобный номер карты в
+ * заготовке менеджер однажды отправил бы клиенту как настоящий. Текст по
+ * умолчанию говорит ровно то, что есть, — реквизиты не заданы.
+ */
+const DEFAULTS: Record<TextTemplateKey, TemplateDefault> = {
+  payment_requisites_rub: {
+    title: 'Оплата рублями',
+    body:
+      'Реквизиты для оплаты рублями пока не заданы: администратор задаёт их ' +
+      'в разделе настроек. До этого номер придётся набирать руками.',
+  },
+  payment_requisites_usdt: {
+    title: 'Оплата в USDT',
+    body:
+      'Адрес кошелька сервиса пока не задан: администратор задаёт его в ' +
+      'разделе настроек. До этого адрес придётся набирать руками.',
+  },
+};
+
+export interface TextTemplateView {
+  readonly key: TextTemplateKey;
+  readonly title: string;
+  readonly body: string;
+  /** Правда, пока администратор не правил заготовку: текст из кода. */
+  readonly isDefault: boolean;
+  readonly updatedAt: Date | null;
+}
+
+/**
+ * Текст заготовки: из справочника, а при пустом справочнике — из кода.
+ * Читается операциями сервиса, а не только панелью.
+ */
+export async function readTextTemplate(
+  executor: Executor,
+  key: TextTemplateKey,
+): Promise<string> {
+  const [row] = await executor
+    .select({ body: textTemplates.body })
+    .from(textTemplates)
+    .where(eq(textTemplates.key, key))
+    .limit(1);
+
+  return row?.body ?? DEFAULTS[key].body;
+}
+
+/**
+ * Все заготовки — сотруднику: менеджер вставляет их в заявку, а правит
+ * администратор.
+ */
+export async function listTextTemplates(
+  ctx: CoreConfig,
+  actor: Actor,
+): Promise<readonly TextTemplateView[]> {
+  requireStaff(actor);
+
+  const rows = await ctx.db
+    .select()
+    .from(textTemplates)
+    .orderBy(asc(textTemplates.key));
+  const stored = new Map(rows.map((row) => [row.key, row]));
+
+  // Список ведёт код, а не справочник: заготовка, которой в базе ещё
+  // нет, должна быть видна администратору — иначе он не узнает, что её
+  // можно задать.
+  return textTemplateKeys.map((key) => {
+    const row = stored.get(key);
+    return {
+      key,
+      title: DEFAULTS[key].title,
+      body: row?.body ?? DEFAULTS[key].body,
+      isDefault: row === undefined,
+      updatedAt: row?.updatedAt ?? null,
+    };
+  });
+}
+
+export async function updateTextTemplate(
+  ctx: CoreConfig,
+  actor: Actor,
+  key: TextTemplateKey,
+  body: string,
+): Promise<TextTemplateView> {
+  const admin = requireAdmin(actor);
+  const text = body.trim();
+  if (!text) {
+    // Пустая заготовка молча вернула бы значение из кода, и
+    // администратор решил бы, что правка не сохранилась.
+    throw new InvalidInputError('Текст заготовки пуст: сбросить её к значению из кода нельзя');
+  }
+
+  return ctx.db.transaction(async (tx) => {
+    const before = await readTextTemplate(tx, key);
+    const [row] = await tx
+      .insert(textTemplates)
+      .values({ key, body: text })
+      .onConflictDoUpdate({
+        target: textTemplates.key,
+        set: { body: text, updatedAt: new Date() },
+      })
+      .returning();
+
+    await recordSettingsChange(tx, admin.staffId, 'text_template', key, {
+      before,
+      after: text,
+    });
+
+    return {
+      key,
+      title: DEFAULTS[key].title,
+      body: row!.body,
+      isDefault: false,
+      updatedAt: row!.updatedAt,
+    };
+  });
+}

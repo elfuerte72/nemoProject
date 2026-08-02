@@ -7,7 +7,14 @@ import type {
   PreliminaryQuoteView,
   RequisitesView,
 } from '@nemo/core';
-import { Money, type Amount, type ExchangeKind, type ExchangeRequestStatus } from '@nemo/types';
+import {
+  Money,
+  requisiteKinds,
+  requisiteKindSuits,
+  type Amount,
+  type ExchangeKind,
+  type ExchangeRequestStatus,
+} from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import {
   KIND_LABELS,
@@ -17,6 +24,7 @@ import {
   type RequestStep,
 } from '@/lib/exchange-request-labels';
 import {
+  describeRequisites,
   formatAmount,
   formatDate,
   formatMoney,
@@ -25,7 +33,7 @@ import {
   parseAmount,
   shortId,
 } from '@/lib/format';
-import { RequisitesForm } from './requisites-section';
+import { RequisitesSheet } from './requisites-section';
 import { CardIcon, ChevronDown, ChevronRight, SwapIcon } from './ui/icons';
 import { Popover } from './ui/popover';
 import { NoticeSheet, Sheet } from './ui/sheet';
@@ -58,7 +66,10 @@ type SheetState =
 export function ExchangeScreen() {
   const [terms, setTerms] = useState<ExchangeTermsView>();
   const [requests, setRequests] = useState<ExchangeRequestView[]>([]);
-  const [requisites, setRequisites] = useState<RequisitesView | null>(null);
+  const [requisites, setRequisites] = useState<RequisitesView[]>([]);
+  /** Куда уйдут деньги по этой заявке. */
+  const [selected, setSelected] = useState<string>();
+  const [networks, setNetworks] = useState<string[]>([]);
   const [fromCode, setFromCode] = useState('');
   const [toCode, setToCode] = useState('');
   const [kind, setKind] = useState<ExchangeKind>('electronic');
@@ -79,7 +90,7 @@ export function ExchangeScreen() {
         const [conditions, mine, saved] = await Promise.all([
           get<{ terms: ExchangeTermsView }>('/api/exchange-terms'),
           get<{ requests: ExchangeRequestView[] }>('/api/exchange-requests'),
-          get<{ requisites: RequisitesView | null }>('/api/requisites'),
+          get<{ requisites: RequisitesView[] }>('/api/requisites'),
         ]);
         setTerms(conditions.terms);
         setRequests(mine.requests);
@@ -100,6 +111,15 @@ export function ExchangeScreen() {
         setLoading(false);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    // Отдельным запросом, а не вместе с остальным: молчание справочника
+    // сетей — не повод не открыть экран обмена. Без сетей нельзя завести
+    // кошелёк, но рублёвая сторона работает как работала.
+    void get<{ networks: string[] }>('/api/networks')
+      .then((result) => setNetworks(result.networks))
+      .catch(() => setNetworks([]));
   }, []);
 
   const pairs = useMemo(() => terms?.pairs ?? [], [terms]);
@@ -135,6 +155,49 @@ export function ExchangeScreen() {
   useEffect(() => {
     if (kinds.length > 0 && !kinds.includes(kind)) setKind(kinds[0]!);
   }, [kinds, kind]);
+
+  /**
+   * Реквизиты, подходящие валюте получения: рубли приходят по телефону
+   * или на карту, USDT — на кошелёк. Правило берётся из доменных типов,
+   * а не пишется здесь заново: отказывает всё равно операция, и своя
+   * копия правила разошлась бы с ней молча.
+   */
+  const toCurrency = useMemo(
+    () => terms?.currencies.find((currency) => currency.code === toCode),
+    [terms, toCode],
+  );
+  const suitableKinds = useMemo(
+    () =>
+      toCurrency ? requisiteKinds.filter((one) => requisiteKindSuits(one, toCurrency.kind)) : [],
+    [toCurrency],
+  );
+  const suitable = useMemo(
+    () =>
+      toCurrency
+        ? requisites.filter((one) => requisiteKindSuits(one.kind, toCurrency.kind))
+        : [],
+    [requisites, toCurrency],
+  );
+  /*
+   * Кошелёк в погашенной сети из выбора уходит, а из списка — нет:
+   * клиент видит, почему запись не предлагается, и может её удалить.
+   * Подать по ней заявку всё равно нельзя — операция откажет.
+   */
+  const offered = useMemo(() => suitable.filter((one) => one.isAvailable), [suitable]);
+
+  useEffect(() => {
+    // Подставляется запись из последней заявки в ту же валюту: обычная
+    // повторная заявка не должна требовать выбора. Заявки приходят от
+    // новых к старым, поэтому первая найденная и есть последняя.
+    if (selected !== undefined && offered.some((one) => one.id === selected)) return;
+    const lastUsed = requests.find(
+      (request) =>
+        request.toCode === toCode &&
+        request.requisitesId !== null &&
+        offered.some((one) => one.id === request.requisitesId),
+    )?.requisitesId;
+    setSelected(lastUsed ?? offered[0]?.id);
+  }, [offered, requests, toCode, selected]);
 
   useEffect(() => {
     // У наличных курса нет: там финальный курс называет менеджер, и
@@ -189,7 +252,7 @@ export function ExchangeScreen() {
         fromAmount: parseAmount(amount),
         // Наличные клиент получает на руки: реквизиты для перевода при
         // этом способе не нужны и не запрашиваются.
-        ...(kind === 'electronic' && requisites ? { requisitesId: requisites.id } : {}),
+        ...(kind === 'electronic' && selected ? { requisitesId: selected } : {}),
       });
       setRequests((current) => [created.request, ...current]);
       setAmount('');
@@ -276,9 +339,10 @@ export function ExchangeScreen() {
     !belowMinimum &&
     // Электронный перевод без реквизитов отправлять некуда, а наличные
     // клиент получает на руки — там их и не спрашивают.
-    (!electronic || requisites !== null);
+    (!electronic || selected !== undefined);
 
-  const requisitesLine = requisites ? describe(requisites) : 'Укажите реквизиты';
+  const chosen = offered.find((one) => one.id === selected);
+  const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
 
   if (loading) {
     return <p className="empty">Загружаем направления обмена…</p>;
@@ -427,8 +491,8 @@ export function ExchangeScreen() {
             {terms && minimumApplies
               ? ` Минимальная сумма обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
               : ''}
-            {electronic && !requisites
-              ? ' Чтобы подать заявку, укажите реквизиты: без них деньги некуда отправить.'
+            {electronic && selected === undefined
+              ? ` Чтобы подать заявку, укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
               : ''}
           </p>
         </>
@@ -524,11 +588,26 @@ export function ExchangeScreen() {
 
       {sheet?.kind === 'requisites' ? (
         <Sheet title="Куда отправить деньги" onClose={() => setSheet(undefined)}>
-          <RequisitesForm
-            current={requisites}
-            onSaved={(saved) => {
-              setRequisites(saved);
+          <RequisitesSheet
+            requisites={suitable}
+            selectedId={selected}
+            kinds={suitableKinds}
+            networks={networks}
+            onPick={(picked) => {
+              setSelected(picked.id);
               setSheet(undefined);
+            }}
+            onSaved={(saved) => {
+              setRequisites((current) => [saved, ...current]);
+              setSelected(saved.id);
+              setSheet(undefined);
+            }}
+            onRemoved={(removedId) => {
+              setRequisites((current) => current.filter((one) => one.id !== removedId));
+              // Выбор сбрасывается здесь же: подстановка вернёт
+              // подходящую запись, а показывать удалённую как выбранную
+              // нельзя — заявка по ней не подастся.
+              setSelected((current) => (current === removedId ? undefined : current));
             }}
           />
         </Sheet>
@@ -625,16 +704,6 @@ function rubleSide(
   }
   if (direction.toCode === rubleCode) return quote?.toAmount ?? null;
   return null;
-}
-
-/**
- * Реквизиты одной строкой. От карты клиенту видны четыре цифры, и по
- * ним он свою карту узнаёт; полный номер расшифровывает только
- * админ-панель (docs/adr/0002).
- */
-function describe(requisites: RequisitesView): string {
-  const card = requisites.cardLast4 ? `карта •••• ${requisites.cardLast4}` : requisites.phone;
-  return [requisites.bankName, card].filter(Boolean).join(' · ') || 'Реквизиты сохранены';
 }
 
 /** Заявка ещё в пути: показывается карточкой, а не строкой истории. */

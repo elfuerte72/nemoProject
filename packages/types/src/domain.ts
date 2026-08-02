@@ -105,13 +105,46 @@ export type WithdrawalMethod = z.infer<typeof withdrawalMethodSchema>;
  * сетях, а перевод в чужую — потерянные деньги без возврата. Спросить
  * сеть дешевле, чем выяснять её у клиента после отправки.
  *
- * Список задан здесь, а не в интерфейсе: и клиент, и менеджер должны
- * называть сеть одинаково, иначе «TRC20» и «Tron» в двух окнах окажутся
- * разными вещами.
+ * Здесь только форма кода, а не список: сети живут справочником в базе,
+ * и администратор гасит ту, в которой кошелёк временно недоступен.
+ * Перечисление в коде было бы второй правдой о том, куда сервис умеет
+ * отправлять, — и рано или поздно разошлось бы со справочником.
  */
-export const withdrawalNetworks = ['TRC20', 'ERC20', 'BEP20', 'TON', 'SOL'] as const;
-export const withdrawalNetworkSchema = z.enum(withdrawalNetworks);
-export type WithdrawalNetwork = z.infer<typeof withdrawalNetworkSchema>;
+export const networkCodeSchema = z.string().min(2).max(20);
+
+/**
+ * Способ, которым клиент получает деньги.
+ *
+ * Тип записи, а не набор необязательных полей: реквизит, по которому
+ * нельзя отправить деньги, не должен существовать. Что обязательно
+ * внутри каждого типа, проверяет база — форма всего лишь не даёт
+ * составить неполную запись раньше неё.
+ */
+export const requisiteKinds = [
+  'phone', // перевод по номеру телефона
+  'card', // перевод на карту
+  'wallet', // перевод на криптокошелёк
+] as const;
+export const requisiteKindSchema = z.enum(requisiteKinds);
+export type RequisiteKind = z.infer<typeof requisiteKindSchema>;
+
+/** Валюта бывает фиатной и криптовалютной: от этого зависит, куда её отправлять. */
+export const currencyKinds = ['fiat', 'crypto'] as const;
+export const currencyKindSchema = z.enum(currencyKinds);
+export type CurrencyKind = z.infer<typeof currencyKindSchema>;
+
+/**
+ * Подходит ли реквизит валюте, которую клиент получает.
+ *
+ * Рубли приходят на карту или по телефону, USDT — на кошелёк. Правило
+ * живёт в доменных типах, а не в операции: отказывает всё равно
+ * операция, но экран должен показать клиенту только подходящие записи —
+ * и делать это по своей копии правила означало бы разойтись с ядром
+ * молча.
+ */
+export function requisiteKindSuits(kind: RequisiteKind, currency: CurrencyKind): boolean {
+  return currency === 'crypto' ? kind === 'wallet' : kind !== 'wallet';
+}
 
 /**
  * Состояния заявки на карту. Сервис карту не выпускает — статусы
@@ -194,6 +227,6 @@ export type StaffRole = z.infer<typeof staffRoleSchema>;
 export const currencySchema = z.object({
   code: z.string().min(2).max(12),
   decimals: z.number().int().min(0).max(18),
-  kind: z.enum(['fiat', 'crypto']),
+  kind: currencyKindSchema,
 });
 export type Currency = z.infer<typeof currencySchema>;

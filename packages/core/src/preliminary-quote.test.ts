@@ -106,7 +106,11 @@ describe('недоступность провайдера', () => {
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
     const core = createCore({ db, rateSource: givenRateSource(null) });
     await core.registerClient({ telegramUserId: 100n });
-    const requisites = await core.saveRequisites(asClient(100n), { phone: '+79990000000' });
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'phone',
+      bankName: 'Сбербанк',
+      phone: '+79990000000',
+    });
 
     expect(await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
 
@@ -149,7 +153,11 @@ describe('поданная заявка', () => {
     await givenServiceSettings({ markupBps: 200 });
     const core = createCore({ db, rateSource: givenRateSource('100') });
     await core.registerClient({ telegramUserId: 100n });
-    const requisites = await core.saveRequisites(asClient(100n), { phone: '+79990000000' });
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'phone',
+      bankName: 'Сбербанк',
+      phone: '+79990000000',
+    });
 
     const { request } = await core.submitExchangeRequest(asClient(100n), {
       kind: 'electronic',

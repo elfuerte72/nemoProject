@@ -73,6 +73,9 @@ export const staffRoleEnum = pgEnum('staff_role', ['manager', 'admin']);
 
 export const currencyKindEnum = pgEnum('currency_kind', ['fiat', 'crypto']);
 
+/** Способ, которым клиент получает деньги. Русские названия — в `CONTEXT.md`. */
+export const requisiteKindEnum = pgEnum('requisite_kind', ['phone', 'card', 'wallet']);
+
 export const bonusTransactionKindEnum = pgEnum('bonus_transaction_kind', [
   'accrual', // начисление за исполненную заявку реферала
   'withdrawal', // списание при выплате
@@ -193,9 +196,49 @@ export const clients = pgTable(
 );
 
 /**
+ * Справочник сетей перевода.
+ *
+ * По образцу справочника валют: код и признак активности. Общий для
+ * реквизитов обмена и заявок на вывод — двух разных правд о том, куда
+ * сервис умеет отправлять, не существует, иначе появится заявка,
+ * которую нельзя исполнить.
+ *
+ * Гасит сеть администратор — тогда, когда кошелёк в ней временно
+ * недоступен. Строки не удаляются: на них ссылаются прошлые заявки.
+ */
+export const transferNetworks = pgTable('transfer_networks', {
+  code: text('code').primaryKey(),
+  isActive: boolean('is_active').default(true).notNull(),
+});
+
+/**
+ * Заготовки текста: реквизиты сервиса для оплаты и тексты, которые
+ * читает клиент.
+ *
+ * Отдельной таблицей, а не колонками настроек: это не скаляры со своими
+ * ограничениями, а произвольный текст, и колонка под каждый означала бы
+ * миграцию на каждую новую формулировку.
+ *
+ * Пустая таблица — рабочее состояние: значения по умолчанию лежат в
+ * коде, и первый запуск не требует ручного заполнения.
+ */
+export const textTemplates = pgTable('text_templates', {
+  key: text('key').primaryKey(),
+  body: text('body').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
  * Сохранённые реквизиты клиента — куда менеджер отправляет деньги.
- * Полный номер лежит только в зашифрованном виде (docs/adr/0002);
- * `card_last4` открыт, чтобы клиент узнавал свою карту в списке.
+ *
+ * Запись описывает один способ получения целиком, а не набор
+ * необязательных полей: реквизита, по которому нельзя отправить деньги,
+ * не существует. Что обязательно внутри типа, проверяет ограничение
+ * ниже — форма всего лишь не даёт составить неполную запись раньше него.
+ *
+ * Полный номер карты и адрес кошелька лежат только в зашифрованном виде
+ * (docs/adr/0002); открыты `card_last4` и `address_hint` — по ним клиент
+ * узнаёт свою запись в списке, не видя её целиком.
  */
 export const clientRequisites = pgTable(
   'client_requisites',
@@ -204,14 +247,51 @@ export const clientRequisites = pgTable(
     clientId: bigint('client_id', { mode: 'bigint' })
       .notNull()
       .references(() => clients.telegramUserId, { onDelete: 'cascade' }),
+    kind: requisiteKindEnum('kind').notNull(),
     bankName: text('bank_name'),
     phone: text('phone'),
     cardLast4: text('card_last4'),
     cardSealed: bytea('card_sealed'),
+    /** Сеть кошелька. Ошибка сети необратима, поэтому она из справочника. */
+    network: text('network').references(() => transferNetworks.code),
+    addressSealed: bytea('address_sealed'),
+    /** Начало и конец адреса: всё, что видно о кошельке без расшифровки. */
+    addressHint: text('address_hint'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
   },
-  (table) => [index('client_requisites_client_idx').on(table.clientId)],
+  (table) => [
+    index('client_requisites_client_idx').on(table.clientId),
+    /*
+     * Набор полей определяется типом, и проверяет это база, а не только
+     * форма: форма — не единственный способ создать запись, а
+     * последствие у чужого поля одно — сеть у карты или номер карты у
+     * кошелька означают перевод не туда, откуда не возвращаются.
+     *
+     * Архивные записи из проверки исключены. Архив — свидетельство
+     * того, куда деньги ушли тогда; требовать от него полноты
+     * сегодняшних правил значило бы переписывать историю, а записи, по
+     * которой ещё можно отправить деньги, архив не содержит по
+     * определению.
+     */
+    check(
+      'client_requisites_fields_by_kind',
+      sql`${table.archivedAt} is not null or case ${table.kind}
+        when 'phone' then ${table.bankName} is not null and ${table.phone} is not null
+          and ${table.cardLast4} is null and ${table.cardSealed} is null
+          and ${table.network} is null and ${table.addressSealed} is null
+          and ${table.addressHint} is null
+        when 'card' then ${table.bankName} is not null and ${table.cardLast4} is not null
+          and ${table.cardSealed} is not null and ${table.phone} is null
+          and ${table.network} is null and ${table.addressSealed} is null
+          and ${table.addressHint} is null
+        when 'wallet' then ${table.network} is not null and ${table.addressSealed} is not null
+          and ${table.addressHint} is not null and ${table.bankName} is null
+          and ${table.phone} is null and ${table.cardLast4} is null
+          and ${table.cardSealed} is null
+      end`,
+    ),
+  ],
 );
 
 /** Справочник валют. Наполняется после ответа на блокер C1. */
@@ -389,8 +469,12 @@ export const withdrawalRequests = pgTable(
     /**
      * Сеть перевода. Только у выплат в криптовалюте: у банковского счёта
      * её нет, и «TRC20» рядом с номером карты означал бы ошибку ввода.
+     *
+     * Ссылкой на общий справочник: сеть, в которую сервис не умеет
+     * отправлять, не должна попадать в заявку ни отсюда, ни из
+     * реквизитов обмена.
      */
-    network: text('network'),
+    network: text('network').references(() => transferNetworks.code),
     destinationSealed: bytea('destination_sealed'),
     destinationHint: text('destination_hint'),
     status: withdrawalRequestStatusEnum('status').default('new').notNull(),
