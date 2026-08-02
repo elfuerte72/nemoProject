@@ -11,10 +11,16 @@
  * поддельные обновления. Маршрут сверяет его с заголовком
  * `x-telegram-bot-api-secret-token` и без совпадения не отвечает.
  *
+ * Ботов два (docs/adr/0005): клиентский принимает `/start` и открывает
+ * Mini App, служебный подтверждает вход в админку и отвечает ссылкой на
+ * неё. Вебхук нужен обоим, поэтому у скрипта есть выбор бота.
+ *
  * Запуск:
- *   pnpm set-telegram-webhook            — зарегистрировать
- *   pnpm set-telegram-webhook --info     — показать, что зарегистрировано
- *   pnpm set-telegram-webhook --delete   — снять
+ *   pnpm set-telegram-webhook                    — клиентский бот
+ *   pnpm set-telegram-webhook --admin            — бот входа в админку
+ *   pnpm set-telegram-webhook --info             — что зарегистрировано
+ *   pnpm set-telegram-webhook --admin --info
+ *   pnpm set-telegram-webhook --delete           — снять
  */
 
 const API = 'https://api.telegram.org';
@@ -54,26 +60,49 @@ async function call(token: string, method: string, body?: unknown): Promise<unkn
   return payload.result;
 }
 
-async function main(): Promise<void> {
-  const token = required('TELEGRAM_BOT_TOKEN');
-  const mode = process.argv[2];
+/** Какой бот настраивается и откуда берутся его переменные. */
+function target(admin: boolean) {
+  return admin
+    ? {
+        name: 'бот входа в админку',
+        token: required('ADMIN_LOGIN_BOT_TOKEN'),
+        appUrl: required('ADMIN_URL'),
+        secret: required('ADMIN_BOT_WEBHOOK_SECRET'),
+      }
+    : {
+        name: 'клиентский бот',
+        token: required('TELEGRAM_BOT_TOKEN'),
+        appUrl: required('MINIAPP_URL'),
+        secret: required('TELEGRAM_WEBHOOK_SECRET'),
+      };
+}
 
-  if (mode === '--info') {
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const admin = args.includes('--admin');
+
+  // Для просмотра и снятия хватает токена: адрес и секрет нужны только
+  // при регистрации, и требовать их здесь значило бы не дать посмотреть
+  // состояние на машине, где заполнено не всё.
+  const token = admin ? required('ADMIN_LOGIN_BOT_TOKEN') : required('TELEGRAM_BOT_TOKEN');
+
+  if (args.includes('--info')) {
     console.log(JSON.stringify(await call(token, 'getWebhookInfo'), null, 2));
     return;
   }
 
-  if (mode === '--delete') {
+  if (args.includes('--delete')) {
     await call(token, 'deleteWebhook');
     console.log('Вебхук снят. Бот перестал получать обновления.');
     return;
   }
 
-  const appUrl = required('MINIAPP_URL').replace(/\/+$/, '');
-  const secret = required('TELEGRAM_WEBHOOK_SECRET');
+  const chosen = target(admin);
+  const appUrl = chosen.appUrl.replace(/\/+$/, '');
+  const secret = chosen.secret;
   const url = `${appUrl}/api/bot`;
 
-  await call(token, 'setWebhook', {
+  await call(chosen.token, 'setWebhook', {
     url,
     secret_token: secret,
     allowed_updates: ALLOWED_UPDATES,
@@ -83,8 +112,8 @@ async function main(): Promise<void> {
     drop_pending_updates: true,
   });
 
-  console.log(`Вебхук зарегистрирован: ${url}`);
-  console.log('Проверить: pnpm set-telegram-webhook --info');
+  console.log(`Вебхук зарегистрирован (${chosen.name}): ${url}`);
+  console.log(`Проверить: pnpm set-telegram-webhook${admin ? ' --admin' : ''} --info`);
 }
 
 // Отказ Telegram — не авария скрипта: чаще всего это неверный токен или
