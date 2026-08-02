@@ -81,6 +81,13 @@ export async function setNetworkActive(
  * Отдельно от ссылки на справочник в базе: та ловит несуществующую сеть,
  * а эта — выключенную, и говорит об этом словами, а не кодом нарушенного
  * ограничения.
+ *
+ * Строка справочника блокируется на время проверки. Без блокировки
+ * администратор, гасящий сеть, и клиент, подающий в неё заявку,
+ * расходятся: клиент читает «включена» из своего снимка, администратор
+ * успевает записать «выключена», и заявка появляется в сети, из которой
+ * уже не отправляют. Вызывается операция всегда изнутри транзакции, и
+ * блокировка держится ровно до её конца.
  */
 export async function requireActiveNetwork(
   executor: Executor,
@@ -90,7 +97,8 @@ export async function requireActiveNetwork(
     .select({ isActive: transferNetworks.isActive })
     .from(transferNetworks)
     .where(eq(transferNetworks.code, code))
-    .limit(1);
+    .limit(1)
+    .for('update');
 
   if (!row) {
     throw new InvalidInputError(`Сеть ${code} сервисом не поддерживается`);

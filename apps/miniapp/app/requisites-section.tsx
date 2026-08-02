@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { RequisitesView } from '@nemo/core';
 import type { RequisiteKind } from '@nemo/types';
 import { ApiError, del, post } from '@/lib/client-api';
@@ -147,6 +147,14 @@ function RequisitesForm({
   const [address, setAddress] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    // Справочник сетей приходит отдельным запросом и может опоздать к
+    // открытию формы. Без этого кнопки сетей появились бы, но ни одна не
+    // была бы выбрана, и сохранение оставалось бы погашенным до нажатия
+    // на ту сеть, которая и так подставилась бы сама.
+    setNetwork((current) => current || (networks[0] ?? ''));
+  }, [networks]);
 
   /** Что отправлять — решает выбранный способ, а не то, что осталось в полях. */
   function body(): Record<string, string> {
