@@ -251,7 +251,7 @@ export function ExchangeScreen({ onBonus }: { readonly onBonus: (intent: BonusIn
   return (
     <>
       {pairs.length > 0 ? (
-        <RatesPanel fromCode={fromCode} toCode={toCode} quote={quote} pairs={pairs} />
+        <RatesPanel fromCode={fromCode} toCode={toCode} pairs={pairs} />
       ) : undefined}
 
       <div className="quick-row">

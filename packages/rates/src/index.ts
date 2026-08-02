@@ -1,5 +1,5 @@
 import type { RatePair, RateQuote, RateSource } from '@nemo/core';
-import { Money } from '@nemo/types';
+import { Money, type Amount } from '@nemo/types';
 
 /**
  * Котировки Rapira — одна из реализаций источника курса.
@@ -114,24 +114,54 @@ export function createRapiraRateSource(options: RapiraOptions = {}): RateSource 
         return null;
       }
 
+      const asOf = new Date(cached?.at ?? now());
+
       const direct = rates.get(`${pair.fromCode}/${pair.toCode}`.toUpperCase());
       if (direct !== undefined) {
-        return { rate: Money.toAmount(direct), asOf: new Date(cached?.at ?? now()) };
+        return { rate: Money.toAmount(direct), asOf };
       }
 
       // Обратная пара: биржа котирует USDT/RUB, а спросили RUB → USDT.
       // Без этого половина направлений осталась бы без курса, хотя цена
       // у них есть.
       const inverse = rates.get(`${pair.toCode}/${pair.fromCode}`.toUpperCase());
-      if (inverse === undefined || Money.isZero(Money.toAmount(inverse))) {
+      if (inverse !== undefined && !Money.isZero(Money.toAmount(inverse))) {
+        return { rate: Money.divide(Money.toAmount('1'), Money.toAmount(inverse)), asOf };
+      }
+
+      // Пересчёт через опорную валюту. Rapira котирует всё к USDT, а к
+      // рублю — только его самого: без этого шага «сколько рублей за
+      // биткойн» осталось бы без ответа, хотя обе половины цены известны.
+      //
+      // Перемножение — не котировка биржи, а вычисление, и точность у
+      // него ниже. Для предварительного курса этого достаточно: он
+      // справочный (docs/adr/0004), а исполняется заявка по курсу
+      // менеджера.
+      const from = priceInPivot(rates, pair.fromCode);
+      const to = priceInPivot(rates, pair.toCode);
+      if (from === null || to === null || Money.isZero(to)) {
         return null;
       }
-      return {
-        rate: Money.divide(Money.toAmount('1'), Money.toAmount(inverse)),
-        asOf: new Date(cached?.at ?? now()),
-      };
+      return { rate: Money.divide(from, to), asOf };
     },
   };
+}
+
+/** Валюта, через которую биржа котирует всё остальное. */
+const PIVOT = 'USDT';
+
+/** Сколько опорной валюты стоит единица `code`. */
+function priceInPivot(rates: Map<string, string>, code: string): Amount | null {
+  const upper = code.toUpperCase();
+  if (upper === PIVOT) return Money.toAmount('1');
+
+  const direct = rates.get(`${upper}/${PIVOT}`);
+  if (direct !== undefined) return Money.toAmount(direct);
+
+  const inverse = rates.get(`${PIVOT}/${upper}`);
+  if (inverse === undefined) return null;
+  const price = Money.toAmount(inverse);
+  return Money.isZero(price) ? null : Money.divide(Money.toAmount('1'), price);
 }
 
 /**

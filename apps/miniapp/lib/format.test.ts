@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount, normalizeTyped, parseAmount } from './format';
+import { formatAmount, formatRateValue, normalizeTyped, parseAmount } from './format';
 
 /**
  * Суммы приходят десятичными строками произвольной точности, и путь
@@ -33,6 +33,24 @@ describe('formatAmount', () => {
 
   it('не портит точность на числах, которых не выдерживает double', () => {
     expect(formatAmount('9007199254740993')).toBe(`9${NBSP}007${NBSP}199${NBSP}254${NBSP}740${NBSP}993`);
+  });
+});
+
+describe('formatRateValue', () => {
+  it('у крупных курсов дробную часть отбрасывает', () => {
+    expect(formatRateValue('5224938.612')).toBe(`5${NBSP}224${NBSP}938`);
+  });
+
+  it('у обычных оставляет два знака', () => {
+    expect(formatRateValue('82.6612')).toBe('82,66');
+  });
+
+  it('у дробных сохраняет всё, чем они различаются', () => {
+    expect(formatRateValue('0.01185579')).toBe('0,01185579');
+  });
+
+  it('не округляет вверх: справочный курс не обещает точности', () => {
+    expect(formatRateValue('82.669')).toBe('82,66');
   });
 });
 

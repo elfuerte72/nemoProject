@@ -50,6 +50,36 @@ const SUPPORT = {
   body: 'Менеджер отвечает в чате бота — обычно за несколько минут. Закройте приложение, чтобы вернуться в переписку, и напишите свой вопрос.',
 };
 
+/**
+ * Насколько должно ужаться окно, чтобы считать это клавиатурой. Адресная
+ * строка и панели браузера отъедают заметно меньше.
+ */
+const KEYBOARD_MIN_PX = 120;
+
+/**
+ * Открыта ли экранная клавиатура.
+ *
+ * Спрашивается у окна, а не у полей ввода: полей на экранах много, они
+ * лежат и в листах, и вешать на каждое пару обработчиков — значит
+ * однажды пропустить одно. Клавиатура же одна, и она ужимает видимую
+ * часть окна, не трогая его собственную высоту.
+ */
+function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const check = () => setOpen(window.innerHeight - viewport.height > KEYBOARD_MIN_PX);
+    check();
+    viewport.addEventListener('resize', check);
+    return () => viewport.removeEventListener('resize', check);
+  }, []);
+
+  return open;
+}
+
 export function ClientApp() {
   const [tab, setTab] = useState<Tab>('exchange');
   // Направление перехода: экраны в панели лежат слева направо, и лист
@@ -60,10 +90,13 @@ export function ClientApp() {
   const [support, setSupport] = useState(false);
   const [error, setError] = useState<string>();
 
+  const keyboard = useKeyboardOpen();
+
   useEffect(() => {
     const webApp = getWebApp();
     webApp?.ready();
     webApp?.expand();
+    webApp?.disableVerticalSwipes?.();
 
     void (async () => {
       try {
@@ -117,7 +150,7 @@ export function ClientApp() {
           <p className="muted">Загружаем…</p>
         </div>
       ) : (
-        <div className="app__scroll">
+        <div className={keyboard ? 'app__scroll app__scroll--bare' : 'app__scroll'}>
           <div key={tab} className={back ? 'app__screen app__screen--back' : 'app__screen'}>
             {tab === 'exchange' ? <ExchangeScreen onBonus={openBonus} /> : undefined}
             {tab === 'bonus' ? (
@@ -142,22 +175,30 @@ export function ClientApp() {
         </div>
       )}
 
-      <div className="app__fade" />
-
-      <nav className="tabbar">
-        {TABS.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => go(id)}
-            className="tabbar__item"
-            aria-current={tab === id ? 'page' : undefined}
-          >
-            <Icon filled={tab === id} />
-            <span>{label}</span>
-          </button>
-        ))}
-      </nav>
+      {/*
+        Под открытой клавиатурой панель садится ей на крышку и закрывает
+        то самое поле, ради которого клавиатуру и вызвали. Переключать
+        разделы посреди ввода суммы всё равно незачем.
+      */}
+      {keyboard ? undefined : (
+        <>
+          <div className="app__fade" />
+          <nav className="tabbar">
+            {TABS.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => go(id)}
+                className="tabbar__item"
+                aria-current={tab === id ? 'page' : undefined}
+              >
+                <Icon filled={tab === id} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </nav>
+        </>
+      )}
 
       {support ? (
         <NoticeSheet title={SUPPORT.title} body={SUPPORT.body} onClose={() => setSupport(false)} />
