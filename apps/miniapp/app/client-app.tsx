@@ -15,7 +15,7 @@ import {
   TabCardIcon,
   TabExchangeIcon,
 } from './ui/icons';
-import { NoticeSheet } from './ui/sheet';
+import { Popover } from './ui/popover';
 
 /**
  * Оболочка клиентского приложения: разделы и первый запуск.
@@ -45,10 +45,8 @@ const TABS: readonly {
   { id: 'card', label: 'Карта', Icon: TabCardIcon },
 ];
 
-const SUPPORT = {
-  title: 'Поддержка',
-  body: 'Менеджер отвечает в чате бота — обычно за несколько минут. Закройте приложение, чтобы вернуться в переписку, и напишите свой вопрос.',
-};
+const SUPPORT =
+  'Менеджер отвечает в чате бота — обычно за несколько минут. Закройте приложение, чтобы вернуться в переписку, и напишите свой вопрос.';
 
 /**
  * Насколько должно ужаться окно, чтобы считать это клавиатурой. Адресная
@@ -97,6 +95,11 @@ export function ClientApp() {
     webApp?.ready();
     webApp?.expand();
     webApp?.disableVerticalSwipes?.();
+    // Своя шапка у приложения уже есть, и вторая над ней — потерянная
+    // полоса экрана. Где метод не поддержан, окно просто останется
+    // обычным: отступы считаются по переменным Telegram, а они в этом
+    // случае нулевые.
+    webApp?.requestFullscreen?.();
 
     void (async () => {
       try {
@@ -131,12 +134,19 @@ export function ClientApp() {
         </span>
         <button
           type="button"
-          onClick={() => setSupport(true)}
+          onClick={() => setSupport(!support)}
           className="icon-btn"
           aria-label="Поддержка"
+          aria-expanded={support}
         >
           <QuestionIcon />
         </button>
+
+        {support ? (
+          <Popover label="Поддержка" onClose={() => setSupport(false)}>
+            <p className="popover__text">{SUPPORT}</p>
+          </Popover>
+        ) : undefined}
       </header>
 
       {error ? (
@@ -199,10 +209,6 @@ export function ClientApp() {
           </nav>
         </>
       )}
-
-      {support ? (
-        <NoticeSheet title={SUPPORT.title} body={SUPPORT.body} onClose={() => setSupport(false)} />
-      ) : undefined}
     </div>
   );
 }

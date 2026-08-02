@@ -181,6 +181,12 @@ button {
   pointer-events: none;
 }
 
+/*
+ * Сверху приложение обходит две полосы: системную (часы, вырез) и ту,
+ * что Telegram оставляет себе под кнопки «закрыть» и «меню» в
+ * полноэкранном режиме. Вторая приходит переменной и равна нулю, пока
+ * режим не включён, — поэтому одно правило работает в обоих случаях.
+ */
 .app__header {
   flex-shrink: 0;
   position: relative;
@@ -188,7 +194,8 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: max(14px, env(safe-area-inset-top)) var(--gutter) 4px;
+  padding: calc(max(14px, env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px)) + var(--tg-content-safe-area-inset-top, 0px))
+    var(--gutter) 4px;
 }
 
 .app__brand {
@@ -256,7 +263,8 @@ button {
   right: 0;
   bottom: 0;
   display: flex;
-  padding: 12px var(--gutter) max(26px, env(safe-area-inset-bottom));
+  padding: 12px var(--gutter)
+    max(26px, env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
   background: var(--bg);
   border-top: 1px solid var(--hairline);
 }
@@ -280,6 +288,69 @@ button {
 
 .tabbar__item[aria-current='page'] {
   color: var(--gold-light);
+}
+
+/* ── Подсказка у кнопки ──────────────────────────────────────────── */
+
+@keyframes nm-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.popover__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+}
+
+.popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: var(--gutter);
+  z-index: 26;
+  width: min(300px, calc(100vw - 2 * var(--gutter)));
+  padding: 16px;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow:
+    var(--lift),
+    0 22px 44px -22px rgba(0, 0, 0, 1);
+  /* Раскрывается от кнопки, а не из ниоткуда: угол роста показывает, что
+     это ответ именно на неё. */
+  transform-origin: top right;
+  animation: nm-pop 0.18s var(--ease) both;
+}
+
+.popover:focus-visible {
+  outline: none;
+}
+
+/* Носик, упирающийся в кнопку. */
+.popover::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: 12px;
+  width: 12px;
+  height: 12px;
+  background: var(--surface);
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+
+.popover__text {
+  position: relative;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #aba69d;
+  text-wrap: pretty;
 }
 
 /* ── Типографика ─────────────────────────────────────────────────── */
@@ -1287,6 +1358,77 @@ button.rates__head:hover {
 
 .sheet__actions .btn {
   margin-top: 0;
+}
+
+/* ── Переключатель ───────────────────────────────────────────────── */
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  margin-top: 26px;
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--radius-tile);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.toggle:hover:not(:disabled) {
+  background: var(--surface-soft-hover);
+}
+
+.toggle:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.toggle__label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.toggle__note {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.toggle__track {
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(245, 242, 234, 0.12);
+  padding: 3px;
+  transition: background 0.18s ease;
+}
+
+.toggle[aria-pressed='true'] .toggle__track {
+  background: var(--gold-face-soft);
+}
+
+.toggle__knob {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #f5f2ea;
+  box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.8);
+  transition: transform 0.18s var(--ease);
+}
+
+.toggle[aria-pressed='true'] .toggle__knob {
+  transform: translateX(18px);
 }
 
 /* ── Формы ───────────────────────────────────────────────────────── */

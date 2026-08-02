@@ -72,19 +72,28 @@ export function MarketingConsent({
     );
   }
 
-  if (!consent) return null;
-
+  // Переключатель, а не «отписаться»: одна кнопка умела только выключить,
+  // и передумавшему клиенту нечем было включить рассылку обратно.
   return (
-    <p className="hint">
+    <>
       <button
         type="button"
-        onClick={() => void answer(false)}
+        onClick={() => void answer(!consent)}
         disabled={busy}
-        className="link link--muted"
+        aria-pressed={consent}
+        className="toggle"
       >
-        Отписаться от рассылки
+        <span className="toggle__label">
+          Новости и предложения
+          <span className="toggle__note">
+            О заявках бот пишет всегда — этого переключателя они не касаются.
+          </span>
+        </span>
+        <span className="toggle__track">
+          <span className="toggle__knob" />
+        </span>
       </button>
-      {error ? <span className="error"> {error}</span> : undefined}
-    </p>
+      {error ? <p className="error">{error}</p> : undefined}
+    </>
   );
 }

@@ -33,7 +33,6 @@ import {
   ChevronDown,
   ChevronRight,
   ExchangeIcon,
-  InviteIcon,
   SwapIcon,
   WithdrawIcon,
 } from './ui/icons';
@@ -277,12 +276,6 @@ export function ExchangeScreen({ onBonus }: { readonly onBonus: (intent: BonusIn
             <WithdrawIcon />
           </span>
           <span className="quick__label">Вывести</span>
-        </button>
-        <button type="button" onClick={() => onBonus('invite')} className="quick">
-          <span className="quick__circle">
-            <InviteIcon />
-          </span>
-          <span className="quick__label">Пригласить</span>
         </button>
       </div>
 
