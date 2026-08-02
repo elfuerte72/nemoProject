@@ -193,10 +193,7 @@ button {
  */
 .app__safe-top {
   flex-shrink: 0;
-  height: calc(
-    max(14px, env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px)) +
-      var(--tg-content-safe-area-inset-top, 0px)
-  );
+  height: calc(max(14px, env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px)) + var(--tg-content-safe-area-inset-top, 0px));
 }
 
 .app__scroll {
