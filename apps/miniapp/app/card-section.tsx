@@ -10,7 +10,7 @@ import { NemoOutline } from './ui/icons';
 import { NoticeSheet } from './ui/sheet';
 
 /**
- * Заявка на европейскую карту.
+ * Заявка на виртуальную карту.
  *
  * Экран честно говорит, чего сервис не делает: карту он не выпускает,
  * её данных не хранит и операций по ней не проводит. Поэтому на плашке
@@ -46,6 +46,23 @@ export function CardSection() {
     })();
   }, []);
 
+  async function cancel(applicationId: string) {
+    setError(undefined);
+    setBusy(true);
+    try {
+      const cancelled = await post<{ application: CardApplicationView }>(
+        `/api/card-applications/${applicationId}/cancel`,
+      );
+      setApplications((current) =>
+        current.map((one) => (one.id === applicationId ? cancelled.application : one)),
+      );
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : 'Не удалось отозвать заявку');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit() {
     setError(undefined);
     setBusy(true);
@@ -66,7 +83,11 @@ export function CardSection() {
   const current = applications[0];
   // Пока заявка не закрыта отказом, вторую подавать нечего: провайдер
   // ведёт одну.
-  const canApply = current === undefined || current.status === 'rejected';
+  const canApply =
+    current === undefined || current.status === 'rejected' || current.status === 'cancelled';
+  // Отозвать можно, пока провайдер за заявку не взялся: дальше оформление
+  // идёт на его стороне, и «отменено» в приложении его не остановит.
+  const canCancel = current?.status === 'submitted';
   const reached = current ? CARD_STEPS.indexOf(current.status as (typeof CARD_STEPS)[number]) : -1;
 
   return (
@@ -97,7 +118,7 @@ export function CardSection() {
       </div>
 
       <div className="card panel">
-        <div className="panel__title">Европейская карта</div>
+        <div className="panel__title">Виртуальная карта</div>
         <p className="panel__text">
           Оставьте заявку — менеджер оформит её у провайдера и будет вести статус. Данные карты в
           приложении не хранятся, операций по ней здесь нет.
@@ -121,10 +142,10 @@ export function CardSection() {
                 </span>
               </div>
             ))}
-            {current.status === 'rejected' ? (
+            {current.status === 'rejected' || current.status === 'cancelled' ? (
               <div className="steps__row">
                 <span className="steps__title steps__title--reached">
-                  {CARD_STATUS_LABELS.rejected}
+                  {CARD_STATUS_LABELS[current.status]}
                 </span>
                 <span className="steps__mark">{formatDate(current.updatedAt)}</span>
               </div>
@@ -145,9 +166,21 @@ export function CardSection() {
               Подать заявку на карту
             </button>
           ) : (
-            <button type="button" onClick={() => setAbout(true)} className="btn btn--soft">
-              Что дальше
-            </button>
+            <>
+              <button type="button" onClick={() => setAbout(true)} className="btn btn--soft">
+                Что дальше
+              </button>
+              {canCancel && current ? (
+                <button
+                  type="button"
+                  onClick={() => void cancel(current.id)}
+                  disabled={busy}
+                  className="btn btn--soft"
+                >
+                  Отменить
+                </button>
+              ) : undefined}
+            </>
           )}
         </div>
       </div>

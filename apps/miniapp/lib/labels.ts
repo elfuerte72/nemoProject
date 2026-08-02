@@ -32,6 +32,7 @@ export const CARD_STATUS_LABELS: Record<CardApplicationStatus, string> = {
   processing: 'В обработке',
   active: 'Активна',
   rejected: 'Отклонена',
+  cancelled: 'Отозвана',
 };
 
 export const BONUS_KIND_LABELS: Record<BonusTransactionKind, string> = {

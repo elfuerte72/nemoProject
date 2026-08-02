@@ -4,13 +4,14 @@ import {
   ConflictError,
   createCore,
   ForbiddenError,
+  NotFoundError,
   TransitionNotAllowedError,
   type Actor,
 } from './index.js';
 import { asClient, givenStaff } from './test-support.js';
 
 /**
- * Заявка на европейскую карту.
+ * Заявка на виртуальную карту.
  *
  * Сервис карту не выпускает — он ведёт состояние заявки, поданной
  * внешнему провайдеру (docs/adr/0004). Поэтому проверять здесь нечего,
@@ -28,6 +29,49 @@ beforeEach(async () => {
 });
 
 afterAll(() => closeTestDatabase());
+
+describe('отзыв клиентом', () => {
+  it('доступен, пока провайдер за заявку не взялся', async () => {
+    const { application } = await core.submitCardApplication(asClient(100n));
+
+    const { application: cancelled, notifications } = await core.cancelOwnCardApplication(
+      asClient(100n),
+      application.id,
+    );
+
+    expect(cancelled.status).toBe('cancelled');
+    expect(notifications).toEqual([
+      { kind: 'card-application-status', to: 100n, status: 'cancelled' },
+    ]);
+  });
+
+  it('после отзыва можно подать новую: место занято не осталось', async () => {
+    const { application } = await core.submitCardApplication(asClient(100n));
+    await core.cancelOwnCardApplication(asClient(100n), application.id);
+
+    const { application: second } = await core.submitCardApplication(asClient(100n));
+
+    expect(second.status).toBe('submitted');
+  });
+
+  it('невозможен, когда заявку уже ведёт провайдер', async () => {
+    const { application } = await core.submitCardApplication(asClient(100n));
+    await core.updateCardApplicationStatus(manager, application.id, { status: 'processing' });
+
+    await expect(
+      core.cancelOwnCardApplication(asClient(100n), application.id),
+    ).rejects.toThrow(TransitionNotAllowedError);
+  });
+
+  it('чужую заявку не находит: её существование не подтверждается', async () => {
+    await core.registerClient({ telegramUserId: 200n });
+    const { application } = await core.submitCardApplication(asClient(100n));
+
+    await expect(
+      core.cancelOwnCardApplication(asClient(200n), application.id),
+    ).rejects.toThrow(NotFoundError);
+  });
+});
 
 describe('подача заявки', () => {
   it('принимается и сообщается клиенту', async () => {

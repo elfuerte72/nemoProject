@@ -66,6 +66,7 @@ export const cardApplicationStatusEnum = pgEnum('card_application_status', [
   'processing',
   'active',
   'rejected',
+  'cancelled',
 ]);
 
 export const staffRoleEnum = pgEnum('staff_role', ['manager', 'admin']);
@@ -382,7 +383,7 @@ export const withdrawalRequests = pgTable(
 );
 
 /**
- * Заявка на европейскую карту. Сервис карту не выпускает — статус
+ * Заявка на виртуальную карту. Сервис карту не выпускает — статус
  * отражает то, что сообщил внешний провайдер (docs/adr/0004).
  */
 export const cardApplications = pgTable(

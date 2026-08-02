@@ -124,21 +124,23 @@ export function ClientApp() {
           <NemoMark />
           Nemo
         </span>
-        <button
-          type="button"
-          onClick={() => setSupport(!support)}
-          className="icon-btn"
-          aria-label="Поддержка"
-          aria-expanded={support}
-        >
-          <QuestionIcon />
-        </button>
+        <span className="popover-anchor">
+          <button
+            type="button"
+            onClick={() => setSupport(!support)}
+            className="icon-btn"
+            aria-label="Поддержка"
+            aria-expanded={support}
+          >
+            <QuestionIcon />
+          </button>
 
-        {support ? (
-          <Popover label="Поддержка" onClose={() => setSupport(false)}>
-            <p className="popover__text">{SUPPORT}</p>
-          </Popover>
-        ) : undefined}
+          {support ? (
+            <Popover label="Поддержка" onClose={() => setSupport(false)}>
+              <p className="popover__text">{SUPPORT}</p>
+            </Popover>
+          ) : undefined}
+        </span>
       </header>
 
       {error ? (
@@ -182,7 +184,6 @@ export function ClientApp() {
       */}
       {keyboard ? undefined : (
         <>
-          <div className="app__fade" />
           <nav className="tabbar">
             {TABS.map(({ id, label, Icon }) => (
               <button

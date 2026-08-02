@@ -12,7 +12,7 @@ import { ConflictError, NotFoundError, TransitionNotAllowedError } from './error
 import type { Notification } from './notifications.js';
 
 /**
- * Заявка на европейскую карту.
+ * Заявка на виртуальную карту.
  *
  * Сервис карту не выпускает, её данных не хранит и операций по ней не
  * проводит (docs/adr/0004). Всё, что здесь есть, — состояние заявки,
@@ -91,6 +91,50 @@ export async function submitCardApplication(
 
     const [row] = await tx.insert(cardApplications).values({ clientId }).returning();
     return { application: toView(row!), notifications: [notificationFor(row!)] };
+  });
+}
+
+/**
+ * Отозвать собственную заявку.
+ *
+ * Только пока провайдер за неё не взялся: дальше оформление уже идёт на
+ * его стороне, и «отменено» в приложении не остановило бы то, что
+ * происходит у него. Отзыв и отказ провайдера — разные исходы и разные
+ * состояния: слитые в одно, они не дали бы отличить передумавшего
+ * клиента от того, кому не выпустили карту.
+ */
+export async function cancelOwnCardApplication(
+  ctx: CoreConfig,
+  actor: Actor,
+  applicationId: string,
+): Promise<CardApplicationResult> {
+  const clientId = requireClient(actor);
+
+  return ctx.db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(cardApplications)
+      .where(eq(cardApplications.id, applicationId))
+      .for('update');
+
+    // Чужая заявка не «запрещена», а «не найдена»: отличать одно от
+    // другого значило бы подтверждать её существование перебирающему.
+    if (!row || row.clientId !== clientId) {
+      throw new NotFoundError('Заявка на карту не найдена');
+    }
+    if (row.status !== 'submitted') {
+      throw new TransitionNotAllowedError(
+        'Заявку уже взяли в работу — отменить её может только менеджер',
+      );
+    }
+
+    const [updated] = await tx
+      .update(cardApplications)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(eq(cardApplications.id, applicationId))
+      .returning();
+
+    return { application: toView(updated!), notifications: [notificationFor(updated!)] };
   });
 }
 

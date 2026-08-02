@@ -26,6 +26,7 @@ import {
 } from './broadcasts.js';
 import {
   listCardApplicationQueue,
+  cancelOwnCardApplication,
   listCardApplications,
   submitCardApplication,
   updateCardApplicationStatus,
@@ -134,6 +135,8 @@ export function createCore(ctx: CoreConfig) {
 
     submitCardApplication: (actor: Actor) => submitCardApplication(ctx, actor),
     listCardApplications: (actor: Actor) => listCardApplications(ctx, actor),
+    cancelOwnCardApplication: (actor: Actor, applicationId: string) =>
+      cancelOwnCardApplication(ctx, actor, applicationId),
     listCardApplicationQueue: (actor: Actor) => listCardApplicationQueue(ctx, actor),
     updateCardApplicationStatus: (
       actor: Actor,

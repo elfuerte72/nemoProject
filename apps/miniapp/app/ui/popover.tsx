@@ -12,10 +12,13 @@ import { useEffect, useRef, type ReactNode } from 'react';
 export function Popover({
   label,
   onClose,
+  menu = false,
   children,
 }: {
   readonly label: string;
   readonly onClose: () => void;
+  /** Список выбора: у́же справочного текста и с меньшими полями. */
+  readonly menu?: boolean;
   readonly children: ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
@@ -34,7 +37,13 @@ export function Popover({
     <>
       {/* Нажатие мимо закрывает: подсказка не должна требовать прицела. */}
       <div className="popover__scrim" onClick={onClose} />
-      <div ref={panel} className="popover" role="dialog" aria-label={label} tabIndex={-1}>
+      <div
+        ref={panel}
+        className={menu ? 'popover popover--menu' : 'popover'}
+        role="dialog"
+        aria-label={label}
+        tabIndex={-1}
+      >
         {children}
       </div>
     </>

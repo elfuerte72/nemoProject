@@ -1,0 +1,1 @@
+ALTER TYPE "public"."card_application_status" ADD VALUE 'cancelled';
