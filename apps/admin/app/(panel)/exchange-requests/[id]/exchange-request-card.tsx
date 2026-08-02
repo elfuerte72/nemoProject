@@ -144,7 +144,15 @@ export function ExchangeRequestCard({
             {formatAmount(request.fromAmount)} {request.fromCode} → {request.toCode}
           </h1>
           <p className="page__sub">
-            {KIND_LABELS[request.kind]} · клиент {request.clientId}
+            {KIND_LABELS[request.kind]} · клиент {request.clientId} ·{' '}
+            {/*
+              Написать клиенту — отсюда, а не из личных сообщений: ответ
+              доставит бот, которого клиент запускал, и номер заявки уже
+              будет стоять в поле.
+            */}
+            <Link href={`/conversations/${request.clientId}?request=${request.id}`}>
+              написать
+            </Link>
           </p>
         </div>
         <span className={pillClass(STATUS_TONES[request.status])}>

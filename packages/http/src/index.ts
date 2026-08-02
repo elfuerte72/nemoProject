@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { CoreError, type CoreErrorCode } from '@nemo/core';
 
 /**
@@ -67,4 +68,32 @@ export function unauthorizedResponse(message: string): Response {
 export function unexpectedErrorResponse(error: unknown): Response {
   console.error(error);
   return json({ error: 'Внутренняя ошибка' }, { status: 500 });
+}
+
+/**
+ * Проверка секрета служебного вызова.
+ *
+ * Сюда обращается не клиент и не бот, а планировщик развёртывания —
+ * подписывать ему нечем, и защищает такие маршруты общий секрет. Он
+ * один на оба приложения, и проверка у них обязана совпадать: разошлись
+ * бы — один из маршрутов остался бы открытым.
+ *
+ * Сравнение постоянным временем: обычное сравнение строк отвечает тем
+ * быстрее, чем раньше расходятся байты, и по времени ответа секрет
+ * подбирается посимвольно.
+ */
+export function schedulerCallDenied(request: Request): Response | null {
+  const expected = process.env.SCHEDULER_SECRET;
+  if (!expected) {
+    return new Response('Служебные вызовы не настроены: не задан SCHEDULER_SECRET', {
+      status: 500,
+    });
+  }
+
+  const received = request.headers.get('authorization');
+  const a = Buffer.from(received ?? '');
+  const b = Buffer.from(`Bearer ${expected}`);
+  const ok = received !== null && a.length === b.length && timingSafeEqual(a, b);
+
+  return ok ? null : new Response('Неверный секрет', { status: 401 });
 }

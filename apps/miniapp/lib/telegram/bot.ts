@@ -1,5 +1,6 @@
 import { Bot, Keyboard, type Context } from 'grammy';
 import { Money } from '@nemo/types';
+import { renderNotification } from '@nemo/core';
 import { getCore } from '@/lib/core';
 import { formatRateValue } from '@/lib/format';
 import { referralLink } from '@/lib/referral';
@@ -88,9 +89,27 @@ export function getBot(): Bot {
   bot.command('support', support);
   bot.hears(MENU.support, support);
 
-  // Шаблонного автоответа на произвольный текст здесь нет: он обещал
-  // клиенту менеджера, до которого сообщение не доходило. Переписка —
-  // отдельная работа, и до неё молчание честнее обещания.
+  /*
+   * Всё остальное — обращение к менеджеру. Шаблонного автоответа здесь
+   * нет: подтверждение приёма возвращает операция, и только на первое
+   * сообщение череды — иначе разговор выглядит перепиской с
+   * автоответчиком.
+   */
+  bot.on('message:text', (ctx) => receive(ctx, { body: ctx.message.text }, menu));
+
+  bot.on('message:photo', (ctx) => {
+    // Берётся самый крупный размер: Telegram присылает лесенку, и
+    // менеджеру нужен тот, на котором видно сумму перевода.
+    const largest = ctx.message.photo.at(-1);
+    return receive(
+      ctx,
+      {
+        ...(ctx.message.caption === undefined ? {} : { body: ctx.message.caption }),
+        ...(largest === undefined ? {} : { attachmentFileId: largest.file_id }),
+      },
+      menu,
+    );
+  });
 
   /*
    * Отказ ядра — не повод оставить клиента без ответа и не повод
@@ -109,6 +128,41 @@ export function getBot(): Bot {
 
   instance = bot;
   return bot;
+}
+
+/**
+ * Обращение клиента: сохранить и подтвердить приём.
+ *
+ * Само сообщение не пересылается сотрудникам отсюда: их уведомляет бот
+ * входа в админку, чей токен лежит только в деплое панели
+ * (docs/adr/0005). Клиентское приложение до него не дотягивается — и не
+ * должно.
+ */
+async function receive(
+  ctx: Context,
+  content: { body?: string; attachmentFileId?: string },
+  menu: Keyboard,
+): Promise<void> {
+  const telegramUserId = ctx.from?.id;
+  if (telegramUserId === undefined) return;
+
+  const { notifications } = await getCore().receiveClientMessage({
+    telegramUserId: BigInt(telegramUserId),
+    ...content,
+    ...(ctx.from?.username === undefined ? {} : { username: ctx.from.username }),
+  });
+
+  // Подтверждение отвечается прямо здесь, а не уходит доставкой: так оно
+  // приходит одним сообщением вместе с меню — клиент, написавший боту
+  // раньше выкатки, увидит клавиатуру с первым же своим вопросом.
+  // Пустой ответ операции означает, что подтверждение уже уходило: два
+  // одинаковых сообщения подряд превратили бы разговор в автоответчик.
+  const acknowledgement = notifications.find(
+    (one) => one.kind === 'client-message-received',
+  );
+  if (acknowledgement) {
+    await ctx.reply(renderNotification(acknowledgement), { reply_markup: menu });
+  }
 }
 
 /**

@@ -32,10 +32,14 @@ export default async function PanelLayout({ children }: { children: ReactNode })
    * разделами — плата за это; очереди рассчитаны на десятки строк, и
    * отдельный запрос за одним числом стоил бы столько же.
    */
-  const [exchange, withdrawals, cards] = await Promise.all([
+  const [exchange, withdrawals, cards, conversations] = await Promise.all([
     core.listExchangeRequestQueue(actor),
     core.listWithdrawalQueue(actor),
     core.listCardApplicationQueue(actor),
+    // Обращения считаются запросом за числом, а не выборкой ленты: у
+    // очередей строк десятки, а сообщений в переписке накапливаются
+    // тысячи, и тянуть их ради счётчика нельзя.
+    core.countUnansweredConversations(actor),
   ]);
 
   return (
@@ -47,6 +51,7 @@ export default async function PanelLayout({ children }: { children: ReactNode })
           exchange: exchange.length,
           withdrawals: withdrawals.length,
           cards: cards.length,
+          conversations,
         }}
       />
       <div>{children}</div>

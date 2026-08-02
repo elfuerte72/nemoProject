@@ -10,6 +10,7 @@ import type {
 } from '@nemo/core';
 import type { StaffRole } from '@nemo/types';
 import { pillClass, ROLE_LABELS } from '@/lib/labels';
+import { Dialog } from '@/app/ui/dialog';
 
 /**
  * Раздел администратора: экономика сервиса и сотрудники.
@@ -402,6 +403,27 @@ function TextTemplates({
               setDrafts((current) => ({ ...current, [template.key]: event.target.value }))
             }
           />
+          {/*
+            Предпросмотр тем же окном, в котором менеджер читает
+            переписку: администратор видит формулировку так, как её
+            прочтёт клиент, а не как строку в поле ввода.
+          */}
+          {template.scope === 'bot' ? (
+            <Dialog
+              messages={[
+                {
+                  id: template.key,
+                  direction: 'outgoing',
+                  body: drafts[template.key] ?? template.body,
+                  hasAttachment: false,
+                  authorStaffId: null,
+                  authorName: null,
+                  exchangeRequestId: null,
+                  createdAt: new Date(),
+                },
+              ]}
+            />
+          ) : undefined}
           <div className="row__actions">
             <button
               type="button"

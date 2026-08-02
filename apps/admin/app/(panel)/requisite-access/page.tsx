@@ -65,10 +65,10 @@ export default async function RequisiteAccessPage({
       <main className="page">
         <header className="page__head">
           <div>
-            <h1 className="page__title">Журнал доступа к реквизитам</h1>
+            <h1 className="page__title">Журнал доступа</h1>
             <p className="page__sub">
-              Кто и когда открывал чужие номера карт. Только чтение: записи не правятся и
-              не удаляются.
+              Кто и когда открывал чужие номера карт, адреса кошельков и присланные
+              клиентами изображения. Только чтение: записи не правятся и не удаляются.
             </p>
           </div>
           <span className="section__count">{entries.length}</span>
@@ -108,7 +108,7 @@ export default async function RequisiteAccessPage({
         </form>
 
         {entries.length === 0 ? (
-          <p className="empty">Обращений к реквизитам не было.</p>
+          <p className="empty">К чувствительным данным никто не обращался.</p>
         ) : (
           <ul className="rows">
             {entries.map((entry) => (
@@ -131,6 +131,13 @@ export default async function RequisiteAccessPage({
                     {entry.withdrawalRequestId
                       ? ` · реквизиты по заявке на вывод ${entry.withdrawalRequestId.slice(0, 8)}`
                       : ''}
+                    {/*
+                      Вложение — такой же чувствительный документ: на
+                      скриншоте перевода видно и счёт, и имя. Без этой
+                      строки его просмотр в журнале неотличим от
+                      прочих — а журнал ведётся ровно ради «что именно».
+                    */}
+                    {entry.messageId ? ' · изображение из переписки' : ''}
                   </span>
                 </div>
                 <span className="row__meta">
