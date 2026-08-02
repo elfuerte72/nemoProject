@@ -1,9 +1,23 @@
 import { z } from 'zod';
 import { InvalidInputError } from '@nemo/core';
 import { staffRoleSchema, telegramUserIdSchema } from '@nemo/types';
+import type { StaffEnrollment } from '@nemo/core';
 import { errorResponse, json } from '@/lib/api';
 import { requireStaffActor } from '@/lib/auth/require-session';
+import { enrollmentQr } from '@/lib/auth/enrollment';
 import { getCore } from '@/lib/core';
+
+/**
+ * Ключ второго фактора уходит на экран вместе с кодом для камеры.
+ * Переписывать тридцать два знака руками — занятие, на котором
+ * ошибаются, а ошибка выглядит как «код не подходит».
+ */
+async function withQr(enrollment: StaffEnrollment) {
+  return {
+    ...enrollment,
+    qr: await enrollmentQr(enrollment.staff.displayName, enrollment.enrollmentSecret),
+  };
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,7 +67,7 @@ export async function POST(request: Request): Promise<Response> {
           displayName: input.displayName,
           role: input.role,
         });
-        return json(enrollment, { status: 201 });
+        return json(await withQr(enrollment), { status: 201 });
       }
       case 'role':
         return json({ staff: await core.updateStaffRole(actor, input.staffId, input.role) });
@@ -62,7 +76,7 @@ export async function POST(request: Request): Promise<Response> {
           staff: await core.setStaffActive(actor, input.staffId, input.isActive),
         });
       case 'reset-second-factor':
-        return json(await core.resetStaffSecondFactor(actor, input.staffId));
+        return json(await withQr(await core.resetStaffSecondFactor(actor, input.staffId)));
     }
   } catch (error) {
     return errorResponse(error);

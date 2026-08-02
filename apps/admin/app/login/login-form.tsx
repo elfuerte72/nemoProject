@@ -59,7 +59,9 @@ export function LoginForm() {
       const response = await fetch('/api/auth/totp', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code }),
+        // Аутентификаторы показывают код с пробелом посередине, и
+        // скопированный вместе с ним он не должен считаться неверным.
+        body: JSON.stringify({ code: code.replace(/\s+/g, '') }),
       });
       if (!response.ok) {
         const body = (await response.json()) as { error?: string };
@@ -87,8 +89,8 @@ export function LoginForm() {
         </>
       ) : (
         <form onSubmit={submitCode} style={styles.form}>
-          <label style={styles.muted} htmlFor="totp">
-            Код из приложения
+          <label style={styles.label} htmlFor="totp">
+            Код из приложения-аутентификатора
           </label>
           <input
             id="totp"
@@ -99,6 +101,16 @@ export function LoginForm() {
             autoFocus
             style={styles.input}
           />
+          {/*
+            Иначе человек ждёт код в сообщении и не находит его: слово
+            «приложение» он читает как Telegram, а больше на экране
+            подсказок нет.
+          */}
+          <p style={styles.muted}>
+            Шесть цифр из Google Authenticator, Яндекс Ключа или другого приложения,
+            куда добавлен ваш ключ. Код меняется каждые 30 секунд, и никуда не
+            присылается — приложение считает его само.
+          </p>
           <button type="submit" disabled={busy} style={styles.button}>
             Войти
           </button>
@@ -128,6 +140,7 @@ const styles = {
   },
   heading: { fontSize: '1.25rem' },
   form: { display: 'flex', flexDirection: 'column', gap: '0.6rem' },
+  label: { fontSize: '0.9rem', fontWeight: 600 },
   input: { padding: '0.6rem', fontSize: '1.1rem', letterSpacing: '0.2em' },
   button: { padding: '0.7rem', fontSize: '1rem', fontWeight: 600 },
   muted: { opacity: 0.7, fontSize: '0.85rem', lineHeight: 1.45 },

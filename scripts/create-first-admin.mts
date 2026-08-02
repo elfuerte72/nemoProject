@@ -1,4 +1,22 @@
+import QRCode from 'qrcode';
 import { CoreError, createCore, createDatabase } from '@nemo/core';
+
+/**
+ * Ссылка, которую понимают все аутентификаторы. Та же сборка, что в
+ * админке: `apps/admin/lib/auth/enrollment.ts` — но импортировать оттуда
+ * скрипт не может, приложение ему не зависимость.
+ */
+function otpauthUri(displayName: string, secret: string): string {
+  const issuer = 'nemoProject';
+  const params = new URLSearchParams({
+    secret,
+    issuer,
+    algorithm: 'SHA1',
+    digits: '6',
+    period: '30',
+  });
+  return `otpauth://totp/${encodeURIComponent(`${issuer}:${displayName}`)}?${params}`;
+}
 
 /**
  * Завести первого администратора при развёртывании.
@@ -45,9 +63,16 @@ async function main(): Promise<void> {
       displayName: displayName!,
     });
 
-    console.log(`Администратор «${staff.displayName}» заведён.`);
-    console.log(`Ключ для приложения-аутентификатора: ${enrollmentSecret}`);
-    console.log('Добавьте его в приложение сейчас — второй раз он показан не будет.');
+    console.log(`Администратор «${staff.displayName}» заведён.\n`);
+
+    // Код прямо в терминале: переписывать тридцать два знака руками —
+    // занятие, на котором ошибаются, а ошибка выглядит как «код не
+    // подходит» и уводит разбираться не туда.
+    const uri = otpauthUri(staff.displayName, enrollmentSecret);
+    console.log(await QRCode.toString(uri, { type: 'terminal', small: true }));
+    console.log('Наведите камеру приложения-аутентификатора на код выше.');
+    console.log(`Либо добавьте ключ вручную: ${enrollmentSecret}`);
+    console.log('Показывается один раз — второй раз его не будет.');
   } catch (error) {
     // Отказ операции — не авария скрипта: чаще всего он означает, что
     // сотрудники уже заведены. Стек в этом случае только мешает.
