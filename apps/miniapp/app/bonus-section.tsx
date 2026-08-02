@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { BonusAccountView, WithdrawalRequestView } from '@nemo/core';
-import type { WithdrawalMethod } from '@nemo/types';
+import { withdrawalNetworks, type WithdrawalMethod, type WithdrawalNetwork } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { formatAmount, formatDate, parseAmount, shortId } from '@/lib/format';
 import {
@@ -11,7 +11,6 @@ import {
   WITHDRAWAL_STATUS_LABELS,
 } from '@/lib/labels';
 import { getWebApp } from '@/lib/telegram/webapp';
-import type { BonusIntent } from './client-app';
 import { InviteIcon, WithdrawIcon } from './ui/icons';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
@@ -47,13 +46,7 @@ type SheetState =
   | { readonly kind: 'invite' }
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
-export function BonusSection({
-  intent,
-  onIntentShown,
-}: {
-  readonly intent: BonusIntent | undefined;
-  readonly onIntentShown: () => void;
-}) {
+export function BonusSection() {
   const [account, setAccount] = useState<BonusAccountView>();
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequestView[]>([]);
   const [sheet, setSheet] = useState<SheetState>();
@@ -77,14 +70,6 @@ export function BonusSection({
       }
     })();
   }, []);
-
-  // Кнопка «Вывести» есть и на экране обмена: оттуда раздел открывается
-  // сразу нужным листом, а не на полшага раньше.
-  useEffect(() => {
-    if (!intent) return;
-    setSheet({ kind: intent });
-    onIntentShown();
-  }, [intent, onIntentShown]);
 
   const link = account ? referralLink(account.referralCode) : undefined;
 
@@ -132,7 +117,7 @@ export function BonusSection({
           <span className="quick__circle">
             <WithdrawIcon />
           </span>
-          <span className="quick__label">Вывести</span>
+          <span className="quick__label">Вывод</span>
         </button>
         <button type="button" onClick={() => setSheet({ kind: 'invite' })} className="quick">
           <span className="quick__circle">
@@ -181,6 +166,7 @@ export function BonusSection({
                   </span>
                   <span className="row__sub">
                     {formatDate(request.createdAt)}
+                    {request.network ? ` · ${request.network}` : ''}
                     {request.destinationHint ? ` · ${request.destinationHint}` : ''}
                     {request.rejectReason ? ` · ${request.rejectReason}` : ''}
                   </span>
@@ -283,6 +269,7 @@ function WithdrawSheet({
 }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<WithdrawalMethod>('bank');
+  const [network, setNetwork] = useState<WithdrawalNetwork>(withdrawalNetworks[0]);
   const [destination, setDestination] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -295,6 +282,7 @@ function WithdrawSheet({
         amount: parseAmount(amount),
         method,
         destination: destination.trim(),
+        ...(method === 'crypto' ? { network } : {}),
       });
       onSubmitted(created.request);
     } catch (failure) {
@@ -336,14 +324,36 @@ function WithdrawSheet({
             className="input"
           />
         </label>
+        {/*
+          Сеть спрашивается до адреса: он в разных сетях выглядит
+          одинаково, и перевод не в ту не возвращается.
+        */}
+        {method === 'crypto' ? (
+          <div className="field">
+            <span className="field__label">Сеть</span>
+            <div className="chips">
+              {withdrawalNetworks.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setNetwork(value)}
+                  aria-pressed={network === value}
+                  className="chips__item"
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : undefined}
         <label className="field">
           <span className="field__label">
-            {method === 'bank' ? 'Счёт или карта' : 'Адрес кошелька'}
+            {method === 'bank' ? 'Счёт или карта' : `Адрес кошелька в сети ${network}`}
           </span>
           <input
             value={destination}
             onChange={(event) => setDestination(event.target.value)}
-            placeholder={method === 'bank' ? '0000 0000 0000 0000' : 'Адрес сети'}
+            placeholder={method === 'bank' ? '0000 0000 0000 0000' : 'Адрес кошелька'}
             className="input"
           />
         </label>

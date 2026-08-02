@@ -350,6 +350,11 @@ export const withdrawalRequests = pgTable(
       .references(() => clients.telegramUserId),
     amount: money('amount').notNull(),
     method: withdrawalMethodEnum('method').notNull(),
+    /**
+     * Сеть перевода. Только у выплат в криптовалюте: у банковского счёта
+     * её нет, и «TRC20» рядом с номером карты означал бы ошибку ввода.
+     */
+    network: text('network'),
     destinationSealed: bytea('destination_sealed'),
     destinationHint: text('destination_hint'),
     status: withdrawalRequestStatusEnum('status').default('new').notNull(),
@@ -366,6 +371,12 @@ export const withdrawalRequests = pgTable(
     check(
       'withdrawal_requests_reject_reason',
       sql`${table.status} <> 'rejected' or ${table.rejectReason} is not null`,
+    ),
+    // Криптоперевод без сети отправить некуда: один и тот же адрес живёт
+    // в нескольких, и выбор наугад — потерянные деньги.
+    check(
+      'withdrawal_requests_crypto_network',
+      sql`${table.method} <> 'crypto' or ${table.network} is not null`,
     ),
   ],
 );

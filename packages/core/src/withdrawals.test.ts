@@ -87,6 +87,7 @@ describe('подача заявки на вывод', () => {
         amount: '999',
         method: 'crypto',
         destination: 'TXYZ',
+        network: 'TRC20',
       }),
     ).rejects.toThrow(InvalidInputError);
   });
@@ -101,6 +102,33 @@ describe('подача заявки на вывод', () => {
         destination: '40817810099910004312',
       }),
     ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('требует сеть у выплаты в криптовалюте', async () => {
+    await givenClientWithBonuses(5000);
+
+    // Один и тот же адрес существует в нескольких сетях, и отправленное
+    // не в ту не возвращается: угадывать её за клиента нельзя.
+    await expect(
+      core.submitWithdrawalRequest(asClient(1n), {
+        amount: '5000',
+        method: 'crypto',
+        destination: 'TXYZabcdef1234567890',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не запоминает сеть у выплаты на счёт: там её нет', async () => {
+    await givenClientWithBonuses(5000);
+
+    const { request } = await core.submitWithdrawalRequest(asClient(1n), {
+      amount: '5000',
+      method: 'bank',
+      destination: '40817810099910004312',
+      network: 'TRC20',
+    });
+
+    expect(request.network).toBeNull();
   });
 
   it('требует реквизиты получения', async () => {
@@ -138,6 +166,7 @@ describe('реквизиты получения', () => {
       amount: '5000',
       method: 'crypto',
       destination: 'TXYZabcdef1234567890',
+      network: 'TRC20',
     });
 
     expect(await core.revealWithdrawalDestination(manager, request.id)).toBe(
@@ -151,6 +180,7 @@ describe('реквизиты получения', () => {
       amount: '5000',
       method: 'crypto',
       destination: 'TXYZabcdef1234567890',
+      network: 'TRC20',
     });
 
     await expect(

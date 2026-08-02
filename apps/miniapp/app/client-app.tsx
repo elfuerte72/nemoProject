@@ -32,9 +32,6 @@ import { Popover } from './ui/popover';
 
 type Tab = 'exchange' | 'bonus' | 'card';
 
-/** Что открыть в разделе бонусов, когда туда ведёт кнопка с другого экрана. */
-export type BonusIntent = 'withdraw' | 'invite';
-
 const TABS: readonly {
   id: Tab;
   label: string;
@@ -83,7 +80,6 @@ export function ClientApp() {
   // Направление перехода: экраны в панели лежат слева направо, и лист
   // должен въезжать с той стороны, куда клиент двинулся.
   const [back, setBack] = useState(false);
-  const [bonusIntent, setBonusIntent] = useState<BonusIntent>();
   const [client, setClient] = useState<ClientView>();
   const [support, setSupport] = useState(false);
   const [error, setError] = useState<string>();
@@ -112,16 +108,12 @@ export function ClientApp() {
   }, []);
 
   const go = useCallback(
-    (next: Tab, intent?: BonusIntent) => {
+    (next: Tab) => {
       setBack(TABS.findIndex((one) => one.id === next) < TABS.findIndex((one) => one.id === tab));
       setTab(next);
-      setBonusIntent(intent);
     },
     [tab],
   );
-
-  const openBonus = useCallback((intent: BonusIntent) => go('bonus', intent), [go]);
-  const clearIntent = useCallback(() => setBonusIntent(undefined), []);
 
   return (
     <div className="app">
@@ -162,10 +154,8 @@ export function ClientApp() {
       ) : (
         <div className={keyboard ? 'app__scroll app__scroll--bare' : 'app__scroll'}>
           <div key={tab} className={back ? 'app__screen app__screen--back' : 'app__screen'}>
-            {tab === 'exchange' ? <ExchangeScreen onBonus={openBonus} /> : undefined}
-            {tab === 'bonus' ? (
-              <BonusSection intent={bonusIntent} onIntentShown={clearIntent} />
-            ) : undefined}
+            {tab === 'exchange' ? <ExchangeScreen /> : undefined}
+            {tab === 'bonus' ? <BonusSection /> : undefined}
             {tab === 'card' ? <CardSection /> : undefined}
           </div>
 

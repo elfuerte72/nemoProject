@@ -8,6 +8,7 @@ import {
   isWithdrawalOpen,
   type Amount,
   type WithdrawalMethod,
+  type WithdrawalNetwork,
   type WithdrawalRequestStatus,
 } from '@nemo/types';
 import { requireClient, requireStaff, type Actor } from './actor.js';
@@ -47,6 +48,8 @@ export interface WithdrawalRequestView {
   readonly clientId: bigint;
   readonly amount: Amount;
   readonly method: WithdrawalMethod;
+  /** Сеть перевода. У выплаты на банковский счёт её нет. */
+  readonly network: WithdrawalNetwork | null;
   /** Всё, что видно о реквизитах получения без расшифровки. */
   readonly destinationHint: string | null;
   readonly status: WithdrawalRequestStatus;
@@ -60,6 +63,8 @@ export interface SubmitWithdrawalInput {
   readonly method: WithdrawalMethod;
   /** Счёт или адрес кошелька. Наружу больше не отдаётся. */
   readonly destination: string;
+  /** Сеть перевода. Обязательна для криптовалюты и бессмысленна для счёта. */
+  readonly network?: WithdrawalNetwork | undefined;
 }
 
 export interface WithdrawalTransitionResult {
@@ -78,6 +83,7 @@ function toView(row: WithdrawalRow): WithdrawalRequestView {
     clientId: row.clientId,
     amount: Money.toAmount(row.amount),
     method: row.method,
+    network: toNetwork(row.network),
     destinationHint: row.destinationHint,
     status: row.status,
     rejectReason: row.rejectReason,
@@ -94,6 +100,15 @@ function notificationFor(row: WithdrawalRow): Notification {
     amount: Money.toAmount(row.amount),
     ...(row.rejectReason === null ? {} : { rejectReason: row.rejectReason }),
   };
+}
+
+/**
+ * Сеть из базы. Колонка текстовая, а не перечислением: список сетей
+ * меняется чаще, чем стоит гонять миграции, и хранимое значение уже
+ * проверено при подаче.
+ */
+function toNetwork(value: string | null): WithdrawalNetwork | null {
+  return value === null ? null : (value as WithdrawalNetwork);
 }
 
 /**
@@ -143,6 +158,12 @@ export async function submitWithdrawalRequest(
   if (!destination) {
     throw new InvalidInputError('Укажите, куда перечислить выплату');
   }
+  // Сеть у криптоперевода обязательна: тот же адрес существует в
+  // нескольких, и отправленное не в ту не возвращается. Ограничение
+  // повторено в базе — здесь оно нужно ради внятного отказа.
+  if (input.method === 'crypto' && !input.network) {
+    throw new InvalidInputError('Выберите сеть, в которой ждёте перевод');
+  }
   const sealed = seal(requirePublicKey(ctx), destination);
 
   return ctx.db.transaction(async (tx) => {
@@ -179,6 +200,9 @@ export async function submitWithdrawalRequest(
         clientId,
         amount,
         method: input.method,
+        // У банковского счёта сети нет: пришедшую вместе с ним не
+        // сохраняем, иначе она попадёт в карточку заявки и собьёт с толку.
+        network: input.method === 'crypto' ? (input.network ?? null) : null,
         destinationSealed: sealed,
         destinationHint: hint(destination),
       })
