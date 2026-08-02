@@ -84,7 +84,7 @@ describe('второй фактор', () => {
       totpCode(enrolled.enrollmentSecret),
     );
 
-    expect(session).toEqual({ staffId, role: 'admin' });
+    expect(session).toMatchObject({ staffId, role: 'admin' });
   });
 
   it('не принимает код у сотрудника, отключённого между шагами входа', async () => {
@@ -102,7 +102,7 @@ describe('действующая сессия', () => {
   it('перестаёт действовать, как только сотрудника отключили', async () => {
     const { staff } = await givenEnrolledStaff(777n);
 
-    expect(await core.getActiveStaff(staff.id)).toEqual({
+    expect(await core.getActiveStaff(staff.id)).toMatchObject({
       staffId: staff.id,
       role: 'manager',
     });

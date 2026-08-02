@@ -28,6 +28,8 @@ export const DENIED = 'Доступ запрещён';
 export interface StaffSession {
   readonly staffId: string;
   readonly role: StaffRole;
+  /** Кем сотрудник подписан в панели: строка уже прочитана, лишнего запроса нет. */
+  readonly displayName: string;
 }
 
 type StaffRow = typeof staff.$inferSelect;
@@ -60,7 +62,7 @@ export async function beginStaffLogin(
   if (!row?.isActive || !row.totpSecretSealed) {
     throw new ForbiddenError(DENIED);
   }
-  return { staffId: row.id, role: row.role };
+  return { staffId: row.id, role: row.role, displayName: row.displayName };
 }
 
 /** Второй шаг: без верного кода сессия не выдаётся. */
@@ -78,7 +80,7 @@ export async function completeStaffLogin(
   if (!verifyTotp(secret, code)) {
     throw new ForbiddenError(DENIED);
   }
-  return { staffId: row.id, role: row.role };
+  return { staffId: row.id, role: row.role, displayName: row.displayName };
 }
 
 /**
@@ -93,5 +95,5 @@ export async function getActiveStaff(
   staffId: string,
 ): Promise<StaffSession> {
   const row = await findActive(ctx.db, staffId);
-  return { staffId: row.id, role: row.role };
+  return { staffId: row.id, role: row.role, displayName: row.displayName };
 }

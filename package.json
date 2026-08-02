@@ -14,6 +14,7 @@
     "db:studio": "pnpm --filter @nemo/db studio",
     "generate-keys": "tsx scripts/generate-requisite-keys.mts",
     "create-first-admin": "tsx --env-file-if-exists=.env scripts/create-first-admin.mts",
+    "reissue-second-factor": "tsx --env-file-if-exists=.env scripts/reissue-second-factor.mts",
     "set-telegram-webhook": "tsx --env-file-if-exists=.env scripts/set-telegram-webhook.mts",
     "seed-currency-pairs": "tsx --env-file-if-exists=.env scripts/seed-currency-pairs.mts"
   },

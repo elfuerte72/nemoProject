@@ -31,8 +31,15 @@ export default async function SettingsPage() {
     ]);
 
     return (
-      <main style={styles.page}>
-        <h1 style={styles.title}>Настройки</h1>
+      <main className="page">
+        <header className="page__head">
+          <div>
+            <h1 className="page__title">Настройки</h1>
+            <p className="page__sub">
+              Ставки, наценки и сотрудники. Изменения действуют вперёд и попадают в журнал.
+            </p>
+          </div>
+        </header>
 
         <SettingsForms
           settings={settings}
@@ -45,20 +52,26 @@ export default async function SettingsPage() {
 
         <BroadcastForm broadcasts={broadcasts} />
 
-        <section style={styles.block}>
-          <h2 style={styles.heading}>Журнал изменений</h2>
+        <section className="section">
+          <div className="section__head">
+            <h2 className="section__title">Журнал изменений</h2>
+            <span className="section__rule" />
+          </div>
           {log.length === 0 ? (
-            <p style={styles.muted}>Настройки ещё не меняли.</p>
+            <p className="empty">Настройки ещё не меняли.</p>
           ) : (
-            <ul style={styles.list}>
+            <ul className="rows">
               {log.map((entry) => (
-                <li key={entry.id} style={styles.item}>
-                  <div>
-                    {new Date(entry.createdAt).toLocaleString('ru-RU')} — {entry.staffName}
+                <li key={entry.id} className="row">
+                  <div className="row__main">
+                    <span className="row__title">{entry.staffName}</span>
+                    <span className="row__meta">
+                      {entry.subject}: {JSON.stringify(entry.changes)}
+                    </span>
                   </div>
-                  <div style={styles.muted}>
-                    {entry.subject}: {JSON.stringify(entry.changes)}
-                  </div>
+                  <span className="row__meta">
+                    {new Date(entry.createdAt).toLocaleString('ru-RU')}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -71,30 +84,12 @@ export default async function SettingsPage() {
     // страницу входа — войти он как раз может, просто не сюда.
     if (error instanceof CoreError && error.code === 'forbidden') {
       return (
-        <main style={styles.page}>
-          <h1 style={styles.title}>Настройки</h1>
-          <p style={styles.muted}>Раздел доступен только администратору.</p>
+        <main className="page">
+          <h1 className="page__title">Настройки</h1>
+          <p className="empty">Раздел доступен только администратору.</p>
         </main>
       );
     }
     throw error;
   }
 }
-
-const styles = {
-  page: {
-    fontFamily: 'system-ui, sans-serif',
-    padding: '2rem 1.5rem',
-    maxWidth: 780,
-    margin: '0 auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2rem',
-  },
-  title: { fontSize: '1.3rem' },
-  block: { display: 'flex', flexDirection: 'column', gap: '0.6rem' },
-  heading: { fontSize: '1.05rem' },
-  list: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.6rem' },
-  item: { borderTop: '1px solid rgba(128,128,128,0.25)', paddingTop: '0.5rem' },
-  muted: { opacity: 0.7, fontSize: '0.85rem', lineHeight: 1.45, wordBreak: 'break-word' },
-} satisfies Record<string, React.CSSProperties>;

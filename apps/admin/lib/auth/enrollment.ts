@@ -11,34 +11,18 @@ import QRCode from 'qrcode';
  *
  * Сам ключ остаётся на экране: телефона под рукой может не быть, а
  * менеджеры паролей принимают его текстом.
+ *
+ * Ссылку собирает ядро (`@nemo/core`, second-factor.ts) — её же печатает
+ * скрипт развёртывания, у которого этого экрана нет.
  */
-
-const ISSUER = 'nemoProject';
-
-/**
- * Ссылка, которую понимают все аутентификаторы. Имя сотрудника входит в
- * подпись записи — иначе в приложении с десятком служб человек не
- * поймёт, к какой из них относится строка.
- */
-export function otpauthUri(displayName: string, secret: string): string {
-  const label = encodeURIComponent(`${ISSUER}:${displayName}`);
-  const params = new URLSearchParams({
-    secret,
-    issuer: ISSUER,
-    algorithm: 'SHA1',
-    digits: '6',
-    period: '30',
-  });
-  return `otpauth://totp/${label}?${params.toString()}`;
-}
 
 /**
  * Код для камеры в виде разметки, а не картинки: страница отдаётся
  * готовой, и отдельный запрос за изображением ключа второго фактора
  * оставил бы его в кэше и в журнале обращений.
  */
-export async function enrollmentQr(displayName: string, secret: string): Promise<string> {
-  return QRCode.toString(otpauthUri(displayName, secret), {
+export async function enrollmentQr(otpauthUri: string): Promise<string> {
+  return QRCode.toString(otpauthUri, {
     type: 'svg',
     margin: 1,
     errorCorrectionLevel: 'M',

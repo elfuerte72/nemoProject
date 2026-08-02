@@ -1,0 +1,858 @@
+/*
+ * Визуальный язык админ-панели.
+ *
+ * Токены те же, что в клиентском приложении (`apps/miniapp/app/globals.css`):
+ * это один сервис, и менеджер, открывший панель после Mini App, должен
+ * узнать её. Размеры — другие: тут не палец на телефоне, а курсор на
+ * ноутбуке, и в одном экране должна помещаться очередь, а не одна
+ * карточка.
+ *
+ * Файл один, а не модуль на экран: экранов шесть, и делят они всё —
+ * боковое меню, карточку, ряд списка, поле, кнопку. Разложенные по
+ * модулям, эти правила разошлись бы при первой же правке.
+ *
+ * Тема фиксированно тёмная: светлого варианта макета нет, а половина
+ * палитры, собранная на глаз, читалась бы хуже отсутствующей.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0a0a0c;
+  --surface: #15151a;
+  --surface-soft: rgba(245, 242, 234, 0.04);
+  --surface-soft-strong: rgba(245, 242, 234, 0.07);
+  --surface-soft-hover: rgba(245, 242, 234, 0.08);
+  --hairline: rgba(245, 242, 234, 0.07);
+  --hairline-soft: rgba(245, 242, 234, 0.06);
+
+  --text: #f5f2ea;
+  --text-dim: #c9c4b9;
+  --text-muted: #96918a;
+  --text-faint: #55524c;
+
+  --gold: #c9a66b;
+  --gold-light: #d9be86;
+  --gold-ink: #14120e;
+  --gold-face: linear-gradient(150deg, #f0dfb8, #c9a66b 65%, #b18f52);
+
+  --up: #57b98a;
+  --down: #e0574f;
+  --wait: #d9be86;
+
+  --lift: inset 0 1px 0 rgba(245, 242, 234, 0.07);
+  --drop: 0 18px 40px -28px rgba(0, 0, 0, 1);
+
+  --sidebar: 248px;
+  --gutter: 32px;
+  --radius-card: 18px;
+  --radius-control: 12px;
+  --radius-inner: 10px;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+select,
+button,
+textarea {
+  font-family: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+}
+
+@keyframes nm-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Оболочка ────────────────────────────────────────────────────── */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+/*
+ * Меню не уезжает со страницей: между разделами менеджер ходит весь
+ * день, и прокрутка наверх перед каждым переходом — это его время.
+ */
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 26px 18px;
+  border-right: 1px solid var(--hairline);
+  background: #0c0c10;
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.sidebar__brand span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar__group {
+  margin: 18px 0 6px;
+  padding: 0 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.sidebar__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: var(--radius-inner);
+  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.sidebar__link:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+/*
+ * Текущий раздел отмечен и цветом, и полосой слева: одного золота на
+ * тёмном мало — вкладки различаются на глаз, только если смотреть.
+ */
+.sidebar__link[aria-current='page'] {
+  background: rgba(217, 190, 134, 0.1);
+  color: var(--gold-light);
+  box-shadow: inset 2px 0 0 var(--gold);
+}
+
+.sidebar__icon {
+  flex-shrink: 0;
+  display: flex;
+  color: currentColor;
+}
+
+/* Счётчик очереди: сколько ждёт — видно, не открывая раздел. */
+.sidebar__count {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.sidebar__link[aria-current='page'] .sidebar__count {
+  background: rgba(217, 190, 134, 0.18);
+  color: var(--gold-light);
+}
+
+.sidebar__foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+
+.sidebar__who {
+  padding: 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sidebar__name {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.sidebar__role {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ── Страница ────────────────────────────────────────────────────── */
+
+.page {
+  padding: 30px var(--gutter) 72px;
+  max-width: 1180px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  animation: nm-fade-up 0.28s var(--ease) both;
+}
+
+.page--narrow {
+  max-width: 760px;
+}
+
+.page__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.page__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+}
+
+.page__sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.page__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.page__back:hover {
+  color: var(--gold-light);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.section__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.section__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+
+.section__count {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* ── Поверхности ─────────────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  padding: 20px 22px;
+  box-shadow: var(--lift), var(--drop);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.card__note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+
+/* ── Списки заявок ───────────────────────────────────────────────── */
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  transition: background 0.15s ease;
+}
+
+a.row:hover,
+.row--hover:hover {
+  background: var(--surface-soft-hover);
+}
+
+.row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.row__main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row__title {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
+}
+
+.row__meta {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.row__side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── Состояния ───────────────────────────────────────────────────── */
+
+.pill {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* Ждёт человека — золото: столько же внимания, сколько кнопке. */
+.pill--wait {
+  background: rgba(217, 190, 134, 0.14);
+  color: var(--gold-light);
+}
+
+.pill--done {
+  background: rgba(87, 185, 138, 0.14);
+  color: var(--up);
+}
+
+.pill--off {
+  background: rgba(224, 87, 79, 0.14);
+  color: var(--down);
+}
+
+.tag {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ── Кнопки ──────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--radius-control);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    filter 0.15s ease,
+    background 0.15s ease,
+    transform 0.12s ease;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.btn--gold {
+  background: var(--gold-face);
+  color: var(--gold-ink);
+}
+
+.btn--gold:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn--soft {
+  background: var(--surface-soft-strong);
+  color: var(--text);
+}
+
+.btn--soft:hover:not(:disabled) {
+  background: rgba(245, 242, 234, 0.12);
+}
+
+.btn--ghost {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: none;
+  border: 1px solid var(--hairline);
+  color: var(--text-dim);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  border-color: rgba(217, 190, 134, 0.5);
+  color: var(--text);
+}
+
+/* Отмена и отказ — красным по краю, а не заливкой: это тоже рабочее
+   действие, а не авария, но перепутать его с соседним нельзя. */
+.btn--danger {
+  background: none;
+  border: 1px solid rgba(224, 87, 79, 0.35);
+  color: #f0857e;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: rgba(224, 87, 79, 0.1);
+}
+
+.btn--wide {
+  width: 100%;
+}
+
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-light);
+  cursor: pointer;
+  text-align: left;
+}
+
+.link:hover {
+  color: #f0ddb4;
+}
+
+/* ── Поля ────────────────────────────────────────────────────────── */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.input {
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: rgba(245, 242, 234, 0.03);
+  color: var(--text);
+  font-size: 14px;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.input::placeholder {
+  color: var(--text-faint);
+}
+
+.input:hover {
+  background: var(--surface-soft);
+}
+
+.input:focus {
+  outline: none;
+  border-color: rgba(217, 190, 134, 0.55);
+  background: var(--surface-soft);
+}
+
+textarea.input {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+select.input {
+  appearance: none;
+  cursor: pointer;
+  /* Своя стрелка: системная на тёмном фоне в Chrome остаётся светлой
+     плашкой и выбивается из ряда полей. */
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% + 1px),
+    calc(100% - 13px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
+}
+
+.form-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.form-row > .field {
+  flex: 1;
+  min-width: 160px;
+}
+
+.form-row > .field--narrow {
+  flex: 0 0 170px;
+}
+
+/* ── Пустое и служебное ──────────────────────────────────────────── */
+
+.empty {
+  margin: 0;
+  padding: 22px;
+  border: 1px dashed var(--hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.muted {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.error {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius-control);
+  background: rgba(224, 87, 79, 0.1);
+  color: #f0857e;
+  font-size: 13px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* ── Вход ────────────────────────────────────────────────────────── */
+
+.login {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Тёплое свечение — единственный источник цвета на пустом экране, тот
+   же приём, что на первом экране Mini App. */
+.login::before {
+  content: '';
+  position: absolute;
+  top: -180px;
+  left: 50%;
+  margin-left: -220px;
+  width: 440px;
+  height: 380px;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(201, 166, 107, 0.16), rgba(201, 166, 107, 0));
+  pointer-events: none;
+}
+
+.login__card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  padding: 32px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  animation: nm-fade-up 0.32s var(--ease) both;
+}
+
+.login__brand {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.login__eyebrow {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.login__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Код набирают глазами по цифрам, поэтому он крупный и разрежённый. */
+.login__code {
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  font-variant-numeric: tabular-nums;
+  min-height: 56px;
+}
+
+.login__widget {
+  display: flex;
+  justify-content: center;
+  min-height: 48px;
+}
+
+/* ── Второй фактор ───────────────────────────────────────────────── */
+
+.secret {
+  border: 1px solid rgba(217, 190, 134, 0.35);
+  background: rgba(217, 190, 134, 0.05);
+}
+
+/* Белая подложка обязательна: код читается по контрасту, а чёрные
+   фигуры на тёмном камера не различит. */
+.secret__qr {
+  align-self: center;
+  width: 232px;
+  max-width: 100%;
+  padding: 6px;
+  border-radius: var(--radius-inner);
+  background: #fff;
+  line-height: 0;
+}
+
+.secret__key {
+  padding: 10px 14px;
+  border-radius: var(--radius-inner);
+  background: rgba(10, 10, 12, 0.6);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ── Узкий экран ─────────────────────────────────────────────────── */
+
+/*
+ * Панель — рабочее место за столом, но открывают её и с телефона: чтобы
+ * посмотреть очередь по дороге. Меню в этом случае становится строкой
+ * сверху, а не прячется за кнопкой: разделов шесть, и они помещаются.
+ */
+@media (max-width: 860px) {
+  :root {
+    --gutter: 18px;
+  }
+
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px var(--gutter);
+    border-right: none;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .sidebar__brand {
+    padding: 0;
+  }
+
+  .sidebar__nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .sidebar__group {
+    display: none;
+  }
+
+  .sidebar__link[aria-current='page'] {
+    box-shadow: none;
+  }
+
+  .sidebar__foot {
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: none;
+  }
+
+  .sidebar__who {
+    padding: 0;
+  }
+
+  .page {
+    padding: 22px var(--gutter) 48px;
+  }
+}

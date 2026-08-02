@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { CardApplicationView } from '@nemo/core';
 import { cardApplicationTransitions } from '@nemo/types';
-import { CARD_STATUS_LABELS } from '@/lib/labels';
+import { CARD_STATUS_LABELS, CARD_STATUS_TONES, pillClass } from '@/lib/labels';
 
 /**
  * Заявки на виртуальную карту.
@@ -52,42 +52,55 @@ export function CardList({
   }
 
   if (applications.length === 0) {
-    return <p style={styles.muted}>Заявок на карту нет.</p>;
+    return <p className="empty">Заявок на карту нет.</p>;
   }
 
   return (
     <>
-      {error ? <p style={styles.error}>{error}</p> : undefined}
-      <ul style={styles.list}>
+      {error ? <p className="error">{error}</p> : undefined}
+      <ul className="rows">
         {applications.map((application) => (
-          <li key={application.id} style={styles.item}>
-            <div style={styles.title}>Клиент {application.clientId}</div>
-            <div style={styles.muted}>
-              {CARD_STATUS_LABELS[application.status]} · подана{' '}
-              {new Date(application.createdAt).toLocaleDateString('ru-RU')}
-              {application.providerReference
-                ? ` · у провайдера ${application.providerReference}`
-                : ''}
+          <li key={application.id} className="row row--stack">
+            <div className="row__side" style={{ justifyContent: 'space-between' }}>
+              <div className="row__main">
+                <span className="row__title">Клиент {application.clientId}</span>
+                <span className="row__meta">
+                  подана {new Date(application.createdAt).toLocaleDateString('ru-RU')}
+                  {application.providerReference
+                    ? ` · у провайдера ${application.providerReference}`
+                    : ''}
+                </span>
+              </div>
+              <span className={pillClass(CARD_STATUS_TONES[application.status])}>
+                {CARD_STATUS_LABELS[application.status]}
+              </span>
             </div>
-            <input
-              value={references[application.id] ?? application.providerReference ?? ''}
-              onChange={(event) =>
-                setReferences((current) => ({
-                  ...current,
-                  [application.id]: event.target.value,
-                }))
-              }
-              placeholder="Номер заявки у провайдера"
-              style={styles.input}
-            />
-            <div style={styles.row}>
+
+            <div className="row__actions">
+              <input
+                className="input"
+                style={{ flex: 1, minWidth: '14rem' }}
+                value={references[application.id] ?? application.providerReference ?? ''}
+                onChange={(event) =>
+                  setReferences((current) => ({
+                    ...current,
+                    [application.id]: event.target.value,
+                  }))
+                }
+                placeholder="Номер заявки у провайдера"
+              />
+              {/*
+                Кнопка на каждый доступный переход: состояние заявки
+                приходит от провайдера, и менеджер переносит сюда то, что
+                тот сообщил, — выбирать из полного списка ему незачем.
+              */}
               {cardApplicationTransitions[application.status].map((next) => (
                 <button
                   key={next}
                   type="button"
                   onClick={() => update(application.id, next)}
                   disabled={busy}
-                  style={styles.button}
+                  className={next === 'rejected' ? 'btn btn--danger' : 'btn btn--soft'}
                 >
                   {CARD_STATUS_LABELS[next]}
                 </button>
@@ -99,20 +112,3 @@ export function CardList({
     </>
   );
 }
-
-const styles = {
-  list: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem' },
-  item: {
-    borderTop: '1px solid rgba(128,128,128,0.25)',
-    paddingTop: '0.7rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.4rem',
-  },
-  title: { fontWeight: 600 },
-  row: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' },
-  input: { padding: '0.5rem', fontSize: '0.95rem', maxWidth: '20rem' },
-  button: { padding: '0.5rem 0.8rem', fontSize: '0.9rem' },
-  muted: { opacity: 0.7, fontSize: '0.85rem' },
-  error: { color: '#c0392b', fontSize: '0.9rem' },
-} satisfies Record<string, React.CSSProperties>;

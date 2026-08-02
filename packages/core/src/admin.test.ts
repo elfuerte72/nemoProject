@@ -6,6 +6,7 @@ import {
   createCore,
   ForbiddenError,
   InvalidInputError,
+  NotFoundError,
   type Actor,
 } from './index.js';
 import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
@@ -108,6 +109,38 @@ describe('сотрудники', () => {
     await expect(
       core.completeStaffLogin(staffId, totpCode(second.enrollmentSecret)),
     ).resolves.toMatchObject({ staffId });
+  });
+});
+
+describe('второй фактор из консоли сервера', () => {
+  it('выдаётся заново без администратора: иначе войти, чтобы починить вход, нельзя', async () => {
+    const first = await core.addStaff(admin, { telegramUserId: 555n, displayName: 'Анна' });
+    const { staffId } = await core.beginStaffLogin(555n);
+
+    const second = await core.reissueSecondFactorFromConsole(555n);
+
+    await expect(
+      core.completeStaffLogin(staffId, totpCode(first.enrollmentSecret)),
+    ).rejects.toThrow(ForbiddenError);
+    await expect(
+      core.completeStaffLogin(staffId, totpCode(second.enrollmentSecret)),
+    ).resolves.toMatchObject({ staffId });
+  });
+
+  it('отказывает на незнакомом Telegram, а не заводит сотрудника молча', async () => {
+    await expect(core.reissueSecondFactorFromConsole(404n)).rejects.toThrow(NotFoundError);
+  });
+});
+
+describe('подпись записи в аутентификаторе', () => {
+  it('несёт Telegram и роль: одним «nemo» две записи в приложении не различить', async () => {
+    const { otpauthUri } = await core.addStaff(admin, {
+      telegramUserId: 555n,
+      displayName: 'Анна',
+      role: 'manager',
+    });
+
+    expect(decodeURIComponent(otpauthUri)).toContain('nemo:555 · manager');
   });
 });
 

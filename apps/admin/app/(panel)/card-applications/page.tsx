@@ -21,8 +21,17 @@ export default async function CardApplicationsPage() {
   const applications = await getCore().listCardApplicationQueue(actor);
 
   return (
-    <main style={styles.page}>
-      <h1 style={styles.heading}>Заявки на карту — {applications.length}</h1>
+    <main className="page page--narrow">
+      <header className="page__head">
+        <div>
+          <h1 className="page__title">Заявки на карту</h1>
+          <p className="page__sub">
+            Состояние приходит от провайдера — панель только записывает то, что он сообщил.
+          </p>
+        </div>
+        <span className="section__count">{applications.length}</span>
+      </header>
+
       <CardList
         applications={applications.map((application) => ({
           ...application,
@@ -32,16 +41,3 @@ export default async function CardApplicationsPage() {
     </main>
   );
 }
-
-const styles = {
-  page: {
-    fontFamily: 'system-ui, sans-serif',
-    padding: '2rem 1.5rem',
-    maxWidth: 720,
-    margin: '0 auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.5rem',
-  },
-  heading: { fontSize: '1.3rem' },
-} satisfies Record<string, React.CSSProperties>;

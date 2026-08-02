@@ -7,6 +7,7 @@ import {
   listCurrencyPairsForAdmin,
   listSettingsAuditLog,
   listStaff,
+  reissueSecondFactorFromConsole,
   resetStaffSecondFactor,
   setStaffActive,
   updateCurrencyPairMarkup,
@@ -179,6 +180,9 @@ export function createCore(ctx: CoreConfig) {
     getActiveStaff: (staffId: string) => getActiveStaff(ctx, staffId),
     enrollFirstAdmin: (input: { telegramUserId: bigint; displayName: string }) =>
       enrollFirstAdmin(ctx, input),
+    // Без актора и только из скрипта развёртывания — см. `admin.ts`.
+    reissueSecondFactorFromConsole: (telegramUserId: bigint) =>
+      reissueSecondFactorFromConsole(ctx, telegramUserId),
 
     listStaff: (actor: Actor) => listStaff(ctx, actor),
     addStaff: (actor: Actor, input: AddStaffInput) => addStaff(ctx, actor, input),
