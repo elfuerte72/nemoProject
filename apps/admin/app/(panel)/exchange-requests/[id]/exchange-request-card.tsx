@@ -35,7 +35,11 @@ export function ExchangeRequestCard({
 }: {
   request: ExchangeRequestForDisplay;
   events: readonly ExchangeRequestEventView[];
-  /** Заготовки реквизитов для оплаты: набирать номер руками не нужно. */
+  /**
+   * Заготовки реквизитов для оплаты: набирать номер руками не нужно.
+   * Только они: приветствие бота, подставленное в поле реквизитов, ушло
+   * бы клиенту вместо счёта.
+   */
   templates: readonly TextTemplateView[];
   viewerStaffId: string;
 }) {

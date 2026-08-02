@@ -45,7 +45,7 @@ export default async function RequestPage({
     <ExchangeRequestCard
       request={{ ...request, clientId: request.clientId.toString() }}
       events={events}
-      templates={templates}
+      templates={templates.filter((one) => one.scope === 'payment')}
       viewerStaffId={actor.staffId}
     />
   );

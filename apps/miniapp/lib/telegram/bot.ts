@@ -1,6 +1,7 @@
-import { Bot, InlineKeyboard, Keyboard, type Context } from 'grammy';
+import { Bot, Keyboard, type Context } from 'grammy';
 import { Money } from '@nemo/types';
 import { getCore } from '@/lib/core';
+import { formatRateValue } from '@/lib/format';
 import { referralLink } from '@/lib/referral';
 
 /**
@@ -13,7 +14,8 @@ import { referralLink } from '@/lib/referral';
  * Постоянная клавиатура — главное меню сервиса: она остаётся под полем
  * ввода, и нужную кнопку не приходится искать в истории переписки.
  * Приходит с каждым ответом бота, а не только с `/start`: у клиента,
- * запускавшего бота раньше, меню появится с первым же сообщением.
+ * запускавшего бота раньше, меню появится с первым же ответом — иначе
+ * он остался бы с одной старой кнопкой и списком команд.
  *
  * Тексты берутся из заготовок, которые администратор правит из панели;
  * значения по умолчанию лежат в коде, и пустой справочник ничего не
@@ -77,8 +79,8 @@ export function getBot(): Bot {
 
   bot.command('start', greet);
 
-  bot.command('rates', (ctx) => showRates(ctx, appUrl, menu));
-  bot.hears(MENU.rates, (ctx) => showRates(ctx, appUrl, menu));
+  bot.command('rates', (ctx) => showRates(ctx, menu));
+  bot.hears(MENU.rates, (ctx) => showRates(ctx, menu));
 
   bot.command('referral', (ctx) => sendReferralLink(ctx, menu));
   bot.hears(MENU.referral, (ctx) => sendReferralLink(ctx, menu));
@@ -90,9 +92,31 @@ export function getBot(): Bot {
   // клиенту менеджера, до которого сообщение не доходило. Переписка —
   // отдельная работа, и до неё молчание честнее обещания.
 
+  /*
+   * Отказ ядра — не повод оставить клиента без ответа и не повод
+   * отвечать Telegram ошибкой: он повторит обновление, и клиент получит
+   * то же самое ещё раз. Ошибка пишется в журнал, клиент видит, что его
+   * услышали.
+   */
+  bot.catch(async ({ ctx, error }) => {
+    console.error('Бот не смог ответить:', error);
+    await ctx
+      .reply('Не получилось ответить прямо сейчас. Попробуйте ещё раз через минуту.')
+      .catch(() => undefined);
+  });
+
   instance = bot;
   return bot;
 }
+
+/**
+ * Молчание источника котировок — не поломка: заявку подать можно, и курс
+ * по ней назовёт менеджер. Сказать об этом честно дешевле, чем показать
+ * пустое место.
+ */
+const RATES_UNAVAILABLE =
+  'Курс сейчас недоступен: его назовёт менеджер после подачи заявки. ' +
+  'Обменник работает как обычно.';
 
 /**
  * Курс в чате — единственное место, где бот показывает данные.
@@ -100,47 +124,44 @@ export function getBot(): Bot {
  * Две котировки, а не одна с обратным знаком: наценка накладывается на
  * каждое направление отдельно, и покупка с продажей не зеркальны.
  */
-async function showRates(ctx: Context, appUrl: string, menu: Keyboard): Promise<void> {
+async function showRates(ctx: Context, menu: Keyboard): Promise<void> {
   const core = getCore();
   const [sell, buy] = await Promise.all([
     core.getQuote({ fromCode: 'USDT', toCode: 'RUB' }),
     core.getQuote({ fromCode: 'RUB', toCode: 'USDT' }),
   ]);
 
-  const open = new InlineKeyboard().webApp(MENU.app, appUrl);
-
   if (!sell && !buy) {
-    // Молчание источника котировок — не поломка: заявку подать можно, и
-    // курс по ней назовёт менеджер. Сказать об этом честно дешевле, чем
-    // показать пустое место.
-    await ctx.reply(
-      'Курс сейчас недоступен: его назовёт менеджер после подачи заявки. ' +
-        'Обменник работает как обычно.',
-      { reply_markup: menu },
-    );
+    await ctx.reply(RATES_UNAVAILABLE, { reply_markup: menu });
     return;
   }
 
   const lines = [
-    sell ? `Продаёте USDT — ${rubles(sell.rate)} ₽ за 1 USDT` : undefined,
+    sell ? `Продаёте USDT — ${formatRateValue(sell.rate)} ₽ за 1 USDT` : undefined,
     // Котировка «рубли → USDT» приходит в USDT за рубль: числом вроде
     // 0,0098 человек не пользуется, и она переворачивается в рубли за
     // монету — так курс и читают в обменниках.
     buy && !Money.isZero(buy.rate)
-      ? `Покупаете USDT — ${rubles(Money.divide(Money.toAmount('1'), buy.rate))} ₽ за 1 USDT`
+      ? `Покупаете USDT — ${formatRateValue(Money.divide(Money.toAmount('1'), buy.rate))} ₽ за 1 USDT`
       : undefined,
   ].filter((line) => line !== undefined);
 
+  if (lines.length === 0) {
+    // Обе котировки пришли, но считать по ним нечего. Для клиента это то
+    // же самое, что молчание источника, и сказать надо то же самое.
+    await ctx.reply(RATES_UNAVAILABLE, { reply_markup: menu });
+    return;
+  }
+
+  // Ответ уходит с тем же меню: его первая кнопка открывает обменник и
+  // стоит прямо под сообщением — отдельная кнопка под ответом дублировала
+  // бы её, а клавиатура при этом не дошла бы до тех, кто спрашивает
+  // только курс.
   await ctx.reply(
     `${lines.join('\n')}\n\nКурс с наценкой сервиса: по нему и обменяем — ` +
-      'подать заявку можно в приложении.',
-    { reply_markup: open },
+      'подать заявку можно в обменнике.',
+    { reply_markup: menu },
   );
-}
-
-/** Рубли для чтения: копейки в курсе важны, а восемнадцать знаков — нет. */
-function rubles(value: string): string {
-  return Money.format(Money.toAmount(value), 2).replace('.', ',');
 }
 
 /**
@@ -156,6 +177,10 @@ async function sendReferralLink(ctx: Context, menu: Keyboard): Promise<void> {
   // только там, где `telegram_user_id` подтверждён подписью initData.
   const { client } = await getCore().registerClient({
     telegramUserId: BigInt(telegramUserId),
+    // Username в Telegram меняется, и заведённый из чата клиент не
+    // должен остаться без него: в панели по нему менеджер и узнаёт, с
+    // кем говорит.
+    ...(ctx.from?.username === undefined ? {} : { username: ctx.from.username }),
   });
 
   const link = referralLink(client.referralCode);

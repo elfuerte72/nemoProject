@@ -32,9 +32,20 @@ export const textTemplateKeys = [
 ] as const;
 export type TextTemplateKey = (typeof textTemplateKeys)[number];
 
+/**
+ * Где заготовка применяется.
+ *
+ * Не украшение списка: реквизиты для оплаты менеджер вставляет в
+ * заявку одним нажатием, и приветствие бота, попавшее в тот же список,
+ * ушло бы клиенту вместо счёта.
+ */
+export const textTemplateScopes = ['payment', 'bot'] as const;
+export type TextTemplateScope = (typeof textTemplateScopes)[number];
+
 interface TemplateDefault {
   /** Как заготовка называется в панели: подпись, а не текст для клиента. */
   readonly title: string;
+  readonly scope: TextTemplateScope;
   readonly body: string;
 }
 
@@ -48,18 +59,21 @@ interface TemplateDefault {
 const DEFAULTS: Record<TextTemplateKey, TemplateDefault> = {
   payment_requisites_rub: {
     title: 'Оплата рублями',
+    scope: 'payment',
     body:
       'Реквизиты для оплаты рублями пока не заданы: администратор задаёт их ' +
       'в разделе настроек. До этого номер придётся набирать руками.',
   },
   payment_requisites_usdt: {
     title: 'Оплата в USDT',
+    scope: 'payment',
     body:
       'Адрес кошелька сервиса пока не задан: администратор задаёт его в ' +
       'разделе настроек. До этого адрес придётся набирать руками.',
   },
   bot_greeting: {
     title: 'Приветствие бота',
+    scope: 'bot',
     body:
       'Здравствуйте. Это обменник USDT и рублей — переводом или наличными.\n\n' +
       'Курс видно сразу: по нему и обменяем. Открывайте обменник, выбирайте ' +
@@ -69,12 +83,14 @@ const DEFAULTS: Record<TextTemplateKey, TemplateDefault> = {
   },
   bot_support: {
     title: 'Ответ на кнопку поддержки',
+    scope: 'bot',
     body:
       'Напишите вопрос прямо сюда, в этот чат. Его прочитает менеджер и ' +
       'ответит здесь же — держать открытым приложение для этого не нужно.',
   },
   bot_referral: {
     title: 'Подпись к реферальной ссылке',
+    scope: 'bot',
     body:
       'Меняю здесь USDT и рубли: курс видно сразу, заявку ведёт менеджер. ' +
       'По этой ссылке — заходите:',
@@ -84,6 +100,8 @@ const DEFAULTS: Record<TextTemplateKey, TemplateDefault> = {
 export interface TextTemplateView {
   readonly key: TextTemplateKey;
   readonly title: string;
+  /** Где заготовка применяется: в заявке у менеджера или в боте. */
+  readonly scope: TextTemplateScope;
   readonly body: string;
   /** Правда, пока администратор не правил заготовку: текст из кода. */
   readonly isDefault: boolean;
@@ -131,6 +149,7 @@ export async function listTextTemplates(
     return {
       key,
       title: DEFAULTS[key].title,
+      scope: DEFAULTS[key].scope,
       body: row?.body ?? DEFAULTS[key].body,
       isDefault: row === undefined,
       updatedAt: row?.updatedAt ?? null,
@@ -171,6 +190,7 @@ export async function updateTextTemplate(
     return {
       key,
       title: DEFAULTS[key].title,
+      scope: DEFAULTS[key].scope,
       body: row!.body,
       isDefault: false,
       updatedAt: row!.updatedAt,

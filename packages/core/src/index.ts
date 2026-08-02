@@ -279,7 +279,11 @@ export type {
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
 export type { NetworkView } from './networks.js';
 export { textTemplateKeys } from './text-templates.js';
-export type { TextTemplateKey, TextTemplateView } from './text-templates.js';
+export type {
+  TextTemplateKey,
+  TextTemplateScope,
+  TextTemplateView,
+} from './text-templates.js';
 export type { BonusAccountView, BonusTransactionView } from './bonus-account.js';
 export type { ServiceSettingsView } from './settings.js';
 export type { QuoteInput, QuoteView, RatePair, RateQuote, RateSource } from './rates.js';
