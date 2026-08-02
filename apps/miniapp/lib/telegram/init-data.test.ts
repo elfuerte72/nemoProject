@@ -8,8 +8,8 @@ const NOW = new Date('2026-08-01T12:00:00Z');
 /** Собирает подписанный initData так же, как это делает Telegram. */
 function signInitData(fields: Record<string, string>): string {
   const dataCheckString = Object.entries(fields)
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([key, value]) => `${key}=${value}`)
-    .sort()
     .join('\n');
   const secret = createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
   const hash = createHmac('sha256', secret).update(dataCheckString).digest('hex');
@@ -68,8 +68,21 @@ describe('verifyInitData', () => {
     expect(verifyInitData(raw, BOT_TOKEN, NOW).startParam).toBe('ref_7123456789');
   });
 
-  it('не спотыкается о новое поле signature, которого нет в строке проверки', () => {
-    const raw = `${signInitData(validFields())}&signature=abc`;
+  it('считает signature обычным полем строки проверки', () => {
+    // Из строки проверки это поле исключает сторонняя проверка через
+    // Ed25519, а не проверка ботом по HMAC. Живой Telegram присылает его
+    // всегда, и лишнее исключение отвергало бы каждый запуск.
+    const raw = signInitData(validFields({ signature: 'abcDEF123_-xyz' }));
+
     expect(() => verifyInitData(raw, BOT_TOKEN, NOW)).not.toThrow();
+  });
+
+  it('отвергает подменённый signature: он под подписью', () => {
+    const raw = signInitData(validFields({ signature: 'abcDEF123_-xyz' })).replace(
+      'signature=abcDEF123_-xyz',
+      'signature=podmena',
+    );
+
+    expect(() => verifyInitData(raw, BOT_TOKEN, NOW)).toThrow(InitDataError);
   });
 });
