@@ -1,7 +1,14 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
-import { createCore, ForbiddenError, InvalidInputError, NotFoundError } from './index.js';
-import { asClient, givenCurrencyPair } from './test-support.js';
+import {
+  createCore,
+  ForbiddenError,
+  InvalidInputError,
+  NotFoundError,
+  type RateQuote,
+  type RateSource,
+} from './index.js';
+import { asClient, givenCurrencyPair, givenServiceSettings } from './test-support.js';
 
 /**
  * Подача заявки на обмен.
@@ -194,6 +201,104 @@ describe('проверка заявки', () => {
   });
 });
 
+/**
+ * Минимальная сумма обмена задана в рублях: при наценке в пару
+ * процентов мелкий обмен не покрывает комиссию сети, которую платит
+ * сервис. Поэтому порог сравнивается с рублёвой стороной заявки, а не с
+ * суммой подачи как она есть — 3000 USDT и 3000 ₽ это разные деньги.
+ */
+describe('минимальная сумма обмена', () => {
+  /** Источник, отвечающий одной котировкой на любую пару. */
+  function givenRateSource(rate: string): RateSource {
+    return {
+      async quote(): Promise<RateQuote> {
+        return { rate: rate as RateQuote['rate'], asOf: new Date('2026-01-01T00:00:00Z') };
+      },
+    };
+  }
+
+  beforeEach(async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USDT', kind: 'electronic' });
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USDT', kind: 'cash' });
+    await givenServiceSettings({ minExchangeAmount: '3000' });
+  });
+
+  it('отвергает заявку, отдающую меньше минимума в рублях', async () => {
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'RUB',
+        toCode: 'USDT',
+        fromAmount: '2999',
+        requisitesId,
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('принимает заявку ровно на минимум', async () => {
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'RUB',
+      toCode: 'USDT',
+      fromAmount: '3000',
+      requisitesId,
+    });
+
+    expect(request.status).toBe('new');
+  });
+
+  it('считает рублёвую сторону по курсу, когда рубли получают, а не отдают', async () => {
+    const withRate = createCore({ db: testDatabase(), rateSource: givenRateSource('100') });
+    await givenServiceSettings({ markupBps: 0 });
+
+    // 25 USDT по курсу 100 — 2500 ₽, ниже порога в 3000 ₽.
+    await expect(
+      withRate.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '25',
+        requisitesId,
+      }),
+    ).rejects.toThrow(InvalidInputError);
+
+    // 30 USDT — ровно 3000 ₽.
+    const { request } = await withRate.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '30',
+      requisitesId,
+    });
+    expect(request.status).toBe('new');
+  });
+
+  it('не проверяется, когда рублёвой стороны не посчитать: курс назовёт менеджер', async () => {
+    // Наличные идут без котировки вовсе, и отказ по порогу означал бы
+    // отказ по числу, которого у сервиса в этот момент нет.
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'cash',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1',
+    });
+
+    expect(request.status).toBe('new');
+  });
+
+  it('не проверяется при молчании источника котировок', async () => {
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1',
+      requisitesId,
+    });
+
+    expect(request.status).toBe('new');
+  });
+});
+
 describe('список заявок клиента', () => {
   it('показывает заявки от новых к старым', async () => {
     const first = await core.submitExchangeRequest(asClient(100n), {
@@ -252,8 +357,8 @@ describe('список заявок клиента', () => {
   });
 });
 
-describe('справочник направлений', () => {
-  it('показывает только действующие направления', async () => {
+describe('условия обмена', () => {
+  it('перечисляют только действующие направления', async () => {
     await givenCurrencyPair({
       fromCode: 'BTC',
       toCode: 'RUB',
@@ -261,7 +366,7 @@ describe('справочник направлений', () => {
       isActive: false,
     });
 
-    const pairs = await core.listCurrencyPairs();
+    const { pairs } = await core.getExchangeTerms();
 
     // Внутри одной пары валют электронный перевод идёт перед наличными:
     // это основной способ, и переставлять его вниз по алфавиту незачем.
@@ -269,5 +374,13 @@ describe('справочник направлений', () => {
       'USDT/RUB:electronic',
       'USDT/RUB:cash',
     ]);
+  });
+
+  it('называют минимальную сумму обмена: клиент узнаёт её до подачи', async () => {
+    await givenServiceSettings({ minExchangeAmount: '5000' });
+
+    const terms = await core.getExchangeTerms();
+
+    expect(terms).toMatchObject({ minAmount: '5000', minAmountCode: 'RUB' });
   });
 });

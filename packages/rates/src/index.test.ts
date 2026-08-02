@@ -57,47 +57,17 @@ describe('котировка пары', () => {
 });
 
 /**
- * Биржа котирует всё к USDT, а к рублю — только его самого. Прямой цены
- * «сколько рублей за биткойн» у неё нет, хотя обе половины известны.
+ * Пересчёт через опорную валюту убран вместе с парой, ради которой
+ * существовал: USDT и рубль биржа котирует напрямую, а других валют у
+ * сервиса нет. Проверяется поэтому обратное — что цена, собранная из
+ * двух котировок, за настоящую не выдаётся.
  */
-describe('пересчёт через опорную валюту', () => {
-  it('собирает цену из двух котировок к USDT', async () => {
+describe('пара, которой биржа не котирует', () => {
+  it('остаётся без курса, даже когда обе половины цены известны', async () => {
     const { fetch } = givenRapira([
       { symbol: 'USDT/RUB', close: 80 },
       { symbol: 'BTC/USDT', close: 60000 },
     ]);
-    const source = createRapiraRateSource({ fetch });
-
-    const quote = await source.quote({ fromCode: 'BTC', toCode: 'RUB' });
-
-    // 60 000 долларов за биткойн по 80 рублей за доллар — посчитано вручную.
-    expect(quote?.rate).toBe('4800000');
-  });
-
-  it('работает и в обратную сторону', async () => {
-    const { fetch } = givenRapira([
-      { symbol: 'USDT/RUB', close: 80 },
-      { symbol: 'BTC/USDT', close: 60000 },
-    ]);
-    const source = createRapiraRateSource({ fetch });
-
-    const quote = await source.quote({ fromCode: 'RUB', toCode: 'BTC' });
-
-    expect(quote?.rate).toBe('0.000000208333333333');
-  });
-
-  it('связывает две валюты, ни одна из которых не опорная', async () => {
-    const { fetch } = givenRapira([
-      { symbol: 'BTC/USDT', close: 60000 },
-      { symbol: 'ETH/USDT', close: 2000 },
-    ]);
-    const source = createRapiraRateSource({ fetch });
-
-    expect((await source.quote({ fromCode: 'BTC', toCode: 'ETH' }))?.rate).toBe('30');
-  });
-
-  it('пуста, если у одной из валют нет цены даже в опорной', async () => {
-    const { fetch } = givenRapira([{ symbol: 'USDT/RUB', close: 80 }]);
     const source = createRapiraRateSource({ fetch });
 
     expect(await source.quote({ fromCode: 'BTC', toCode: 'RUB' })).toBeNull();

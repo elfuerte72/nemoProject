@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type {
-  CurrencyPairView,
   ExchangeRequestView,
+  ExchangeTermsView,
   PreliminaryQuoteView,
   RequisitesView,
 } from '@nemo/core';
@@ -21,6 +21,7 @@ import {
   formatDate,
   formatMoney,
   formatRate,
+  isBelow,
   normalizeTyped,
   parseAmount,
   shortId,
@@ -56,7 +57,7 @@ type SheetState =
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
 export function ExchangeScreen() {
-  const [pairs, setPairs] = useState<CurrencyPairView[]>([]);
+  const [terms, setTerms] = useState<ExchangeTermsView>();
   const [requests, setRequests] = useState<ExchangeRequestView[]>([]);
   const [requisites, setRequisites] = useState<RequisitesView | null>(null);
   const [fromCode, setFromCode] = useState('');
@@ -76,19 +77,24 @@ export function ExchangeScreen() {
   useEffect(() => {
     void (async () => {
       try {
-        const [directions, mine, saved] = await Promise.all([
-          get<{ pairs: CurrencyPairView[] }>('/api/currency-pairs'),
+        const [conditions, mine, saved] = await Promise.all([
+          get<{ terms: ExchangeTermsView }>('/api/exchange-terms'),
           get<{ requests: ExchangeRequestView[] }>('/api/exchange-requests'),
           get<{ requisites: RequisitesView | null }>('/api/requisites'),
         ]);
-        setPairs(directions.pairs);
+        setTerms(conditions.terms);
         setRequests(mine.requests);
         setRequisites(saved.requisites);
         // USDT — направление, за которым приходят чаще всего; открывать
         // экран на нём короче, чем перещёлкивать с того, что оказалось
         // первым в справочнике.
-        const codes = directions.pairs.map((pair) => pair.fromCode);
-        setFromCode(codes.includes(PREFERRED_FROM) ? PREFERRED_FROM : (codes[0] ?? ''));
+        const codes = conditions.terms.pairs.map((pair) => pair.fromCode);
+        const from = codes.includes(PREFERRED_FROM) ? PREFERRED_FROM : (codes[0] ?? '');
+        setFromCode(from);
+        // Встречная валюта ставится здесь же, а не отдельным проходом:
+        // от неё зависит, показывать ли выбор валюты вообще, и лишний
+        // кадр без неё мигнул бы списком там, где выбора нет.
+        setToCode(conditions.terms.pairs.find((pair) => pair.fromCode === from)?.toCode ?? '');
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить данные');
       } finally {
@@ -97,7 +103,20 @@ export function ExchangeScreen() {
     })();
   }, []);
 
-  const fromCodes = useMemo(() => [...new Set(pairs.map((pair) => pair.fromCode))], [pairs]);
+  const pairs = useMemo(() => terms?.pairs ?? [], [terms]);
+
+  /**
+   * Валюты, между которыми есть выбор помимо кнопки-переворота.
+   *
+   * Встречная валюта из списка убирается: выбрать её значило бы
+   * развернуть направление, а это и делает кнопка. Когда меняется одна
+   * пара, после такой чистки остаётся один вариант — и вместо списка
+   * показывается подпись. Появится третья валюта — выбор вернётся сам.
+   */
+  const fromCodes = useMemo(
+    () => [...new Set(pairs.map((pair) => pair.fromCode))].filter((code) => code !== toCode),
+    [pairs, toCode],
+  );
   const toCodes = useMemo(
     () => [...new Set(pairs.filter((pair) => pair.fromCode === fromCode).map((p) => p.toCode))],
     [pairs, fromCode],
@@ -230,11 +249,29 @@ export function ExchangeScreen() {
   }
 
   const electronic = kind === 'electronic';
+
+  /**
+   * Рублёвая сторона заявки — с ней сравнивается минимальная сумма
+   * обмена. Рубли клиент либо отдаёт, и тогда это введённая сумма, либо
+   * получает — и тогда её называет курс. Без курса стороны нет, и
+   * порога экран не показывает: ядро его в этом случае тоже не
+   * проверяет.
+   */
+  const rubles = !terms
+    ? null
+    : fromCode === terms.minAmountCode
+      ? (parseAmount(amount) || null)
+      : toCode === terms.minAmountCode
+        ? quote?.toAmount ?? null
+        : null;
+  const belowMinimum = Boolean(terms && rubles && isBelow(rubles, terms.minAmount));
+
   const ready =
     !busy &&
     Boolean(fromCode) &&
     Boolean(toCode) &&
     Boolean(amount.trim()) &&
+    !belowMinimum &&
     // Электронный перевод без реквизитов отправлять некуда, а наличные
     // клиент получает на руки — там их и не спрашивают.
     (!electronic || requisites !== null);
@@ -380,6 +417,14 @@ export function ExchangeScreen() {
                 ? 'Курс предварительный — финальный подтвердит менеджер.'
                 : 'Курс сейчас недоступен — его назовёт менеджер после подачи заявки.'
               : 'Курс по наличным называет менеджер.'}
+            {/*
+              Минимум называется до подачи, а не в отказе после неё:
+              заявку, которую сервис заведомо не примет, клиент не должен
+              успеть подать.
+            */}
+            {terms
+              ? ` Минимальная сумма обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
+              : ''}
             {electronic && !requisites
               ? ' Чтобы подать заявку, укажите реквизиты: без них деньги некуда отправить.'
               : ''}

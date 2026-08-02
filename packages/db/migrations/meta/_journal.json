@@ -50,6 +50,13 @@
       "when": 1785672457146,
       "tag": "0006_zippy_meggan",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785689510710,
+      "tag": "0007_economy_settings",
+      "breakpoints": true
     }
   ]
 }

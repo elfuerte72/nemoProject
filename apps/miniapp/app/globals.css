@@ -186,25 +186,17 @@ button {
  * что Telegram оставляет себе под кнопки «закрыть» и «меню» в
  * полноэкранном режиме. Вторая приходит переменной и равна нулю, пока
  * режим не включён, — поэтому одно правило работает в обоих случаях.
+ *
+ * Содержимого у полосы нет: знак сервиса и кнопка помощи из шапки
+ * убраны. Осталась она затем, ради чего и считалась, — чтобы первый
+ * экран не уезжал под вырез и под кнопки Telegram.
  */
-.app__header {
+.app__safe-top {
   flex-shrink: 0;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: calc(max(14px, env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px)) + var(--tg-content-safe-area-inset-top, 0px))
-    var(--gutter) 4px;
-}
-
-.app__brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
+  height: calc(
+    max(14px, env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px)) +
+      var(--tg-content-safe-area-inset-top, 0px)
+  );
 }
 
 .app__scroll {
@@ -545,28 +537,6 @@ button.tile:hover {
 
 .btn--soft:hover:not(:disabled) {
   background: rgba(245, 242, 234, 0.12);
-}
-
-.icon-btn {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 999px;
-  border: 1px solid rgba(245, 242, 234, 0.12);
-  background: rgba(245, 242, 234, 0.05);
-  color: var(--text-dim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition:
-    color 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.icon-btn:hover {
-  border-color: rgba(217, 190, 134, 0.6);
-  color: var(--text);
 }
 
 .link {

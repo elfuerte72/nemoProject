@@ -22,9 +22,8 @@ export default async function SettingsPage() {
 
   const core = getCore();
   try {
-    const [settings, pairs, staff, log, broadcasts] = await Promise.all([
+    const [settings, staff, log, broadcasts] = await Promise.all([
       core.getServiceSettings(actor),
-      core.listCurrencyPairsForAdmin(actor),
       core.listStaff(actor),
       core.listSettingsAuditLog(actor),
       core.listBroadcasts(actor),
@@ -36,14 +35,13 @@ export default async function SettingsPage() {
           <div>
             <h1 className="page__title">Настройки</h1>
             <p className="page__sub">
-              Ставки, наценки и сотрудники. Изменения действуют вперёд и попадают в журнал.
+              Экономика сервиса и сотрудники. Изменения действуют вперёд и попадают в журнал.
             </p>
           </div>
         </header>
 
         <SettingsForms
           settings={settings}
-          pairs={pairs}
           staff={staff.map((one) => ({
             ...one,
             telegramUserId: one.telegramUserId.toString(),

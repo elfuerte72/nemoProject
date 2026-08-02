@@ -17,6 +17,9 @@ importers:
       '@nemo/db':
         specifier: workspace:*
         version: link:packages/db
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/react@19.2.18)(postgres@3.4.9)(react@19.2.8)
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4

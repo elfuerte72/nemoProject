@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { currencies, currencyPairs, staff } from '@nemo/db';
+import { currencies, currencyPairs, serviceSettings, staff } from '@nemo/db';
 import { testDatabase } from '@nemo/db/testing';
 import type { ExchangeKind, StaffRole } from '@nemo/types';
 import type { Actor } from './actor.js';
@@ -35,7 +35,6 @@ export async function givenCurrencyPair(options: {
   fromCode: string;
   toCode: string;
   kind?: ExchangeKind;
-  markupBps?: number;
   isActive?: boolean;
 }): Promise<void> {
   await givenCurrency(options.fromCode, { kind: 'crypto', decimals: 18 });
@@ -44,9 +43,24 @@ export async function givenCurrencyPair(options: {
     fromCode: options.fromCode,
     toCode: options.toCode,
     kind: options.kind ?? 'electronic',
-    markupBps: options.markupBps ?? 100,
     isActive: options.isActive ?? true,
   });
+}
+
+/**
+ * Экономика сервиса: наценка, минимумы, срок жизни заявки.
+ *
+ * Строка настроек уже есть — её создаёт очистка базы со значениями по
+ * умолчанию, — поэтому фикстура правит, а не вставляет. Через операцию
+ * администратора это делать не нужно: тесту курса администратор не
+ * нужен, а обходить его собственную проверку прав фикстура и не может.
+ */
+export async function givenServiceSettings(options: {
+  markupBps?: number;
+  minExchangeAmount?: string;
+  unpaidRequestTtlMinutes?: number;
+}): Promise<void> {
+  await db.update(serviceSettings).set(options).where(eq(serviceSettings.id, 1));
 }
 
 let staffCounter = 0n;
