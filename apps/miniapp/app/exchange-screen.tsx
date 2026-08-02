@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   CurrencyPairView,
   ExchangeRequestView,
@@ -25,17 +25,9 @@ import {
   parseAmount,
   shortId,
 } from '@/lib/format';
-import type { BonusIntent } from './client-app';
 import { RatesPanel } from './rates-panel';
 import { RequisitesForm } from './requisites-section';
-import {
-  CardIcon,
-  ChevronDown,
-  ChevronRight,
-  ExchangeIcon,
-  SwapIcon,
-  WithdrawIcon,
-} from './ui/icons';
+import { CardIcon, ChevronDown, ChevronRight, SwapIcon } from './ui/icons';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
 /**
@@ -62,7 +54,7 @@ type SheetState =
   | { readonly kind: 'requisites' }
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
-export function ExchangeScreen({ onBonus }: { readonly onBonus: (intent: BonusIntent) => void }) {
+export function ExchangeScreen() {
   const [pairs, setPairs] = useState<CurrencyPairView[]>([]);
   const [requests, setRequests] = useState<ExchangeRequestView[]>([]);
   const [requisites, setRequisites] = useState<RequisitesView | null>(null);
@@ -77,7 +69,6 @@ export function ExchangeScreen({ onBonus }: { readonly onBonus: (intent: BonusIn
   const [busy, setBusy] = useState(false);
   /** Счётчик разворотов: им же заводятся анимации обеих строк и поворот кнопки. */
   const [swaps, setSwaps] = useState(0);
-  const amountField = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void (async () => {
@@ -241,7 +232,7 @@ export function ExchangeScreen({ onBonus }: { readonly onBonus: (intent: BonusIn
     // клиент получает на руки — там их и не спрашивают.
     (!electronic || requisites !== null);
 
-  const requisitesLine = requisites ? describe(requisites) : 'Укажите, куда отправить деньги';
+  const requisitesLine = requisites ? describe(requisites) : 'Укажите реквизиты';
 
   if (loading) {
     return <p className="empty">Загружаем направления обмена…</p>;
@@ -253,31 +244,6 @@ export function ExchangeScreen({ onBonus }: { readonly onBonus: (intent: BonusIn
         <RatesPanel pairs={pairs} />
       ) : undefined}
 
-      <div className="quick-row">
-        {/* Без направлений обменивать нечего, и кнопка вела бы к полю,
-            которого на экране нет. */}
-        {pairs.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => {
-              amountField.current?.focus();
-              amountField.current?.select();
-            }}
-            className="quick"
-          >
-            <span className="quick__circle">
-              <ExchangeIcon />
-            </span>
-            <span className="quick__label">Обменять</span>
-          </button>
-        ) : undefined}
-        <button type="button" onClick={() => onBonus('withdraw')} className="quick">
-          <span className="quick__circle">
-            <WithdrawIcon />
-          </span>
-          <span className="quick__label">Вывести</span>
-        </button>
-      </div>
 
       {pairs.length === 0 ? (
         <p className="empty">
@@ -290,7 +256,6 @@ export function ExchangeScreen({ onBonus }: { readonly onBonus: (intent: BonusIn
               <div className="eyebrow">Отдаю</div>
               <div key={`give-${swaps}`} className={swaps ? 'calc__line calc__line--give' : 'calc__line'}>
                 <input
-                  ref={amountField}
                   value={amount}
                   onChange={(event) => setAmount(event.target.value)}
                   // Разряды расставляются, когда человек закончил

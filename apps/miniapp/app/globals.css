@@ -1360,6 +1360,41 @@ button.rates__head:hover {
   margin-top: 0;
 }
 
+/* ── Выбор одного из многих ──────────────────────────────────────── */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chips__item {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.chips__item:hover {
+  color: var(--text);
+}
+
+.chips__item[aria-pressed='true'] {
+  background: rgba(217, 190, 134, 0.14);
+  border-color: rgba(217, 190, 134, 0.55);
+  color: var(--gold-light);
+}
+
 /* ── Переключатель ───────────────────────────────────────────────── */
 
 .toggle {

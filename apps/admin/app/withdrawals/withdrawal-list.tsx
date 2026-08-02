@@ -61,6 +61,12 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
           <li key={request.id} style={styles.item}>
             <div style={styles.title}>
               {request.amount} баллов · {WITHDRAWAL_METHOD_LABELS[request.method]}
+              {/*
+                Сеть стоит рядом со способом, а не в реквизитах: перевод
+                не в ту сеть не возвращается, и увидеть её менеджер должен
+                до того, как откроет адрес.
+              */}
+              {request.network ? ` · ${request.network}` : ''}
             </div>
             <div style={styles.muted}>
               {WITHDRAWAL_STATUS_LABELS[request.status]} · клиент {request.clientId} ·{' '}

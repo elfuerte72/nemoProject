@@ -99,6 +99,21 @@ export const withdrawalMethodSchema = z.enum(withdrawalMethods);
 export type WithdrawalMethod = z.infer<typeof withdrawalMethodSchema>;
 
 /**
+ * Сеть, в которой ждут перевод.
+ *
+ * Отдельно от адреса, потому что один и тот же адрес живёт в нескольких
+ * сетях, а перевод в чужую — потерянные деньги без возврата. Спросить
+ * сеть дешевле, чем выяснять её у клиента после отправки.
+ *
+ * Список задан здесь, а не в интерфейсе: и клиент, и менеджер должны
+ * называть сеть одинаково, иначе «TRC20» и «Tron» в двух окнах окажутся
+ * разными вещами.
+ */
+export const withdrawalNetworks = ['TRC20', 'ERC20', 'BEP20', 'TON', 'SOL'] as const;
+export const withdrawalNetworkSchema = z.enum(withdrawalNetworks);
+export type WithdrawalNetwork = z.infer<typeof withdrawalNetworkSchema>;
+
+/**
  * Состояния заявки на карту. Сервис карту не выпускает — статусы
  * отражают то, что сообщил внешний провайдер (см. docs/adr/0004).
  */
