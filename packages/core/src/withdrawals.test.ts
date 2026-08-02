@@ -8,7 +8,7 @@ import {
   TransitionNotAllowedError,
   type Actor,
 } from './index.js';
-import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenNetwork, givenStaff } from './test-support.js';
 
 /**
  * Заявка на вывод бонусных баллов.
@@ -58,6 +58,7 @@ async function givenClientWithBonuses(balance: number): Promise<void> {
 beforeEach(async () => {
   await resetDatabase();
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
+  await givenNetwork('TRC20');
   manager = await givenStaff();
 });
 
@@ -114,6 +115,35 @@ describe('подача заявки на вывод', () => {
         amount: '5000',
         method: 'crypto',
         destination: 'TXYZabcdef1234567890',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не подаётся в сети, выключенной администратором', async () => {
+    await givenClientWithBonuses(5000);
+    await givenNetwork('TON', { isActive: false });
+
+    // Справочник сетей один на весь сервис: закрывая сеть, администратор
+    // закрывает её и для реквизитов обмена, и для выплат.
+    await expect(
+      core.submitWithdrawalRequest(asClient(1n), {
+        amount: '5000',
+        method: 'crypto',
+        destination: 'UQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e',
+        network: 'TON',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не подаётся в сети, которой сервис не знает', async () => {
+    await givenClientWithBonuses(5000);
+
+    await expect(
+      core.submitWithdrawalRequest(asClient(1n), {
+        amount: '5000',
+        method: 'crypto',
+        destination: '0xabcdef1234567890',
+        network: 'ERC20',
       }),
     ).rejects.toThrow(InvalidInputError);
   });

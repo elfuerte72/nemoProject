@@ -22,11 +22,13 @@ export default async function SettingsPage() {
 
   const core = getCore();
   try {
-    const [settings, staff, log, broadcasts] = await Promise.all([
+    const [settings, staff, log, broadcasts, networks, templates] = await Promise.all([
       core.getServiceSettings(actor),
       core.listStaff(actor),
       core.listSettingsAuditLog(actor),
       core.listBroadcasts(actor),
+      core.listNetworks(actor),
+      core.listTextTemplates(actor),
     ]);
 
     return (
@@ -42,6 +44,8 @@ export default async function SettingsPage() {
 
         <SettingsForms
           settings={settings}
+          networks={networks}
+          templates={templates}
           staff={staff.map((one) => ({
             ...one,
             telegramUserId: one.telegramUserId.toString(),

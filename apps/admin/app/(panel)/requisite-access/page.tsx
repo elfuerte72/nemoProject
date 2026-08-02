@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
+import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,8 +117,16 @@ export default async function RequisiteAccessPage({
                   <span className="row__title">{entry.staffName}</span>
                   <span className="row__meta">
                     клиент {entry.clientId.toString()}
+                    {/*
+                      Что именно открывали, а не только по какой заявке:
+                      «карта» стояло здесь и тогда, когда открывали
+                      кошелёк, — а вопрос к журналу ровно об этом.
+                    */}
+                    {entry.requisiteKind
+                      ? ` · ${REQUISITE_KIND_LABELS[entry.requisiteKind].toLowerCase()}: ${entry.requisiteHint ?? ''}`
+                      : ''}
                     {entry.exchangeRequestId
-                      ? ` · карта по заявке на обмен ${entry.exchangeRequestId.slice(0, 8)}`
+                      ? ` · по заявке на обмен ${entry.exchangeRequestId.slice(0, 8)}`
                       : ''}
                     {entry.withdrawalRequestId
                       ? ` · реквизиты по заявке на вывод ${entry.withdrawalRequestId.slice(0, 8)}`

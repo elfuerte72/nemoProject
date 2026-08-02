@@ -6,6 +6,7 @@ import { requireAdmin, type Actor } from './actor.js';
 import { requirePublicKey, type CoreConfig, type Executor } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
 import { otpauthUri } from './second-factor.js';
+import { recordSettingsChange } from './settings-audit.js';
 import { readServiceSettings, type ServiceSettingsView } from './settings.js';
 
 /**
@@ -78,16 +79,6 @@ function toStaffView(row: StaffRow): StaffView {
     hasSecondFactor: row.totpSecretSealed !== null,
     createdAt: row.createdAt,
   };
-}
-
-async function recordSettingsChange(
-  executor: Executor,
-  staffId: string,
-  subject: string,
-  subjectId: string | null,
-  changes: Record<string, unknown>,
-): Promise<void> {
-  await executor.insert(settingsAuditLog).values({ staffId, subject, subjectId, changes });
 }
 
 /**

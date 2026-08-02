@@ -1,15 +1,16 @@
 import { notInArray, or } from 'drizzle-orm';
 import { createDatabase } from '@nemo/core';
-import { currencies, currencyPairs } from '@nemo/db';
+import { currencies, currencyPairs, transferNetworks } from '@nemo/db';
 
 /**
- * Привести справочник направлений в развёрнутой базе к тому, чем сервис
- * торгует.
+ * Привести справочники в развёрнутой базе к тому, чем сервис торгует и
+ * куда он отправляет.
  *
  * Скрипт, а не операция ядра и не экран администратора: состав
  * справочника — решение о том, чем сервис торгует, и меняется оно реже,
  * чем раз в заход. Операция под него завелась бы ради работы, которую
- * никто не делает.
+ * никто не делает. Гасить и включать сети администратор при этом может
+ * из панели: это уже не состав справочника, а рабочее состояние.
  *
  * Сервис работает с одной парой — USDT и рубль — в обе стороны,
  * безналично и наличными. Прочие валюты скрипт удаляет: экран не должен
@@ -17,12 +18,14 @@ import { currencies, currencyPairs } from '@nemo/db';
  * данные в развёрнутой базе тестовые — переносить нечего.
  *
  * Заявки на удаление не смотрят: код валюты хранится в них строкой, а
- * не ссылкой, и поданная когда-то заявка остаётся читаемой.
+ * не ссылкой, и поданная когда-то заявка остаётся читаемой. Сети,
+ * наоборот, хранятся ссылкой — лишние скрипт не удаляет, а гасит: на них
+ * ссылаются прошлые заявки и сохранённые реквизиты.
  *
- * Повторный запуск ничего не ломает: справочник каждый раз приводится к
+ * Повторный запуск ничего не ломает: справочники каждый раз приводятся к
  * одному и тому же состоянию.
  *
- * Запуск: pnpm seed-currency-pairs
+ * Запуск: pnpm seed-directories
  */
 
 const CURRENCIES = [
@@ -44,6 +47,12 @@ const PAIRS = [
   { fromCode: 'RUB', toCode: 'USDT', kind: 'electronic' as const },
   { fromCode: 'RUB', toCode: 'USDT', kind: 'cash' as const },
 ];
+
+/**
+ * Сети, в которых сервис принимает и отправляет USDT. Справочник общий:
+ * из него берут сеть и реквизиты обмена, и заявки на вывод.
+ */
+const NETWORKS = ['TRC20', 'TON'];
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -91,6 +100,30 @@ async function main(): Promise<void> {
           `валют ${droppedCurrencies.length} ` +
           `(${droppedCurrencies.map((one) => one.code).join(', ')})`,
       );
+    }
+
+    for (const code of NETWORKS) {
+      // Уже заведённая сеть включается обратно: скрипт объявляет, с чем
+      // сервис работает, и после него справочник в одном и том же виде
+      // независимо от того, что в нём стояло раньше.
+      await db
+        .insert(transferNetworks)
+        .values({ code })
+        .onConflictDoUpdate({ target: transferNetworks.code, set: { isActive: true } });
+      console.log(`сеть ${code}`);
+    }
+
+    // Лишние сети гасятся, а не удаляются: на них ссылаются прошлые
+    // заявки на вывод и сохранённые реквизиты, и удаление упёрлось бы в
+    // эти ссылки.
+    const disabled = await db
+      .update(transferNetworks)
+      .set({ isActive: false })
+      .where(notInArray(transferNetworks.code, NETWORKS))
+      .returning({ code: transferNetworks.code });
+
+    if (disabled.length > 0) {
+      console.log(`Погашено сетей: ${disabled.map((one) => one.code).join(', ')}`);
     }
 
     console.log('Готово. Наценку и минимальную сумму обмена задайте в разделе настроек.');

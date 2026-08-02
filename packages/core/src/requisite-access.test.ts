@@ -33,6 +33,7 @@ async function givenRequestWithCard(
   owner: (Actor & { type: 'staff' }) | undefined = undefined,
 ): Promise<string> {
   const requisites = await core.saveRequisites(asClient(100n), {
+    kind: 'card',
     bankName: 'Сбер',
     cardNumber: CARD,
   });
@@ -115,7 +116,11 @@ describe('чтение реквизитов менеджером', () => {
   it('не даётся, пока заявку никто не взял в работу', async () => {
     // «В момент работы с его заявкой» — это после того, как менеджер её
     // взял. Иначе чужие номера карт открыты всей смене по одной ссылке.
-    const requisites = await core.saveRequisites(asClient(100n), { cardNumber: CARD });
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Сбер',
+      cardNumber: CARD,
+    });
     const { request } = await core.submitExchangeRequest(asClient(100n), {
       kind: 'electronic',
       fromCode: 'USDT',

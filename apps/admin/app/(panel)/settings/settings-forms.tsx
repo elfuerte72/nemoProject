@@ -2,7 +2,12 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import type { ServiceSettingsView, StaffView } from '@nemo/core';
+import type {
+  NetworkView,
+  ServiceSettingsView,
+  StaffView,
+  TextTemplateView,
+} from '@nemo/core';
 import type { StaffRole } from '@nemo/types';
 import { pillClass, ROLE_LABELS } from '@/lib/labels';
 
@@ -23,9 +28,13 @@ type StaffForDisplay = Omit<StaffView, 'telegramUserId'> & { telegramUserId: str
 
 export function SettingsForms({
   settings,
+  networks,
+  templates,
   staff,
 }: {
   settings: ServiceSettingsView;
+  networks: readonly NetworkView[];
+  templates: readonly TextTemplateView[];
   staff: readonly StaffForDisplay[];
 }) {
   const router = useRouter();
@@ -226,6 +235,48 @@ export function SettingsForms({
       </section>
 
       <section className="card">
+        <h2 className="card__title">Сети перевода</h2>
+        <p className="card__note">
+          Один справочник на реквизиты обмена и на выплаты: выключенная сеть перестаёт
+          предлагаться и там и там. Выключайте её, пока кошелёк недоступен, — сохранённые
+          клиентами адреса в ней при этом не пропадают.
+        </p>
+        {networks.length === 0 ? (
+          <p className="empty">Сети ещё не заведены: их создаёт скрипт развёртывания.</p>
+        ) : (
+          <ul className="rows">
+            {networks.map((network) => (
+              <li key={network.code} className="row">
+                <div className="row__main">
+                  <span className="row__title">{network.code}</span>
+                  <span className="row__meta">
+                    {network.isActive ? 'Предлагается клиентам' : 'Выключена'}
+                  </span>
+                </div>
+                <div className="row__actions">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={network.isActive ? 'btn btn--danger' : 'btn btn--ghost'}
+                    onClick={() =>
+                      send('/api/networks', {
+                        code: network.code,
+                        isActive: !network.isActive,
+                      })
+                    }
+                  >
+                    {network.isActive ? 'Выключить' : 'Включить'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <TextTemplates templates={templates} busy={busy} onSave={send} />
+
+      <section className="card" id="staff">
         <h2 className="card__title">Сотрудники</h2>
         <div className="form-row">
           <label className="field field--narrow">
@@ -341,5 +392,71 @@ export function SettingsForms({
         </ul>
       </section>
     </>
+  );
+}
+
+/**
+ * Заготовки текстов.
+ *
+ * Реквизиты сервиса для оплаты и тексты, которые читает клиент. Правятся
+ * без выкатки — это и есть их смысл, — и потому не проходят ревью:
+ * плата принята сознательно, а значения по умолчанию остаются в коде.
+ *
+ * Каждая заготовка сохраняется отдельно: одна кнопка на все означала бы,
+ * что правка одного текста трогает журнал по остальным.
+ */
+function TextTemplates({
+  templates,
+  busy,
+  onSave,
+}: {
+  templates: readonly TextTemplateView[];
+  busy: boolean;
+  onSave: (path: string, body: unknown) => Promise<unknown>;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(templates.map((one) => [one.key, one.body])),
+  );
+
+  return (
+    <section className="card">
+      <h2 className="card__title">Заготовки текстов</h2>
+      <p className="card__note">
+        Менеджер вставляет их в заявку одной кнопкой, а не набирает номер руками. Пока
+        заготовку не правили, показывается значение из кода — оно ничего не обещает
+        клиенту и служит образцом тона.
+      </p>
+      {templates.map((template) => (
+        <div key={template.key} className="field">
+          <span className="label">
+            {template.title}
+            {template.isDefault ? ' · значение из кода' : ''}
+          </span>
+          <textarea
+            className="input"
+            rows={3}
+            value={drafts[template.key] ?? template.body}
+            onChange={(event) =>
+              setDrafts((current) => ({ ...current, [template.key]: event.target.value }))
+            }
+          />
+          <div className="row__actions">
+            <button
+              type="button"
+              disabled={busy || !(drafts[template.key] ?? template.body).trim()}
+              className="btn btn--soft"
+              onClick={() =>
+                onSave('/api/text-templates', {
+                  key: template.key,
+                  body: drafts[template.key] ?? template.body,
+                })
+              }
+            >
+              Сохранить
+            </button>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }

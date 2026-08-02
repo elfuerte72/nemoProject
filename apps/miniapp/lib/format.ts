@@ -1,3 +1,5 @@
+import type { RequisiteKind } from '@nemo/types';
+
 /**
  * Числа и даты в том виде, в каком их читает клиент.
  *
@@ -97,4 +99,36 @@ export function formatDate(value: Date | string): string {
 /** Короткий номер заявки: полный идентификатор клиенту не нужен. */
 export function shortId(id: string): string {
   return `№ ${id.slice(0, 6)}`;
+}
+
+/**
+ * Реквизиты одной строкой: банк и телефон, банк и последние цифры карты,
+ * сеть и края адреса. По этой подписи клиент узнаёт свою запись, не видя
+ * её целиком — полное значение расшифровывает только админ-панель
+ * (docs/adr/0002).
+ *
+ * Своя, а не общая с ядром: у ядра такая же подпись есть — ею
+ * называется открытый реквизит в журнале доступа, — но ядро тянет за
+ * собой драйвер базы, и импорт из него в экране увёз бы её в браузер.
+ * Совпадать эти две подписи должны, и расходятся они заметно: в
+ * приложении и в панели один реквизит назывался бы по-разному.
+ */
+export function describeRequisites(requisites: {
+  kind: RequisiteKind;
+  bankName: string | null;
+  phone: string | null;
+  cardLast4: string | null;
+  network: string | null;
+  addressHint: string | null;
+}): string {
+  switch (requisites.kind) {
+    case 'phone':
+      return [requisites.bankName, requisites.phone].filter(Boolean).join(' · ');
+    case 'card':
+      return [requisites.bankName, `карта •••• ${requisites.cardLast4 ?? ''}`.trim()]
+        .filter(Boolean)
+        .join(' · ');
+    case 'wallet':
+      return [requisites.network, requisites.addressHint].filter(Boolean).join(' · ');
+  }
 }

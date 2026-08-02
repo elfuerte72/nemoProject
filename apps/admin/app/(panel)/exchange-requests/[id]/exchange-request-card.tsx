@@ -7,11 +7,12 @@ import type {
   ExchangeRequestEventView,
   ManagerExchangeRequestView,
   RevealedRequisites,
+  TextTemplateView,
 } from '@nemo/core';
 import { canTransition, type ExchangeRequestStatus } from '@nemo/types';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
 import { formatAmount, formatMoney } from '@/lib/format';
-import { pillClass } from '@/lib/labels';
+import { pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
 
 /**
  * Действия менеджера над заявкой.
@@ -29,10 +30,13 @@ type ExchangeRequestForDisplay = Omit<ManagerExchangeRequestView, 'clientId'> & 
 export function ExchangeRequestCard({
   request,
   events,
+  templates,
   viewerStaffId,
 }: {
   request: ExchangeRequestForDisplay;
   events: readonly ExchangeRequestEventView[];
+  /** Заготовки реквизитов для оплаты: набирать номер руками не нужно. */
+  templates: readonly TextTemplateView[];
   viewerStaffId: string;
 }) {
   const router = useRouter();
@@ -182,32 +186,68 @@ export function ExchangeRequestCard({
         </section>
       ) : undefined}
 
-      <section className="card">
-        <h2 className="card__title">Реквизиты клиента</h2>
-        {requisites ? (
-          <ul className="rows">
-            <Fact label="Банк">{requisites.bankName ?? '—'}</Fact>
-            <Fact label="Телефон" mono>
-              {requisites.phone ?? '—'}
-            </Fact>
-            <Fact label="Карта" mono>
-              {requisites.cardNumber ?? '—'}
-            </Fact>
-          </ul>
-        ) : (
-          <>
-            <p className="card__note">
-              Открытие номера карты записывается в журнал: администратор увидит, кто и
-              когда его смотрел.
-            </p>
-            <div className="row__actions">
-              <button type="button" onClick={reveal} disabled={busy || !mine} className="btn btn--soft">
-                Показать реквизиты
-              </button>
-            </div>
-          </>
-        )}
-      </section>
+      {/*
+        Наличную заявку клиент получает на руки: реквизитов у неё нет, и
+        предлагать их раскрыть — обещать менеджеру данные, которых не
+        существует.
+      */}
+      {request.kind === 'electronic' ? (
+        <section className="card">
+          <h2 className="card__title">Реквизиты клиента</h2>
+          {requisites ? (
+            <ul className="rows">
+              <Fact label="Способ получения">{REQUISITE_KIND_LABELS[requisites.kind]}</Fact>
+              {requisites.bankName ? <Fact label="Банк">{requisites.bankName}</Fact> : undefined}
+              {requisites.phone ? (
+                <Fact label="Телефон" mono>
+                  {requisites.phone}
+                </Fact>
+              ) : undefined}
+              {requisites.cardNumber ? (
+                <Fact label="Карта" mono>
+                  {requisites.cardNumber}
+                </Fact>
+              ) : undefined}
+              {/*
+                Сеть — не подпись к адресу, а условие перевода: адрес в
+                разных сетях выглядит одинаково, и отправленное не в ту
+                не возвращается. Поэтому она стоит выше адреса и набрана
+                заметно.
+              */}
+              {requisites.network ? (
+                <li className="row">
+                  <div className="row__main">
+                    <span className="row__meta">Сеть — проверьте перед отправкой</span>
+                    <span className={pillClass('wait')}>{requisites.network}</span>
+                  </div>
+                </li>
+              ) : undefined}
+              {requisites.address ? (
+                <Fact label="Адрес кошелька" mono>
+                  {requisites.address}
+                </Fact>
+              ) : undefined}
+            </ul>
+          ) : (
+            <>
+              <p className="card__note">
+                Открытие номера карты и адреса кошелька записывается в журнал:
+                администратор увидит, кто и когда их смотрел.
+              </p>
+              <div className="row__actions">
+                <button
+                  type="button"
+                  onClick={reveal}
+                  disabled={busy || !mine}
+                  className="btn btn--soft"
+                >
+                  Показать реквизиты
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      ) : undefined}
 
       {can.claim ? (
         <button
@@ -253,6 +293,27 @@ export function ExchangeRequestCard({
               rows={3}
             />
           </label>
+          {/*
+            Заготовка вставляется целиком, а не дописывается: менеджер
+            выдаёт клиенту один счёт, и две склеенные заготовки означали
+            бы перевод неизвестно куда. Поправить вставленное он может
+            прямо в поле.
+          */}
+          {templates.length > 0 ? (
+            <div className="row__actions">
+              <span className="row__meta">Вставить заготовку:</span>
+              {templates.map((template) => (
+                <button
+                  key={template.key}
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => setPaymentInstructions(template.body)}
+                >
+                  {template.title}
+                </button>
+              ))}
+            </div>
+          ) : undefined}
           <div className="row__actions">
             {/*
               Курс и реквизиты обязательны — операция без них откажет.

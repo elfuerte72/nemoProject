@@ -38,7 +38,11 @@ beforeEach(async () => {
   await resetDatabase();
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
   await core.registerClient({ telegramUserId: 100n });
-  const requisites = await core.saveRequisites(asClient(100n), { phone: '+79990000000' });
+  const requisites = await core.saveRequisites(asClient(100n), {
+    kind: 'phone',
+    bankName: 'Сбербанк',
+    phone: '+79990000000',
+  });
   requisitesId = requisites.id;
   manager = await givenStaff({ displayName: 'Пётр' });
 });

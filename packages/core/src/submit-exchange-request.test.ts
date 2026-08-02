@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { generateRequisiteKeyPair } from '@nemo/crypto';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import {
   createCore,
@@ -8,7 +9,12 @@ import {
   type RateQuote,
   type RateSource,
 } from './index.js';
-import { asClient, givenCurrencyPair, givenServiceSettings } from './test-support.js';
+import {
+  asClient,
+  givenCurrencyPair,
+  givenNetwork,
+  givenServiceSettings,
+} from './test-support.js';
 
 /**
  * Подача заявки на обмен.
@@ -18,20 +24,37 @@ import { asClient, givenCurrencyPair, givenServiceSettings } from './test-suppor
  * Заявка — это запрос, а не обмен по зафиксированной цене.
  */
 
-const core = createCore({ db: testDatabase() });
+const keys = generateRequisiteKeyPair();
+const core = createCore({ db: testDatabase(), requisites: { publicKey: keys.publicKey } });
 
-/** Куда отправлять деньги. Для электронного перевода без этого никак. */
+/**
+ * Куда отправлять деньги. Для электронного перевода без этого никак, и
+ * запись должна подходить валюте получения: рубли приходят по телефону
+ * или на карту, USDT — на кошелёк.
+ */
 let requisitesId: string;
+let walletId: string;
 
 beforeEach(async () => {
   await resetDatabase();
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
   await core.registerClient({ telegramUserId: 100n });
-  // Телефон вместо карты: шифровать нечего, а значит и ключ не нужен —
-  // проверяются здесь правила подачи, а не хранение номеров.
-  const requisites = await core.saveRequisites(asClient(100n), { phone: '+79990000000' });
+  await givenNetwork('TRC20');
+  // Телефон вместо карты: шифровать нечего, и проверяются здесь правила
+  // подачи, а не хранение номеров.
+  const requisites = await core.saveRequisites(asClient(100n), {
+    kind: 'phone',
+    bankName: 'Сбербанк',
+    phone: '+79990000000',
+  });
   requisitesId = requisites.id;
+  const wallet = await core.saveRequisites(asClient(100n), {
+    kind: 'wallet',
+    network: 'TRC20',
+    address: 'TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e',
+  });
+  walletId = wallet.id;
 });
 
 afterAll(() => closeTestDatabase());
@@ -116,18 +139,24 @@ describe('реквизиты при подаче', () => {
     expect(request.status).toBe('new');
   });
 
-  it('должны быть действующими: заменённые в заявку не принимаются', async () => {
-    await core.saveRequisites(asClient(100n), { phone: '+79991111111' });
+  it('не устаревают от того, что клиент завёл ещё одни', async () => {
+    // Записи больше не сменяют друг друга: карта, телефон и кошелёк —
+    // разные способы получения, и клиент хранит их сколько нужно.
+    await core.saveRequisites(asClient(100n), {
+      kind: 'phone',
+      bankName: 'Сбербанк',
+      phone: '+79991111111',
+    });
 
-    await expect(
-      core.submitExchangeRequest(asClient(100n), {
-        kind: 'electronic',
-        fromCode: 'USDT',
-        toCode: 'RUB',
-        fromAmount: '100',
-        requisitesId,
-      }),
-    ).rejects.toThrow(NotFoundError);
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      requisitesId,
+    });
+
+    expect(request.status).toBe('new');
   });
 });
 
@@ -230,7 +259,7 @@ describe('минимальная сумма обмена', () => {
         fromCode: 'RUB',
         toCode: 'USDT',
         fromAmount: '2999',
-        requisitesId,
+        requisitesId: walletId,
       }),
     ).rejects.toThrow(InvalidInputError);
   });
@@ -241,7 +270,7 @@ describe('минимальная сумма обмена', () => {
       fromCode: 'RUB',
       toCode: 'USDT',
       fromAmount: '3000',
-      requisitesId,
+      requisitesId: walletId,
     });
 
     expect(request.status).toBe('new');

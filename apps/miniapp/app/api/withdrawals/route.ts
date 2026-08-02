@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { InvalidInputError } from '@nemo/core';
-import { withdrawalMethodSchema, withdrawalNetworkSchema } from '@nemo/types';
+import { networkCodeSchema, withdrawalMethodSchema } from '@nemo/types';
 import { botToken, deliverNotifications } from '@nemo/telegram';
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
@@ -22,9 +22,10 @@ const submitSchema = z.object({
   amount: z.string(),
   method: withdrawalMethodSchema,
   destination: z.string().min(1).max(200),
-  // Обязательность сети для криптовалюты проверяет операция: правило о
-  // том, чего требует способ выплаты, — её, а не разбора запроса.
-  network: withdrawalNetworkSchema.optional(),
+  // Обязательность сети для криптовалюты и то, что она вообще заведена и
+  // включена, проверяет операция: справочник сетей — её дело, а не
+  // разбора запроса.
+  network: networkCodeSchema.optional(),
 });
 
 export async function GET(request: Request): Promise<Response> {
