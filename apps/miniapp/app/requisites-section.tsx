@@ -6,6 +6,7 @@ import type { RequisiteKind } from '@nemo/types';
 import { ApiError, del, post } from '@/lib/client-api';
 import { describeRequisites } from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
+import { addressLabel, NetworkPicker } from './ui/network-picker';
 
 /**
  * Куда клиенту отправить деньги.
@@ -86,11 +87,21 @@ export function RequisitesSheet({
               type="button"
               onClick={() => onPick(one)}
               aria-pressed={one.id === selectedId}
+              // Кошелёк в погашенной сети выбрать нельзя, но он остаётся
+              // на месте: пропавшая сама запись выглядела бы потерей, а
+              // сеть могут включить обратно.
+              disabled={!one.isAvailable}
               className="option option--flush"
             >
               <span className="row__body">
-                <span className="row__title">{describeRequisites(one)}</span>
-                <span className="row__sub">{REQUISITE_KIND_LABELS[one.kind]}</span>
+                <span className={one.isAvailable ? 'row__title' : 'row__title row__title--dim'}>
+                  {describeRequisites(one)}
+                </span>
+                <span className="row__sub">
+                  {one.isAvailable
+                    ? REQUISITE_KIND_LABELS[one.kind]
+                    : `${REQUISITE_KIND_LABELS[one.kind]} · сеть временно недоступна`}
+                </span>
               </span>
             </button>
             <button
@@ -240,38 +251,14 @@ function RequisitesForm({
 
         {kind === 'wallet' ? (
           <>
-            {/*
-              Сеть спрашивается до адреса и остаётся видна рядом с ним:
-              адрес в разных сетях выглядит одинаково, а перевод не в ту
-              не возвращается.
-            */}
-            <div className="field">
-              <span className="field__label">Сеть</span>
-              {networks.length === 0 ? (
-                <p className="hint">
-                  Сети временно недоступны — напишите менеджеру, он отправит перевод
-                  вручную.
-                </p>
-              ) : (
-                <div className="chips">
-                  {networks.map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setNetwork(value)}
-                      aria-pressed={network === value}
-                      className="chips__item"
-                    >
-                      {value}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <NetworkPicker
+              networks={networks}
+              selected={network}
+              empty="Сети временно недоступны — напишите менеджеру, он отправит перевод вручную."
+              onPick={setNetwork}
+            />
             <label className="field">
-              <span className="field__label">
-                {network ? `Адрес кошелька в сети ${network}` : 'Адрес кошелька'}
-              </span>
+              <span className="field__label">{addressLabel(network)}</span>
               <input
                 value={address}
                 onChange={(event) => setAddress(event.target.value)}

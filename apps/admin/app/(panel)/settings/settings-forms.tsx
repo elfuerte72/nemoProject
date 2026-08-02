@@ -234,49 +234,11 @@ export function SettingsForms({
         </div>
       </section>
 
-      <section className="card">
-        <h2 className="card__title">Сети перевода</h2>
-        <p className="card__note">
-          Один справочник на реквизиты обмена и на выплаты: выключенная сеть перестаёт
-          предлагаться и там и там. Выключайте её, пока кошелёк недоступен, — сохранённые
-          клиентами адреса в ней при этом не пропадают.
-        </p>
-        {networks.length === 0 ? (
-          <p className="empty">Сети ещё не заведены: их создаёт скрипт развёртывания.</p>
-        ) : (
-          <ul className="rows">
-            {networks.map((network) => (
-              <li key={network.code} className="row">
-                <div className="row__main">
-                  <span className="row__title">{network.code}</span>
-                  <span className="row__meta">
-                    {network.isActive ? 'Предлагается клиентам' : 'Выключена'}
-                  </span>
-                </div>
-                <div className="row__actions">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className={network.isActive ? 'btn btn--danger' : 'btn btn--ghost'}
-                    onClick={() =>
-                      send('/api/networks', {
-                        code: network.code,
-                        isActive: !network.isActive,
-                      })
-                    }
-                  >
-                    {network.isActive ? 'Выключить' : 'Включить'}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <TransferNetworks networks={networks} busy={busy} onToggle={send} />
 
       <TextTemplates templates={templates} busy={busy} onSave={send} />
 
-      <section className="card" id="staff">
+      <section className="card">
         <h2 className="card__title">Сотрудники</h2>
         <div className="form-row">
           <label className="field field--narrow">
@@ -458,5 +420,65 @@ function TextTemplates({
         </div>
       ))}
     </section>
+  );
+}
+
+/**
+ * Сети перевода: флажок на каждую.
+ *
+ * Состав справочника здесь не меняется — его наполняет скрипт
+ * развёртывания. Отсюда администратор гасит сеть на время, пока кошелёк
+ * в ней недоступен.
+ */
+function TransferNetworks({
+  networks,
+  busy,
+  onToggle,
+}: {
+  networks: readonly NetworkView[];
+  busy: boolean;
+  onToggle: (path: string, body: unknown) => Promise<unknown>;
+}) {
+  return (
+    <section className="card">
+      <h2 className="card__title">Сети перевода</h2>
+      <p className="card__note">
+        Один справочник на реквизиты обмена и на выплаты: выключенная сеть перестаёт
+        предлагаться и там и там. Выключайте её, пока кошелёк недоступен, — сохранённые
+        клиентами адреса в ней при этом не пропадают.
+      </p>
+      {networks.length === 0 ? (
+        <p className="empty">Сети ещё не заведены: их создаёт скрипт развёртывания.</p>
+      ) : (
+        <ul className="rows">
+          {networks.map((network) => (
+            <li key={network.code} className="row">
+              <div className="row__main">
+                <span className="row__title">{network.code}</span>
+                <span className="row__meta">
+                  {network.isActive ? 'Предлагается клиентам' : 'Выключена'}
+                </span>
+              </div>
+              <div className="row__actions">
+                <button
+                  type="button"
+                  disabled={busy}
+                  className={network.isActive ? 'btn btn--danger' : 'btn btn--ghost'}
+                  onClick={() =>
+                    onToggle('/api/networks', {
+                      code: network.code,
+                      isActive: !network.isActive,
+                    })
+                  }
+                >
+                  {network.isActive ? 'Выключить' : 'Включить'}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+
   );
 }

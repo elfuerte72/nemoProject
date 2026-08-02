@@ -87,16 +87,14 @@ export function ExchangeScreen() {
   useEffect(() => {
     void (async () => {
       try {
-        const [conditions, mine, saved, sending] = await Promise.all([
+        const [conditions, mine, saved] = await Promise.all([
           get<{ terms: ExchangeTermsView }>('/api/exchange-terms'),
           get<{ requests: ExchangeRequestView[] }>('/api/exchange-requests'),
           get<{ requisites: RequisitesView[] }>('/api/requisites'),
-          get<{ networks: string[] }>('/api/networks'),
         ]);
         setTerms(conditions.terms);
         setRequests(mine.requests);
         setRequisites(saved.requisites);
-        setNetworks(sending.networks);
         // USDT — направление, за которым приходят чаще всего; открывать
         // экран на нём короче, чем перещёлкивать с того, что оказалось
         // первым в справочнике.
@@ -113,6 +111,15 @@ export function ExchangeScreen() {
         setLoading(false);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    // Отдельным запросом, а не вместе с остальным: молчание справочника
+    // сетей — не повод не открыть экран обмена. Без сетей нельзя завести
+    // кошелёк, но рублёвая сторона работает как работала.
+    void get<{ networks: string[] }>('/api/networks')
+      .then((result) => setNetworks(result.networks))
+      .catch(() => setNetworks([]));
   }, []);
 
   const pairs = useMemo(() => terms?.pairs ?? [], [terms]);
@@ -171,20 +178,26 @@ export function ExchangeScreen() {
         : [],
     [requisites, toCurrency],
   );
+  /*
+   * Кошелёк в погашенной сети из выбора уходит, а из списка — нет:
+   * клиент видит, почему запись не предлагается, и может её удалить.
+   * Подать по ней заявку всё равно нельзя — операция откажет.
+   */
+  const offered = useMemo(() => suitable.filter((one) => one.isAvailable), [suitable]);
 
   useEffect(() => {
     // Подставляется запись из последней заявки в ту же валюту: обычная
     // повторная заявка не должна требовать выбора. Заявки приходят от
     // новых к старым, поэтому первая найденная и есть последняя.
-    if (selected !== undefined && suitable.some((one) => one.id === selected)) return;
+    if (selected !== undefined && offered.some((one) => one.id === selected)) return;
     const lastUsed = requests.find(
       (request) =>
         request.toCode === toCode &&
         request.requisitesId !== null &&
-        suitable.some((one) => one.id === request.requisitesId),
+        offered.some((one) => one.id === request.requisitesId),
     )?.requisitesId;
-    setSelected(lastUsed ?? suitable[0]?.id);
-  }, [suitable, requests, toCode, selected]);
+    setSelected(lastUsed ?? offered[0]?.id);
+  }, [offered, requests, toCode, selected]);
 
   useEffect(() => {
     // У наличных курса нет: там финальный курс называет менеджер, и
@@ -328,7 +341,7 @@ export function ExchangeScreen() {
     // клиент получает на руки — там их и не спрашивают.
     (!electronic || selected !== undefined);
 
-  const chosen = suitable.find((one) => one.id === selected);
+  const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
 
   if (loading) {

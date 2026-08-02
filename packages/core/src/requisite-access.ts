@@ -192,18 +192,6 @@ export async function listRequisiteAccessLog(
   return rows.map(({ requisites, ...entry }) => ({
     ...entry,
     requisiteKind: requisites?.kind ?? null,
-    requisiteHint:
-      requisites === null
-        ? null
-        : describeRequisites({
-            id: requisites.id,
-            kind: requisites.kind,
-            bankName: requisites.bankName,
-            phone: requisites.phone,
-            cardLast4: requisites.cardLast4,
-            network: requisites.network,
-            addressHint: requisites.addressHint,
-            createdAt: requisites.createdAt,
-          }),
+    requisiteHint: requisites === null ? null : describeRequisites(requisites),
   }));
 }

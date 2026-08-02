@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { addressEdges, lastFour, seal } from '@nemo/crypto';
-import { clientRequisites, currencies } from '@nemo/db';
+import { clientRequisites, currencies, transferNetworks } from '@nemo/db';
 import { requisiteKindSuits, type RequisiteKind } from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
 import { requirePublicKey, type CoreConfig, type Executor } from './context.js';
@@ -40,6 +40,13 @@ export interface RequisitesView {
   readonly network: string | null;
   /** Всё, что клиент видит от адреса кошелька: его начало и конец. */
   readonly addressHint: string | null;
+  /**
+   * Можно ли подать заявку на эту запись прямо сейчас. Ложь у кошелька
+   * в сети, которую администратор погасил: запись остаётся у клиента —
+   * её можно удалить, а сеть могут включить обратно, — но выбирать её
+   * при подаче нельзя.
+   */
+  readonly isAvailable: boolean;
   readonly createdAt: Date;
 }
 
@@ -61,7 +68,7 @@ type RequisitesRow = typeof clientRequisites.$inferSelect;
  * без приватного ключа, но и отдавать его клиентскому приложению
  * незачем.
  */
-function toView(row: RequisitesRow): RequisitesView {
+function toView(row: RequisitesRow, isAvailable = true): RequisitesView {
   return {
     id: row.id,
     kind: row.kind,
@@ -70,6 +77,7 @@ function toView(row: RequisitesRow): RequisitesView {
     cardLast4: row.cardLast4,
     network: row.network,
     addressHint: row.addressHint,
+    isAvailable,
     createdAt: row.createdAt,
   };
 }
@@ -84,7 +92,14 @@ function toView(row: RequisitesRow): RequisitesView {
  * расходятся заметно — один реквизит назывался бы в приложении и в
  * панели по-разному.
  */
-export function describeRequisites(view: RequisitesView): string {
+export function describeRequisites(view: {
+  kind: RequisiteKind;
+  bankName: string | null;
+  phone: string | null;
+  cardLast4: string | null;
+  network: string | null;
+  addressHint: string | null;
+}): string {
   switch (view.kind) {
     case 'phone':
       return [view.bankName, view.phone].filter(Boolean).join(' · ');
@@ -98,8 +113,8 @@ export function describeRequisites(view: RequisitesView): string {
 }
 
 /** Обязательное поле записи: пустое означало бы реквизит, по которому не отправить. */
-function required(value: string | undefined, subject: string): string {
-  const trimmed = value?.trim();
+function required(value: string, subject: string): string {
+  const trimmed = value.trim();
   if (!trimmed) {
     throw new InvalidInputError(`${subject}: поле обязательно`);
   }
@@ -185,21 +200,30 @@ export async function saveRequisites(
   });
 }
 
-/** Записи клиента, которыми он может воспользоваться. Архивные не в счёт. */
+/**
+ * Записи клиента. Архивные не в счёт — их он удалил.
+ *
+ * Кошелёк в погашенной сети остаётся в списке, но помечен недоступным:
+ * убрать его совсем значило бы, что запись пропала сама, а клиенту она
+ * ещё нужна — сеть включат обратно, а до тех пор он может её удалить.
+ */
 export async function listRequisites(
   ctx: CoreConfig,
   actor: Actor,
 ): Promise<readonly RequisitesView[]> {
   const clientId = requireClient(actor);
   const rows = await ctx.db
-    .select()
+    .select({ requisites: clientRequisites, networkIsActive: transferNetworks.isActive })
     .from(clientRequisites)
+    .leftJoin(transferNetworks, eq(transferNetworks.code, clientRequisites.network))
     .where(
       and(eq(clientRequisites.clientId, clientId), isNull(clientRequisites.archivedAt)),
     )
     .orderBy(desc(clientRequisites.createdAt));
 
-  return rows.map(toView);
+  // У перевода по телефону и на карту сети нет вовсе, и соединение
+  // оставляет пусто: такая запись доступна всегда.
+  return rows.map((row) => toView(row.requisites, row.networkIsActive ?? true));
 }
 
 /**

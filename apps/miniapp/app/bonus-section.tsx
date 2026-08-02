@@ -13,6 +13,7 @@ import {
 import { getWebApp } from '@/lib/telegram/webapp';
 import { InviteIcon, WithdrawIcon } from './ui/icons';
 import { MarketingConsentToggle } from './marketing-consent';
+import { addressLabel, NetworkPicker } from './ui/network-picker';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
 /**
@@ -355,42 +356,17 @@ function WithdrawSheet({
             className="input"
           />
         </label>
-        {/*
-          Сеть спрашивается до адреса: он в разных сетях выглядит
-          одинаково, и перевод не в ту не возвращается.
-        */}
         {method === 'crypto' ? (
-          <div className="field">
-            <span className="field__label">Сеть</span>
-            {networks.length === 0 ? (
-              <p className="hint">
-                Сети временно недоступны — выплату можно получить на счёт или спросить
-                менеджера.
-              </p>
-            ) : (
-              <div className="chips">
-                {networks.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setNetwork(value)}
-                    aria-pressed={network === value}
-                    className="chips__item"
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <NetworkPicker
+            networks={networks}
+            selected={network}
+            empty="Сети временно недоступны — выплату можно получить на счёт или спросить менеджера."
+            onPick={setNetwork}
+          />
         ) : undefined}
         <label className="field">
           <span className="field__label">
-            {method === 'bank'
-              ? 'Счёт или карта'
-              : network
-                ? `Адрес кошелька в сети ${network}`
-                : 'Адрес кошелька'}
+            {method === 'bank' ? 'Счёт или карта' : addressLabel(network)}
           </span>
           <input
             value={destination}

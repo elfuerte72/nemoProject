@@ -195,6 +195,34 @@ describe('список реквизитов', () => {
     expect(await core.listRequisites(asClient(100n))).toEqual([]);
   });
 
+  it('помечает кошелёк в погашенной сети недоступным, но не прячет его', async () => {
+    // Убрать запись совсем значило бы, что она пропала сама: сеть
+    // включат обратно, а до тех пор клиент может её удалить.
+    await core.saveRequisites(asClient(100n), {
+      kind: 'wallet',
+      network: 'TRC20',
+      address: ADDRESS,
+    });
+    await givenNetwork('TRC20', { isActive: false });
+
+    const [wallet] = await core.listRequisites(asClient(100n));
+
+    expect(wallet?.network).toBe('TRC20');
+    expect(wallet?.isAvailable).toBe(false);
+  });
+
+  it('оставляет доступными карту и телефон: сети у них нет', async () => {
+    await core.saveRequisites(asClient(100n), {
+      kind: 'phone',
+      bankName: 'Сбербанк',
+      phone: '+79990000000',
+    });
+
+    const [saved] = await core.listRequisites(asClient(100n));
+
+    expect(saved?.isAvailable).toBe(true);
+  });
+
   it('не отдаёт записи другого клиента', async () => {
     await core.registerClient({ telegramUserId: 200n });
     await core.saveRequisites(asClient(100n), {
