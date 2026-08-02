@@ -63,6 +63,7 @@ import {
 } from './requisites.js';
 import {
   listTextTemplates,
+  readTextTemplate,
   updateTextTemplate,
   type TextTemplateKey,
 } from './text-templates.js';
@@ -229,6 +230,11 @@ export function createCore(ctx: CoreConfig) {
     setNetworkActive: (actor: Actor, code: string, isActive: boolean) =>
       setNetworkActive(ctx, actor, code, isActive),
 
+    /*
+     * Текст заготовки без исполнителя: его читает бот, чтобы показать
+     * клиенту, и права здесь спрашивать не у кого.
+     */
+    getTextTemplate: (key: TextTemplateKey) => readTextTemplate(ctx.db, key),
     listTextTemplates: (actor: Actor) => listTextTemplates(ctx, actor),
     updateTextTemplate: (actor: Actor, key: TextTemplateKey, body: string) =>
       updateTextTemplate(ctx, actor, key, body),

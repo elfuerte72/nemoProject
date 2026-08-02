@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { BonusAccountView, WithdrawalRequestView } from '@nemo/core';
 import type { WithdrawalMethod } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
+import { referralLink } from '@/lib/referral';
 import { formatAmount, formatDate, parseAmount, shortId } from '@/lib/format';
 import {
   BONUS_KIND_LABELS,
@@ -24,16 +25,6 @@ import { NoticeSheet, Sheet } from './ui/sheet';
  * приглашение: человек, пришедший по ссылке, не соглашался быть
  * показанным тому, кто её прислал.
  */
-
-/**
- * Ссылка собирается здесь, а не в ядре: адрес бота — свойство
- * развёртывания, и операция, знающая его, перестала бы работать при
- * смене имени бота, не сломавшись при этом заметно.
- */
-function referralLink(code: string): string | undefined {
-  const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
-  return bot ? `https://t.me/${bot}?startapp=${code}` : undefined;
-}
 
 /** Сколько «Скопировано» держится на месте кнопки. */
 const COPIED_MS = 1600;

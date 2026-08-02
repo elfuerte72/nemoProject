@@ -23,6 +23,8 @@
  *   pnpm set-telegram-webhook --delete           — снять
  */
 
+import { BOT_COMMANDS } from '../apps/miniapp/lib/telegram/commands.js';
+
 const API = 'https://api.telegram.org';
 
 /**
@@ -113,7 +115,36 @@ async function main(): Promise<void> {
   });
 
   console.log(`Вебхук зарегистрирован (${chosen.name}): ${url}`);
+
+  if (!admin) {
+    await setUpClientMenu(chosen.token, appUrl);
+  }
+
   console.log(`Проверить: pnpm set-telegram-webhook${admin ? ' --admin' : ''} --info`);
+}
+
+/**
+ * Меню клиентского бота: список команд и кнопка рядом с полем ввода.
+ *
+ * Настраивается при развёртывании, а не в коде бота: и то и другое —
+ * свойство самого бота в Telegram, а не ответа на конкретное сообщение,
+ * и выставлять их на каждое обновление значило бы тратить запросы на
+ * то, что не меняется.
+ *
+ * Список команд у бота входа не трогается: у него одна работа —
+ * подтвердить вход, — и меню сервиса в нём было бы обещанием, которого
+ * он не выполняет (docs/adr/0005).
+ */
+async function setUpClientMenu(token: string, appUrl: string): Promise<void> {
+  await call(token, 'setMyCommands', { commands: BOT_COMMANDS });
+  await call(token, 'setChatMenuButton', {
+    menu_button: {
+      type: 'web_app',
+      text: 'Обменник',
+      web_app: { url: appUrl },
+    },
+  });
+  console.log('Список команд и кнопка меню чата обновлены.');
 }
 
 // Отказ Telegram — не авария скрипта: чаще всего это неверный токен или
