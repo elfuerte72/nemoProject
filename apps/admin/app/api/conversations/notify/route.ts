@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { schedulerCallDenied } from '@nemo/http';
 import { deliverNotifications } from '@nemo/telegram';
 import { errorResponse, json } from '@/lib/api';
 import { loginBotToken } from '@/lib/auth/login-bot';
@@ -21,13 +21,8 @@ export const dynamic = 'force-dynamic';
  * два наложившихся вызова не разошлют одно обращение дважды.
  */
 export async function POST(request: Request): Promise<Response> {
-  const expected = process.env.SCHEDULER_SECRET;
-  if (!expected) {
-    return new Response('Рассылка обращений не настроена', { status: 500 });
-  }
-  if (!matches(request.headers.get('authorization'), `Bearer ${expected}`)) {
-    return new Response('Неверный секрет', { status: 401 });
-  }
+  const denied = schedulerCallDenied(request);
+  if (denied) return denied;
 
   try {
     const notifications = await getCore().takeStaffNotifications(new Date());
@@ -42,16 +37,4 @@ export async function POST(request: Request): Promise<Response> {
   } catch (error) {
     return errorResponse(error);
   }
-}
-
-/**
- * Сравнение секретов постоянным временем: обычное сравнение строк
- * отвечает тем быстрее, чем раньше расходятся байты, и по времени
- * ответа секрет подбирается посимвольно.
- */
-function matches(received: string | null, expected: string): boolean {
-  if (received === null) return false;
-  const a = Buffer.from(received);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
 }

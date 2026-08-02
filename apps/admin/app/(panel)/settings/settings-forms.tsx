@@ -10,7 +10,7 @@ import type {
 } from '@nemo/core';
 import type { StaffRole } from '@nemo/types';
 import { pillClass, ROLE_LABELS } from '@/lib/labels';
-import { Dialog } from '../conversations/dialog';
+import { Dialog } from '@/app/ui/dialog';
 
 /**
  * Раздел администратора: экономика сервиса и сотрудники.

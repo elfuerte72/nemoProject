@@ -55,18 +55,7 @@ export function Dialog({
               }
             >
               {message.body ? <span className="bubble__text">{message.body}</span> : undefined}
-              {message.hasAttachment ? (
-                /*
-                  Изображение подтягивается по требованию и клиентским
-                  токеном: на дисках сервиса чужих чеков нет, а каждый
-                  просмотр попадает в журнал доступа.
-                */
-                <img
-                  className="bubble__image"
-                  src={`/api/conversations/attachments/${message.id}`}
-                  alt="Вложение от клиента"
-                />
-              ) : undefined}
+              {message.hasAttachment ? <Attachment messageId={message.id} /> : undefined}
               <span className="bubble__meta">
                 {message.direction === 'outgoing' && message.authorName
                   ? `${message.authorName} · `
@@ -100,5 +89,31 @@ export function Dialog({
         </div>
       ) : undefined}
     </div>
+  );
+}
+
+/**
+ * Изображение из переписки.
+ *
+ * Подтягивается по требованию и клиентским токеном: на дисках сервиса
+ * чужих чеков нет, а каждый просмотр попадает в журнал доступа.
+ *
+ * Telegram хранит файлы не вечно, и недоступное вложение показывается
+ * отсутствующим: битая картинка читалась бы как «оно есть, но панель
+ * сломалась».
+ */
+function Attachment({ messageId }: { readonly messageId: string }) {
+  const [missing, setMissing] = useState(false);
+
+  if (missing) {
+    return <span className="bubble__meta">Изображение недоступно у Telegram</span>;
+  }
+  return (
+    <img
+      className="bubble__image"
+      src={`/api/conversations/attachments/${messageId}`}
+      alt="Вложение от клиента"
+      onError={() => setMissing(true)}
+    />
   );
 }

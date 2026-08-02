@@ -157,7 +157,9 @@ async function receive(
   // раньше выкатки, увидит клавиатуру с первым же своим вопросом.
   // Пустой ответ операции означает, что подтверждение уже уходило: два
   // одинаковых сообщения подряд превратили бы разговор в автоответчик.
-  const acknowledgement = notifications[0];
+  const acknowledgement = notifications.find(
+    (one) => one.kind === 'client-message-received',
+  );
   if (acknowledgement) {
     await ctx.reply(renderNotification(acknowledgement), { reply_markup: menu });
   }

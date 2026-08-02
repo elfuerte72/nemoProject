@@ -669,8 +669,10 @@ export const clientMessages = pgTable(
       'client_messages_author_for_outgoing',
       sql`(${table.direction} = 'outgoing') = (${table.authorStaffId} is not null)`,
     ),
-    // Пустое сообщение не сообщение: в ленте оно выглядит потерянным
-    // текстом, и разбираться в нём будет менеджер.
+    // Сообщение без содержимого не сообщение: в ленте оно выглядит
+    // потерянной строкой, и разбираться в ней будет менеджер. Пустую
+    // строку вместо текста отсекает операция — база ловит то, что
+    // прошло бы мимо неё: прямую вставку в обход прикладного слоя.
     check(
       'client_messages_not_empty',
       sql`${table.body} is not null or ${table.attachmentFileId} is not null`,

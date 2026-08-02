@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { clientMessages } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, ForbiddenError, InvalidInputError, type Actor } from './index.js';
 import { asClient, givenStaff } from './test-support.js';
@@ -12,7 +13,8 @@ import { asClient, givenStaff } from './test-support.js';
  * автоответчик — оно приходит однажды на череду сообщений.
  */
 
-const core = createCore({ db: testDatabase() });
+const db = testDatabase();
+const core = createCore({ db });
 
 let manager: Actor & { type: 'staff' };
 
@@ -167,6 +169,29 @@ describe('список обращений', () => {
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'Ещё' });
 
     expect(await core.countUnansweredConversations(manager)).toBe(1);
+  });
+
+  it('разводит сообщения одного мгновения по сквозному номеру', async () => {
+    // Две записи, вставленные одной транзакцией, получают одно и то же
+    // время создания: `now()` в Postgres — время начала транзакции. По
+    // нему «последнее сообщение» неопределимо, и ответ на вопрос «ждёт
+    // ли клиент» зависел бы от того, как лягут строки.
+    await db.transaction(async (tx) => {
+      await tx.insert(clientMessages).values({
+        clientId: 100n,
+        direction: 'incoming',
+        body: 'Вопрос',
+      });
+      await tx.insert(clientMessages).values({
+        clientId: 100n,
+        direction: 'outgoing',
+        body: 'Ответ',
+        authorStaffId: manager.staffId,
+      });
+    });
+
+    expect(await core.countUnansweredConversations(manager)).toBe(0);
+    expect((await core.listConversations(manager))[0]?.isUnanswered).toBe(false);
   });
 
   it('пуст, пока никто не писал', async () => {

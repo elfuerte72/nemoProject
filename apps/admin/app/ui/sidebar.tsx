@@ -56,7 +56,7 @@ export function Sidebar({
   ];
   const admin: readonly Item[] = [
     { href: '/settings', label: 'Настройки', icon: 'settings' },
-    { href: '/requisite-access', label: 'Журнал реквизитов', icon: 'log' },
+    { href: '/requisite-access', label: 'Журнал доступа', icon: 'log' },
   ];
 
   /*

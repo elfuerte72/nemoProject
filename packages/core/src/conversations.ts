@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { clientMessages, clients, staff } from '@nemo/db';
 import { requireStaff, type Actor } from './actor.js';
 import type { CoreConfig } from './context.js';
@@ -119,6 +119,8 @@ export async function receiveClientMessage(
     // Клиент мог ни разу не открыть приложение: его заводит первое же
     // сообщение боту. Реферера при этом не появляется — привязка идёт
     // там, где `telegram_user_id` подтверждён подписью данных запуска.
+    // Username обновляется: в Telegram он меняется, а менеджер по нему
+    // узнаёт, с кем говорит.
     await tx
       .insert(clients)
       .values({
@@ -129,7 +131,26 @@ export async function receiveClientMessage(
         // пришлёт ссылку, и угадывался бы по чужому коду.
         referralCode: generateReferralCode(),
       })
-      .onConflictDoNothing({ target: clients.telegramUserId });
+      .onConflictDoUpdate({
+        target: clients.telegramUserId,
+        set: { username: input.username ?? null },
+        setWhere: sql`${clients.username} is distinct from ${input.username ?? null}`,
+      });
+
+    /*
+     * Строка клиента блокируется до конца транзакции. Без блокировки два
+     * сообщения, пришедших одновременно, читают ленту каждое в своём
+     * снимке, не видят чужой незакоммиченной строки и оба занимают право
+     * на подтверждение — клиент получает два одинаковых ответа, а
+     * сотрудники два уведомления об одном обращении. Проверка «не
+     * подтверждали ли уже» без неё не защищает ни от чего.
+     */
+    await tx
+      .select({ id: clients.telegramUserId })
+      .from(clients)
+      .where(eq(clients.telegramUserId, input.telegramUserId))
+      .limit(1)
+      .for('update');
 
     const [row] = await tx
       .insert(clientMessages)
@@ -254,6 +275,7 @@ export async function listConversations(
         direction: clientMessages.direction,
         body: clientMessages.body,
         createdAt: clientMessages.createdAt,
+        seq: clientMessages.seq,
       })
       .from(clientMessages)
       .orderBy(clientMessages.clientId, desc(clientMessages.seq)),
@@ -270,7 +292,10 @@ export async function listConversations(
     })
     .from(last)
     .innerJoin(clients, eq(clients.telegramUserId, last.clientId))
-    .orderBy(desc(last.createdAt));
+    // Ждущие ответа сверху: это работа, а не история. Внутри — по
+    // сквозному номеру, тому же, которым определяется последнее
+    // сообщение: время двух записей в одну миллисекунду не разводит.
+    .orderBy(sql`${last.direction} = 'incoming' desc`, desc(last.seq));
 
   return rows.map(({ direction, ...row }) => ({
     ...row,
@@ -344,9 +369,12 @@ export async function takeStaffNotifications(
       .from(staff)
       .where(eq(staff.isActive, true));
 
+    // Имена только тех, чьи обращения уходят: вся таблица клиентов ради
+    // нескольких строк — цена, которую платят на каждом опросе.
     const senders = await tx
       .select({ telegramUserId: clients.telegramUserId, username: clients.username })
-      .from(clients);
+      .from(clients)
+      .where(inArray(clients.telegramUserId, [...new Set(fresh.map((one) => one.clientId))]));
     const usernames = new Map(senders.map((one) => [one.telegramUserId, one.username]));
 
     return fresh.flatMap((message) =>

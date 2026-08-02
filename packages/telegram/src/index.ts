@@ -45,16 +45,17 @@ async function send(notification: Notification, options: DeliveryOptions): Promi
     const response = await fetch(
       `https://api.telegram.org/bot${options.botToken}/sendMessage`,
       {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        // Строкой, а не числом: `telegram_user_id` — bigint, и на
-        // приведении к `number` он однажды потеряет точность.
-        chat_id: notification.to.toString(),
-        text: renderNotification(notification),
-        ...panelButton(notification, options.panelUrl),
-      }),
-    });
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          // Строкой, а не числом: `telegram_user_id` — bigint, и на
+          // приведении к `number` он однажды потеряет точность.
+          chat_id: notification.to.toString(),
+          text: renderNotification(notification),
+          ...panelButton(notification, options.panelUrl),
+        }),
+      },
+    );
     if (!response.ok) {
       console.error('Telegram отклонил уведомление', notification.kind, response.status);
     }
