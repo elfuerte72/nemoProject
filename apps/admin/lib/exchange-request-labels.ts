@@ -14,6 +14,23 @@ export const STATUS_LABELS: Record<ExchangeRequestStatus, string> = {
   cancelled: 'Отменена',
 };
 
+/**
+ * Цвет состояния. Золотом отмечено ровно то, что ждёт менеджера:
+ * очередь на экране длинная, и цвет здесь отвечает на вопрос «за что
+ * браться», а не украшает строку. Взятая в работу заявка ничего не
+ * ждёт — она уже у кого-то, и золота ей не положено.
+ */
+export const STATUS_TONES: Record<ExchangeRequestStatus, PillTone> = {
+  new: 'wait',
+  in_progress: 'plain',
+  rate_confirmed: 'plain',
+  payment_received: 'wait',
+  completed: 'done',
+  cancelled: 'off',
+};
+
+export type PillTone = 'plain' | 'wait' | 'done' | 'off';
+
 /** Способ исполнения. Одна карта на всю админку: в двух местах подписи разошлись. */
 export const KIND_LABELS: Record<ExchangeKind, string> = {
   electronic: 'электронный перевод',

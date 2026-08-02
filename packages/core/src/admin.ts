@@ -5,6 +5,7 @@ import { Money, type ExchangeKind, type StaffRole } from '@nemo/types';
 import { requireAdmin, type Actor } from './actor.js';
 import { requirePublicKey, type CoreConfig, type Executor } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
+import { otpauthUri } from './second-factor.js';
 import { readServiceSettings, type ServiceSettingsView } from './settings.js';
 
 /**
@@ -42,6 +43,11 @@ export interface StaffView {
 export interface StaffEnrollment {
   readonly staff: StaffView;
   readonly enrollmentSecret: string;
+  /**
+   * Тот же секрет ссылкой для приложения-аутентификатора: из неё
+   * рисуется код для камеры и в админке, и в скрипте развёртывания.
+   */
+  readonly otpauthUri: string;
 }
 
 export interface AddStaffInput {
@@ -103,6 +109,16 @@ function sealedSecret(ctx: CoreConfig): { secret: string; sealed: Buffer } {
   return { secret, sealed: seal(requirePublicKey(ctx), secret) };
 }
 
+/** Что выдаётся на руки после смены секрета: сам ключ и ссылка на него. */
+function enrollmentOf(row: StaffRow, secret: string): StaffEnrollment {
+  const view = toStaffView(row);
+  return {
+    staff: view,
+    enrollmentSecret: secret,
+    otpauthUri: otpauthUri({ telegramUserId: view.telegramUserId, role: view.role }, secret),
+  };
+}
+
 export async function listStaff(
   ctx: CoreConfig,
   actor: Actor,
@@ -146,7 +162,7 @@ export async function addStaff(
       displayName,
       role: row.role,
     });
-    return { staff: toStaffView(row), enrollmentSecret: secret };
+    return enrollmentOf(row, secret);
   });
 }
 
@@ -236,7 +252,50 @@ export async function resetStaffSecondFactor(
       .returning();
 
     await recordSettingsChange(tx, admin.staffId, 'staff', staffId, { action: 'second-factor-reset' });
-    return { staff: toStaffView(row!), enrollmentSecret: secret };
+    return enrollmentOf(row!, secret);
+  });
+}
+
+/**
+ * Выдать второй фактор заново из консоли сервера.
+ *
+ * Тот же сброс, что и в админке, но без администратора: администратор,
+ * потерявший собственный второй фактор, войти и сбросить его себе не
+ * может, а другого администратора в сервисе может не быть вовсе. Без
+ * этой операции такая потеря запирает админку насовсем — при живой базе
+ * и работающем деплое.
+ *
+ * Прав она не спрашивает, и защищает её только доступ к серверу — как и
+ * `enrollFirstAdmin`. Поэтому вызывать её можно ровно из скрипта
+ * развёртывания: маршрут, дающий эту операцию по сети, отдал бы админку
+ * тому, кто первым угадает адрес.
+ *
+ * Сотрудник ищется по Telegram, а не по идентификатору строки: у того,
+ * кто запускает скрипт, есть Telegram сотрудника — из переписки, — а
+ * uuid он взял бы только из той самой админки, в которую не может войти.
+ *
+ * В журнал изменений это не пишется. Журнал отвечает на вопрос «кто из
+ * сотрудников поменял», а здесь менял не сотрудник, а тот, у кого доступ
+ * к серверу: записать его чужим именем значило бы соврать в единственном
+ * месте, куда потом придут разбираться.
+ */
+export async function reissueSecondFactorFromConsole(
+  ctx: CoreConfig,
+  telegramUserId: bigint,
+): Promise<StaffEnrollment> {
+  const { secret, sealed } = sealedSecret(ctx);
+
+  return ctx.db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(staff)
+      .set({ totpSecretSealed: sealed })
+      .where(eq(staff.telegramUserId, telegramUserId))
+      .returning();
+
+    if (!row) {
+      throw new NotFoundError('Сотрудник с таким Telegram не заведён');
+    }
+    return enrollmentOf(row, secret);
   });
 }
 
@@ -274,7 +333,7 @@ export async function enrollFirstAdmin(
       })
       .returning();
 
-    return { staff: toStaffView(row!), enrollmentSecret: secret };
+    return enrollmentOf(row!, secret);
   });
 }
 

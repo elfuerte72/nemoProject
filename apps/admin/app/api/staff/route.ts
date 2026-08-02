@@ -15,7 +15,7 @@ import { getCore } from '@/lib/core';
 async function withQr(enrollment: StaffEnrollment) {
   return {
     ...enrollment,
-    qr: await enrollmentQr(enrollment.staff.displayName, enrollment.enrollmentSecret),
+    qr: await enrollmentQr(enrollment.otpauthUri),
   };
 }
 

@@ -2,23 +2,6 @@ import QRCode from 'qrcode';
 import { CoreError, createCore, createDatabase } from '@nemo/core';
 
 /**
- * Ссылка, которую понимают все аутентификаторы. Та же сборка, что в
- * админке: `apps/admin/lib/auth/enrollment.ts` — но импортировать оттуда
- * скрипт не может, приложение ему не зависимость.
- */
-function otpauthUri(displayName: string, secret: string): string {
-  const issuer = 'nemoProject';
-  const params = new URLSearchParams({
-    secret,
-    issuer,
-    algorithm: 'SHA1',
-    digits: '6',
-    period: '30',
-  });
-  return `otpauth://totp/${encodeURIComponent(`${issuer}:${displayName}`)}?${params}`;
-}
-
-/**
  * Завести первого администратора при развёртывании.
  *
  * Второй фактор сотруднику выдаёт администратор, а первого
@@ -58,7 +41,7 @@ async function main(): Promise<void> {
   const core = createCore({ db, requisites: { publicKey } });
 
   try {
-    const { staff, enrollmentSecret } = await core.enrollFirstAdmin({
+    const { staff, enrollmentSecret, otpauthUri } = await core.enrollFirstAdmin({
       telegramUserId: BigInt(telegramUserId!),
       displayName: displayName!,
     });
@@ -68,8 +51,7 @@ async function main(): Promise<void> {
     // Код прямо в терминале: переписывать тридцать два знака руками —
     // занятие, на котором ошибаются, а ошибка выглядит как «код не
     // подходит» и уводит разбираться не туда.
-    const uri = otpauthUri(staff.displayName, enrollmentSecret);
-    console.log(await QRCode.toString(uri, { type: 'terminal', small: true }));
+    console.log(await QRCode.toString(otpauthUri, { type: 'terminal', small: true }));
     console.log('Наведите камеру приложения-аутентификатора на код выше.');
     console.log(`Либо добавьте ключ вручную: ${enrollmentSecret}`);
     console.log('Показывается один раз — второй раз его не будет.');

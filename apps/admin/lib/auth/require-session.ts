@@ -5,6 +5,12 @@ import { readToken, SESSION_COOKIE, sessionSecret, SessionError } from '@/lib/au
 
 export type StaffActor = Actor & { type: 'staff' };
 
+/** Кто смотрит: для операций нужен актор, для подписи в меню — имя. */
+export interface StaffViewer {
+  readonly actor: StaffActor;
+  readonly displayName: string;
+}
+
 /**
  * Кто выполняет запрос в админке.
  *
@@ -14,6 +20,11 @@ export type StaffActor = Actor & { type: 'staff' };
  * закрывать доступ немедленно, а не когда истечёт выданная раньше кука.
  */
 export async function requireStaffActor(): Promise<StaffActor> {
+  return (await requireStaffViewer()).actor;
+}
+
+/** То же, но с именем сотрудника: его показывает каркас панели. */
+export async function requireStaffViewer(): Promise<StaffViewer> {
   const store = await cookies();
   const payload = readToken(store.get(SESSION_COOKIE)?.value, { secret: sessionSecret() });
 
@@ -22,7 +33,10 @@ export async function requireStaffActor(): Promise<StaffActor> {
   }
 
   const session = await getCore().getActiveStaff(payload.staffId);
-  return { type: 'staff', staffId: session.staffId, role: session.role };
+  return {
+    actor: { type: 'staff', staffId: session.staffId, role: session.role },
+    displayName: session.displayName,
+  };
 }
 
 /**
@@ -35,8 +49,13 @@ export async function requireStaffActor(): Promise<StaffActor> {
  * о котором никто не узнает.
  */
 export async function requireStaffActorOrNull(): Promise<StaffActor | null> {
+  return (await requireStaffViewerOrNull())?.actor ?? null;
+}
+
+/** То же с именем: каркас панели решает по нему, показывать ли панель. */
+export async function requireStaffViewerOrNull(): Promise<StaffViewer | null> {
   try {
-    return await requireStaffActor();
+    return await requireStaffViewer();
   } catch (error) {
     if (error instanceof SessionError) return null;
     if (error instanceof CoreError && error.code === 'forbidden') return null;
