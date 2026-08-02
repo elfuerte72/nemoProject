@@ -28,11 +28,20 @@ const CURRENCIES = [
  */
 const MARKUP_BPS = 200;
 
+/**
+ * Направление — это пара плюс способ, и оно одностороннее: «отдаю USDT,
+ * получаю рубли» и «отдаю рубли, получаю USDT» — две разные строки с
+ * разной наценкой. Обмен работает в обе стороны только если заведены обе.
+ */
 const PAIRS = [
   { fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' as const },
   { fromCode: 'USDT', toCode: 'RUB', kind: 'cash' as const },
+  { fromCode: 'RUB', toCode: 'USDT', kind: 'electronic' as const },
+  { fromCode: 'RUB', toCode: 'USDT', kind: 'cash' as const },
   { fromCode: 'BTC', toCode: 'RUB', kind: 'electronic' as const },
   { fromCode: 'BTC', toCode: 'RUB', kind: 'cash' as const },
+  { fromCode: 'RUB', toCode: 'BTC', kind: 'electronic' as const },
+  { fromCode: 'RUB', toCode: 'BTC', kind: 'cash' as const },
 ];
 
 async function main(): Promise<void> {
