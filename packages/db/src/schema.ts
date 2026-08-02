@@ -360,10 +360,9 @@ export const exchangeRequests = pgTable(
     assignedManagerId: uuid('assigned_manager_id').references(() => staff.id),
     requisitesId: uuid('requisites_id').references(() => clientRequisites.id),
     /**
-     * Куда клиенту платить. Диктуется менеджером вместе с финальным
-     * курсом и хранится в заявке, а не только в сообщении бота: клиент
-     * возвращается к ней через день и не должен искать сообщение в
-     * переписке.
+     * Куда клиенту платить. Называется менеджером и хранится в заявке,
+     * а не только в сообщении бота: клиент возвращается к ней через
+     * день и не должен искать сообщение в переписке.
      */
     paymentInstructions: text('payment_instructions'),
     /**

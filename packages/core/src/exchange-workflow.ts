@@ -22,6 +22,7 @@ import {
 import { toExchangeRequestView, type ExchangeRequestView } from './exchange-requests.js';
 import type { Notification } from './notifications.js';
 import { accrueReferralBonuses } from './referral-accruals.js';
+import { readServiceSettings } from './settings.js';
 
 /**
  * Путь заявки на обмен от очереди до исполнения.
@@ -98,7 +99,10 @@ export function toManagerView(row: ExchangeRequestRow): ManagerExchangeRequestVi
  * Уведомление — следствие перехода, а не отдельное действие: так его
  * нельзя забыть, добавив новый переход.
  */
-function notificationFor(row: ExchangeRequestRow): Notification {
+function notificationFor(
+  row: ExchangeRequestRow,
+  payWithinMinutes?: number,
+): Notification {
   return {
     kind: 'exchange-request-status',
     to: row.clientId,
@@ -108,6 +112,11 @@ function notificationFor(row: ExchangeRequestRow): Notification {
     ...(row.paymentInstructions === null
       ? {}
       : { paymentInstructions: row.paymentInstructions }),
+    // Срок называется там же, где реквизиты: до этого момента платить
+    // некуда, и отсчёт не идёт.
+    ...(row.status === 'rate_confirmed' && payWithinMinutes !== undefined
+      ? { payWithinMinutes }
+      : {}),
     ...(row.cancelReason === null ? {} : { cancelReason: row.cancelReason }),
   };
 }
@@ -178,6 +187,8 @@ interface TransitionInput {
   readonly actorStaffId?: string | undefined;
   readonly comment?: string | undefined;
   readonly patch?: ExchangeRequestPatch | undefined;
+  /** Срок оплаты, если этот переход его открывает. */
+  readonly payWithinMinutes?: number | undefined;
 }
 
 async function applyTransition(
@@ -211,7 +222,10 @@ async function applyTransition(
     comment: input.comment ?? null,
   });
 
-  return { row: updated!, notifications: [notificationFor(updated!)] };
+  return {
+    row: updated!,
+    notifications: [notificationFor(updated!, input.payWithinMinutes)],
+  };
 }
 
 /** Переход, выполненный сотрудником: наружу уходит его представление. */
@@ -382,7 +396,7 @@ export async function confirmExchangeRate(
   requestId: string,
   input: ConfirmExchangeRateInput,
 ): Promise<TransitionResult> {
-  const toAmount =
+  const named =
     input.toAmount === undefined
       ? undefined
       : requirePositiveAmount(input.toAmount, 'Сумма к выдаче');
@@ -395,9 +409,21 @@ export async function confirmExchangeRate(
     const row = await lockRequest(tx, requestId);
     const staffId = requireOwnership(row, actor);
     const finalRate = rateForConfirmation(row, input);
+    // У заявки с курсом подачи сумма к выдаче посчитана при подаче —
+    // клиент видел её в калькуляторе. Присланная поверх отвергается по
+    // той же причине, что и чужой курс: менеджер должен узнать, что
+    // сделка пойдёт не по названной им сумме, раньше клиента.
+    if (row.requestRate !== null && named !== undefined) {
+      throw new InvalidInputError(
+        'Сумма к выдаче посчитана по курсу заявки и не меняется',
+      );
+    }
+    const toAmount = row.requestRate === null ? named : undefined;
+    const { unpaidExchangeRequestTtlMinutes } = await readServiceSettings(tx);
 
     return staffTransition(tx, row, {
       to: 'rate_confirmed',
+      payWithinMinutes: unpaidExchangeRequestTtlMinutes,
       actorType: 'manager',
       actorStaffId: staffId,
       patch: {

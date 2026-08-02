@@ -31,6 +31,12 @@ export type Notification =
       readonly finalRate?: Amount;
       /** Куда клиенту платить: только в переходе «курс подтверждён». */
       readonly paymentInstructions?: string;
+      /**
+       * Сколько минут у клиента на оплату. Идёт вместе с реквизитами:
+       * узнать о сроке из предупреждения за полчаса до конца — значит
+       * узнать о нём слишком поздно.
+       */
+      readonly payWithinMinutes?: number;
       /** Причина отмены: обязательна, когда отменяет менеджер. */
       readonly cancelReason?: string;
     }
@@ -114,6 +120,10 @@ function renderExchangeRequestStatus(
           : undefined,
         notification.paymentInstructions
           ? `Реквизиты для оплаты: ${notification.paymentInstructions}`
+          : undefined,
+        notification.payWithinMinutes
+          ? `Оплатите в течение ${notification.payWithinMinutes} мин: столько держится курс. ` +
+            'Неоплаченную заявку сервис отменит.'
           : undefined,
         'После оплаты менеджер подтвердит поступление.',
       ]

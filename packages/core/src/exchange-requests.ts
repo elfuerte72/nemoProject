@@ -284,6 +284,11 @@ export async function submitExchangeRequest(
         toCode: input.toCode,
         fromAmount,
         requestRate,
+        // Сумма к получению — такое же обещание, как и курс: клиент
+        // видел её в калькуляторе и по ней принимал решение. Считается
+        // здесь, а не набирается менеджером руками, иначе обещание
+        // держалось бы на его внимательности.
+        toAmount: requestRate === null ? null : Money.multiply(fromAmount, requestRate),
         requisitesId: input.requisitesId ?? null,
       })
       .returning();

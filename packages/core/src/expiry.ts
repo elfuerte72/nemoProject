@@ -27,6 +27,15 @@ import { readServiceSettings } from './settings.js';
 /** За сколько до истечения бот предупреждает клиента. */
 const WARNING_MINUTES = 30;
 
+/*
+ * Срок применяется ко всем заявкам, а не только к безналичным. Курс
+ * назван и у наличной — его называет менеджер при подтверждении, — и
+ * держать его бессрочно значило бы оставить сервису тот самый
+ * односторонний риск, ради ограничения которого срок и заведён.
+ * Наличному обмену нужен свой запас времени: клиенту ехать в офис, и
+ * администратору стоит задавать срок с этим расчётом.
+ */
+
 type ExchangeRequestRow = typeof exchangeRequests.$inferSelect;
 
 /** Причина отмены — та, что увидит клиент. */
@@ -87,6 +96,11 @@ export async function expireUnpaidExchangeRequests(
 
     // История заявки ведётся и здесь: в разборе спорного обмена должно
     // быть видно, что заявку закрыл срок, а не менеджер и не клиент.
+    // Таблица переходов при этом не спрашивается — переход «курс
+    // подтверждён» → «отменена» она разрешает, а условие отбора уже
+    // требует именно этого состояния. Читать строку, чтобы спросить
+    // таблицу, значило бы вернуть ту самую гонку, ради ухода от которой
+    // изменение сделано условным.
     await tx.insert(exchangeRequestEvents).values(
       expired.map((row) => ({
         requestId: row.id,
@@ -141,7 +155,7 @@ export async function warnAboutExpiringExchangeRequests(
       kind: 'exchange-request-expiring' as const,
       to: row.clientId,
       requestId: row.id,
-      minutesLeft: minutesLeft(row, ttl, at),
+      minutesLeft: minutesLeft(row.requisitesIssuedAt!, ttl, at),
     }));
   });
 }
@@ -151,10 +165,12 @@ export async function warnAboutExpiringExchangeRequests(
  * минут» там, где их четырнадцать с половиной, честнее, чем «14» — но
  * ровно до тех пор, пока округление не переходит через срок, а оно не
  * переходит: условие отбора требует, чтобы срок ещё не истёк.
+ *
+ * Момент выдачи у отобранных строк заполнен — этого требует то же
+ * условие; `getTime` от пустого значения здесь не случается.
  */
-function minutesLeft(row: ExchangeRequestRow, ttl: number, at: Date): number {
-  const issuedAt = row.requisitesIssuedAt?.getTime() ?? at.getTime();
-  const left = issuedAt + ttl * 60_000 - at.getTime();
+function minutesLeft(issuedAt: Date, ttl: number, at: Date): number {
+  const left = issuedAt.getTime() + ttl * 60_000 - at.getTime();
   return Math.max(1, Math.ceil(left / 60_000));
 }
 

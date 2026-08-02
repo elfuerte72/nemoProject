@@ -30,19 +30,23 @@ const core = createCore({ db });
 /** Срок жизни неоплаченной заявки в этих проверках. */
 const TTL_MINUTES = 120;
 
-const ISSUED_AT = new Date('2026-08-03T10:00:00.000Z');
+let manager: Actor & { type: 'staff' };
+
+/** Когда менеджер выдал реквизиты по заявке, заведённой последней. */
+let issuedAt: Date;
 
 /** Момент через столько минут после выдачи реквизитов. */
 function minutesAfterIssue(minutes: number): Date {
-  return new Date(ISSUED_AT.getTime() + minutes * 60_000);
+  return new Date(issuedAt.getTime() + minutes * 60_000);
 }
 
-let manager: Actor & { type: 'staff' };
-
 /**
- * Заявка, которой менеджер выдал реквизиты. Момент выдачи ставится
- * прямо в строку: операция подтверждения берёт системные часы, а
- * проверкам нужен известный момент, от которого считается срок.
+ * Заявка, которой менеджер выдал реквизиты.
+ *
+ * Момент выдачи не подставляется, а читается из самой заявки: операция
+ * записывает его сама, и проверкам достаточно знать, от чего считать.
+ * Подменять системные часы при этом не нужно — момент истечения они
+ * получают параметром.
  */
 async function givenRequestAwaitingPayment(): Promise<string> {
   const { request } = await core.submitExchangeRequest(asClient(100n), {
@@ -52,14 +56,11 @@ async function givenRequestAwaitingPayment(): Promise<string> {
     fromAmount: '100',
   });
   await core.claimExchangeRequest(manager, request.id);
-  await core.confirmExchangeRate(manager, request.id, {
+  const { request: confirmed } = await core.confirmExchangeRate(manager, request.id, {
     finalRate: '95',
     paymentInstructions: 'наличными в офисе',
   });
-  await db
-    .update(exchangeRequests)
-    .set({ requisitesIssuedAt: ISSUED_AT })
-    .where(eq(exchangeRequests.id, request.id));
+  issuedAt = confirmed.requisitesIssuedAt!;
   return request.id;
 }
 
@@ -136,7 +137,8 @@ describe('отмена по истечении срока', () => {
       fromAmount: '100',
     });
 
-    await core.expireUnpaidExchangeRequests(minutesAfterIssue(TTL_MINUTES * 10));
+    // Далёкий момент: платить некуда, и отсчёт не идёт вовсе.
+    await core.expireUnpaidExchangeRequests(new Date('2030-01-01T00:00:00.000Z'));
 
     expect(await statusOf(request.id)).toBe('new');
   });

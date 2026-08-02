@@ -86,6 +86,12 @@ export function ExchangeScreen() {
   const [busy, setBusy] = useState(false);
   /** Счётчик разворотов: им же заводятся анимации обеих строк и поворот кнопки. */
   const [swaps, setSwaps] = useState(0);
+  /**
+   * Отсечка для обратного отсчёта. Экран открыт минутами, а срок оплаты
+   * идёт всё это время: посчитанное однажды число устареет молча, и
+   * клиент увидит «остаётся 40 мин» тогда, когда их пять.
+   */
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     void (async () => {
@@ -123,6 +129,12 @@ export function ExchangeScreen() {
     void get<{ networks: string[] }>('/api/networks')
       .then((result) => setNetworks(result.networks))
       .catch(() => setNetworks([]));
+  }, []);
+
+  useEffect(() => {
+    // Раз в полминуты: отсчёт показывается минутами, и чаще незачем.
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
   }, []);
 
   const pairs = useMemo(() => terms?.pairs ?? [], [terms]);
@@ -345,7 +357,7 @@ export function ExchangeScreen() {
     (!electronic || selected !== undefined);
 
   const paymentLeft =
-    active && terms ? timeLeftToPay(active, terms.unpaidTtlMinutes) : undefined;
+    active && terms ? timeLeftToPay(active, terms.unpaidTtlMinutes, now) : undefined;
 
   const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
@@ -729,11 +741,15 @@ function rubleSide(
  * Минуты, а не точное время: заявка живёт часами, и «до 14:37» просило
  * бы клиента считать разницу самому.
  */
-function timeLeftToPay(request: ExchangeRequestView, ttlMinutes: number): string | undefined {
+function timeLeftToPay(
+  request: ExchangeRequestView,
+  ttlMinutes: number,
+  now: number,
+): string | undefined {
   if (request.status !== 'rate_confirmed' || !request.requisitesIssuedAt) return undefined;
 
   const issuedAt = new Date(request.requisitesIssuedAt).getTime();
-  const left = issuedAt + ttlMinutes * 60_000 - Date.now();
+  const left = issuedAt + ttlMinutes * 60_000 - now;
   if (left <= 0) {
     // Срок вышел, а заявка ещё в этом состоянии: отменяет её отдельный
     // прогон, и до него честнее сказать, что время кончилось, чем
