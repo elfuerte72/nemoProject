@@ -340,9 +340,12 @@ const styles = {
   qr: {
     background: '#fff',
     padding: '0.6rem',
-    width: 'fit-content',
     alignSelf: 'center',
     lineHeight: 0,
+    // Ширина задана и здесь: если картинка придёт без собственного
+    // размера, она всё равно займёт место, а не исчезнет молча.
+    width: '232px',
+    maxWidth: '100%',
   },
   secret: { fontSize: '1rem', wordBreak: 'break-all', userSelect: 'all' },
   link: {
