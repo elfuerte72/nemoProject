@@ -16,8 +16,12 @@ RUN corepack enable
 WORKDIR /app
 
 COPY --chown=node:node . .
-USER node
 
+# Про corepack и владельца каталога — см. docker/miniapp.Dockerfile.
+RUN corepack install
+RUN chown node:node /app
+
+USER node
 RUN pnpm install --frozen-lockfile
 
 # Имя бота нужно на сборке: из него виджет Telegram Login собирает
