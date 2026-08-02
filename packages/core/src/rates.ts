@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { currencyPairs } from '@nemo/db';
 import { Money, type Amount } from '@nemo/types';
 import type { CoreConfig, Executor } from './context.js';
+import { readServiceSettings } from './settings.js';
 
 /**
  * Предварительный курс для электронных переводов.
@@ -40,7 +41,7 @@ export interface RateSource {
 }
 
 export interface PreliminaryQuoteView {
-  /** Курс с наценкой направления — тот, что видит клиент. */
+  /** Курс с наценкой сервиса — тот, что видит клиент. */
   readonly rate: Amount;
   /** Сколько клиент получит по этому курсу. `null`, если сумма не указана. */
   readonly toAmount: Amount | null;
@@ -54,19 +55,18 @@ export interface PreliminaryQuoteInput extends RatePair {
 
 /**
  * Наценка уменьшает то, что получает клиент: она и есть заработок
- * сервиса на направлении. Правило берётся из справочника направлений, а
- * не из кода, — его задаёт администратор (тикет 14).
+ * сервиса на обмене. Правило берётся из настроек сервиса, а не из кода
+ * и не из справочника направлений: наценка одна на весь сервис, и
+ * задаёт её администратор.
  */
 function applyMarkup(rate: Amount, markupBps: number): Amount {
   return Money.subtract(rate, Money.percentOf(rate, markupBps));
 }
 
-async function findElectronicPair(
-  executor: Executor,
-  pair: RatePair,
-): Promise<{ markupBps: number } | undefined> {
+/** Заведено ли направление безналичного обмена и не выключено ли оно. */
+async function hasElectronicPair(executor: Executor, pair: RatePair): Promise<boolean> {
   const [row] = await executor
-    .select({ markupBps: currencyPairs.markupBps })
+    .select({ id: currencyPairs.id })
     .from(currencyPairs)
     .where(
       and(
@@ -77,7 +77,7 @@ async function findElectronicPair(
       ),
     )
     .limit(1);
-  return row;
+  return row !== undefined;
 }
 
 /**
@@ -96,13 +96,13 @@ export async function getPreliminaryQuote(
   const source = ctx.rateSource;
   if (!source) return null;
 
-  const pair = await findElectronicPair(ctx.db, input);
-  if (!pair) return null;
+  if (!(await hasElectronicPair(ctx.db, input))) return null;
 
   const quoted = await source.quote({ fromCode: input.fromCode, toCode: input.toCode });
   if (!quoted) return null;
 
-  const rate = applyMarkup(quoted.rate, pair.markupBps);
+  const { markupBps } = await readServiceSettings(ctx.db);
+  const rate = applyMarkup(quoted.rate, markupBps);
   const fromAmount = Money.amountSchema.safeParse(input.fromAmount ?? '');
 
   return {
@@ -111,7 +111,7 @@ export async function getPreliminaryQuote(
       fromAmount.success && !Money.isNegative(fromAmount.data)
         ? Money.multiply(fromAmount.data, rate)
         : null,
-    markupBps: pair.markupBps,
+    markupBps,
     asOf: quoted.asOf,
   };
 }

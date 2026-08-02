@@ -13,29 +13,7 @@ interface IconProps {
   readonly size?: number;
 }
 
-export function NemoMark({ size = 30 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 1.9 20.7 6.9V16.9L12 21.9 3.3 16.9V6.9Z" fill="url(#nemo-mark-gold)" />
-      <path
-        d="M9.4 15.6V8.4l5.2 7.2V8.4"
-        stroke="#14120E"
-        strokeWidth="1.9"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <defs>
-        <linearGradient id="nemo-mark-gold" x1="3" y1="2" x2="21" y2="22">
-          <stop stopColor="#F3E3BE" />
-          <stop offset=".55" stopColor="#C9A66B" />
-          <stop offset="1" stopColor="#8C6F3E" />
-        </linearGradient>
-      </defs>
-    </svg>
-  );
-}
-
-/** Тот же знак обводкой — для тиснения на карте. */
+/** Знак сервиса обводкой — для тиснения на карте. */
 export function NemoOutline({ size = 22 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -52,20 +30,6 @@ export function NemoOutline({ size = 22 }: IconProps) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-export function QuestionIcon({ size = 17 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M9.2 9.2a2.9 2.9 0 1 1 3.8 2.75c-.6.2-.9.75-.9 1.35v.9"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <circle cx="12" cy="17.6" r="1.15" fill="currentColor" />
     </svg>
   );
 }

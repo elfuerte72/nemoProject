@@ -8,14 +8,7 @@ import { BonusSection } from './bonus-section';
 import { CardSection } from './card-section';
 import { ExchangeScreen } from './exchange-screen';
 import { MarketingConsentAsk } from './marketing-consent';
-import {
-  NemoMark,
-  QuestionIcon,
-  TabBonusIcon,
-  TabCardIcon,
-  TabExchangeIcon,
-} from './ui/icons';
-import { Popover } from './ui/popover';
+import { TabBonusIcon, TabCardIcon, TabExchangeIcon } from './ui/icons';
 
 /**
  * Оболочка клиентского приложения: разделы и первый запуск.
@@ -41,9 +34,6 @@ const TABS: readonly {
   { id: 'bonus', label: 'Бонусы', Icon: TabBonusIcon },
   { id: 'card', label: 'Карта', Icon: TabCardIcon },
 ];
-
-const SUPPORT =
-  'Менеджер отвечает в чате бота — обычно за несколько минут. Закройте приложение, чтобы вернуться в переписку, и напишите свой вопрос.';
 
 /**
  * Насколько должно ужаться окно, чтобы считать это клавиатурой. Адресная
@@ -81,7 +71,6 @@ export function ClientApp() {
   // должен въезжать с той стороны, куда клиент двинулся.
   const [back, setBack] = useState(false);
   const [client, setClient] = useState<ClientView>();
-  const [support, setSupport] = useState(false);
   const [error, setError] = useState<string>();
 
   const keyboard = useKeyboardOpen();
@@ -91,10 +80,10 @@ export function ClientApp() {
     webApp?.ready();
     webApp?.expand();
     webApp?.disableVerticalSwipes?.();
-    // Своя шапка у приложения уже есть, и вторая над ней — потерянная
-    // полоса экрана. Где метод не поддержан, окно просто останется
-    // обычным: отступы считаются по переменным Telegram, а они в этом
-    // случае нулевые.
+    // Шапка Telegram над приложением — потерянная полоса экрана, а
+    // форма обмена и без того помещается впритык. Где метод не
+    // поддержан, окно просто останется обычным: отступы считаются по
+    // переменным Telegram, а они в этом случае нулевые.
     webApp?.requestFullscreen?.();
 
     void (async () => {
@@ -119,29 +108,13 @@ export function ClientApp() {
     <div className="app">
       <div className="app__glow" />
 
-      <header className="app__header">
-        <span className="app__brand">
-          <NemoMark />
-          Nemo
-        </span>
-        <span className="popover-anchor">
-          <button
-            type="button"
-            onClick={() => setSupport(!support)}
-            className="icon-btn"
-            aria-label="Поддержка"
-            aria-expanded={support}
-          >
-            <QuestionIcon />
-          </button>
-
-          {support ? (
-            <Popover label="Поддержка" onClose={() => setSupport(false)}>
-              <p className="popover__text">{SUPPORT}</p>
-            </Popover>
-          ) : undefined}
-        </span>
-      </header>
+      {/*
+        Шапка пуста намеренно: знак сервиса и кнопка помощи из неё
+        убраны — полоса экрана дороже того, что они сообщали. Сам отступ
+        остаётся: без него первый экран уезжает под вырез и под кнопки
+        Telegram в полноэкранном режиме.
+      */}
+      <div className="app__safe-top" />
 
       {error ? (
         <div className="app__center">

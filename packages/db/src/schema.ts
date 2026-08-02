@@ -90,9 +90,14 @@ export const actorTypeEnum = pgEnum('actor_type', ['system', 'client', 'manager'
  * таблице «ключ-значение» и то и другое стало бы текстом, а проверять
  * его пришлось бы в коде.
  *
- * Значения по умолчанию — заглушки: конкретные ставки и минимальная
- * сумма вывода зависят от блокеров B1 и B3 и заполняются администратором
- * через экран настроек (тикет 14).
+ * Здесь же — всё, что определяет экономику сервиса: наценка,
+ * минимальная сумма обмена, срок жизни неоплаченной заявки. Константы,
+ * определяющие деньги, в коде не остаются: администратор меняет их из
+ * панели, а не выкаткой.
+ *
+ * Значения по умолчанию — заглушки: конкретные ставки и суммы зависят
+ * от блокеров B1 и B3 и заполняются администратором через экран
+ * настроек.
  *
  * «Ставка линии» — термин из `CONTEXT.md`: доля дохода по заявке,
  * начисляемая рефереру. Со «ставкой» как синонимом курса, которую тот
@@ -108,6 +113,28 @@ export const serviceSettings = pgTable(
     referralLine2Bps: integer('referral_line2_bps').default(200).notNull(),
     /** Ниже этой суммы заявка на вывод не принимается. */
     minWithdrawalAmount: money('min_withdrawal_amount').default('1000').notNull(),
+    /**
+     * Наценка к котировке в базисных пунктах — одна на весь сервис.
+     *
+     * Была свойством направления, стала настройкой: при двух зеркальных
+     * направлениях восемь полей давали одно и то же число, а разная
+     * наценка на покупку и продажу сознательно не делается. Вернуть её
+     * по направлениям можно миграцией, когда появится повод.
+     */
+    markupBps: integer('markup_bps').default(200).notNull(),
+    /**
+     * Ниже этой суммы заявка на обмен не принимается. В рублях: при
+     * наценке в пару процентов мелкий обмен не покрывает комиссию сети,
+     * которую платит сервис.
+     */
+    minExchangeAmount: money('min_exchange_amount').default('3000').notNull(),
+    /**
+     * Сколько заявка ждёт оплаты после того, как менеджер выдал
+     * реквизиты. Курс заявки — обязательство сервиса, и бессрочным оно
+     * быть не может: клиент вернулся бы к нему тогда, когда рынок ушёл
+     * в его пользу.
+     */
+    unpaidExchangeRequestTtlMinutes: integer('unpaid_exchange_request_ttl_minutes').default(120).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -122,6 +149,13 @@ export const serviceSettings = pgTable(
       sql`${table.referralLine2Bps} between 0 and 10000`,
     ),
     check('service_settings_min_withdrawal_non_negative', sql`${table.minWithdrawalAmount} >= 0`),
+    // Наценка в 100% означала бы курс, по которому клиент не получает
+    // ничего: это не настройка доходности, а опечатка.
+    check('service_settings_markup_range', sql`${table.markupBps} between 0 and 10000`),
+    check('service_settings_min_exchange_non_negative', sql`${table.minExchangeAmount} >= 0`),
+    // Нулевой срок отменял бы заявку в тот же миг, когда менеджер выдал
+    // реквизиты, — то есть закрывал бы сервис.
+    check('service_settings_ttl_positive', sql`${table.unpaidExchangeRequestTtlMinutes} > 0`),
   ],
 );
 
@@ -189,8 +223,13 @@ export const currencies = pgTable('currencies', {
 });
 
 /**
- * Валютное направление и наценка по нему. Наценка — правило в базисных
- * пунктах (100 bps = 1%), задаётся администратором.
+ * Валютное направление: пара валют плюс способ исполнения. Направление
+ * одностороннее — «отдаю USDT, получаю рубли» и обратное хранятся
+ * отдельными строками.
+ *
+ * Наценки здесь нет: она одна на весь сервис и живёт в его настройках.
+ * Восемь полей, из которых работали два, администратор правил по
+ * одному, а результат складывался в одно число.
  */
 export const currencyPairs = pgTable(
   'currency_pairs',
@@ -203,13 +242,9 @@ export const currencyPairs = pgTable(
       .notNull()
       .references(() => currencies.code),
     kind: exchangeKindEnum('kind').notNull(),
-    markupBps: integer('markup_bps').notNull(),
     isActive: boolean('is_active').default(true).notNull(),
   },
-  (table) => [
-    unique('currency_pairs_direction').on(table.fromCode, table.toCode, table.kind),
-    check('currency_pairs_markup_non_negative', sql`${table.markupBps} >= 0`),
-  ],
+  (table) => [unique('currency_pairs_direction').on(table.fromCode, table.toCode, table.kind)],
 );
 
 /**

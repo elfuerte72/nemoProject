@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type RatePair, type RateQuote, type RateSource } from './index.js';
-import { asClient, givenCurrencyPair } from './test-support.js';
+import { asClient, givenCurrencyPair, givenServiceSettings } from './test-support.js';
 
 /**
  * Предварительный курс для электронных переводов.
@@ -36,13 +36,9 @@ beforeEach(async () => {
 afterAll(() => closeTestDatabase());
 
 describe('электронный перевод', () => {
-  it('пересчитывает сумму по котировке с наценкой направления', async () => {
-    await givenCurrencyPair({
-      fromCode: 'USDT',
-      toCode: 'RUB',
-      kind: 'electronic',
-      markupBps: 200,
-    });
+  it('пересчитывает сумму по котировке с наценкой сервиса', async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 200 });
     const core = createCore({ db, rateSource: givenRateSource('100') });
 
     const quote = await core.getPreliminaryQuote({
@@ -56,13 +52,9 @@ describe('электронный перевод', () => {
     expect(quote).toMatchObject({ rate: '98', toAmount: '980', markupBps: 200 });
   });
 
-  it('берёт наценку из справочника направлений, а не из кода', async () => {
-    await givenCurrencyPair({
-      fromCode: 'USDT',
-      toCode: 'RUB',
-      kind: 'electronic',
-      markupBps: 1000,
-    });
+  it('берёт наценку из настроек сервиса, а не из справочника направлений', async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 1000 });
     const core = createCore({ db, rateSource: givenRateSource('100') });
 
     const quote = await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' });
@@ -70,8 +62,24 @@ describe('электронный перевод', () => {
     expect(quote?.rate).toBe('90');
   });
 
+  it('одна наценка действует на оба направления пары', async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USDT', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 500 });
+    const core = createCore({ db, rateSource: givenRateSource('100') });
+
+    const forward = await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' });
+    const backward = await core.getPreliminaryQuote({ fromCode: 'RUB', toCode: 'USDT' });
+
+    // 5% с котировки 100 — курс 95 в обе стороны: асимметричный спред
+    // сознательно не делается.
+    expect(forward?.rate).toBe('95');
+    expect(backward?.rate).toBe('95');
+  });
+
   it('отдаёт курс и без суммы: клиент ещё ничего не ввёл', async () => {
-    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', markupBps: 0 });
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB' });
+    await givenServiceSettings({ markupBps: 0 });
     const core = createCore({ db, rateSource: givenRateSource('95.5') });
 
     const quote = await core.getPreliminaryQuote({ fromCode: 'USDT', toCode: 'RUB' });
@@ -137,12 +145,8 @@ describe('неактивное направление', () => {
 
 describe('поданная заявка', () => {
   it('запоминает курс на момент подачи — от чего отталкивался клиент', async () => {
-    await givenCurrencyPair({
-      fromCode: 'USDT',
-      toCode: 'RUB',
-      kind: 'electronic',
-      markupBps: 200,
-    });
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 200 });
     const core = createCore({ db, rateSource: givenRateSource('100') });
     await core.registerClient({ telegramUserId: 100n });
     const requisites = await core.saveRequisites(asClient(100n), { phone: '+79990000000' });
@@ -151,7 +155,9 @@ describe('поданная заявка', () => {
       kind: 'electronic',
       fromCode: 'USDT',
       toCode: 'RUB',
-      fromAmount: '10',
+      // Сотня USDT по курсу 98 — 9800 ₽, выше минимальной суммы обмена:
+      // проверяется здесь запись курса, а не порог.
+      fromAmount: '100',
       requisitesId: requisites.id,
     });
 

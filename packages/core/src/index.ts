@@ -4,13 +4,11 @@ import {
   addStaff,
   enrollFirstAdmin,
   getServiceSettings,
-  listCurrencyPairsForAdmin,
   listSettingsAuditLog,
   listStaff,
   reissueSecondFactorFromConsole,
   resetStaffSecondFactor,
   setStaffActive,
-  updateCurrencyPairMarkup,
   updateServiceSettings,
   updateStaffRole,
   type AddStaffInput,
@@ -37,7 +35,7 @@ import { getClient, registerClient, type RegisterClientInput } from './clients.j
 import type { CoreConfig } from './context.js';
 import {
   getExchangeRequest,
-  listCurrencyPairs,
+  getExchangeTerms,
   listExchangeRequests,
   submitExchangeRequest,
   type SubmitExchangeRequestInput,
@@ -105,7 +103,7 @@ export function createCore(ctx: CoreConfig) {
     registerClient: (input: RegisterClientInput) => registerClient(ctx, input),
     getClient: (actor: Actor) => getClient(ctx, actor),
 
-    listCurrencyPairs: () => listCurrencyPairs(ctx),
+    getExchangeTerms: () => getExchangeTerms(ctx),
     getPreliminaryQuote: (input: PreliminaryQuoteInput) => getPreliminaryQuote(ctx, input),
     submitExchangeRequest: (actor: Actor, input: SubmitExchangeRequestInput) =>
       submitExchangeRequest(ctx, actor, input),
@@ -196,9 +194,6 @@ export function createCore(ctx: CoreConfig) {
     getServiceSettings: (actor: Actor) => getServiceSettings(ctx, actor),
     updateServiceSettings: (actor: Actor, input: UpdateServiceSettingsInput) =>
       updateServiceSettings(ctx, actor, input),
-    listCurrencyPairsForAdmin: (actor: Actor) => listCurrencyPairsForAdmin(ctx, actor),
-    updateCurrencyPairMarkup: (actor: Actor, pairId: string, markupBps: number) =>
-      updateCurrencyPairMarkup(ctx, actor, pairId, markupBps),
     listSettingsAuditLog: (actor: Actor, limit?: number) =>
       listSettingsAuditLog(ctx, actor, limit),
 
@@ -235,6 +230,7 @@ export type {
 export type {
   CurrencyPairView,
   ExchangeRequestView,
+  ExchangeTermsView,
   SubmitExchangeRequestInput,
   SubmitExchangeRequestResult,
 } from './exchange-requests.js';
@@ -267,7 +263,6 @@ export type { BroadcastProgress, BroadcastView, StartedBroadcast } from './broad
 export type { StaffSession } from './staff.js';
 export type {
   AddStaffInput,
-  CurrencyPairAdminView,
   SettingsAuditEntry,
   StaffEnrollment,
   StaffView,

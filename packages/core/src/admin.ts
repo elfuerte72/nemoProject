@@ -1,7 +1,7 @@
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import { generateTotpSecret, seal } from '@nemo/crypto';
-import { currencyPairs, serviceSettings, settingsAuditLog, staff } from '@nemo/db';
-import { Money, type ExchangeKind, type StaffRole } from '@nemo/types';
+import { serviceSettings, settingsAuditLog, staff } from '@nemo/db';
+import { Money, type StaffRole } from '@nemo/types';
 import { requireAdmin, type Actor } from './actor.js';
 import { requirePublicKey, type CoreConfig, type Executor } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
@@ -54,15 +54,6 @@ export interface AddStaffInput {
   readonly telegramUserId: bigint;
   readonly displayName: string;
   readonly role?: StaffRole | undefined;
-}
-
-export interface CurrencyPairAdminView {
-  readonly id: string;
-  readonly fromCode: string;
-  readonly toCode: string;
-  readonly kind: ExchangeKind;
-  readonly markupBps: number;
-  readonly isActive: boolean;
 }
 
 export interface SettingsAuditEntry {
@@ -349,6 +340,9 @@ export interface UpdateServiceSettingsInput {
   readonly referralLine1Bps?: number | undefined;
   readonly referralLine2Bps?: number | undefined;
   readonly minWithdrawalAmount?: string | undefined;
+  readonly markupBps?: number | undefined;
+  readonly minExchangeAmount?: string | undefined;
+  readonly unpaidExchangeRequestTtlMinutes?: number | undefined;
 }
 
 /** Ставка выше 100% отдавала бы рефереру больше, чем сервис заработал. */
@@ -359,6 +353,14 @@ function requireBps(value: number, subject: string): number {
     );
   }
   return value;
+}
+
+function requireNonNegativeAmount(value: string, subject: string): string {
+  const parsed = Money.amountSchema.safeParse(value);
+  if (!parsed.success || Money.isNegative(parsed.data)) {
+    throw new InvalidInputError(`${subject}: ожидается неотрицательное число`);
+  }
+  return parsed.data;
 }
 
 export async function updateServiceSettings(
@@ -376,11 +378,30 @@ export async function updateServiceSettings(
     patch.referralLine2Bps = requireBps(input.referralLine2Bps, 'Ставка второй линии');
   }
   if (input.minWithdrawalAmount !== undefined) {
-    const parsed = Money.amountSchema.safeParse(input.minWithdrawalAmount);
-    if (!parsed.success || Money.isNegative(parsed.data)) {
-      throw new InvalidInputError('Минимальная сумма вывода: ожидается неотрицательное число');
+    patch.minWithdrawalAmount = requireNonNegativeAmount(
+      input.minWithdrawalAmount,
+      'Минимальная сумма вывода',
+    );
+  }
+  if (input.markupBps !== undefined) {
+    patch.markupBps = requireBps(input.markupBps, 'Наценка');
+  }
+  if (input.minExchangeAmount !== undefined) {
+    patch.minExchangeAmount = requireNonNegativeAmount(
+      input.minExchangeAmount,
+      'Минимальная сумма обмена',
+    );
+  }
+  if (input.unpaidExchangeRequestTtlMinutes !== undefined) {
+    // Нулевой срок отменял бы заявку в тот же миг, когда менеджер выдал
+    // реквизиты: клиент не успел бы даже открыть банк.
+    const minutes = input.unpaidExchangeRequestTtlMinutes;
+    if (!Number.isInteger(minutes) || minutes <= 0) {
+      throw new InvalidInputError(
+        'Срок жизни неоплаченной заявки: ожидается целое число минут больше нуля',
+      );
     }
-    patch.minWithdrawalAmount = parsed.data;
+    patch.unpaidExchangeRequestTtlMinutes = minutes;
   }
   if (Object.keys(patch).length === 0) {
     throw new InvalidInputError('Нечего менять');
@@ -396,70 +417,6 @@ export async function updateServiceSettings(
     const after = await readServiceSettings(tx);
     await recordSettingsChange(tx, admin.staffId, 'service_settings', null, { before, after });
     return after;
-  });
-}
-
-export async function listCurrencyPairsForAdmin(
-  ctx: CoreConfig,
-  actor: Actor,
-): Promise<readonly CurrencyPairAdminView[]> {
-  requireAdmin(actor);
-  return ctx.db
-    .select({
-      id: currencyPairs.id,
-      fromCode: currencyPairs.fromCode,
-      toCode: currencyPairs.toCode,
-      kind: currencyPairs.kind,
-      markupBps: currencyPairs.markupBps,
-      isActive: currencyPairs.isActive,
-    })
-    .from(currencyPairs)
-    .orderBy(asc(currencyPairs.fromCode), asc(currencyPairs.toCode), asc(currencyPairs.kind));
-}
-
-/**
- * Наценка по направлению. Задаётся администратором, а не берётся из
- * кода: доходность сервиса — его решение, а не константа сборки.
- */
-export async function updateCurrencyPairMarkup(
-  ctx: CoreConfig,
-  actor: Actor,
-  pairId: string,
-  markupBps: number,
-): Promise<CurrencyPairAdminView> {
-  const admin = requireAdmin(actor);
-  requireBps(markupBps, 'Наценка направления');
-
-  return ctx.db.transaction(async (tx) => {
-    const [current] = await tx
-      .select()
-      .from(currencyPairs)
-      .where(eq(currencyPairs.id, pairId))
-      .limit(1);
-    if (!current) {
-      throw new NotFoundError('Направление обмена не найдено');
-    }
-
-    const [row] = await tx
-      .update(currencyPairs)
-      .set({ markupBps })
-      .where(eq(currencyPairs.id, pairId))
-      .returning();
-
-    await recordSettingsChange(tx, admin.staffId, 'currency_pair', pairId, {
-      direction: `${current.fromCode} → ${current.toCode} (${current.kind})`,
-      from: current.markupBps,
-      to: markupBps,
-    });
-
-    return {
-      id: row!.id,
-      fromCode: row!.fromCode,
-      toCode: row!.toCode,
-      kind: row!.kind,
-      markupBps: row!.markupBps,
-      isActive: row!.isActive,
-    };
   });
 }
 

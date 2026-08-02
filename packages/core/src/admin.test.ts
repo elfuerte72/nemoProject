@@ -192,6 +192,14 @@ describe('ставки линий и минимальная сумма выво�
     });
   });
 
+  it('не смешивают ставку линии с наценкой: правится только названное', async () => {
+    await core.updateServiceSettings(admin, { markupBps: 350 });
+
+    const settings = await core.getServiceSettings(admin);
+
+    expect(settings).toMatchObject({ markupBps: 350, referralLine1Bps: 500 });
+  });
+
   it('не принимают ставку выше ста процентов', async () => {
     await expect(
       core.updateServiceSettings(admin, { referralLine1Bps: 10_001 }),
@@ -211,28 +219,51 @@ describe('ставки линий и минимальная сумма выво�
   });
 });
 
-describe('наценка направления', () => {
-  it('задаётся администратором и берётся из справочника', async () => {
-    await givenCurrencyPair({
-      fromCode: 'USDT',
-      toCode: 'RUB',
-      kind: 'electronic',
-      markupBps: 100,
+describe('экономика сервиса', () => {
+  it('задаётся администратором одним набором значений', async () => {
+    const updated = await core.updateServiceSettings(admin, {
+      markupBps: 350,
+      minExchangeAmount: '5000',
+      unpaidExchangeRequestTtlMinutes: 90,
     });
-    const [pair] = await core.listCurrencyPairsForAdmin(admin);
 
-    const updated = await core.updateCurrencyPairMarkup(admin, pair!.id, 350);
-
-    expect(updated.markupBps).toBe(350);
+    expect(updated).toMatchObject({
+      markupBps: 350,
+      minExchangeAmount: '5000',
+      unpaidExchangeRequestTtlMinutes: 90,
+    });
   });
 
   it('не принимает наценку выше ста процентов', async () => {
-    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
-    const [pair] = await core.listCurrencyPairsForAdmin(admin);
-
-    await expect(core.updateCurrencyPairMarkup(admin, pair!.id, 10_001)).rejects.toThrow(
+    await expect(core.updateServiceSettings(admin, { markupBps: 10_001 })).rejects.toThrow(
       InvalidInputError,
     );
+  });
+
+  it('не принимает отрицательную минимальную сумму обмена', async () => {
+    await expect(
+      core.updateServiceSettings(admin, { minExchangeAmount: '-1' }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не принимает нулевой срок жизни заявки: он отменял бы её сразу', async () => {
+    await expect(
+      core.updateServiceSettings(admin, { unpaidExchangeRequestTtlMinutes: 0 }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('пишет изменение экономики в журнал настроек', async () => {
+    await core.updateServiceSettings(admin, { markupBps: 350 });
+
+    const [entry] = await core.listSettingsAuditLog(admin);
+    const changes = entry!.changes as {
+      before: { markupBps: number };
+      after: { markupBps: number };
+    };
+
+    expect(entry).toMatchObject({ subject: 'service_settings' });
+    expect(changes.before.markupBps).toBe(200);
+    expect(changes.after.markupBps).toBe(350);
   });
 });
 

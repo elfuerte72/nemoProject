@@ -2,9 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import type { CurrencyPairAdminView, ServiceSettingsView, StaffView } from '@nemo/core';
+import type { ServiceSettingsView, StaffView } from '@nemo/core';
 import type { StaffRole } from '@nemo/types';
-import { KIND_LABELS } from '@/lib/exchange-request-labels';
 import { pillClass, ROLE_LABELS } from '@/lib/labels';
 
 /**
@@ -14,17 +13,19 @@ import { pillClass, ROLE_LABELS } from '@/lib/labels';
  * пересчитываются, потому что ставка, по которой начислено, хранится в
  * самом движении баллов. Экран говорит об этом прямо — иначе
  * администратор ждал бы пересчёта и не понимал, почему его нет.
+ *
+ * Экономика собрана в одну карточку: наценка, минимум обмена и срок
+ * жизни заявки складываются в доход сервиса, и разнесённые по разным
+ * местам они не читались бы вместе.
  */
 
 type StaffForDisplay = Omit<StaffView, 'telegramUserId'> & { telegramUserId: string };
 
 export function SettingsForms({
   settings,
-  pairs,
   staff,
 }: {
   settings: ServiceSettingsView;
-  pairs: readonly CurrencyPairAdminView[];
   staff: readonly StaffForDisplay[];
 }) {
   const router = useRouter();
@@ -39,9 +40,9 @@ export function SettingsForms({
   const [line1, setLine1] = useState(String(settings.referralLine1Bps));
   const [line2, setLine2] = useState(String(settings.referralLine2Bps));
   const [minWithdrawal, setMinWithdrawal] = useState<string>(settings.minWithdrawalAmount);
-  const [markups, setMarkups] = useState<Record<string, string>>(
-    Object.fromEntries(pairs.map((pair) => [pair.id, String(pair.markupBps)])),
-  );
+  const [markup, setMarkup] = useState(String(settings.markupBps));
+  const [minExchange, setMinExchange] = useState<string>(settings.minExchangeAmount);
+  const [ttlMinutes, setTtlMinutes] = useState(String(settings.unpaidExchangeRequestTtlMinutes));
 
   const [newTelegram, setNewTelegram] = useState('');
   const [newName, setNewName] = useState('');
@@ -158,7 +159,6 @@ export function SettingsForms({
             className="btn btn--gold"
             onClick={() =>
               send('/api/settings', {
-                subject: 'service',
                 referralLine1Bps: Number(line1),
                 referralLine2Bps: Number(line2),
                 minWithdrawalAmount: minWithdrawal.replace(',', '.').trim(),
@@ -171,52 +171,58 @@ export function SettingsForms({
       </section>
 
       <section className="card">
-        <h2 className="card__title">Наценки по направлениям</h2>
-        {pairs.length === 0 ? (
-          <p className="empty">
-            Направления обмена ещё не заведены — наполнение справочника ждёт ответа
-            заказчика о списке валют.
-          </p>
-        ) : (
-          <ul className="rows">
-            {pairs.map((pair) => (
-              <li key={pair.id} className="row">
-                <div className="row__main">
-                  <span className="row__title">
-                    {pair.fromCode} → {pair.toCode}
-                  </span>
-                  <span className="row__meta">{KIND_LABELS[pair.kind]}</span>
-                </div>
-                <div className="row__side">
-                  <input
-                    className="input"
-                    style={{ width: '7rem' }}
-                    value={markups[pair.id] ?? ''}
-                    onChange={(event) =>
-                      setMarkups((current) => ({ ...current, [pair.id]: event.target.value }))
-                    }
-                    inputMode="numeric"
-                    aria-label={`Наценка ${pair.fromCode} → ${pair.toCode}, bps`}
-                  />
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="btn btn--ghost"
-                    onClick={() =>
-                      send('/api/settings', {
-                        subject: 'currency-pair',
-                        pairId: pair.id,
-                        markupBps: Number(markups[pair.id]),
-                      })
-                    }
-                  >
-                    Сохранить
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <h2 className="card__title">Экономика обмена</h2>
+        <p className="card__note">
+          Наценка одна на весь сервис и действует в обе стороны. Минимальная сумма
+          задана в рублях: при наценке в пару процентов мелкий обмен не покрывает
+          комиссию сети, которую сервис платит за клиента. Срок отсчитывается с
+          момента, когда менеджер выдал реквизиты для оплаты.
+        </p>
+        <div className="form-row">
+          <label className="field">
+            <span className="label">Наценка, bps</span>
+            <input
+              className="input"
+              value={markup}
+              onChange={(event) => setMarkup(event.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+          <label className="field">
+            <span className="label">Минимум обмена, ₽</span>
+            <input
+              className="input"
+              value={minExchange}
+              onChange={(event) => setMinExchange(event.target.value)}
+              inputMode="decimal"
+            />
+          </label>
+          <label className="field">
+            <span className="label">Срок оплаты, минут</span>
+            <input
+              className="input"
+              value={ttlMinutes}
+              onChange={(event) => setTtlMinutes(event.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+        </div>
+        <div className="row__actions">
+          <button
+            type="button"
+            disabled={busy}
+            className="btn btn--gold"
+            onClick={() =>
+              send('/api/settings', {
+                markupBps: Number(markup),
+                minExchangeAmount: minExchange.replace(',', '.').trim(),
+                unpaidExchangeRequestTtlMinutes: Number(ttlMinutes),
+              })
+            }
+          >
+            Сохранить
+          </button>
+        </div>
       </section>
 
       <section className="card">

@@ -8,6 +8,7 @@ import { InvalidInputError, NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
 import { quoteForSubmission } from './rates.js';
 import { requireOwnRequisites } from './requisites.js';
+import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
 
 /**
  * Заявка на обмен: что клиент отдаёт, что хочет получить и на какую
@@ -65,6 +66,18 @@ export interface CurrencyPairView {
   readonly fromCode: string;
   readonly toCode: string;
   readonly kind: ExchangeKind;
+}
+
+/**
+ * Условия обмена для экрана заявки: куда сервис меняет и от какой суммы
+ * берётся. Минимум приходит вместе с направлениями, а не отдельным
+ * запросом: клиент должен узнать его до подачи, а не из отказа.
+ */
+export interface ExchangeTermsView {
+  readonly pairs: readonly CurrencyPairView[];
+  readonly minAmount: Amount;
+  /** Валюта минимума: см. `MIN_EXCHANGE_CODE`. */
+  readonly minAmountCode: string;
 }
 
 type ExchangeRequestRow = typeof exchangeRequests.$inferSelect;
@@ -146,6 +159,29 @@ async function requireActivePair(
   }
 }
 
+/**
+ * Рублёвая сторона заявки — та, с которой сравнивается минимальная
+ * сумма обмена.
+ *
+ * Рубли клиент либо отдаёт, и тогда это сумма подачи, либо получает — и
+ * тогда её нужно посчитать по курсу. Курса может не быть вовсе: у
+ * наличных его нет до разговора с менеджером, а провайдер котировок
+ * может молчать. В этом случае стороны нет, и порог не проверяется:
+ * отказ по числу, которого у сервиса в этот момент не существует,
+ * выглядел бы для клиента поломкой.
+ */
+function rubleSideOf(
+  input: { fromCode: string; toCode: string },
+  fromAmount: Amount,
+  rate: Amount | null,
+): Amount | null {
+  if (input.fromCode === MIN_EXCHANGE_CODE) return fromAmount;
+  if (input.toCode === MIN_EXCHANGE_CODE && rate !== null) {
+    return Money.multiply(fromAmount, rate);
+  }
+  return null;
+}
+
 export async function submitExchangeRequest(
   ctx: CoreConfig,
   actor: Actor,
@@ -177,6 +213,14 @@ export async function submitExchangeRequest(
     await requireActivePair(tx, input);
     if (input.requisitesId !== undefined) {
       await requireOwnRequisites(tx, clientId, input.requisitesId);
+    }
+
+    const settings = await readServiceSettings(tx);
+    const rubles = rubleSideOf(input, fromAmount, preliminaryRate);
+    if (rubles !== null && Money.compare(rubles, settings.minExchangeAmount) < 0) {
+      throw new InvalidInputError(
+        `Минимальная сумма обмена — ${settings.minExchangeAmount} ${MIN_EXCHANGE_CODE}`,
+      );
     }
 
     const [row] = await tx
@@ -252,11 +296,9 @@ export async function getExchangeRequest(
   return toExchangeRequestView(row);
 }
 
-/** Справочник направлений для экрана обмена. */
-export async function listCurrencyPairs(
-  ctx: CoreConfig,
-): Promise<readonly CurrencyPairView[]> {
-  const rows = await ctx.db
+/** Условия обмена для экрана заявки: направления и минимальная сумма. */
+export async function getExchangeTerms(ctx: CoreConfig): Promise<ExchangeTermsView> {
+  const pairs = await ctx.db
     .select({
       fromCode: currencyPairs.fromCode,
       toCode: currencyPairs.toCode,
@@ -265,5 +307,7 @@ export async function listCurrencyPairs(
     .from(currencyPairs)
     .where(eq(currencyPairs.isActive, true))
     .orderBy(asc(currencyPairs.fromCode), asc(currencyPairs.toCode), asc(currencyPairs.kind));
-  return rows;
+
+  const { minExchangeAmount } = await readServiceSettings(ctx.db);
+  return { pairs, minAmount: minExchangeAmount, minAmountCode: MIN_EXCHANGE_CODE };
 }
