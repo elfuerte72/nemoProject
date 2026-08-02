@@ -2,35 +2,46 @@
 
 import { useEffect, useState } from 'react';
 import type { CardApplicationView } from '@nemo/core';
+import type { CardApplicationStatus } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
+import { formatDate } from '@/lib/format';
 import { CARD_STATUS_LABELS } from '@/lib/labels';
+import { NemoOutline } from './ui/icons';
+import { NoticeSheet } from './ui/sheet';
 
 /**
  * Заявка на европейскую карту.
  *
  * Экран честно говорит, чего сервис не делает: карту он не выпускает,
- * её данных не хранит и операций по ней не проводит. Обещание обратного
- * стоило бы дороже неудобства — клиент ждал бы от приложения того,
- * чего в нём нет.
+ * её данных не хранит и операций по ней не проводит. Поэтому на плашке
+ * нет ни номера, ни имени держателя — там нечего показать, и
+ * нарисованные «•••• 4821» обещали бы карту, которой в приложении нет.
  */
+
+/** Путь заявки к выпущенной карте. Отказ — выход из него, а не шаг. */
+const CARD_STEPS = ['submitted', 'processing', 'active'] as const satisfies readonly CardApplicationStatus[];
+
+const ABOUT = {
+  title: 'Как это работает',
+  body: 'Заявку ведёт менеджер: оформляет её у провайдера и сообщает о каждом шаге. Карту выпускает провайдер — её номер и баланс живут у него, а приложение показывает только состояние заявки.',
+};
+
 export function CardSection() {
   const [applications, setApplications] = useState<CardApplicationView[]>([]);
+  const [about, setAbout] = useState(false);
   const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void (async () => {
       try {
-        const mine = await get<{ applications: CardApplicationView[] }>(
-          '/api/card-applications',
-        );
+        const mine = await get<{ applications: CardApplicationView[] }>('/api/card-applications');
         setApplications(mine.applications);
       } catch (failure) {
-        setError(
-          failure instanceof ApiError ? failure.message : 'Не удалось загрузить заявки',
-        );
+        setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить заявки');
       } finally {
-        setBusy(false);
+        setLoading(false);
       }
     })();
   }, []);
@@ -39,66 +50,132 @@ export function CardSection() {
     setError(undefined);
     setBusy(true);
     try {
-      const created = await post<{ application: CardApplicationView }>(
-        '/api/card-applications',
-      );
+      const created = await post<{ application: CardApplicationView }>('/api/card-applications');
       setApplications((current) => [created.application, ...current]);
     } catch (failure) {
-      setError(
-        failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на карту',
-      );
+      setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на карту');
     } finally {
       setBusy(false);
     }
   }
 
+  if (loading) {
+    return <p className="empty">Загружаем заявки на карту…</p>;
+  }
+
+  const current = applications[0];
+  // Пока заявка не закрыта отказом, вторую подавать нечего: провайдер
+  // ведёт одну.
+  const canApply = current === undefined || current.status === 'rejected';
+  const reached = current ? CARD_STEPS.indexOf(current.status as (typeof CARD_STEPS)[number]) : -1;
+
   return (
-    <div style={styles.page}>
-      <section>
-        <h2 style={styles.heading}>Европейская карта</h2>
-        <p style={styles.muted}>
-          Оставьте заявку — менеджер займётся оформлением у провайдера и будет вести её
-          статус. Карту выпускает провайдер: её данные в приложении не хранятся и операций
-          по ней здесь нет.
+    <>
+      <div className="plastic">
+        <div className="plastic__glow" />
+        <div className="plastic__head">
+          <span className="plastic__brand">
+            <NemoOutline />
+            NEMO
+          </span>
+          <span className="plastic__status">
+            {current ? CARD_STATUS_LABELS[current.status] : 'Не оформлена'}
+          </span>
+        </div>
+        <div className="plastic__body">
+          <div className="plastic__number">•••• •••• •••• ••••</div>
+          <div className="plastic__foot">
+            <span className="plastic__holder">
+              {current?.providerReference ?? 'ВЫПУСКАЕТ ПРОВАЙДЕР'}
+            </span>
+            <span className="plastic__marks">
+              <span className="plastic__mark" />
+              <span className="plastic__mark" />
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="card panel">
+        <div className="panel__title">Европейская карта</div>
+        <p className="panel__text">
+          Оставьте заявку — менеджер оформит её у провайдера и будет вести статус. Данные карты в
+          приложении не хранятся, операций по ней здесь нет.
         </p>
-        <button type="button" onClick={submit} disabled={busy} style={styles.button}>
-          Подать заявку на карту
-        </button>
-      </section>
 
-      {error ? <p style={styles.error}>{error}</p> : undefined}
+        {current ? (
+          <div className="steps">
+            {CARD_STEPS.map((step, index) => (
+              <div key={step} className="steps__row">
+                <span
+                  className={
+                    index <= reached ? 'steps__title steps__title--reached' : 'steps__title'
+                  }
+                >
+                  {CARD_STATUS_LABELS[step]}
+                </span>
+                <span
+                  className={index === reached ? 'steps__mark steps__mark--now' : 'steps__mark'}
+                >
+                  {index < reached ? 'Готово' : index === reached ? 'Сейчас' : '—'}
+                </span>
+              </div>
+            ))}
+            {current.status === 'rejected' ? (
+              <div className="steps__row">
+                <span className="steps__title steps__title--reached">
+                  {CARD_STATUS_LABELS.rejected}
+                </span>
+                <span className="steps__mark">{formatDate(current.updatedAt)}</span>
+              </div>
+            ) : undefined}
+          </div>
+        ) : undefined}
 
-      <section>
-        <h2 style={styles.heading}>Мои заявки на карту</h2>
-        {applications.length === 0 ? (
-          <p style={styles.muted}>Заявок на карту пока нет.</p>
-        ) : (
-          <ul style={styles.list}>
-            {applications.map((application) => (
-              <li key={application.id} style={styles.item}>
-                <div>{CARD_STATUS_LABELS[application.status]}</div>
-                <div style={styles.muted}>
-                  Подана{' '}
-                  {new Date(application.createdAt).toLocaleDateString('ru-RU')}
-                  {application.providerReference
-                    ? ` · номер у провайдера ${application.providerReference}`
-                    : ''}
-                </div>
+        {error ? <p className="error">{error}</p> : undefined}
+
+        <div className="panel__actions">
+          {canApply ? (
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={busy}
+              className="btn btn--gold"
+            >
+              Подать заявку на карту
+            </button>
+          ) : (
+            <button type="button" onClick={() => setAbout(true)} className="btn btn--soft">
+              Что дальше
+            </button>
+          )}
+        </div>
+      </div>
+
+      {applications.length > 1 ? (
+        <>
+          <div className="section-title">Прошлые заявки</div>
+          <ul className="rows">
+            {applications.slice(1).map((application) => (
+              <li key={application.id} className="row">
+                <span className="row__body">
+                  <span className="row__title">{CARD_STATUS_LABELS[application.status]}</span>
+                  <span className="row__sub">
+                    Подана {formatDate(application.createdAt)}
+                    {application.providerReference
+                      ? ` · у провайдера ${application.providerReference}`
+                      : ''}
+                  </span>
+                </span>
               </li>
             ))}
           </ul>
-        )}
-      </section>
-    </div>
+        </>
+      ) : undefined}
+
+      {about ? (
+        <NoticeSheet title={ABOUT.title} body={ABOUT.body} onClose={() => setAbout(false)} />
+      ) : undefined}
+    </>
   );
 }
-
-const styles = {
-  page: { display: 'flex', flexDirection: 'column', gap: '2rem' },
-  heading: { fontSize: '1rem', marginBottom: '0.5rem' },
-  button: { padding: '0.75rem', fontSize: '1rem', fontWeight: 600, marginTop: '0.75rem' },
-  muted: { opacity: 0.7, fontSize: '0.85rem', lineHeight: 1.45 },
-  error: { color: '#c0392b', fontSize: '0.9rem' },
-  list: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' },
-  item: { borderTop: '1px solid rgba(128,128,128,0.25)', paddingTop: '0.6rem' },
-} satisfies Record<string, React.CSSProperties>;
