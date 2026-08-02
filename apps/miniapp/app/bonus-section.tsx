@@ -12,6 +12,7 @@ import {
 } from '@/lib/labels';
 import { getWebApp } from '@/lib/telegram/webapp';
 import { InviteIcon, WithdrawIcon } from './ui/icons';
+import { MarketingConsentToggle } from './marketing-consent';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
 /**
@@ -46,7 +47,13 @@ type SheetState =
   | { readonly kind: 'invite' }
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
-export function BonusSection() {
+export function BonusSection({
+  consent,
+  onConsentChanged,
+}: {
+  readonly consent: boolean;
+  readonly onConsentChanged: (consent: boolean) => void;
+}) {
   const [account, setAccount] = useState<BonusAccountView>();
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequestView[]>([]);
   const [sheet, setSheet] = useState<SheetState>();
@@ -209,6 +216,12 @@ export function BonusSection() {
           ))}
         </ul>
       )}
+
+      {/*
+        Рассылка — про самого клиента, а не про его баллы, но кабинет
+        здесь единственное место, где вообще есть что-то о нём.
+      */}
+      <MarketingConsentToggle consent={consent} onAnswered={onConsentChanged} />
 
       {sheet?.kind === 'withdraw' ? (
         <WithdrawSheet

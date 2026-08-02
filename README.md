@@ -15,6 +15,7 @@ pnpm db:migrate           # применить миграции к базе ра
 cp .env.example .env      # заполнить токен бота
 pnpm generate-keys        # выпустить пару ключей шифрования реквизитов в .env
 pnpm dev
+git config core.hooksPath .githooks   # напоминание про CHANGELOG.md при коммите
 ```
 
 `docker compose up -d` создаёт обе базы: `nemo_dev` для разработки и

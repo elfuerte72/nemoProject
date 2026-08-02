@@ -7,20 +7,15 @@ import { Sheet } from './ui/sheet';
 /**
  * Согласие на рассылку.
  *
- * При первом входе клиента спрашивают прямо — листом поверх экрана,
- * который не даёт пройти мимо. Дальше отписка остаётся одной кнопкой на
- * виду, внизу любого раздела: спрятанная в настройках отписка — это
- * способ не получить её вовсе.
+ * Вопрос и переключатель разведены по местам, потому что живут в разное
+ * время. Вопрос задаётся один раз при первом входе — листом поверх
+ * любого раздела, мимо которого не пройти. Переключатель нужен потом и
+ * редко, и его место — в кабинете, рядом с прочим о самом клиенте, а не
+ * под каждым экраном.
  */
-export function MarketingConsent({
-  askNow,
-  consent,
-  onAnswered,
-}: {
-  readonly askNow: boolean;
-  readonly consent: boolean;
-  readonly onAnswered: (consent: boolean) => void;
-}) {
+
+/** Сохранить ответ. Общее для вопроса и переключателя. */
+function useAnswer(onAnswered: (consent: boolean) => void) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
@@ -39,41 +34,67 @@ export function MarketingConsent({
     }
   }
 
-  if (askNow) {
-    return (
-      // Лист закрывается только ответом: `onClose` здесь — «не нужно».
-      // Вопрос задан один раз, и уход от него молчанием вернул бы его
-      // при следующем запуске.
-      <Sheet title="Присылать новости?" onClose={() => void answer(false)}>
-        <p className="sheet__body">
-          Предложения и новости сервиса. Заявок и их статусов это не касается — о них бот
-          сообщает всегда.
-        </p>
-        {error ? <p className="error">{error}</p> : undefined}
-        <div className="sheet__actions">
-          <button
-            type="button"
-            onClick={() => void answer(true)}
-            disabled={busy}
-            className="btn btn--gold"
-          >
-            Присылать
-          </button>
-          <button
-            type="button"
-            onClick={() => void answer(false)}
-            disabled={busy}
-            className="btn btn--soft"
-          >
-            Не нужно
-          </button>
-        </div>
-      </Sheet>
-    );
-  }
+  return { answer, error, busy };
+}
 
-  // Переключатель, а не «отписаться»: одна кнопка умела только выключить,
-  // и передумавшему клиенту нечем было включить рассылку обратно.
+/**
+ * Вопрос при первом входе. Висит, пока клиент на него не ответил, а не
+ * только в первую сессию: закрывший приложение до ответа иначе не увидел
+ * бы его больше никогда.
+ */
+export function MarketingConsentAsk({
+  onAnswered,
+}: {
+  readonly onAnswered: (consent: boolean) => void;
+}) {
+  const { answer, error, busy } = useAnswer(onAnswered);
+
+  return (
+    // Лист закрывается только ответом: `onClose` здесь — «не нужно».
+    // Уход от вопроса молчанием вернул бы его при следующем запуске.
+    <Sheet title="Присылать новости?" onClose={() => void answer(false)}>
+      <p className="sheet__body">
+        Предложения и новости сервиса. Заявок и их статусов это не касается — о них бот
+        сообщает всегда.
+      </p>
+      {error ? <p className="error">{error}</p> : undefined}
+      <div className="sheet__actions">
+        <button
+          type="button"
+          onClick={() => void answer(true)}
+          disabled={busy}
+          className="btn btn--gold"
+        >
+          Присылать
+        </button>
+        <button
+          type="button"
+          onClick={() => void answer(false)}
+          disabled={busy}
+          className="btn btn--soft"
+        >
+          Не нужно
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * Переключатель — на виду в кабинете, а не в настройках, которых у
+ * приложения нет. Именно переключатель, а не «отписаться»: одна кнопка
+ * умела только выключить, и передумавшему клиенту нечем было включить
+ * рассылку обратно.
+ */
+export function MarketingConsentToggle({
+  consent,
+  onAnswered,
+}: {
+  readonly consent: boolean;
+  readonly onAnswered: (consent: boolean) => void;
+}) {
+  const { answer, error, busy } = useAnswer(onAnswered);
+
   return (
     <>
       <button
