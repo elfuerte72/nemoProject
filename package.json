@@ -13,7 +13,8 @@
     "db:migrate": "pnpm --filter @nemo/db migrate",
     "db:studio": "pnpm --filter @nemo/db studio",
     "generate-keys": "tsx scripts/generate-requisite-keys.mts",
-    "create-first-admin": "tsx --env-file-if-exists=.env scripts/create-first-admin.mts"
+    "create-first-admin": "tsx --env-file-if-exists=.env scripts/create-first-admin.mts",
+    "set-telegram-webhook": "tsx --env-file-if-exists=.env scripts/set-telegram-webhook.mts"
   },
   "dependencies": {
     "@nemo/core": "workspace:*",
