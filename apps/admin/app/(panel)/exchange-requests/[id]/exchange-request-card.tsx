@@ -160,7 +160,7 @@ export function ExchangeRequestCard({
           <h2 className="card__title">Что уже решено</h2>
           <ul className="rows">
             {request.finalRate ? (
-              <Fact label="Финальный курс">
+              <Fact label="Курс сделки">
                 {formatAmount(request.finalRate)}
                 {request.toAmount
                   ? ` · к выдаче ${formatMoney(request.toAmount, request.toCode)}`
@@ -262,18 +262,36 @@ export function ExchangeRequestCard({
 
       {can.confirmRate ? (
         <section className="card">
-          <h2 className="card__title">Финальный курс</h2>
-          <p className="card__note">Курс и реквизиты уйдут клиенту в бот сообщением.</p>
+          <h2 className="card__title">Курс и реквизиты для оплаты</h2>
+          <p className="card__note">
+            {request.requestRate
+              ? 'Курс клиент получил при подаче, и он не меняется: сервис работает по нему. ' +
+                'Отсюда уходят только реквизиты — с этого момента пойдёт срок оплаты.'
+              : 'У этой заявки курса подачи нет — назовите свой. Курс и реквизиты уйдут ' +
+                'клиенту в бот сообщением, и с этого момента пойдёт срок оплаты.'}
+          </p>
           <div className="form-row">
-            <label className="field">
-              <span className="label">Курс</span>
-              <input
-                className="input"
-                value={finalRate}
-                onChange={(event) => setFinalRate(event.target.value)}
-                inputMode="decimal"
-              />
-            </label>
+            {/*
+              Поле курса — только там, где курс называет менеджер. У
+              безналичной заявки он назван при подаче, и поле ввода
+              обещало бы возможность его поменять.
+            */}
+            {request.requestRate ? (
+              <div className="field">
+                <span className="label">Курс заявки</span>
+                <span className="row__title mono">{formatAmount(request.requestRate)}</span>
+              </div>
+            ) : (
+              <label className="field">
+                <span className="label">Курс</span>
+                <input
+                  className="input"
+                  value={finalRate}
+                  onChange={(event) => setFinalRate(event.target.value)}
+                  inputMode="decimal"
+                />
+              </label>
+            )}
             <label className="field">
               <span className="label">К выдаче в {request.toCode}</span>
               <input
@@ -323,18 +341,23 @@ export function ExchangeRequestCard({
             */}
             <button
               type="button"
-              disabled={busy || !finalRate.trim() || !paymentInstructions.trim()}
+              disabled={
+                busy ||
+                !paymentInstructions.trim() ||
+                // Курс обязателен только там, где его называет менеджер.
+                (!request.requestRate && !finalRate.trim())
+              }
               className="btn btn--gold"
               onClick={() =>
                 act({
                   action: 'confirm-rate',
-                  finalRate,
+                  ...(request.requestRate ? {} : { finalRate }),
                   ...(toAmount ? { toAmount } : {}),
                   paymentInstructions,
                 })
               }
             >
-              Подтвердить курс и выдать реквизиты
+              {request.requestRate ? 'Выдать реквизиты для оплаты' : 'Назвать курс и выдать реквизиты'}
             </button>
           </div>
         </section>

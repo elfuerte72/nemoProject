@@ -165,6 +165,7 @@ type ExchangeRequestPatch = Partial<
     | 'finalRate'
     | 'toAmount'
     | 'paymentInstructions'
+    | 'requisitesIssuedAt'
     | 'serviceIncome'
     | 'serviceIncomeCode'
     | 'cancelReason'
@@ -324,11 +325,55 @@ export async function claimExchangeRequest(
 }
 
 export interface ConfirmExchangeRateInput {
-  readonly finalRate: string;
+  /**
+   * Курс, который называет менеджер. Только у заявки без курса подачи —
+   * наличной или поданной при молчащем источнике котировок. У
+   * безналичной заявки курс уже назван при подаче, и менять его
+   * менеджер не может.
+   */
+  readonly finalRate?: string | undefined;
   /** Сколько клиент получит по названному курсу. */
   readonly toAmount?: string | undefined;
   /** Куда клиенту платить. */
   readonly paymentInstructions: string;
+}
+
+/**
+ * Курс, по которому пойдёт сделка.
+ *
+ * Курс подачи — обязательство сервиса (docs/adr/0006): подтверждение
+ * его не меняет. Менеджер называет свой только там, где курса нет
+ * вовсе, — у наличных и у заявки, поданной при молчащем источнике.
+ *
+ * Присланный поверх курса подачи отвергается, а не игнорируется молча:
+ * менеджер, набравший другое число, должен узнать, что сделка пойдёт не
+ * по нему, — иначе он назовёт клиенту цену, которой не будет.
+ */
+function rateForConfirmation(
+  row: ExchangeRequestRow,
+  input: ConfirmExchangeRateInput,
+): Amount {
+  const named =
+    input.finalRate === undefined
+      ? undefined
+      : requirePositiveAmount(input.finalRate, 'Курс');
+
+  if (row.requestRate === null) {
+    if (named === undefined) {
+      throw new InvalidInputError(
+        'У этой заявки нет курса подачи: назовите курс, по которому исполняете',
+      );
+    }
+    return named;
+  }
+
+  const requestRate = Money.toAmount(row.requestRate);
+  if (named !== undefined && Money.compare(named, requestRate) !== 0) {
+    throw new InvalidInputError(
+      `Курс заявки — обязательство сервиса и не меняется: ${requestRate}`,
+    );
+  }
+  return requestRate;
 }
 
 export async function confirmExchangeRate(
@@ -337,7 +382,6 @@ export async function confirmExchangeRate(
   requestId: string,
   input: ConfirmExchangeRateInput,
 ): Promise<TransitionResult> {
-  const finalRate = requirePositiveAmount(input.finalRate, 'Курс');
   const toAmount =
     input.toAmount === undefined
       ? undefined
@@ -350,6 +394,7 @@ export async function confirmExchangeRate(
   return ctx.db.transaction(async (tx) => {
     const row = await lockRequest(tx, requestId);
     const staffId = requireOwnership(row, actor);
+    const finalRate = rateForConfirmation(row, input);
 
     return staffTransition(tx, row, {
       to: 'rate_confirmed',
@@ -358,6 +403,9 @@ export async function confirmExchangeRate(
       patch: {
         finalRate,
         paymentInstructions,
+        // Момент, с которого клиент впервые мог заплатить: от него и
+        // считается срок жизни неоплаченной заявки.
+        requisitesIssuedAt: new Date(),
         ...(toAmount === undefined ? {} : { toAmount }),
       },
     });

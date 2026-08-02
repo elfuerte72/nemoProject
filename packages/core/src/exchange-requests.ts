@@ -20,11 +20,15 @@ import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
  * Заявка на обмен: что клиент отдаёт, что хочет получить и на какую
  * сумму.
  *
- * Курс здесь не называется. У наличных его до разговора с менеджером
- * не существует вовсе, а у электронных переводов он справочный
- * (docs/adr/0004). Заявка — это запрос, а не обмен по зафиксированной
- * цене, и обещать цену в момент подачи означало бы обещать то, чем
- * сервис не управляет.
+ * Курс безналичной заявки называется при подаче и дальше не меняется:
+ * по какому курсу клиент нажал — по такому сервис и работает
+ * (docs/adr/0006). Обязательство ограничено сроком: не оплатил вовремя
+ * — заявка отменяется.
+ *
+ * У наличной заявки курса нет: котировок наличного рынка у сервиса нет,
+ * и называет его менеджер. Так же ведёт себя безналичная заявка,
+ * поданная при молчащем источнике котировок, — отказывать в подаче
+ * из-за молчания провайдера нельзя, для клиента это выглядит поломкой.
  */
 
 /**
@@ -39,9 +43,18 @@ export interface ExchangeRequestView {
   readonly toCode: string;
   readonly fromAmount: Amount;
   readonly toAmount: Amount | null;
-  readonly preliminaryRate: Amount | null;
+  /**
+   * Курс, по которому подана заявка. У безналичной — обязательство
+   * сервиса; пусто у наличной и у поданной при молчащем источнике.
+   */
+  readonly requestRate: Amount | null;
   readonly finalRate: Amount | null;
   readonly status: ExchangeRequestStatus;
+  /**
+   * Когда менеджер выдал реквизиты. От этого момента идёт срок оплаты:
+   * сколько его осталось, экран считает по сроку из условий обмена.
+   */
+  readonly requisitesIssuedAt: Date | null;
   /**
    * Куда ушли деньги по этой заявке. Клиенту он нужен, чтобы следующая
    * заявка в ту же валюту открывалась на той же записи, а не заставляла
@@ -102,6 +115,11 @@ export interface ExchangeTermsView {
   readonly minAmount: Amount;
   /** Валюта минимума: см. `MIN_EXCHANGE_CODE`. */
   readonly minAmountCode: string;
+  /**
+   * Сколько заявка ждёт оплаты после выдачи реквизитов, в минутах.
+   * Экран считает по нему, сколько времени у клиента осталось.
+   */
+  readonly unpaidTtlMinutes: number;
 }
 
 type ExchangeRequestRow = typeof exchangeRequests.$inferSelect;
@@ -124,9 +142,10 @@ export function toExchangeRequestView(row: ExchangeRequestRow): ExchangeRequestV
     toCode: row.toCode,
     fromAmount: Money.toAmount(row.fromAmount),
     toAmount: toDisplayAmount(row.toAmount),
-    preliminaryRate: toDisplayAmount(row.preliminaryRate),
+    requestRate: toDisplayAmount(row.requestRate),
     finalRate: toDisplayAmount(row.finalRate),
     status: row.status,
+    requisitesIssuedAt: row.requisitesIssuedAt,
     requisitesId: row.requisitesId,
     paymentInstructions: row.paymentInstructions,
     cancelReason: row.cancelReason,
@@ -236,8 +255,8 @@ export async function submitExchangeRequest(
   // Котировка запрашивается до транзакции: это обращение к чужому API,
   // и держать открытой транзакцию на время сетевого запроса значило бы
   // отдавать соединение с базой в распоряжение чужого сервиса. У
-  // наличных курса нет вовсе — там финальный курс называет менеджер.
-  const preliminaryRate =
+  // наличных курса нет вовсе — там курс называет менеджер.
+  const requestRate =
     input.kind === 'electronic'
       ? await quoteForSubmission(ctx, { fromCode: input.fromCode, toCode: input.toCode })
       : null;
@@ -249,7 +268,7 @@ export async function submitExchangeRequest(
     }
 
     const settings = await readServiceSettings(tx);
-    const rubles = rubleSideOf(input, fromAmount, preliminaryRate);
+    const rubles = rubleSideOf(input, fromAmount, requestRate);
     if (rubles !== null && Money.compare(rubles, settings.minExchangeAmount) < 0) {
       throw new InvalidInputError(
         `Минимальная сумма обмена — ${settings.minExchangeAmount} ${MIN_EXCHANGE_CODE}`,
@@ -264,7 +283,7 @@ export async function submitExchangeRequest(
         fromCode: input.fromCode,
         toCode: input.toCode,
         fromAmount,
-        preliminaryRate,
+        requestRate,
         requisitesId: input.requisitesId ?? null,
       })
       .returning();
@@ -347,11 +366,12 @@ export async function getExchangeTerms(ctx: CoreConfig): Promise<ExchangeTermsVi
     .where(eq(currencies.isActive, true))
     .orderBy(asc(currencies.code));
 
-  const { minExchangeAmount } = await readServiceSettings(ctx.db);
+  const settings = await readServiceSettings(ctx.db);
   return {
     pairs,
     currencies: active,
-    minAmount: minExchangeAmount,
+    minAmount: settings.minExchangeAmount,
     minAmountCode: MIN_EXCHANGE_CODE,
+    unpaidTtlMinutes: settings.unpaidExchangeRequestTtlMinutes,
   };
 }

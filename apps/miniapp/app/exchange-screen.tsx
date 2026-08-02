@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type {
   ExchangeRequestView,
   ExchangeTermsView,
-  PreliminaryQuoteView,
+  QuoteView,
   RequisitesView,
 } from '@nemo/core';
 import {
@@ -41,10 +41,13 @@ import { NoticeSheet, Sheet } from './ui/sheet';
 /**
  * Экран обмена: что отдаю, что получаю, сколько.
  *
- * По электронному переводу показывается предварительный курс — с явной
- * пометкой, что он справочный. У наличных курса нет вовсе: там
- * финальный курс называет менеджер, и обещать его в приложении означало
- * бы обещать то, чем сервис не управляет.
+ * По электронному переводу курс называется сразу и дальше не меняется:
+ * по какому курсу клиент нажал — по такому сервис и работает
+ * (docs/adr/0006). Обязательство ограничено сроком оплаты, и экран
+ * показывает, сколько его осталось.
+ *
+ * У наличных курса нет вовсе: там его называет менеджер, и обещать его
+ * в приложении означало бы обещать то, чем сервис не управляет.
  */
 
 /** Пауза перед запросом курса: иначе он уходит на каждое нажатие клавиши. */
@@ -74,7 +77,7 @@ export function ExchangeScreen() {
   const [toCode, setToCode] = useState('');
   const [kind, setKind] = useState<ExchangeKind>('electronic');
   const [amount, setAmount] = useState('');
-  const [quote, setQuote] = useState<PreliminaryQuoteView | null>(null);
+  const [quote, setQuote] = useState<QuoteView | null>(null);
   const [sheet, setSheet] = useState<SheetState>();
   /** Какой из двух списков валют сейчас раскрыт. */
   const [picker, setPicker] = useState<'from' | 'to'>();
@@ -213,7 +216,7 @@ export function ExchangeScreen() {
 
     let cancelled = false;
     const timer = setTimeout(() => {
-      void get<{ quote: PreliminaryQuoteView | null }>(`/api/quote?${params.toString()}`)
+      void get<{ quote: QuoteView | null }>(`/api/quote?${params.toString()}`)
         .then((result) => {
           if (!cancelled) setQuote(result.quote);
         })
@@ -340,6 +343,9 @@ export function ExchangeScreen() {
     // Электронный перевод без реквизитов отправлять некуда, а наличные
     // клиент получает на руки — там их и не спрашивают.
     (!electronic || selected !== undefined);
+
+  const paymentLeft =
+    active && terms ? timeLeftToPay(active, terms.unpaidTtlMinutes) : undefined;
 
   const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
@@ -480,7 +486,7 @@ export function ExchangeScreen() {
           <p className="hint">
             {electronic
               ? quote
-                ? 'Курс предварительный — финальный подтвердит менеджер.'
+                ? 'По этому курсу и обменяем: он фиксируется в заявке.'
                 : 'Курс сейчас недоступен — его назовёт менеджер после подачи заявки.'
               : 'Курс по наличным называет менеджер.'}
             {/*
@@ -540,6 +546,13 @@ export function ExchangeScreen() {
               {formatRate(active.finalRate, active.fromCode, active.toCode)}
             </p>
           ) : undefined}
+
+          {/*
+            Сколько осталось на оплату. Обязательство по курсу не
+            бессрочно, и клиент должен видеть его край: заявку, не
+            оплаченную вовремя, сервис отменяет сам.
+          */}
+          {paymentLeft ? <p className="active__note">{paymentLeft}</p> : undefined}
 
           {actions.length > 0 ? (
             <div className="active__actions">
@@ -694,7 +707,7 @@ function rubleSide(
   rubleCode: string,
   direction: { fromCode: string; toCode: string },
   amount: string,
-  quote: PreliminaryQuoteView | null,
+  quote: QuoteView | null,
 ): Amount | null {
   if (direction.fromCode === rubleCode) {
     // Введённое человеком проверяется той же схемой, что и на сервере:
@@ -704,6 +717,30 @@ function rubleSide(
   }
   if (direction.toCode === rubleCode) return quote?.toAmount ?? null;
   return null;
+}
+
+/**
+ * Сколько времени у клиента осталось на оплату.
+ *
+ * Считается от момента выдачи реквизитов по сроку из условий обмена —
+ * тому же, по которому отменяет ядро. Пусто, пока реквизитов не выдали:
+ * до этого платить некуда, и отсчёт не идёт.
+ *
+ * Минуты, а не точное время: заявка живёт часами, и «до 14:37» просило
+ * бы клиента считать разницу самому.
+ */
+function timeLeftToPay(request: ExchangeRequestView, ttlMinutes: number): string | undefined {
+  if (request.status !== 'rate_confirmed' || !request.requisitesIssuedAt) return undefined;
+
+  const issuedAt = new Date(request.requisitesIssuedAt).getTime();
+  const left = issuedAt + ttlMinutes * 60_000 - Date.now();
+  if (left <= 0) {
+    // Срок вышел, а заявка ещё в этом состоянии: отменяет её отдельный
+    // прогон, и до него честнее сказать, что время кончилось, чем
+    // показывать ноль минут.
+    return 'Срок оплаты истёк — заявку вот-вот отменят.';
+  }
+  return `На оплату остаётся ${Math.ceil(left / 60_000)} мин: курс держится до конца срока.`;
 }
 
 /** Заявка ещё в пути: показывается карточкой, а не строкой истории. */

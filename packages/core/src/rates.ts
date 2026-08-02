@@ -5,19 +5,20 @@ import type { CoreConfig, Executor } from './context.js';
 import { readServiceSettings } from './settings.js';
 
 /**
- * Предварительный курс для электронных переводов.
+ * Котировка для электронных переводов.
  *
  * Источник котировок спрятан за одним интерфейсом: сколько за ним
- * провайдеров и какие они — деталь развёртывания. Список направлений
- * ждёт блокера C1, но известно, что источников будет несколько, и
- * протекать в логику заявки они не должны.
+ * провайдеров и какие они — деталь развёртывания. Известно, что
+ * источников будет несколько, и протекать в логику заявки они не
+ * должны.
  *
- * Наличные через этот интерфейс не проходят вовсе: там финальный курс
- * называет менеджер, и котировка биржи к нему отношения не имеет.
+ * Наличные через этот интерфейс не проходят вовсе: там курс называет
+ * менеджер, и котировка биржи к нему отношения не имеет.
  *
- * Курс здесь справочный (docs/adr/0004). Он не фиксируется, ни к чему
- * сервис не обязывает и существует ради одного — чтобы клиент понимал
- * порядок суммы до подачи заявки.
+ * Курс, показанный клиенту, справочным больше не является: подав по
+ * нему заявку, клиент получает обязательство сервиса (docs/adr/0006).
+ * Но справочна сама эта котировка — до подачи она ни к чему не
+ * обязывает и живёт ровно до следующего запроса.
  */
 
 /** Котировка внешнего источника: сколько `toCode` дают за единицу `fromCode`. */
@@ -40,7 +41,7 @@ export interface RateSource {
   quote(pair: RatePair): Promise<RateQuote | null>;
 }
 
-export interface PreliminaryQuoteView {
+export interface QuoteView {
   /** Курс с наценкой сервиса — тот, что видит клиент. */
   readonly rate: Amount;
   /** Сколько клиент получит по этому курсу. `null`, если сумма не указана. */
@@ -49,7 +50,7 @@ export interface PreliminaryQuoteView {
   readonly asOf: Date;
 }
 
-export interface PreliminaryQuoteInput extends RatePair {
+export interface QuoteInput extends RatePair {
   readonly fromAmount?: string | undefined;
 }
 
@@ -89,10 +90,10 @@ async function hasElectronicPair(executor: Executor, pair: RatePair): Promise<bo
  * по-прежнему можно. Отказ операции заставил бы отличать «провайдер
  * лёг» от «клиент ошибся» там, где для клиента разницы нет.
  */
-export async function getPreliminaryQuote(
+export async function getQuote(
   ctx: CoreConfig,
-  input: PreliminaryQuoteInput,
-): Promise<PreliminaryQuoteView | null> {
+  input: QuoteInput,
+): Promise<QuoteView | null> {
   const source = ctx.rateSource;
   if (!source) return null;
 
@@ -117,22 +118,24 @@ export async function getPreliminaryQuote(
 }
 
 /**
- * Курс на момент подачи заявки — чтобы менеджер видел, от чего клиент
- * отталкивался, а разбор спорного обмена не упирался в «мне показывали
- * другое». Обязательством сервиса он от этого не становится.
+ * Курс, по которому подана заявка, — и он же обязательство сервиса
+ * (docs/adr/0006): по какому курсу клиент нажал, по такому сделка и
+ * пойдёт.
  *
  * Сбой источника заявку не задерживает: без котировки поле останется
- * пустым, и это ровно то, что происходит с наличными.
+ * пустым, и заявка поведёт себя как наличная — курс назовёт менеджер.
+ * Отказывать в подаче из-за молчания провайдера нельзя, для клиента это
+ * выглядит поломкой сервиса.
  */
 export async function quoteForSubmission(
   ctx: CoreConfig,
   input: RatePair,
 ): Promise<Amount | null> {
   try {
-    const quote = await getPreliminaryQuote(ctx, input);
+    const quote = await getQuote(ctx, input);
     return quote?.rate ?? null;
   } catch (error) {
-    console.error('Не удалось получить предварительный курс', error);
+    console.error('Не удалось получить котировку', error);
     return null;
   }
 }

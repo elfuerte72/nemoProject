@@ -4,8 +4,11 @@ import {
   ConflictError,
   createCore,
   ForbiddenError,
+  InvalidInputError,
   TransitionNotAllowedError,
   type Actor,
+  type RateQuote,
+  type RateSource,
 } from './index.js';
 import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
 
@@ -259,5 +262,105 @@ describe('состояние заявки в руках клиента', () => {
     const id = await givenNewRequest();
 
     await expect(core.claimExchangeRequest(asClient(200n), id)).rejects.toThrow(ForbiddenError);
+  });
+});
+
+/**
+ * Курс заявки — обязательство сервиса (docs/adr/0006).
+ *
+ * Правило различается по способу: безналичную заявку определяет курс
+ * подачи, наличную котирует менеджер — котировок наличного рынка у
+ * сервиса нет. Проверяется здесь именно это различие, потому что от
+ * него зависит, ту ли цену клиент увидит в итоге.
+ */
+describe('курс заявки', () => {
+  /** Источник, отвечающий одной котировкой на любую пару. */
+  const rateSource: RateSource = {
+    async quote(): Promise<RateQuote> {
+      return { rate: '100' as RateQuote['rate'], asOf: new Date('2026-01-01T00:00:00Z') };
+    },
+  };
+  const withRate = createCore({ db: testDatabase(), rateSource });
+
+  /** Безналичная заявка, поданная при живом источнике котировок. */
+  async function givenRequestWithRate(): Promise<string> {
+    const { request } = await withRate.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+      requisitesId,
+    });
+    await withRate.claimExchangeRequest(manager, request.id);
+    return request.id;
+  }
+
+  it('записывается в заявку при подаче', async () => {
+    const id = await givenRequestWithRate();
+
+    const seen = await withRate.getExchangeRequest(asClient(100n), id);
+
+    // Наценка по умолчанию — 2%, и курс с ней клиент и видел: 100 − 2%.
+    expect(seen.requestRate).toBe('98');
+  });
+
+  it('не меняется при подтверждении: менеджер работает по курсу подачи', async () => {
+    const id = await givenRequestWithRate();
+
+    const { request } = await withRate.confirmExchangeRate(manager, id, {
+      paymentInstructions: 'TRC20: TXYZ...',
+    });
+
+    expect(request.finalRate).toBe('98');
+  });
+
+  it('не подменяется другим числом: менеджер узнаёт об этом до клиента', async () => {
+    const id = await givenRequestWithRate();
+
+    await expect(
+      withRate.confirmExchangeRate(manager, id, {
+        finalRate: '90',
+        paymentInstructions: 'TRC20: TXYZ...',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('называется менеджером там, где курса подачи нет', async () => {
+    // Наличные: котировок наличного рынка у сервиса нет вовсе.
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
+    const { request } = await withRate.submitExchangeRequest(asClient(100n), {
+      kind: 'cash',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+    });
+    await withRate.claimExchangeRequest(manager, request.id);
+
+    const confirmed = await withRate.confirmExchangeRate(manager, request.id, {
+      finalRate: '93',
+      paymentInstructions: 'наличными в офисе',
+    });
+
+    expect(confirmed.request.requestRate).toBeNull();
+    expect(confirmed.request.finalRate).toBe('93');
+  });
+
+  it('требует курса от менеджера, когда его нет у заявки', async () => {
+    const id = await givenNewRequest();
+    await core.claimExchangeRequest(manager, id);
+
+    await expect(
+      core.confirmExchangeRate(manager, id, { paymentInstructions: 'TRC20: TXYZ...' }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('запоминает момент выдачи реквизитов: от него идёт срок оплаты', async () => {
+    const id = await givenRequestWithRate();
+
+    const { request } = await withRate.confirmExchangeRate(manager, id, {
+      paymentInstructions: 'TRC20: TXYZ...',
+    });
+
+    expect(request.requisitesIssuedAt).toBeInstanceOf(Date);
   });
 });

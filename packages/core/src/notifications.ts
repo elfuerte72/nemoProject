@@ -35,6 +35,17 @@ export type Notification =
       readonly cancelReason?: string;
     }
   | {
+      /**
+       * Срок оплаты подходит к концу. Отдельный вид, а не состояние
+       * заявки: состояние её при этом не меняется — меняется только то,
+       * сколько у клиента осталось времени.
+       */
+      readonly kind: 'exchange-request-expiring';
+      readonly to: bigint;
+      readonly requestId: string;
+      readonly minutesLeft: number;
+    }
+  | {
       readonly kind: 'bonus-accrued';
       readonly to: bigint;
       readonly line: ReferralLine;
@@ -70,6 +81,12 @@ export function renderNotification(notification: Notification): string {
         : 'У вас новый реферал во второй линии: ваш реферал привёл знакомого.';
     case 'exchange-request-status':
       return renderExchangeRequestStatus(notification);
+    case 'exchange-request-expiring':
+      return (
+        `Заявка на обмен ждёт оплаты ещё ${notification.minutesLeft} мин. ` +
+        'Курс держится до конца этого срока; неоплаченную заявку сервис отменит, ' +
+        'и подать её можно будет заново — уже по новому курсу.'
+      );
     case 'bonus-accrued':
       return (
         `Вам начислено ${notification.amount} баллов за исполненную заявку ` +
@@ -89,11 +106,11 @@ function renderExchangeRequestStatus(
     case 'new':
       return 'Заявка на обмен принята. Её возьмёт менеджер — вы получите сообщение.';
     case 'in_progress':
-      return 'Менеджер взял вашу заявку на обмен в работу и скоро назовёт финальный курс.';
+      return 'Менеджер взял вашу заявку на обмен в работу и скоро пришлёт реквизиты для оплаты.';
     case 'rate_confirmed':
       return [
         notification.finalRate
-          ? `Финальный курс по вашей заявке на обмен: ${notification.finalRate}.`
+          ? `Курс по вашей заявке на обмен: ${notification.finalRate}.`
           : undefined,
         notification.paymentInstructions
           ? `Реквизиты для оплаты: ${notification.paymentInstructions}`

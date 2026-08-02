@@ -21,7 +21,7 @@ export async function GET(request: Request): Promise<Response> {
       return json({ quote: null });
     }
 
-    const quote = await getCore().getPreliminaryQuote({
+    const quote = await getCore().getQuote({
       fromCode,
       toCode,
       fromAmount: url.searchParams.get('fromAmount') ?? undefined,

@@ -64,6 +64,13 @@
       "when": 1785694527214,
       "tag": "0008_requisite_types_and_networks",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785699034901,
+      "tag": "0009_rate_commitment_and_expiry",
+      "breakpoints": true
     }
   ]
 }
