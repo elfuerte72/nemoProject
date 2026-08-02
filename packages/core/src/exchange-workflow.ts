@@ -21,6 +21,7 @@ import {
 } from './errors.js';
 import { toExchangeRequestView, type ExchangeRequestView } from './exchange-requests.js';
 import type { Notification } from './notifications.js';
+import { accrueReferralBonuses } from './referral-accruals.js';
 
 /**
  * Путь заявки на обмен от очереди до исполнения.
@@ -403,12 +404,27 @@ export async function completeExchangeRequest(
     const staffId = requireOwnership(row, actor);
     await requireKnownCurrency(tx, serviceIncomeCode);
 
-    return staffTransition(tx, row, {
+    const applied = await applyTransition(tx, row, {
       to: 'completed',
       actorType: 'manager',
       actorStaffId: staffId,
       patch: { serviceIncome, serviceIncomeCode },
     });
+
+    // Начисление — часть той же транзакции, что и смена статуса: откат
+    // одного откатывает другое. Разделить их значило бы допустить
+    // исполненную заявку без начислений — и обнаружить это, когда
+    // реферер спросит, куда делись его баллы.
+    const accrued = await accrueReferralBonuses(tx, {
+      requestId: row.id,
+      clientId: row.clientId,
+      serviceIncome,
+    });
+
+    return {
+      request: toManagerView(applied.row),
+      notifications: [...applied.notifications, ...accrued],
+    };
   });
 }
 

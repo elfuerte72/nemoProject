@@ -1,0 +1,174 @@
+import { desc, eq, inArray } from 'drizzle-orm';
+import { cardApplications } from '@nemo/db';
+import {
+  canTransitionCardApplication,
+  cardApplicationStatuses,
+  isCardApplicationOpen,
+  type CardApplicationStatus,
+} from '@nemo/types';
+import { requireClient, requireStaff, type Actor } from './actor.js';
+import type { CoreConfig, Executor } from './context.js';
+import { ConflictError, NotFoundError, TransitionNotAllowedError } from './errors.js';
+import type { Notification } from './notifications.js';
+
+/**
+ * Заявка на европейскую карту.
+ *
+ * Сервис карту не выпускает, её данных не хранит и операций по ней не
+ * проводит (docs/adr/0004). Всё, что здесь есть, — состояние заявки,
+ * которое менеджер ведёт по ответам внешнего провайдера, и ссылка на
+ * неё в системе провайдера, чтобы было по чему свериться.
+ */
+
+export interface CardApplicationView {
+  readonly id: string;
+  readonly clientId: bigint;
+  readonly status: CardApplicationStatus;
+  /** Номер заявки у провайдера. Не данные карты — их у сервиса нет. */
+  readonly providerReference: string | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface CardApplicationResult {
+  readonly application: CardApplicationView;
+  readonly notifications: readonly Notification[];
+}
+
+type CardApplicationRow = typeof cardApplications.$inferSelect;
+
+/** Состояния, в которых заявка ещё не закрыта: карта либо выпущена, либо ждёт. */
+const PENDING_STATUSES = cardApplicationStatuses.filter(
+  (status) => isCardApplicationOpen(status) || status === 'active',
+);
+
+const OPEN_STATUSES = cardApplicationStatuses.filter(isCardApplicationOpen);
+
+function toView(row: CardApplicationRow): CardApplicationView {
+  return {
+    id: row.id,
+    clientId: row.clientId,
+    status: row.status,
+    providerReference: row.providerReference,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function notificationFor(row: CardApplicationRow): Notification {
+  return { kind: 'card-application-status', to: row.clientId, status: row.status };
+}
+
+/**
+ * Подать заявку.
+ *
+ * Вторая заявка при действующей карте не создаётся — карта у клиента
+ * одна. Не создаётся и вторая, пока первая в работе: провайдер получил
+ * бы два обращения об одном человеке, а клиент — два разных статуса на
+ * один вопрос «где моя карта».
+ */
+export async function submitCardApplication(
+  ctx: CoreConfig,
+  actor: Actor,
+): Promise<CardApplicationResult> {
+  const clientId = requireClient(actor);
+
+  return ctx.db.transaction(async (tx) => {
+    const existing = await tx
+      .select()
+      .from(cardApplications)
+      .where(eq(cardApplications.clientId, clientId))
+      .for('update');
+
+    const pending = existing.find((row) => PENDING_STATUSES.includes(row.status));
+    if (pending) {
+      throw new ConflictError(
+        pending.status === 'active'
+          ? 'Карта уже выпущена и активна'
+          : 'Заявка на карту уже подана и находится в работе',
+      );
+    }
+
+    const [row] = await tx.insert(cardApplications).values({ clientId }).returning();
+    return { application: toView(row!), notifications: [notificationFor(row!)] };
+  });
+}
+
+export async function listCardApplications(
+  ctx: CoreConfig,
+  actor: Actor,
+): Promise<readonly CardApplicationView[]> {
+  const clientId = requireClient(actor);
+  const rows = await ctx.db
+    .select()
+    .from(cardApplications)
+    .where(eq(cardApplications.clientId, clientId))
+    .orderBy(desc(cardApplications.createdAt));
+  return rows.map(toView);
+}
+
+/** Очередь менеджера: заявки, по которым ещё нужно вести статус. */
+export async function listCardApplicationQueue(
+  ctx: CoreConfig,
+  actor: Actor,
+): Promise<readonly CardApplicationView[]> {
+  requireStaff(actor);
+  const rows = await ctx.db
+    .select()
+    .from(cardApplications)
+    .where(inArray(cardApplications.status, OPEN_STATUSES))
+    .orderBy(desc(cardApplications.createdAt));
+  return rows.map(toView);
+}
+
+export interface UpdateCardApplicationInput {
+  readonly status: CardApplicationStatus;
+  readonly providerReference?: string | undefined;
+}
+
+async function lockApplication(
+  executor: Executor,
+  applicationId: string,
+): Promise<CardApplicationRow> {
+  const [row] = await executor
+    .select()
+    .from(cardApplications)
+    .where(eq(cardApplications.id, applicationId))
+    .limit(1)
+    .for('update');
+  if (!row) {
+    throw new NotFoundError('Заявка на карту не найдена');
+  }
+  return row;
+}
+
+export async function updateCardApplicationStatus(
+  ctx: CoreConfig,
+  actor: Actor,
+  applicationId: string,
+  input: UpdateCardApplicationInput,
+): Promise<CardApplicationResult> {
+  requireStaff(actor);
+  const providerReference = input.providerReference?.trim();
+
+  return ctx.db.transaction(async (tx) => {
+    const row = await lockApplication(tx, applicationId);
+    if (!canTransitionCardApplication(row.status, input.status)) {
+      throw new TransitionNotAllowedError(
+        `Заявку на карту из состояния «${row.status}» нельзя перевести в «${input.status}»`,
+      );
+    }
+
+    const [updated] = await tx
+      .update(cardApplications)
+      .set({
+        status: input.status,
+        updatedAt: new Date(),
+        ...(providerReference ? { providerReference } : {}),
+      })
+      .where(eq(cardApplications.id, row.id))
+      .returning();
+
+    return { application: toView(updated!), notifications: [notificationFor(updated!)] };
+  });
+}

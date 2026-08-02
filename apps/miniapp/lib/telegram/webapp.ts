@@ -11,6 +11,8 @@ interface TelegramWebApp {
   initData: string;
   ready(): void;
   expand(): void;
+  /** Открыть ссылку t.me внутри Telegram, а не во внешнем браузере. */
+  openTelegramLink?(url: string): void;
 }
 
 declare global {

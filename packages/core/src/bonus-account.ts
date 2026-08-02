@@ -1,0 +1,126 @@
+import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { bonusTransactions, clients, referrals } from '@nemo/db';
+import { Money, type Amount, type BonusTransactionKind, type ReferralLine } from '@nemo/types';
+import { requireClient, type Actor } from './actor.js';
+import type { CoreConfig, Executor } from './context.js';
+import { NotFoundError } from './errors.js';
+
+/**
+ * Реферальный кабинет клиента: сколько заработал, скольких привёл и за
+ * что именно начислено.
+ *
+ * Баланс — сумма движений, а не отдельно хранимое число. Остаток,
+ * который можно рассинхронизировать с историей, рано или поздно с ней
+ * расходится, и тогда непонятно, какому из двух чисел верить.
+ *
+ * Про самих рефералов клиент видит только количество. Ни имени, ни
+ * username, ни идентификатора: реферальная программа не повод раскрывать
+ * одному клиенту, кто такой другой.
+ */
+
+export interface BonusTransactionView {
+  readonly id: string;
+  readonly kind: BonusTransactionKind;
+  readonly amount: Amount;
+  /** Линия, по которой начислено. У списаний и правок её нет. */
+  readonly line: ReferralLine | null;
+  /** Ставка линии на момент начисления, в базисных пунктах. */
+  readonly rateBps: number | null;
+  /** Заявка на обмен, за которую начислено. */
+  readonly exchangeRequestId: string | null;
+  readonly comment: string | null;
+  readonly createdAt: Date;
+}
+
+export interface BonusAccountView {
+  readonly balance: Amount;
+  /** Полезная нагрузка реферальной ссылки. Саму ссылку собирает приложение. */
+  readonly referralCode: string;
+  readonly line1Count: number;
+  readonly line2Count: number;
+  readonly history: readonly BonusTransactionView[];
+}
+
+type BonusTransactionRow = typeof bonusTransactions.$inferSelect;
+
+function toView(row: BonusTransactionRow): BonusTransactionView {
+  return {
+    id: row.id,
+    kind: row.kind,
+    amount: Money.toAmount(row.amount),
+    line: row.line === 1 || row.line === 2 ? row.line : null,
+    rateBps: row.rateBps,
+    exchangeRequestId: row.exchangeRequestId,
+    comment: row.comment,
+    createdAt: row.createdAt,
+  };
+}
+
+/**
+ * Бонусный баланс клиента.
+ *
+ * Считается запросом к базе, а не сложением выгруженных строк: история
+ * растёт, а баланс нужен и там, где вся она ни к чему — например перед
+ * заявкой на вывод.
+ */
+export async function bonusBalance(
+  executor: Executor,
+  clientId: bigint,
+): Promise<Amount> {
+  const [row] = await executor
+    .select({ total: sql<string | null>`sum(${bonusTransactions.amount})` })
+    .from(bonusTransactions)
+    .where(eq(bonusTransactions.clientId, clientId));
+
+  // Пусто у клиента без движений: ни одного начисления ещё не было.
+  return row?.total === null || row?.total === undefined
+    ? Money.ZERO
+    : Money.toAmount(row.total);
+}
+
+async function countReferrals(
+  executor: Executor,
+  clientId: bigint,
+  line: ReferralLine,
+): Promise<number> {
+  const [row] = await executor
+    .select({ value: count() })
+    .from(referrals)
+    .where(and(eq(referrals.referrerId, clientId), eq(referrals.line, line)));
+  return row?.value ?? 0;
+}
+
+export async function getBonusAccount(
+  ctx: CoreConfig,
+  actor: Actor,
+): Promise<BonusAccountView> {
+  const clientId = requireClient(actor);
+
+  const [client] = await ctx.db
+    .select({ referralCode: clients.referralCode })
+    .from(clients)
+    .where(eq(clients.telegramUserId, clientId))
+    .limit(1);
+  if (!client) {
+    throw new NotFoundError('Клиент не найден');
+  }
+
+  const [balance, line1Count, line2Count, history] = await Promise.all([
+    bonusBalance(ctx.db, clientId),
+    countReferrals(ctx.db, clientId, 1),
+    countReferrals(ctx.db, clientId, 2),
+    ctx.db
+      .select()
+      .from(bonusTransactions)
+      .where(eq(bonusTransactions.clientId, clientId))
+      .orderBy(desc(bonusTransactions.createdAt), desc(bonusTransactions.id)),
+  ]);
+
+  return {
+    balance,
+    referralCode: client.referralCode,
+    line1Count,
+    line2Count,
+    history: history.map(toView),
+  };
+}

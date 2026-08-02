@@ -35,6 +35,31 @@ export default async function DeskPage() {
         </span>
       </header>
 
+      {/*
+        Разделы администратора видны всем, а отказывают сами операции.
+        Скрывать ссылку значило бы полагаться на то, что менеджер не
+        наберёт адрес руками, — это не разграничение доступа, а его
+        видимость.
+      */}
+      <nav style={styles.nav}>
+        <Link href="/withdrawals" style={styles.link}>
+          Заявки на вывод
+        </Link>
+        <Link href="/card-applications" style={styles.link}>
+          Заявки на карту
+        </Link>
+        {actor.role === 'admin' ? (
+          <>
+            <Link href="/settings" style={styles.link}>
+              Настройки
+            </Link>
+            <Link href="/requisite-access" style={styles.link}>
+              Журнал реквизитов
+            </Link>
+          </>
+        ) : undefined}
+      </nav>
+
       <section>
         <h2 style={styles.subheading}>Очередь — {queue.length}</h2>
         <ExchangeRequestList requests={queue} empty="Новых заявок нет." />
@@ -88,6 +113,7 @@ const styles = {
     gap: '2rem',
   },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' },
+  nav: { display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.9rem' },
   heading: { fontSize: '1.35rem' },
   subheading: { fontSize: '1rem', marginBottom: '0.75rem' },
   list: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '1rem' },

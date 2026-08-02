@@ -1,4 +1,36 @@
+import type { StaffRole } from '@nemo/types';
 import type { Actor } from './actor.js';
+import {
+  addStaff,
+  enrollFirstAdmin,
+  getServiceSettings,
+  listCurrencyPairsForAdmin,
+  listSettingsAuditLog,
+  listStaff,
+  resetStaffSecondFactor,
+  setStaffActive,
+  updateCurrencyPairMarkup,
+  updateServiceSettings,
+  updateStaffRole,
+  type AddStaffInput,
+  type UpdateServiceSettingsInput,
+} from './admin.js';
+import { getBonusAccount } from './bonus-account.js';
+import {
+  finishBroadcast,
+  listBroadcasts,
+  recordBroadcastProgress,
+  setMarketingConsent,
+  startBroadcast,
+  type BroadcastProgress,
+} from './broadcasts.js';
+import {
+  listCardApplicationQueue,
+  listCardApplications,
+  submitCardApplication,
+  updateCardApplicationStatus,
+  type UpdateCardApplicationInput,
+} from './card-applications.js';
 import { getClient, registerClient, type RegisterClientInput } from './clients.js';
 import type { CoreConfig } from './context.js';
 import {
@@ -8,12 +40,28 @@ import {
   submitExchangeRequest,
   type SubmitExchangeRequestInput,
 } from './exchange-requests.js';
+import { getPreliminaryQuote, type PreliminaryQuoteInput } from './rates.js';
+import {
+  listRequisiteAccessLog,
+  revealRequisites,
+  type RequisiteAccessFilter,
+} from './requisite-access.js';
 import {
   getRequisites,
   saveRequisites,
   type SaveRequisitesInput,
 } from './requisites.js';
 import { beginStaffLogin, completeStaffLogin, getActiveStaff } from './staff.js';
+import {
+  approveWithdrawalRequest,
+  listWithdrawalQueue,
+  listWithdrawalRequests,
+  markWithdrawalPaid,
+  rejectWithdrawalRequest,
+  revealWithdrawalDestination,
+  submitWithdrawalRequest,
+  type SubmitWithdrawalInput,
+} from './withdrawals.js';
 import {
   cancelExchangeRequest,
   cancelOwnExchangeRequest,
@@ -56,6 +104,7 @@ export function createCore(ctx: CoreConfig) {
     getClient: (actor: Actor) => getClient(ctx, actor),
 
     listCurrencyPairs: () => listCurrencyPairs(ctx),
+    getPreliminaryQuote: (input: PreliminaryQuoteInput) => getPreliminaryQuote(ctx, input),
     submitExchangeRequest: (actor: Actor, input: SubmitExchangeRequestInput) =>
       submitExchangeRequest(ctx, actor, input),
     listExchangeRequests: (actor: Actor) => listExchangeRequests(ctx, actor),
@@ -65,6 +114,32 @@ export function createCore(ctx: CoreConfig) {
     saveRequisites: (actor: Actor, input: SaveRequisitesInput) =>
       saveRequisites(ctx, actor, input),
     getRequisites: (actor: Actor) => getRequisites(ctx, actor),
+
+    setMarketingConsent: (actor: Actor, consent: boolean) =>
+      setMarketingConsent(ctx, actor, consent),
+
+    getBonusAccount: (actor: Actor) => getBonusAccount(ctx, actor),
+    submitWithdrawalRequest: (actor: Actor, input: SubmitWithdrawalInput) =>
+      submitWithdrawalRequest(ctx, actor, input),
+    listWithdrawalRequests: (actor: Actor) => listWithdrawalRequests(ctx, actor),
+    listWithdrawalQueue: (actor: Actor) => listWithdrawalQueue(ctx, actor),
+    approveWithdrawalRequest: (actor: Actor, requestId: string) =>
+      approveWithdrawalRequest(ctx, actor, requestId),
+    markWithdrawalPaid: (actor: Actor, requestId: string) =>
+      markWithdrawalPaid(ctx, actor, requestId),
+    rejectWithdrawalRequest: (actor: Actor, requestId: string, input?: { reason?: string }) =>
+      rejectWithdrawalRequest(ctx, actor, requestId, input),
+    revealWithdrawalDestination: (actor: Actor, requestId: string) =>
+      revealWithdrawalDestination(ctx, actor, requestId),
+
+    submitCardApplication: (actor: Actor) => submitCardApplication(ctx, actor),
+    listCardApplications: (actor: Actor) => listCardApplications(ctx, actor),
+    listCardApplicationQueue: (actor: Actor) => listCardApplicationQueue(ctx, actor),
+    updateCardApplicationStatus: (
+      actor: Actor,
+      applicationId: string,
+      input: UpdateCardApplicationInput,
+    ) => updateCardApplicationStatus(ctx, actor, applicationId, input),
 
     cancelOwnExchangeRequest: (actor: Actor, requestId: string) =>
       cancelOwnExchangeRequest(ctx, actor, requestId),
@@ -90,10 +165,46 @@ export function createCore(ctx: CoreConfig) {
       input: CompleteExchangeRequestInput,
     ) => completeExchangeRequest(ctx, actor, requestId, input),
 
+    revealRequisites: (actor: Actor, exchangeRequestId: string) =>
+      revealRequisites(ctx, actor, exchangeRequestId),
+    listRequisiteAccessLog: (actor: Actor, filter?: RequisiteAccessFilter) =>
+      listRequisiteAccessLog(ctx, actor, filter),
+
     beginStaffLogin: (telegramUserId: bigint) => beginStaffLogin(ctx, telegramUserId),
     completeStaffLogin: (staffId: string, code: string) =>
       completeStaffLogin(ctx, staffId, code),
     getActiveStaff: (staffId: string) => getActiveStaff(ctx, staffId),
+    enrollFirstAdmin: (input: { telegramUserId: bigint; displayName: string }) =>
+      enrollFirstAdmin(ctx, input),
+
+    listStaff: (actor: Actor) => listStaff(ctx, actor),
+    addStaff: (actor: Actor, input: AddStaffInput) => addStaff(ctx, actor, input),
+    updateStaffRole: (actor: Actor, staffId: string, role: StaffRole) =>
+      updateStaffRole(ctx, actor, staffId, role),
+    setStaffActive: (actor: Actor, staffId: string, isActive: boolean) =>
+      setStaffActive(ctx, actor, staffId, isActive),
+    resetStaffSecondFactor: (actor: Actor, staffId: string) =>
+      resetStaffSecondFactor(ctx, actor, staffId),
+
+    getServiceSettings: (actor: Actor) => getServiceSettings(ctx, actor),
+    updateServiceSettings: (actor: Actor, input: UpdateServiceSettingsInput) =>
+      updateServiceSettings(ctx, actor, input),
+    listCurrencyPairsForAdmin: (actor: Actor) => listCurrencyPairsForAdmin(ctx, actor),
+    updateCurrencyPairMarkup: (actor: Actor, pairId: string, markupBps: number) =>
+      updateCurrencyPairMarkup(ctx, actor, pairId, markupBps),
+    listSettingsAuditLog: (actor: Actor, limit?: number) =>
+      listSettingsAuditLog(ctx, actor, limit),
+
+    startBroadcast: (actor: Actor, input: { body: string }) =>
+      startBroadcast(ctx, actor, input),
+    recordBroadcastProgress: (
+      actor: Actor,
+      broadcastId: string,
+      progress: BroadcastProgress,
+    ) => recordBroadcastProgress(ctx, actor, broadcastId, progress),
+    finishBroadcast: (actor: Actor, broadcastId: string, result: BroadcastProgress) =>
+      finishBroadcast(ctx, actor, broadcastId, result),
+    listBroadcasts: (actor: Actor, limit?: number) => listBroadcasts(ctx, actor, limit),
   };
 }
 
@@ -121,7 +232,40 @@ export type {
   SubmitExchangeRequestResult,
 } from './exchange-requests.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
-export type { BeginStaffLoginResult, StaffSession } from './staff.js';
+export type { BonusAccountView, BonusTransactionView } from './bonus-account.js';
+export type { ServiceSettingsView } from './settings.js';
+export type {
+  PreliminaryQuoteInput,
+  PreliminaryQuoteView,
+  RatePair,
+  RateQuote,
+  RateSource,
+} from './rates.js';
+export type {
+  SubmitWithdrawalInput,
+  WithdrawalRequestView,
+  WithdrawalTransitionResult,
+} from './withdrawals.js';
+export type {
+  CardApplicationResult,
+  CardApplicationView,
+  UpdateCardApplicationInput,
+} from './card-applications.js';
+export type {
+  RequisiteAccessEntry,
+  RequisiteAccessFilter,
+  RevealedRequisites,
+} from './requisite-access.js';
+export type { BroadcastProgress, BroadcastView, StartedBroadcast } from './broadcasts.js';
+export type { StaffSession } from './staff.js';
+export type {
+  AddStaffInput,
+  CurrencyPairAdminView,
+  SettingsAuditEntry,
+  StaffEnrollment,
+  StaffView,
+  UpdateServiceSettingsInput,
+} from './admin.js';
 export type {
   ClientTransitionResult,
   CompleteExchangeRequestInput,

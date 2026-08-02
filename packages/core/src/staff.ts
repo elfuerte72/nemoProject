@@ -1,13 +1,8 @@
 import { eq } from 'drizzle-orm';
-import { generateTotpSecret, open, seal, verifyTotp } from '@nemo/crypto';
+import { open, verifyTotp } from '@nemo/crypto';
 import { staff } from '@nemo/db';
 import type { StaffRole } from '@nemo/types';
-import {
-  requirePrivateKey,
-  requirePublicKey,
-  type CoreConfig,
-  type Executor,
-} from './context.js';
+import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
 import { ForbiddenError } from './errors.js';
 
 /**
@@ -19,24 +14,20 @@ import { ForbiddenError } from './errors.js';
  * кода: за админкой лежат чужие номера карт, и угнанный Telegram не
  * должен их открывать.
  *
+ * Секрет второго фактора выдаёт администратор при заведении сотрудника
+ * (`admin.ts`), а не сам вход. Секрет, который заводится при первом
+ * входе, отдаёт админку тому, кто угнал аккаунт до этого входа, — то
+ * есть не срабатывает ровно в том случае, ради которого заведён.
+ *
  * Отказ всегда одинаков. Разные ответы на «не сотрудник», «уволен» и
- * «неверный код» сообщали бы подбирающему, где он остановился.
+ * «второй фактор не выдан» сообщали бы подбирающему, где он остановился.
  */
 
-const DENIED = 'Доступ запрещён';
+export const DENIED = 'Доступ запрещён';
 
 export interface StaffSession {
   readonly staffId: string;
   readonly role: StaffRole;
-}
-
-export interface BeginStaffLoginResult extends StaffSession {
-  /**
-   * Секрет второго фактора — только при первом входе, когда его ещё
-   * нужно завести в приложении-аутентификаторе. Дальше не показывается:
-   * второй раз он и не нужен, и опасен.
-   */
-  readonly enrollmentSecret?: string;
 }
 
 type StaffRow = typeof staff.$inferSelect;
@@ -53,37 +44,23 @@ async function findActive(executor: Executor, staffId: string): Promise<StaffRow
  * Первый шаг входа: сотрудник опознан по Telegram, но сессии ещё нет.
  *
  * Доступ проверяется здесь, а не при выдаче сессии, чтобы уволенный не
- * дошёл даже до ввода кода.
+ * дошёл даже до ввода кода. Сотрудник без выданного второго фактора
+ * тоже не дойдёт: заводить секрет входу нечем и не положено.
  */
 export async function beginStaffLogin(
   ctx: CoreConfig,
   telegramUserId: bigint,
-): Promise<BeginStaffLoginResult> {
-  return ctx.db.transaction(async (tx) => {
-    const [row] = await tx
-      .select()
-      .from(staff)
-      .where(eq(staff.telegramUserId, telegramUserId))
-      .limit(1);
+): Promise<StaffSession> {
+  const [row] = await ctx.db
+    .select()
+    .from(staff)
+    .where(eq(staff.telegramUserId, telegramUserId))
+    .limit(1);
 
-    if (!row?.isActive) {
-      throw new ForbiddenError(DENIED);
-    }
-    if (row.totpSecretSealed) {
-      return { staffId: row.id, role: row.role };
-    }
-
-    // Секрет второго фактора шифруется тем же ключом, что и реквизиты:
-    // оба читаются только в админке, и заводить для них два разных ключа
-    // значило бы удвоить число мест, где ключ можно потерять.
-    const secret = generateTotpSecret();
-    await tx
-      .update(staff)
-      .set({ totpSecretSealed: seal(requirePublicKey(ctx), secret) })
-      .where(eq(staff.id, row.id));
-
-    return { staffId: row.id, role: row.role, enrollmentSecret: secret };
-  });
+  if (!row?.isActive || !row.totpSecretSealed) {
+    throw new ForbiddenError(DENIED);
+  }
+  return { staffId: row.id, role: row.role };
 }
 
 /** Второй шаг: без верного кода сессия не выдаётся. */

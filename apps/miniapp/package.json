@@ -13,6 +13,7 @@
   "dependencies": {
     "@nemo/core": "workspace:*",
     "@nemo/http": "workspace:*",
+    "@nemo/rates": "workspace:*",
     "@nemo/telegram": "workspace:*",
     "@nemo/types": "workspace:*",
     "grammy": "^1.32.0",

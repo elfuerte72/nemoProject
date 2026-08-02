@@ -5,6 +5,7 @@ import {
   customType,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -14,6 +15,7 @@ import {
   timestamp,
   unique,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -133,6 +135,15 @@ export const clients = pgTable(
     username: text('username'),
     phone: text('phone'),
     marketingConsent: boolean('marketing_consent').default(false).notNull(),
+    /**
+     * Когда клиент ответил на вопрос о рассылке. Пусто — не ответил, и
+     * спросить нужно снова: без этой отметки «нет согласия» и «не
+     * спрашивали» неразличимы, и закрывший приложение до ответа не
+     * увидел бы вопроса больше никогда.
+     */
+    marketingConsentAskedAt: timestamp('marketing_consent_asked_at', {
+      withTimezone: true,
+    }),
     referrerId: bigint('referrer_id', { mode: 'bigint' }),
     referralCode: text('referral_code').notNull().unique(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -308,7 +319,9 @@ export const bonusTransactions = pgTable(
     line: smallint('line'),
     rateBps: integer('rate_bps'),
     exchangeRequestId: uuid('exchange_request_id').references(() => exchangeRequests.id),
-    withdrawalRequestId: uuid('withdrawal_request_id'),
+    withdrawalRequestId: uuid('withdrawal_request_id').references(
+      () => withdrawalRequests.id,
+    ),
     comment: text('comment'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -319,6 +332,11 @@ export const bonusTransactions = pgTable(
       table.clientId,
       table.line,
     ),
+    // Одна выплата — одно списание. Повторная отметка о выплате
+    // списала бы баллы дважды, а заметно это стало бы только по жалобе
+    // клиента: у начислений от такого защищает ограничение выше, и у
+    // списаний оно должно быть не слабее.
+    unique('bonus_transactions_one_payout_per_withdrawal').on(table.withdrawalRequestId),
   ],
 );
 
@@ -335,12 +353,21 @@ export const withdrawalRequests = pgTable(
     destinationSealed: bytea('destination_sealed'),
     destinationHint: text('destination_hint'),
     status: withdrawalRequestStatusEnum('status').default('new').notNull(),
-    managerId: uuid('manager_id'),
+    managerId: uuid('manager_id').references((): AnyPgColumn => staff.id),
     rejectReason: text('reject_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     paidAt: timestamp('paid_at', { withTimezone: true }),
   },
-  (table) => [index('withdrawal_requests_status_idx').on(table.status)],
+  (table) => [
+    index('withdrawal_requests_status_idx').on(table.status),
+    index('withdrawal_requests_client_idx').on(table.clientId),
+    check('withdrawal_requests_amount_positive', sql`${table.amount} > 0`),
+    // Отказ без причины оставляет клиента гадать, что исправить.
+    check(
+      'withdrawal_requests_reject_reason',
+      sql`${table.status} <> 'rejected' or ${table.rejectReason} is not null`,
+    ),
+  ],
 );
 
 /**
@@ -377,9 +404,65 @@ export const staff = pgTable('staff', {
 });
 
 /**
+ * Журнал изменений настроек сервиса.
+ *
+ * Только добавление. Ставки линий и наценки — это деньги: и клиента, и
+ * сервиса, — и вопрос «почему за эту заявку начислили столько» должен
+ * иметь ответ, а не догадку.
+ *
+ * Что именно изменилось, хранится документом, а не колонками: настройки
+ * разнородны — ставка в базисных пунктах, минимальная сумма вывода,
+ * роль сотрудника, наценка направления, — и колонка под каждую
+ * означала бы правку схемы при каждой новой настройке.
+ */
+export const settingsAuditLog = pgTable(
+  'settings_audit_log',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    staffId: uuid('staff_id')
+      .notNull()
+      .references(() => staff.id),
+    /** Что настраивали: `service_settings`, `currency_pair`, `staff`. */
+    subject: text('subject').notNull(),
+    /** Идентификатор направления или сотрудника; у настроек сервиса пуст. */
+    subjectId: text('subject_id'),
+    changes: jsonb('changes').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('settings_audit_log_created_idx').on(table.createdAt)],
+);
+
+/**
+ * Ручная рассылка клиентам, давшим согласие.
+ *
+ * Результат отправки хранится, а не только показывается: администратор
+ * возвращается к вопросу «дошло ли до людей письмо на прошлой неделе»
+ * тогда, когда экран отправки давно закрыт.
+ */
+export const broadcasts = pgTable('broadcasts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  authorStaffId: uuid('author_staff_id')
+    .notNull()
+    .references(() => staff.id),
+  body: text('body').notNull(),
+  /** Скольким согласившимся предназначалась рассылка. */
+  recipients: integer('recipients').default(0).notNull(),
+  delivered: integer('delivered').default(0).notNull(),
+  failed: integer('failed').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+});
+
+/**
  * Журнал доступа к расшифрованным реквизитам (docs/adr/0002). Только
  * добавление: восстановить задним числом, кто и когда видел номер карты,
  * иначе невозможно.
+ *
+ * Реквизит бывает двух родов — сохранённая карта клиента и счёт, на
+ * который он попросил выплатить баллы, — поэтому обе ссылки
+ * необязательны, а проверка требует ровно одну. Общий журнал, а не два:
+ * администратор спрашивает «что этот сотрудник видел», а не «что он
+ * видел в разделе выплат».
  */
 export const requisiteAccessLog = pgTable(
   'requisite_access_log',
@@ -388,14 +471,26 @@ export const requisiteAccessLog = pgTable(
     staffId: uuid('staff_id')
       .notNull()
       .references(() => staff.id),
-    requisitesId: uuid('requisites_id')
-      .notNull()
-      .references(() => clientRequisites.id),
+    requisitesId: uuid('requisites_id').references(() => clientRequisites.id),
     exchangeRequestId: uuid('exchange_request_id').references(() => exchangeRequests.id),
+    withdrawalRequestId: uuid('withdrawal_request_id').references(
+      () => withdrawalRequests.id,
+    ),
+    /** Чьи реквизиты открывали. Хранится явно: ссылка бывает разной. */
+    clientId: bigint('client_id', { mode: 'bigint' })
+      .notNull()
+      .references(() => clients.telegramUserId),
     accessedAt: timestamp('accessed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('requisite_access_log_staff_idx').on(table.staffId),
     index('requisite_access_log_requisites_idx').on(table.requisitesId),
+    index('requisite_access_log_client_idx').on(table.clientId),
+    // Запись без предмета не отвечает на вопрос, ради которого журнал
+    // ведётся: что именно сотрудник открыл.
+    check(
+      'requisite_access_log_subject',
+      sql`(${table.requisitesId} is not null) <> (${table.withdrawalRequestId} is not null)`,
+    ),
   ],
 );
