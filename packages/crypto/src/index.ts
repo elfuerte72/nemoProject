@@ -68,9 +68,32 @@ function deriveKey(sharedSecret: Buffer, salt: Buffer): Buffer {
   return Buffer.from(hkdfSync('sha256', sharedSecret, salt, HKDF_INFO, KEY_LENGTH));
 }
 
+/**
+ * Привести ключ к PEM, если он пришёл голым телом base64.
+ *
+ * Ключи живут в переменных окружения, а те почти везде однострочные:
+ * панели развёртывания, файлы `.env`, секреты CI. Перенося ключ,
+ * обрамление теряют — и `createPublicKey` отвечает
+ * «DECODER routines::unsupported», по которому не догадаешься, что дело
+ * в трёх недостающих строках. Принять оба вида дешевле, чем объяснять
+ * разницу в документации, которую прочитают после аварии.
+ */
+function toPem(key: string, label: 'PUBLIC KEY' | 'PRIVATE KEY'): string {
+  const trimmed = key.trim();
+  if (trimmed.includes('-----BEGIN')) {
+    return trimmed;
+  }
+  // Разбиение на строки по 64 знака, а не вставка переносов после
+  // каждых 64: тело ровно этой длины иначе получало бы перенос в конце,
+  // а с ним — пустую строку перед завершающей, и OpenSSL такой PEM
+  // отвергает. Приватный ключ X25519 длиной ровно 64 знака и есть.
+  const body = trimmed.replace(/\s+/g, '').match(/.{1,64}/g)?.join('\n') ?? '';
+  return `-----BEGIN ${label}-----\n${body}\n-----END ${label}-----\n`;
+}
+
 /** Зашифровать реквизит. Требует только публичный ключ. */
 export function seal(publicKeyPem: string, plaintext: string): SealedEnvelope {
-  const recipient = createPublicKey(publicKeyPem);
+  const recipient = createPublicKey(toPem(publicKeyPem, 'PUBLIC KEY'));
   const ephemeral = generateKeyPairSync('x25519');
   const ephemeralRaw = rawPublicKey(ephemeral.publicKey);
 
@@ -110,7 +133,7 @@ export function open(privateKeyPem: string, envelope: Buffer): string {
   const ciphertext = envelope.subarray(offset);
 
   const sharedSecret = diffieHellman({
-    privateKey: createPrivateKey(privateKeyPem),
+    privateKey: createPrivateKey(toPem(privateKeyPem, 'PRIVATE KEY')),
     publicKey: publicKeyFromRaw(Buffer.from(ephemeralRaw)),
   });
   const key = deriveKey(sharedSecret, Buffer.from(ephemeralRaw));

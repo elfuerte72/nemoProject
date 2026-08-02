@@ -63,3 +63,26 @@ describe('lastFour', () => {
     expect(() => lastFour('12')).toThrow(RangeError);
   });
 });
+
+describe('ключ без обрамления', () => {
+  it('принимается: переменные окружения почти везде однострочные', () => {
+    const { publicKey, privateKey } = generateRequisiteKeyPair();
+    // Ровно то, что получается, если скопировать ключ в панель
+    // развёртывания и потерять строки заголовка.
+    const bare = (pem: string) =>
+      pem
+        .split('\n')
+        .filter((line) => !line.startsWith('-----'))
+        .join('');
+
+    const sealed = seal(bare(publicKey), '4111111111111111');
+
+    expect(open(bare(privateKey), sealed)).toBe('4111111111111111');
+  });
+
+  it('не мешает обычному PEM', () => {
+    const { publicKey, privateKey } = generateRequisiteKeyPair();
+
+    expect(open(privateKey, seal(publicKey, 'секрет'))).toBe('секрет');
+  });
+});
