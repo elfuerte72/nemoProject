@@ -48,6 +48,26 @@ export function NemoOutline({ size = 22 }: IconProps) {
   );
 }
 
+/**
+ * Только обод знака, без буквы — грань жетона на заставке.
+ *
+ * У настоящего жетона на ребре буквы нет: она вычеканена на лице.
+ * Повторённая в каждом слое толщины, она двоилась бы на повороте и
+ * читалась не как металл, а как сбой отрисовки.
+ */
+export function NemoRim({ size = 22 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 1.9 20.7 6.9V16.9L12 21.9 3.3 16.9V6.9Z"
+        stroke="url(#nemo-gold)"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function ExchangeIcon({ size = 22 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">

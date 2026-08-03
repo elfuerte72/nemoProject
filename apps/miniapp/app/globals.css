@@ -302,25 +302,85 @@ button {
  * системный значок ожидания — оно сообщает «идёт обработка», а не «это
  * Nemo», и знак в нём перестаёт быть знаком.
  */
-.splash__mark {
+/*
+ * Сцена, в которой стоит знак. Наклон здесь, а не в самом знаке: смотреть
+ * на вращающийся предмет строго в лоб — значит не увидеть, что он
+ * объёмный. Пары градусов сверху хватает, чтобы плоскость перестала быть
+ * плоскостью.
+ */
+.splash__stage {
   display: flex;
-  position: relative;
+  perspective: 620px;
+  transform: rotateX(9deg);
   /* Знак не возникает, а проступает: появление в полный размер на
      тёмном экране читается как вспышка. */
-  animation:
-    nm-emerge 0.55s var(--ease) both,
-    nm-turn 2.4s cubic-bezier(0.66, 0, 0.34, 1) 0.55s infinite;
+  animation: nm-emerge 0.55s var(--ease) both;
 }
 
 @keyframes nm-emerge {
   from {
     opacity: 0;
-    transform: scale(0.86);
+    transform: rotateX(9deg) scale(0.86);
   }
   to {
     opacity: 1;
-    transform: none;
+    transform: rotateX(9deg);
   }
+}
+
+.splash__mark {
+  display: grid;
+  position: relative;
+  /* Без этого слои сплющились бы в одну плоскость и толщина пропала. */
+  transform-style: preserve-3d;
+  animation: nm-turn 3.6s cubic-bezier(0.5, 0, 0.5, 1) 0.55s infinite;
+}
+
+/*
+ * Слои лежат друг на друге, а разводит их вглубь `translateZ`.
+ * Собственный поток им не нужен: в сетке из одной ячейки они и так
+ * встают один на другой, не растягивая её.
+ */
+.splash__mark > * {
+  grid-area: 1 / 1;
+  display: flex;
+}
+
+/*
+ * Лицо и изнанка показываются каждое со своей стороны. Изнанка отражена,
+ * иначе буква на второй половине оборота читалась бы зеркально.
+ */
+.splash__face {
+  backface-visibility: hidden;
+}
+
+.splash__face--front {
+  transform: translateZ(3px);
+}
+
+.splash__face--back {
+  transform: rotateY(180deg) translateZ(3px);
+}
+
+/*
+ * Грани между лицом и изнанкой. Видны только на повороте — в лоб они
+ * прячутся ровно за лицом, — и там дают ту самую толщину. Приглушены:
+ * в полную силу стопка читалась бы как двоящийся знак.
+ */
+.splash__edge {
+  opacity: 0.3;
+}
+
+.splash__edge[data-layer='0'] {
+  transform: translateZ(1.5px);
+}
+
+.splash__edge[data-layer='1'] {
+  transform: translateZ(0);
+}
+
+.splash__edge[data-layer='2'] {
+  transform: translateZ(-1.5px);
 }
 
 /*
@@ -345,16 +405,22 @@ button {
 }
 
 /*
- * Пауза только лицом к смотрящему. На середине оборота знак виден с
- * изнанки, и буква в нём зеркальна — задержись он там, читалась бы «И».
- * Через это положение знак проходит на скорости, а отдыхает собой.
+ * Оборот с остановками на обеих сторонах.
+ *
+ * Раньше пауза была только лицевой: на изнанке буква оказывалась
+ * зеркальной и читалась как «И». Теперь изнанка своя и отражена, так что
+ * замирать можно на обеих — и знак ведёт себя как жетон, который
+ * поворачивают в пальцах, а не как значок ожидания.
  */
 @keyframes nm-turn {
   0%,
-  24% {
+  12% {
     transform: rotateY(0deg);
   }
-  76%,
+  50%,
+  62% {
+    transform: rotateY(180deg);
+  }
   100% {
     transform: rotateY(360deg);
   }
