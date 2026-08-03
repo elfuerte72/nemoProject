@@ -1,4 +1,4 @@
-import type { RequisiteKind } from '@nemo/types';
+import { Money, type RequisiteKind } from '@nemo/types';
 
 /**
  * Числа и даты в том виде, в каком их читает клиент.
@@ -61,24 +61,40 @@ export function formatMoney(value: string, code: string): string {
   return `${formatAmount(value)} ${code}`;
 }
 
-/** Курс: `1 RUB ≈ 0,0106 USDT`. */
+/**
+ * Курс — всегда крупной стороной вперёд: «81 RUB за 1 USDT».
+ *
+ * Направление обмена на чтение курса влиять не должно. «1 RUB ≈ 0,0122
+ * USDT» формально то же самое, но числом в сотых долях никто не
+ * пользуется и с курсом соседнего обменника его не сравнить, не
+ * перевернув в уме. Поэтому мелкая сторона переворачивается, и курс
+ * читается так же, как на любом табло.
+ */
 export function formatRate(rate: string, fromCode: string, toCode: string): string {
-  return `1 ${fromCode} ≈ ${formatAmount(rate)} ${toCode}`;
+  const value = Money.toAmount(rate);
+  const big = Money.compare(value, Money.toAmount('1')) >= 0;
+  return `${formatRateValue(rate)} ${big ? toCode : fromCode} за 1 ${big ? fromCode : toCode}`;
 }
 
 /**
- * Курс на табло: чем крупнее число, тем меньше смысла в его дробной
- * части. Пять миллионов рублей за биткойн с копейками читаются хуже, чем
- * без них; у дешёвых монет, наоборот, вся цена в долях единицы.
+ * Курс числом, крупной стороной.
  *
- * Лишние знаки отбрасываются, а не округляются: курс справочный
- * (docs/adr/0004), и подтянутая вверх цифра обещала бы точность, которой
- * здесь нет.
+ * Целое здесь не округление для вида: курс округляется в ядре и целым
+ * же считается, поэтому сумма к выдаче сходится с показанным курсом
+ * устно. Дробный хвост может появиться только один — от переворота
+ * мелкой стороны, — и он остаток ограниченной точности, а не цена.
+ * Снимается он округлением к ближайшему: отброшенный вниз, он превратил
+ * бы 82 в 81.
  */
 export function formatRateValue(value: string): string {
-  const [whole = '0', fraction = ''] = value.split('.');
-  const digits = whole.replace('-', '').length >= 4 ? 0 : whole === '0' ? 8 : 2;
-  return formatAmount(digits === 0 ? whole : `${whole}.${fraction.slice(0, digits)}`);
+  const amount = Money.toAmount(value);
+  const one = Money.toAmount('1');
+  // Переворачивать нечего и незачем: делить на ноль нельзя, а такой
+  // курс может прийти из старой заявки.
+  if (Money.isZero(amount) || Money.isNegative(amount)) return formatAmount(amount);
+  return formatAmount(
+    Money.round(Money.compare(amount, one) >= 0 ? amount : Money.divide(one, amount)),
+  );
 }
 
 const DATE_FORMAT = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });

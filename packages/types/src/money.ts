@@ -65,6 +65,36 @@ export function divide(a: Amount, b: Amount): Amount {
   return toAmount(new Decimal(a).dividedBy(b));
 }
 
+/**
+ * Округление до целого — вниз и вверх.
+ *
+ * Нужны курсу: он называется клиенту целым числом, и целым же считается,
+ * иначе показанное на экране не сойдётся с посчитанным. Направление
+ * выбирает тот, кто округляет: у обмена оно зависит от того, кто по
+ * этой сделке платит, и «к ближайшему» здесь означало бы отдавать часть
+ * наценки случаю.
+ */
+export function floor(value: Amount): Amount {
+  return toAmount(new Decimal(value).floor());
+}
+
+export function ceil(value: Amount): Amount {
+  return toAmount(new Decimal(value).ceil());
+}
+
+/**
+ * Округление к ближайшему целому.
+ *
+ * Нужно там, где целое уже получено, но прошло через деление: курс
+ * мельче единицы хранится как «единица, делённая на целое», и обратное
+ * деление возвращает не 82, а 81,999999999999998 — хвост, оставшийся от
+ * ограниченной точности. Показывать такое нельзя, а отбрасывать вниз
+ * тем более: получилось бы 81.
+ */
+export function round(value: Amount): Amount {
+  return toAmount(new Decimal(value).toDecimalPlaces(0, Decimal.ROUND_HALF_UP));
+}
+
 /** Доля от суммы в базисных пунктах: 100 bps = 1%. */
 export function percentOf(amount: Amount, basisPoints: number): Amount {
   if (!Number.isInteger(basisPoints) || basisPoints < 0) {

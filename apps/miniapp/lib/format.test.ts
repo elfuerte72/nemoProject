@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount, formatRateValue, normalizeTyped, parseAmount } from './format';
+import { formatAmount, formatRate, formatRateValue, normalizeTyped, parseAmount } from './format';
 
 /**
  * Суммы приходят десятичными строками произвольной точности, и путь
@@ -37,20 +37,43 @@ describe('formatAmount', () => {
 });
 
 describe('formatRateValue', () => {
-  it('у крупных курсов дробную часть отбрасывает', () => {
-    expect(formatRateValue('5224938.612')).toBe(`5${NBSP}224${NBSP}938`);
+  it('показывает курс целым числом', () => {
+    expect(formatRateValue('82')).toBe('82');
   });
 
-  it('у обычных оставляет два знака', () => {
-    expect(formatRateValue('82.6612')).toBe('82,66');
+  it('крупный курс тоже целым', () => {
+    expect(formatRateValue('5224938')).toBe(`5${NBSP}224${NBSP}938`);
   });
 
-  it('у дробных сохраняет всё, чем они различаются', () => {
-    expect(formatRateValue('0.01185579')).toBe('0,01185579');
+  /*
+   * Курс приходит из ядра уже целым. Дробный сюда попадает только из
+   * старых заявок, поданных до округления, — их карточки открывают и
+   * сегодня, и число в них должно читаться так же, как в новых.
+   */
+  it('дробный курс из прежних заявок округляет к ближайшему', () => {
+    expect(formatRateValue('82.6612')).toBe('83');
+    expect(formatRateValue('82.4')).toBe('82');
   });
 
-  it('не округляет вверх: справочный курс не обещает точности', () => {
-    expect(formatRateValue('82.669')).toBe('82,66');
+  it('мелкую сторону пары переворачивает: ею никто не пользуется', () => {
+    // 1 / 82 — таким курс лежит у направления «рубли → USDT».
+    expect(formatRateValue('0.012195121951219512')).toBe('82');
+  });
+
+  it('нулевой курс из старой заявки не роняет экран делением', () => {
+    expect(formatRateValue('0')).toBe('0');
+  });
+
+  it('переворот не оставляет хвоста от деления', () => {
+    // Обратное деление даёт 81,999…, и вниз это дало бы 81.
+    expect(formatRateValue('0.0121951219512195')).toBe('82');
+  });
+});
+
+describe('formatRate', () => {
+  it('читается как табло обменника, куда бы ни шёл обмен', () => {
+    expect(formatRate('82', 'USDT', 'RUB')).toBe('82 RUB за 1 USDT');
+    expect(formatRate('0.012195121951219512', 'RUB', 'USDT')).toBe('82 RUB за 1 USDT');
   });
 });
 
