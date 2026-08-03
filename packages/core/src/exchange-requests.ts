@@ -12,7 +12,7 @@ import { requirePositiveAmount } from './amounts.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
-import { quoteForSubmission } from './rates.js';
+import { quoteForSubmission, roundPayout } from './rates.js';
 import { requireSuitableRequisites } from './requisites.js';
 import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
 
@@ -298,7 +298,8 @@ export async function submitExchangeRequest(
         // видел её в калькуляторе и по ней принимал решение. Считается
         // здесь, а не набирается менеджером руками, иначе обещание
         // держалось бы на его внимательности.
-        toAmount: requestRate === null ? null : Money.multiply(fromAmount, requestRate),
+        toAmount:
+          requestRate === null ? null : roundPayout(Money.multiply(fromAmount, requestRate)),
         requisitesId: input.requisitesId ?? null,
       })
       .returning();

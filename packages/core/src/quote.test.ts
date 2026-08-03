@@ -150,6 +150,25 @@ describe('целый курс', () => {
     expect(quote?.rate).toBe('0.9');
   });
 
+  /*
+   * Дробный хвост у выдачи — помеха, а не точность: «588,23529411
+   * USDT» ни клиенту, ни менеджеру ничего не сообщает. Округляется сама
+   * величина, а не её показ: она уходит в заявку и по ней выдают
+   * деньги.
+   */
+  it('выдаёт целое число единиц, а не хвост в восемь знаков', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USDT', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 0 });
+    // 1/85 — столько монет дают за рубль.
+    const core = createCore({ db, rateSource: givenRateSource('0.011764705882352941') });
+
+    const quote = await core.getQuote({ fromCode: 'RUB', toCode: 'USDT', fromAmount: '50000' });
+
+    // 50 000 / 85 = 588,235…, и хвост отбрасывается вниз: вверх сервис
+    // выдал бы больше, чем купил.
+    expect(quote?.toAmount).toBe('588');
+  });
+
   it('нулевой курс не роняет котировку делением на ноль', async () => {
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
     // Стопроцентная наценка обнуляет курс, и до округления он доходит.
