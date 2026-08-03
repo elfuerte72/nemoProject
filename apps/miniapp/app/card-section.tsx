@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { CardApplicationView } from '@nemo/core';
+import type { ClientCardApplicationView } from '@nemo/core';
 import type { CardApplicationStatus } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { formatDate } from '@/lib/format';
@@ -27,7 +27,7 @@ const ABOUT = {
 };
 
 export function CardSection() {
-  const [applications, setApplications] = useState<CardApplicationView[]>([]);
+  const [applications, setApplications] = useState<ClientCardApplicationView[]>([]);
   const [about, setAbout] = useState(false);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -36,7 +36,7 @@ export function CardSection() {
   useEffect(() => {
     void (async () => {
       try {
-        const mine = await get<{ applications: CardApplicationView[] }>('/api/card-applications');
+        const mine = await get<{ applications: ClientCardApplicationView[] }>('/api/card-applications');
         setApplications(mine.applications);
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить заявки');
@@ -50,7 +50,7 @@ export function CardSection() {
     setError(undefined);
     setBusy(true);
     try {
-      const cancelled = await post<{ application: CardApplicationView }>(
+      const cancelled = await post<{ application: ClientCardApplicationView }>(
         `/api/card-applications/${applicationId}/cancel`,
       );
       setApplications((current) =>
@@ -67,7 +67,7 @@ export function CardSection() {
     setError(undefined);
     setBusy(true);
     try {
-      const created = await post<{ application: CardApplicationView }>('/api/card-applications');
+      const created = await post<{ application: ClientCardApplicationView }>('/api/card-applications');
       setApplications((current) => [created.application, ...current]);
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на карту');
@@ -106,9 +106,13 @@ export function CardSection() {
         <div className="plastic__body">
           <div className="plastic__number">•••• •••• •••• ••••</div>
           <div className="plastic__foot">
-            <span className="plastic__holder">
-              {current?.providerReference ?? 'ВЫПУСКАЕТ ПРОВАЙДЕР'}
-            </span>
+            {/*
+              Номер заявки у провайдера сюда не подставляется: он
+              служебный — по нему сверяется менеджер, — а на месте имени
+              держателя читался бы как данные карты, которых у сервиса
+              нет.
+            */}
+            <span className="plastic__holder">ВЫПУСКАЕТ ПРОВАЙДЕР</span>
             <span className="plastic__marks">
               <span className="plastic__mark" />
               <span className="plastic__mark" />
@@ -193,12 +197,7 @@ export function CardSection() {
               <li key={application.id} className="row">
                 <span className="row__body">
                   <span className="row__title">{CARD_STATUS_LABELS[application.status]}</span>
-                  <span className="row__sub">
-                    Подана {formatDate(application.createdAt)}
-                    {application.providerReference
-                      ? ` · у провайдера ${application.providerReference}`
-                      : ''}
-                  </span>
+                  <span className="row__sub">Подана {formatDate(application.createdAt)}</span>
                 </span>
               </li>
             ))}
