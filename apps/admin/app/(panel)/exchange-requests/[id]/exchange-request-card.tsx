@@ -7,9 +7,9 @@ import type {
   ExchangeRequestEventView,
   ManagerExchangeRequestView,
   RevealedRequisites,
-  TextTemplateView,
 } from '@nemo/core';
 import { canTransition, type ExchangeRequestStatus } from '@nemo/types';
+import { ClientCard, type ClientCardData } from '@/app/ui/client-card';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
 import { formatAmount, formatMoney } from '@/lib/format';
 import { pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
@@ -27,20 +27,18 @@ import { pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
 
 type ExchangeRequestForDisplay = Omit<ManagerExchangeRequestView, 'clientId'> & { clientId: string };
 
+
+
 export function ExchangeRequestCard({
   request,
   events,
-  templates,
+  client,
   viewerStaffId,
 }: {
   request: ExchangeRequestForDisplay;
   events: readonly ExchangeRequestEventView[];
-  /**
-   * Заготовки реквизитов для оплаты: набирать номер руками не нужно.
-   * Только они: приветствие бота, подставленное в поле реквизитов, ушло
-   * бы клиенту вместо счёта.
-   */
-  templates: readonly TextTemplateView[];
+  /** С кем сделка. Пусто, если клиента ещё не завели. */
+  client: ClientCardData | null;
   viewerStaffId: string;
 }) {
   const router = useRouter();
@@ -48,7 +46,12 @@ export function ExchangeRequestCard({
   const [busy, setBusy] = useState(false);
 
   const [finalRate, setFinalRate] = useState('');
-  const [toAmount, setToAmount] = useState('');
+  /*
+   * Сумма к выдаче — та, что клиент увидел при подаче: она посчитана по
+   * курсу заявки и лежит в самой заявке. Пустое поле заставляло бы
+   * менеджера считать её заново и расходиться с обещанным.
+   */
+  const [toAmount, setToAmount] = useState(request.toAmount ?? '');
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [serviceIncome, setServiceIncome] = useState('');
   const [serviceIncomeCode, setServiceIncomeCode] = useState(request.toCode);
@@ -133,26 +136,29 @@ export function ExchangeRequestCard({
   }
 
   return (
-    <main className="page page--narrow">
+    <main className="page page--wide">
       <Link href="/" className="page__back">
         ← К очереди
       </Link>
 
       <header className="page__head">
         <div>
+          {/*
+            Обе стороны сделки в заголовке: сумма к выдаче посчитана при
+            подаче по курсу заявки — это ровно то число, которое увидел
+            клиент. Без него менеджер считает его сам и расходится с
+            обещанным.
+          */}
           <h1 className="page__title">
-            {formatAmount(request.fromAmount)} {request.fromCode} → {request.toCode}
+            {formatAmount(request.fromAmount)} {request.fromCode} →{' '}
+            {request.toAmount ? `${formatAmount(request.toAmount)} ` : ''}
+            {request.toCode}
           </h1>
           <p className="page__sub">
-            {KIND_LABELS[request.kind]} · клиент {request.clientId} ·{' '}
-            {/*
-              Написать клиенту — отсюда, а не из личных сообщений: ответ
-              доставит бот, которого клиент запускал, и номер заявки уже
-              будет стоять в поле.
-            */}
-            <Link href={`/conversations/${request.clientId}?request=${request.id}`}>
-              написать
-            </Link>
+            {KIND_LABELS[request.kind]}
+            {request.toAmount && request.requestRate
+              ? ` · клиент видел эту сумму при подаче, по курсу ${formatAmount(request.requestRate)}`
+              : ''}
           </p>
         </div>
         <span className={pillClass(STATUS_TONES[request.status])}>
@@ -160,8 +166,14 @@ export function ExchangeRequestCard({
         </span>
       </header>
 
-      {error ? <p className="error">{error}</p> : undefined}
+      {error ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : undefined}
 
+      <div className="split">
+        <div className="split__main">
       {!mine && request.assignedManagerId ? (
         <p className="empty">Заявку ведёт другой менеджер — действия закрыты.</p>
       ) : undefined}
@@ -323,27 +335,6 @@ export function ExchangeRequestCard({
               rows={3}
             />
           </label>
-          {/*
-            Заготовка вставляется целиком, а не дописывается: менеджер
-            выдаёт клиенту один счёт, и две склеенные заготовки означали
-            бы перевод неизвестно куда. Поправить вставленное он может
-            прямо в поле.
-          */}
-          {templates.length > 0 ? (
-            <div className="row__actions">
-              <span className="row__meta">Вставить заготовку:</span>
-              {templates.map((template) => (
-                <button
-                  key={template.key}
-                  type="button"
-                  className="btn btn--ghost"
-                  onClick={() => setPaymentInstructions(template.body)}
-                >
-                  {template.title}
-                </button>
-              ))}
-            </div>
-          ) : undefined}
           <div className="row__actions">
             {/*
               Курс и реквизиты обязательны — операция без них откажет.
@@ -469,6 +460,14 @@ export function ExchangeRequestCard({
           ))}
         </ul>
       </section>
+        </div>
+
+        <ClientCard
+          clientId={request.clientId}
+          client={client}
+          conversationHref={`/conversations/${request.clientId}?request=${request.id}`}
+        />
+      </div>
     </main>
   );
 }

@@ -77,12 +77,7 @@ import {
   saveRequisites,
   type SaveRequisitesInput,
 } from './requisites.js';
-import {
-  listTextTemplates,
-  readTextTemplate,
-  updateTextTemplate,
-  type TextTemplateKey,
-} from './text-templates.js';
+import { botText, type BotTextKey } from './bot-texts.js';
 import { beginStaffLogin, completeStaffLogin, getActiveStaff } from './staff.js';
 import {
   approveWithdrawalRequest,
@@ -257,6 +252,9 @@ export function createCore(ctx: CoreConfig) {
       listSettingsAuditLog(ctx, actor, limit),
 
     listNetworks: (actor: Actor) => listNetworks(ctx, actor),
+
+    /** Текст, которым бот говорит с клиентом. Лежит в коде, а не в базе. */
+    getBotText: (key: BotTextKey) => botText(key),
     setNetworkActive: (actor: Actor, code: string, isActive: boolean) =>
       setNetworkActive(ctx, actor, code, isActive),
 
@@ -264,10 +262,6 @@ export function createCore(ctx: CoreConfig) {
      * Текст заготовки без исполнителя: его читает бот, чтобы показать
      * клиенту, и права здесь спрашивать не у кого.
      */
-    getTextTemplate: (key: TextTemplateKey) => readTextTemplate(ctx.db, key),
-    listTextTemplates: (actor: Actor) => listTextTemplates(ctx, actor),
-    updateTextTemplate: (actor: Actor, key: TextTemplateKey, body: string) =>
-      updateTextTemplate(ctx, actor, key, body),
 
     startBroadcast: (actor: Actor, input: { body: string }) =>
       startBroadcast(ctx, actor, input),
@@ -309,16 +303,13 @@ export type {
 } from './exchange-requests.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
 export type { NetworkView } from './networks.js';
-export { textTemplateKeys } from './text-templates.js';
-export type {
-  TextTemplateKey,
-  TextTemplateScope,
-  TextTemplateView,
-} from './text-templates.js';
+export { botTextKeys, BOT_TEXTS } from './bot-texts.js';
+export type { BotTextKey } from './bot-texts.js';
 export type { BonusAccountView, BonusTransactionView } from './bonus-account.js';
 export type { ServiceSettingsView } from './settings.js';
 export type { QuoteInput, QuoteView, RatePair, RateQuote, RateSource } from './rates.js';
 export type {
+  ManagerWithdrawalView,
   SubmitWithdrawalInput,
   WithdrawalRequestView,
   WithdrawalTransitionResult,
@@ -327,6 +318,7 @@ export type {
   CardApplicationResult,
   CardApplicationView,
   ClientCardApplicationView,
+  ManagerCardApplicationView,
   UpdateCardApplicationInput,
 } from './card-applications.js';
 export type {

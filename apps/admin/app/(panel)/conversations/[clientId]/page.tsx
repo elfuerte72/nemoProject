@@ -3,8 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
-import { CopyValue } from '@/app/ui/copy';
-import { Moment } from '@/app/ui/moment';
+import { ClientCard } from '@/app/ui/client-card';
 import { ConversationView } from './conversation-view';
 
 export const dynamic = 'force-dynamic';
@@ -68,80 +67,26 @@ export default async function ConversationPage({
         </div>
       </header>
 
-      <div className="talk">
+      <div className="split">
         <ConversationView
           clientId={clientId}
           messages={messages}
           {...(requestId ? { requestId } : {})}
         />
 
-        <aside className="card who">
-          <h2 className="card__title">Клиент</h2>
-
-          <div className="field">
-            <span className="label">Telegram</span>
-            {card?.username ? (
-              /*
-                Ссылка ведёт по нику, а не по номеру: аккаунт по
-                числовому идентификатору Telegram не открывает, и
-                кнопка «перейти», которая никуда не ведёт, хуже её
-                отсутствия. Без ника окликнуть человека можно только
-                тем же ботом — то есть этой же перепиской.
-              */
-              <a
-                className="who__link"
-                href={`https://t.me/${card.username}`}
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                @{card.username} ↗
-              </a>
-            ) : (
-              <span className="muted">Ника нет — пишет только через бота</span>
-            )}
-          </div>
-
-          <div className="field">
-            <span className="label">Идентификатор</span>
-            <CopyValue value={clientId} />
-          </div>
-
-          {card ? (
-            <>
-              <div className="field">
-                <span className="label">В сервисе с</span>
-                <span>
-                  <Moment at={card.createdAt.toISOString()} mode="day" />
-                </span>
-              </div>
-
-              <div className="field">
-                <span className="label">Пригласил</span>
-                <span>
-                  {card.referrerId
-                    ? card.referrerUsername
-                      ? `@${card.referrerUsername}`
-                      : card.referrerId.toString()
-                    : 'Пришёл сам'}
-                </span>
-              </div>
-
-              <div className="field">
-                <span className="label">Рассылка</span>
-                <span>{card.marketingConsent ? 'Согласен' : 'Не согласен'}</span>
-              </div>
-
-              <div className="field">
-                <span className="label">Реферальный код</span>
-                <CopyValue value={card.referralCode} />
-              </div>
-            </>
-          ) : (
-            <p className="card__note">
-              Клиент писал боту, но приложение ещё не открывал — профиля у него нет.
-            </p>
-          )}
-        </aside>
+        <ClientCard
+          clientId={clientId}
+          client={
+            card
+              ? {
+                  ...card,
+                  telegramUserId: card.telegramUserId.toString(),
+                  referrerId: card.referrerId?.toString() ?? null,
+                  createdAt: card.createdAt.toISOString(),
+                }
+              : null
+          }
+        />
       </div>
     </main>
   );

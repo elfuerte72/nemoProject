@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import type { CardApplicationView } from '@nemo/core';
+import type { ManagerCardApplicationView } from '@nemo/core';
 import { cardApplicationTransitions } from '@nemo/types';
 import { CARD_STATUS_LABELS, CARD_STATUS_TONES, pillClass } from '@/lib/labels';
 import { Moment } from '@/app/ui/moment';
@@ -20,7 +20,10 @@ import { Moment } from '@/app/ui/moment';
  * клиентский компонент само. Строку разбирает уже браузер, и время он
  * покажет в своих часах, а не в серверных.
  */
-type CardApplicationForDisplay = Omit<CardApplicationView, 'clientId' | 'createdAt'> & {
+type CardApplicationForDisplay = Omit<
+  ManagerCardApplicationView,
+  'clientId' | 'createdAt'
+> & {
   clientId: string;
   createdAt: string;
 };
@@ -100,7 +103,10 @@ export function CardList({
               <div className="table__row">
                 <span className="cell">
                   <span className="cell__label">Клиент</span>
-                  <span className="cell__value">{application.clientId}</span>
+                  <span className="cell__value">
+                    {application.clientUsername ? `@${application.clientUsername}` : 'Без ника'}
+                  </span>
+                  <span className="cell__note">{application.clientId}</span>
                 </span>
 
                 <span className="cell cell--num">

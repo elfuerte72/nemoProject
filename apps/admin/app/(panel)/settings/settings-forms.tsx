@@ -6,11 +6,10 @@ import type {
   NetworkView,
   ServiceSettingsView,
   StaffView,
-  TextTemplateView,
 } from '@nemo/core';
 import type { StaffRole } from '@nemo/types';
 import { pillClass, ROLE_LABELS } from '@/lib/labels';
-import { Dialog } from '@/app/ui/dialog';
+import { bpsToPercent, percentToBps } from '@/lib/percent';
 
 /**
  * Раздел администратора: экономика сервиса и сотрудники.
@@ -30,12 +29,10 @@ type StaffForDisplay = Omit<StaffView, 'telegramUserId'> & { telegramUserId: str
 export function SettingsForms({
   settings,
   networks,
-  templates,
   staff,
 }: {
   settings: ServiceSettingsView;
   networks: readonly NetworkView[];
-  templates: readonly TextTemplateView[];
   staff: readonly StaffForDisplay[];
 }) {
   const router = useRouter();
@@ -47,10 +44,10 @@ export function SettingsForms({
     qr?: string | undefined;
   }>();
 
-  const [line1, setLine1] = useState(String(settings.referralLine1Bps));
-  const [line2, setLine2] = useState(String(settings.referralLine2Bps));
+  const [line1, setLine1] = useState(bpsToPercent(settings.referralLine1Bps));
+  const [line2, setLine2] = useState(bpsToPercent(settings.referralLine2Bps));
   const [minWithdrawal, setMinWithdrawal] = useState<string>(settings.minWithdrawalAmount);
-  const [markup, setMarkup] = useState(String(settings.markupBps));
+  const [markup, setMarkup] = useState(bpsToPercent(settings.markupBps));
   const [minExchange, setMinExchange] = useState<string>(settings.minExchangeAmount);
   const [ttlMinutes, setTtlMinutes] = useState(String(settings.unpaidExchangeRequestTtlMinutes));
 
@@ -129,27 +126,27 @@ export function SettingsForms({
       <section className="card">
         <h2 className="card__title">Ставки линий и вывод</h2>
         <p className="card__note">
-          Ставка задаётся в базисных пунктах: 100 bps = 1%. Уже сделанные начисления от
-          смены ставки не меняются — заявка исполнена на тех условиях, что действовали в
-          момент её исполнения.
+          Ставка задаётся в процентах от дохода сервиса по заявке; шаг — сотая процента.
+          Уже сделанные начисления от смены ставки не меняются — заявка исполнена на тех
+          условиях, что действовали в момент её исполнения.
         </p>
         <div className="form-row">
           <label className="field">
-            <span className="label">Первая линия, bps</span>
+            <span className="label">Первая линия, %</span>
             <input
               className="input"
               value={line1}
               onChange={(event) => setLine1(event.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
             />
           </label>
           <label className="field">
-            <span className="label">Вторая линия, bps</span>
+            <span className="label">Вторая линия, %</span>
             <input
               className="input"
               value={line2}
               onChange={(event) => setLine2(event.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
             />
           </label>
           <label className="field">
@@ -163,14 +160,19 @@ export function SettingsForms({
           </label>
         </div>
         <div className="row__actions">
+          {/*
+            Кнопка гаснет на нечисловой ставке: отправленная, она
+            вернулась бы отказом ядра про неверное значение — а
+            администратор видит перед собой поле, в котором опечатка.
+          */}
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || percentToBps(line1) === null || percentToBps(line2) === null}
             className="btn btn--gold"
             onClick={() =>
               send('/api/settings', {
-                referralLine1Bps: Number(line1),
-                referralLine2Bps: Number(line2),
+                referralLine1Bps: percentToBps(line1),
+                referralLine2Bps: percentToBps(line2),
                 minWithdrawalAmount: minWithdrawal.replace(',', '.').trim(),
               })
             }
@@ -183,19 +185,20 @@ export function SettingsForms({
       <section className="card">
         <h2 className="card__title">Экономика обмена</h2>
         <p className="card__note">
-          Наценка одна на весь сервис и действует в обе стороны. Минимальная сумма
-          задана в рублях: при наценке в пару процентов мелкий обмен не покрывает
+          Наценка одна на весь сервис, задаётся в процентах и действует в обе стороны:
+          она вычитается из курса, и клиент видит сумму уже с ней. Минимальная сумма
+          задана в рублях — при наценке в пару процентов мелкий обмен не покрывает
           комиссию сети, которую сервис платит за клиента. Срок отсчитывается с
           момента, когда менеджер выдал реквизиты для оплаты.
         </p>
         <div className="form-row">
           <label className="field">
-            <span className="label">Наценка, bps</span>
+            <span className="label">Наценка, %</span>
             <input
               className="input"
               value={markup}
               onChange={(event) => setMarkup(event.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
             />
           </label>
           <label className="field">
@@ -220,11 +223,11 @@ export function SettingsForms({
         <div className="row__actions">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || percentToBps(markup) === null}
             className="btn btn--gold"
             onClick={() =>
               send('/api/settings', {
-                markupBps: Number(markup),
+                markupBps: percentToBps(markup),
                 minExchangeAmount: minExchange.replace(',', '.').trim(),
                 unpaidExchangeRequestTtlMinutes: Number(ttlMinutes),
               })
@@ -237,7 +240,6 @@ export function SettingsForms({
 
       <TransferNetworks networks={networks} busy={busy} onToggle={send} />
 
-      <TextTemplates templates={templates} busy={busy} onSave={send} />
 
       <section className="card">
         <h2 className="card__title">Сотрудники</h2>
@@ -355,93 +357,6 @@ export function SettingsForms({
         </ul>
       </section>
     </>
-  );
-}
-
-/**
- * Заготовки текстов.
- *
- * Реквизиты сервиса для оплаты и тексты, которые читает клиент. Правятся
- * без выкатки — это и есть их смысл, — и потому не проходят ревью:
- * плата принята сознательно, а значения по умолчанию остаются в коде.
- *
- * Каждая заготовка сохраняется отдельно: одна кнопка на все означала бы,
- * что правка одного текста трогает журнал по остальным.
- */
-function TextTemplates({
-  templates,
-  busy,
-  onSave,
-}: {
-  templates: readonly TextTemplateView[];
-  busy: boolean;
-  onSave: (path: string, body: unknown) => Promise<unknown>;
-}) {
-  const [drafts, setDrafts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(templates.map((one) => [one.key, one.body])),
-  );
-
-  return (
-    <section className="card">
-      <h2 className="card__title">Заготовки текстов</h2>
-      <p className="card__note">
-        Менеджер вставляет их в заявку одной кнопкой, а не набирает номер руками. Пока
-        заготовку не правили, показывается значение из кода — оно ничего не обещает
-        клиенту и служит образцом тона.
-      </p>
-      {templates.map((template) => (
-        <div key={template.key} className="field">
-          <span className="label">
-            {template.title}
-            {template.isDefault ? ' · значение из кода' : ''}
-          </span>
-          <textarea
-            className="input"
-            rows={3}
-            value={drafts[template.key] ?? template.body}
-            onChange={(event) =>
-              setDrafts((current) => ({ ...current, [template.key]: event.target.value }))
-            }
-          />
-          {/*
-            Предпросмотр тем же окном, в котором менеджер читает
-            переписку: администратор видит формулировку так, как её
-            прочтёт клиент, а не как строку в поле ввода.
-          */}
-          {template.scope === 'bot' ? (
-            <Dialog
-              messages={[
-                {
-                  id: template.key,
-                  direction: 'outgoing',
-                  body: drafts[template.key] ?? template.body,
-                  hasAttachment: false,
-                  authorStaffId: null,
-                  authorName: null,
-                  exchangeRequestId: null,
-                  createdAt: new Date(),
-                },
-              ]}
-            />
-          ) : undefined}
-          <div className="row__actions">
-            <button
-              type="button"
-              disabled={busy || !(drafts[template.key] ?? template.body).trim()}
-              className="btn btn--soft"
-              onClick={() =>
-                onSave('/api/text-templates', {
-                  key: template.key,
-                  body: drafts[template.key] ?? template.body,
-                })
-              }
-            >
-              Сохранить
-            </button>
-          </div>
-        </div>
-      ))}
-    </section>
   );
 }
 

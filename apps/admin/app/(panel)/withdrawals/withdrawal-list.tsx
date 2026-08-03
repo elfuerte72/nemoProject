@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { canTransitionWithdrawal } from '@nemo/types';
-import type { WithdrawalRequestView } from '@nemo/core';
+import type { ManagerWithdrawalView } from '@nemo/core';
 import { formatAmount } from '@/lib/format';
 import {
   pillClass,
@@ -23,7 +23,10 @@ import { Moment } from '@/app/ui/moment';
  */
 
 /** Клиент — bigint, время — Date: в клиентский компонент едут строками. */
-type WithdrawalForDisplay = Omit<WithdrawalRequestView, 'clientId' | 'createdAt' | 'paidAt'> & {
+type WithdrawalForDisplay = Omit<
+  ManagerWithdrawalView,
+  'clientId' | 'createdAt' | 'paidAt'
+> & {
   clientId: string;
   createdAt: string;
 };
@@ -119,7 +122,10 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
 
                 <span className="cell">
                   <span className="cell__label">Клиент</span>
-                  <span className="cell__value">{request.clientId}</span>
+                  <span className="cell__value">
+                    {request.clientUsername ? `@${request.clientUsername}` : 'Без ника'}
+                  </span>
+                  <span className="cell__note">{request.clientId}</span>
                 </span>
 
                 {/*

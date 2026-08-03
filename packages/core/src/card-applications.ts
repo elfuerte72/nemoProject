@@ -1,5 +1,5 @@
 import { desc, eq, inArray } from 'drizzle-orm';
-import { cardApplications } from '@nemo/db';
+import { cardApplications, clients } from '@nemo/db';
 import {
   canTransitionCardApplication,
   cardApplicationStatuses,
@@ -172,18 +172,27 @@ export async function listCardApplications(
   return rows.map(toClientView);
 }
 
+/**
+ * Та же заявка в очереди менеджера — с ником клиента: в списке из
+ * десятка строк «379336096» не отличается от соседнего номера.
+ */
+export type ManagerCardApplicationView = CardApplicationView & {
+  readonly clientUsername: string | null;
+};
+
 /** Очередь менеджера: заявки, по которым ещё нужно вести статус. */
 export async function listCardApplicationQueue(
   ctx: CoreConfig,
   actor: Actor,
-): Promise<readonly CardApplicationView[]> {
+): Promise<readonly ManagerCardApplicationView[]> {
   requireStaff(actor);
   const rows = await ctx.db
-    .select()
+    .select({ application: cardApplications, username: clients.username })
     .from(cardApplications)
+    .innerJoin(clients, eq(clients.telegramUserId, cardApplications.clientId))
     .where(inArray(cardApplications.status, OPEN_STATUSES))
     .orderBy(desc(cardApplications.createdAt));
-  return rows.map(toView);
+  return rows.map((row) => ({ ...toView(row.application), clientUsername: row.username }));
 }
 
 export interface UpdateCardApplicationInput {
