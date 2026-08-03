@@ -36,9 +36,14 @@ export interface RatePair {
  * Источник котировок. Недоступность выражается пустым ответом, а не
  * исключением: провайдер, который лежит, — обычное дело, а не авария, и
  * подача заявки от него не зависит.
+ *
+ * `at` спрашивает не «какой курс сейчас», а «какой курс был вот тогда».
+ * Им подача заявки берёт ровно тот курс, который клиент видел на экране:
+ * между показом и нажатием источник успевает обновиться, и без этого
+ * человек соглашался бы на одно число, а получал другое.
  */
 export interface RateSource {
-  quote(pair: RatePair): Promise<RateQuote | null>;
+  quote(pair: RatePair, at?: Date): Promise<RateQuote | null>;
 }
 
 export interface QuoteView {
@@ -52,6 +57,12 @@ export interface QuoteView {
 
 export interface QuoteInput extends RatePair {
   readonly fromAmount?: string | undefined;
+  /**
+   * Отметка времени курса, который клиент увидел. Подача присылает её
+   * обратно, чтобы заявка ушла по показанному курсу, а не по тому,
+   * который успел прийти следом.
+   */
+  readonly asOf?: Date | undefined;
 }
 
 /**
@@ -62,6 +73,38 @@ export interface QuoteInput extends RatePair {
  */
 function applyMarkup(rate: Amount, markupBps: number): Amount {
   return Money.subtract(rate, Money.percentOf(rate, markupBps));
+}
+
+/**
+ * Курс до целого — и клиенту, и менеджеру.
+ *
+ * Число вида «81,487204 ₽ за 1 USDT» не читается и не проверяется в
+ * уме: чтобы сойтись с суммой к выдаче, его пришлось бы перемножать на
+ * бумаге. Целое читается с одного взгляда, и выдача по нему считается
+ * устно — а значит расхождение видно сразу, а не после перевода.
+ *
+ * Округляется та сторона пары, что больше единицы. Обратную считать
+ * нельзя: у RUB → USDT курс равен 0,0123, и целое из него — ноль.
+ * Поэтому крупная сторона округляется, а мелкая выводится делением, и
+ * обе стороны остаются согласованными между собой.
+ *
+ * Направление — всегда в пользу сервиса, и это не жадность, а
+ * необходимость: наценка составляет 1,63 ₽ на курсе 81,49, а разброс
+ * округления — до рубля, то есть до трети наценки. Округление «к
+ * ближайшему» отдавало бы эту треть случаю.
+ */
+function roundRate(rate: Amount): Amount {
+  const one = Money.toAmount('1');
+  if (Money.compare(rate, one) >= 0) {
+    // Клиент получает по этому курсу — платит сервис, и округление
+    // вниз оставляет наценку целой.
+    return Money.floor(rate);
+  }
+  // Курс мельче единицы: крупная сторона — обратная. Её округление
+  // вверх означает, что за единицу получаемого клиент отдаёт больше.
+  const inverse = Money.divide(one, rate);
+  if (Money.isZero(inverse)) return rate;
+  return Money.divide(one, Money.ceil(inverse));
 }
 
 /** Заведено ли направление безналичного обмена и не выключено ли оно. */
@@ -99,11 +142,14 @@ export async function getQuote(
 
   if (!(await hasElectronicPair(ctx.db, input))) return null;
 
-  const quoted = await source.quote({ fromCode: input.fromCode, toCode: input.toCode });
+  const quoted = await source.quote(
+    { fromCode: input.fromCode, toCode: input.toCode },
+    input.asOf,
+  );
   if (!quoted) return null;
 
   const { markupBps } = await readServiceSettings(ctx.db);
-  const rate = applyMarkup(quoted.rate, markupBps);
+  const rate = roundRate(applyMarkup(quoted.rate, markupBps));
   const fromAmount = Money.amountSchema.safeParse(input.fromAmount ?? '');
 
   return {
@@ -122,6 +168,17 @@ export async function getQuote(
  * (docs/adr/0006): по какому курсу клиент нажал, по такому сделка и
  * пойдёт.
  *
+ * «По какому нажал» — буквально: отметку времени показанного курса
+ * приложение присылает вместе с заявкой, и котировка берётся та же
+ * самая. Спрошенная заново, она успевала бы обновиться между показом и
+ * нажатием, и человек соглашался бы на одно число, а получал другое —
+ * молча, потому что заметить это можно только сверив выдачу с тем, что
+ * было на экране.
+ *
+ * Присланному верить при этом не нужно: приходит не курс, а ссылка на
+ * снимок, который сервис сделал сам. Незнакомая отметка просто
+ * откатывается на текущий курс.
+ *
  * Сбой источника заявку не задерживает: без котировки поле останется
  * пустым, и заявка поведёт себя как наличная — курс назовёт менеджер.
  * Отказывать в подаче из-за молчания провайдера нельзя, для клиента это
@@ -129,7 +186,7 @@ export async function getQuote(
  */
 export async function quoteForSubmission(
   ctx: CoreConfig,
-  input: RatePair,
+  input: QuoteInput,
 ): Promise<Amount | null> {
   try {
     const quote = await getQuote(ctx, input);

@@ -50,9 +50,6 @@ import { NoticeSheet, Sheet } from './ui/sheet';
  * в приложении означало бы обещать то, чем сервис не управляет.
  */
 
-/** Пауза перед запросом курса: иначе он уходит на каждое нажатие клавиши. */
-const QUOTE_DEBOUNCE_MS = 400;
-
 /** С чего открывается экран, если такое направление заведено. */
 const PREFERRED_FROM = 'USDT';
 
@@ -222,6 +219,19 @@ export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
     setSelected(lastUsed ?? offered[0]?.id);
   }, [offered, requests, toCode, selected]);
 
+  /*
+   * Курс спрашивается на направление, а не на сумму.
+   *
+   * От суммы он не зависит: получаемое — это произведение суммы на
+   * курс, и считать его на сервере значило бы гонять круг по сети ради
+   * одного умножения. Умножение живёт ниже, на этом же экране, и берёт
+   * ту же `Money` из общего пакета, что и ядро, — число сходится с тем,
+   * которое запишется в заявку, потому что считается тем же кодом.
+   *
+   * Отсюда же исчезла пауза перед запросом: пока запрос уходил на
+   * каждую цифру, без неё к серверу летел бы шквал; теперь дёргать
+   * нечего.
+   */
   useEffect(() => {
     // У наличных курса нет: там финальный курс называет менеджер, и
     // спрашивать провайдера незачем.
@@ -230,29 +240,35 @@ export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
       return;
     }
 
-    const params = new URLSearchParams({ fromCode, toCode });
-    const parsed = parseAmount(amount);
-    if (parsed) params.set('fromAmount', parsed);
-
     let cancelled = false;
-    const timer = setTimeout(() => {
-      void get<{ quote: QuoteView | null }>(`/api/quote?${params.toString()}`)
-        .then((result) => {
-          if (!cancelled) setQuote(result.quote);
-        })
-        // Отсутствие курса — не ошибка экрана: заявку можно подать и
-        // без него, а сказать клиенту нужно то же самое, что при
-        // наличных.
-        .catch(() => {
-          if (!cancelled) setQuote(null);
-        });
-    }, QUOTE_DEBOUNCE_MS);
+    void get<{ quote: QuoteView | null }>(
+      `/api/quote?${new URLSearchParams({ fromCode, toCode }).toString()}`,
+    )
+      .then((result) => {
+        if (!cancelled) setQuote(result.quote);
+      })
+      // Отсутствие курса — не ошибка экрана: заявку можно подать и без
+      // него, а сказать клиенту нужно то же самое, что при наличных.
+      .catch(() => {
+        if (!cancelled) setQuote(null);
+      });
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
-  }, [kind, fromCode, toCode, amount]);
+  }, [kind, fromCode, toCode]);
+
+  /**
+   * Сколько клиент получит. Считается здесь же, без обращения к
+   * серверу: курс уже известен, а `Money` общая с ядром — значит и
+   * округление, и точность те же самые.
+   */
+  const toAmount = useMemo(() => {
+    if (!quote) return null;
+    const parsed = Money.amountSchema.safeParse(parseAmount(amount));
+    if (!parsed.success || Money.isNegative(parsed.data)) return null;
+    return Money.multiply(parsed.data, quote.rate);
+  }, [quote, amount]);
 
   /** Развернуть направление можно, только если обратное вообще меняют. */
   const canSwap = pairs.some((pair) => pair.fromCode === toCode && pair.toCode === fromCode);
@@ -273,6 +289,10 @@ export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
         fromCode,
         toCode,
         fromAmount: parseAmount(amount),
+        // Отметка курса, который клиент сейчас видит на экране: по нему
+        // заявка и уйдёт. Без неё ядро спросило бы курс заново, и между
+        // взглядом и нажатием он успел бы обновиться.
+        ...(quote ? { quotedAt: quote.asOf } : {}),
         // Наличные клиент получает на руки: реквизиты для перевода при
         // этом способе не нужны и не запрашиваются.
         ...(kind === 'electronic' && selected ? { requisitesId: selected } : {}),
@@ -348,7 +368,7 @@ export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
         (toCode === terms.minAmountCode && quote !== null)),
   );
   const rubles = terms
-    ? rubleSide(terms.minAmountCode, { fromCode, toCode }, amount, quote)
+    ? rubleSide(terms.minAmountCode, { fromCode, toCode }, amount, toAmount)
     : null;
   const belowMinimum = Boolean(
     terms && rubles && Money.compare(rubles, terms.minAmount) < 0,
@@ -432,9 +452,9 @@ export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
               <div className="eyebrow">Получаю</div>
               <div key={`get-${swaps}`} className={swaps ? 'calc__line calc__line--get' : 'calc__line'}>
                 <div
-                  className={quote?.toAmount ? 'calc__amount' : 'calc__amount calc__amount--empty'}
+                  className={toAmount ? 'calc__amount' : 'calc__amount calc__amount--empty'}
                 >
-                  {quote?.toAmount ? formatAmount(quote.toAmount) : '0'}
+                  {toAmount ? formatAmount(toAmount) : '0'}
                 </div>
                 <CodePicker
                   label="Что хотите получить"
@@ -727,7 +747,7 @@ function rubleSide(
   rubleCode: string,
   direction: { fromCode: string; toCode: string },
   amount: string,
-  quote: QuoteView | null,
+  toAmount: Amount | null,
 ): Amount | null {
   if (direction.fromCode === rubleCode) {
     // Введённое человеком проверяется той же схемой, что и на сервере:
@@ -735,7 +755,7 @@ function rubleSide(
     const typed = Money.amountSchema.safeParse(parseAmount(amount));
     return typed.success ? typed.data : null;
   }
-  if (direction.toCode === rubleCode) return quote?.toAmount ?? null;
+  if (direction.toCode === rubleCode) return toAmount;
   return null;
 }
 

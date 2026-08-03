@@ -85,7 +85,54 @@ describe('электронный перевод', () => {
 
     const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' });
 
-    expect(quote).toMatchObject({ rate: '95.5', toAmount: null });
+    expect(quote).toMatchObject({ rate: '95', toAmount: null });
+  });
+});
+
+/**
+ * Курс называется целым числом — и им же считается.
+ *
+ * Округлить только показ нельзя: клиент увидел бы «95 ₽ за 1 USDT», а
+ * получил бы по 95,48, и сумма к выдаче перестала бы сходиться с
+ * курсом, по которому он согласился. Проверяется поэтому не вид, а сам
+ * курс и посчитанная по нему выдача.
+ */
+describe('целый курс', () => {
+  it('отбрасывает дробную часть, когда платит сервис', async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 0 });
+    const core = createCore({ db, rateSource: givenRateSource('95.987') });
+
+    const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB', fromAmount: '10' });
+
+    // Клиент получает рубли: округление вниз оставляет наценку целой.
+    expect(quote).toMatchObject({ rate: '95', toAmount: '950' });
+  });
+
+  it('поднимает мелкую сторону вверх: там платит клиент', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USDT', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 0 });
+    // 1/95,987 — столько USDT дают за рубль.
+    const core = createCore({ db, rateSource: givenRateSource('0.010418') });
+
+    const quote = await core.getQuote({ fromCode: 'RUB', toCode: 'USDT' });
+
+    // Крупная сторона — 95,98 рубля за монету; вверх это 96, и обратный
+    // курс выводится из неё, а не округляется сам: целое из 0,0104 было
+    // бы нулём.
+    expect(quote?.rate).toBe('0.010416666666666666');
+  });
+
+  it('сумма к выдаче сходится с показанным курсом устно', async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 200 });
+    const core = createCore({ db, rateSource: givenRateSource('83.17') });
+
+    const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB', fromAmount: '1000' });
+
+    // 83,17 минус 2% — 81,5066, вниз — 81. Тысяча по 81 это 81 000, и
+    // это ровно то, что человек посчитает в уме, увидев курс 81.
+    expect(quote).toMatchObject({ rate: '81', toAmount: '81000' });
   });
 });
 

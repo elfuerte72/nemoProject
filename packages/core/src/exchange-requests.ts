@@ -80,6 +80,12 @@ export interface SubmitExchangeRequestInput {
   readonly fromAmount: string;
   /** Куда отправлять деньги. Реквизиты клиент подтверждает при подаче. */
   readonly requisitesId?: string | undefined;
+  /**
+   * Отметка времени курса, который клиент видел на экране. По нему
+   * заявка и уходит (docs/adr/0006) — спрошенный заново курс успевал бы
+   * обновиться между показом и нажатием.
+   */
+  readonly quotedAt?: Date | undefined;
 }
 
 export interface SubmitExchangeRequestResult {
@@ -258,7 +264,11 @@ export async function submitExchangeRequest(
   // наличных курса нет вовсе — там курс называет менеджер.
   const requestRate =
     input.kind === 'electronic'
-      ? await quoteForSubmission(ctx, { fromCode: input.fromCode, toCode: input.toCode })
+      ? await quoteForSubmission(ctx, {
+          fromCode: input.fromCode,
+          toCode: input.toCode,
+          asOf: input.quotedAt,
+        })
       : null;
 
   return ctx.db.transaction(async (tx) => {

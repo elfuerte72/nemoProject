@@ -16,6 +16,12 @@ const submitSchema = z.object({
   // `number` дробная часть криптовалюты потерялась бы ещё до проверки.
   fromAmount: z.string(),
   requisitesId: z.string().uuid().optional(),
+  /**
+   * Отметка курса, показанного клиенту. Не курс: назвать цену клиент не
+   * может, а сослаться на ту, что назвал сервис, — да. Незнакомую
+   * отметку ядро молча заменит текущим курсом.
+   */
+  quotedAt: z.coerce.date().optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {

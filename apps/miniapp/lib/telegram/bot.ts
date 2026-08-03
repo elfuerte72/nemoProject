@@ -243,11 +243,11 @@ async function showRates(ctx: Context): Promise<void> {
 
   const lines = [
     sell ? `Продаёте USDT — ${formatRateValue(sell.rate)} ₽ за 1 USDT` : undefined,
-    // Котировка «рубли → USDT» приходит в USDT за рубль: числом вроде
-    // 0,0098 человек не пользуется, и она переворачивается в рубли за
-    // монету — так курс и читают в обменниках.
+    // Котировка «рубли → USDT» приходит в USDT за рубль. Переворачивать
+    // её здесь не нужно: `formatRateValue` сам показывает крупную
+    // сторону пары — числом вроде 0,0098 человек не пользуется.
     buy && !Money.isZero(buy.rate)
-      ? `Покупаете USDT — ${formatRateValue(Money.divide(Money.toAmount('1'), buy.rate))} ₽ за 1 USDT`
+      ? `Покупаете USDT — ${formatRateValue(buy.rate)} ₽ за 1 USDT`
       : undefined,
   ].filter((line) => line !== undefined);
 
