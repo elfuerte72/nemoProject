@@ -40,9 +40,11 @@ type SheetState =
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
 export function BonusSection({
+  revisit,
   consent,
   onConsentChanged,
 }: {
+  readonly revisit: number;
   readonly consent: boolean;
   readonly onConsentChanged: (consent: boolean) => void;
 }) {
@@ -68,7 +70,12 @@ export function BonusSection({
         setLoading(false);
       }
     })();
-  }, []);
+    // Раздел остаётся в ряду и заново не собирается: баллы начисляются
+    // по сделкам приглашённых, то есть меняются без участия хозяина
+    // счёта. Признак занятости при этом не поднимается — читается уже
+    // показанное, и подменять баланс на «Загружаем…» значило бы моргать
+    // числом в ответ на возвращение.
+  }, [revisit]);
 
   const link = account ? referralLink(account.referralCode) : undefined;
 

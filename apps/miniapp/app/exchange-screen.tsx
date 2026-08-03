@@ -66,7 +66,7 @@ type SheetState =
   | { readonly kind: 'requisites' }
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
-export function ExchangeScreen() {
+export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
   const [terms, setTerms] = useState<ExchangeTermsView>();
   const [requests, setRequests] = useState<ExchangeRequestView[]>([]);
   const [requisites, setRequisites] = useState<RequisitesView[]>([]);
@@ -109,18 +109,26 @@ export function ExchangeScreen() {
         // первым в справочнике.
         const codes = conditions.terms.pairs.map((pair) => pair.fromCode);
         const from = codes.includes(PREFERRED_FROM) ? PREFERRED_FROM : (codes[0] ?? '');
-        setFromCode(from);
+        // Только пока направление не выбрано. Раздел остаётся в ряду и
+        // перечитывает своё при каждом возвращении: поставленное здесь
+        // заново стирало бы выбор клиента, отошедшего в соседний раздел
+        // с уже набранной суммой.
+        setFromCode((current) => current || from);
         // Встречная валюта ставится здесь же, а не отдельным проходом:
         // от неё зависит, показывать ли выбор валюты вообще, и лишний
         // кадр без неё мигнул бы списком там, где выбора нет.
-        setToCode(conditions.terms.pairs.find((pair) => pair.fromCode === from)?.toCode ?? '');
+        setToCode(
+          (current) =>
+            current || (conditions.terms.pairs.find((pair) => pair.fromCode === from)?.toCode ?? ''),
+        );
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить данные');
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+    // Заявки ведёт менеджер, и его шаг виден только по запросу.
+  }, [revisit]);
 
   useEffect(() => {
     // Отдельным запросом, а не вместе с остальным: молчание справочника
