@@ -123,6 +123,44 @@ describe('целый курс', () => {
     expect(quote?.rate).toBe('0.010416666666666666');
   });
 
+  /*
+   * Округление до целого имеет смысл, пока единица — малая часть курса.
+   * У пары с курсом около единицы целое отнимает почти половину: 1,9
+   * превратилось бы в 1. Сервис торгует одной парой, где курс за
+   * восемьдесят, но справочник направлений открыт, и следующая пара
+   * пришла бы сюда молча.
+   */
+  it('не трогает курс, у которого единица — заметная часть', async () => {
+    await givenCurrencyPair({ fromCode: 'AAA', toCode: 'BBB', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 0 });
+    const core = createCore({ db, rateSource: givenRateSource('1.9') });
+
+    const quote = await core.getQuote({ fromCode: 'AAA', toCode: 'BBB' });
+
+    expect(quote?.rate).toBe('1.9');
+  });
+
+  it('то же с мелкой стороны: 0,9 не должно стать половиной', async () => {
+    await givenCurrencyPair({ fromCode: 'AAA', toCode: 'BBB', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 0 });
+    const core = createCore({ db, rateSource: givenRateSource('0.9') });
+
+    const quote = await core.getQuote({ fromCode: 'AAA', toCode: 'BBB' });
+
+    expect(quote?.rate).toBe('0.9');
+  });
+
+  it('нулевой курс не роняет котировку делением на ноль', async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
+    // Стопроцентная наценка обнуляет курс, и до округления он доходит.
+    await givenServiceSettings({ markupBps: 10_000 });
+    const core = createCore({ db, rateSource: givenRateSource('95') });
+
+    const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' });
+
+    expect(quote?.rate).toBe('0');
+  });
+
   it('сумма к выдаче сходится с показанным курсом устно', async () => {
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
     await givenServiceSettings({ markupBps: 200 });

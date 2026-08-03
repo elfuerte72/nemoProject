@@ -89,6 +89,9 @@ export function formatRate(rate: string, fromCode: string, toCode: string): stri
 export function formatRateValue(value: string): string {
   const amount = Money.toAmount(value);
   const one = Money.toAmount('1');
+  // Переворачивать нечего и незачем: делить на ноль нельзя, а такой
+  // курс может прийти из старой заявки.
+  if (Money.isZero(amount) || Money.isNegative(amount)) return formatAmount(amount);
   return formatAmount(
     Money.round(Money.compare(amount, one) >= 0 ? amount : Money.divide(one, amount)),
   );

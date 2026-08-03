@@ -53,6 +53,13 @@ import { NoticeSheet, Sheet } from './ui/sheet';
 /** С чего открывается экран, если такое направление заведено. */
 const PREFERRED_FROM = 'USDT';
 
+/**
+ * Как часто перечитывается курс, пока экран открыт. Полминуты: чаще
+ * незачем — курс целый и от мелких движений не меняется, а реже значит
+ * дольше показывать число, которое сервис уже не назовёт.
+ */
+const QUOTE_REFRESH_MS = 30_000;
+
 const SUBMITTED = {
   title: 'Заявка принята',
   body: 'Менеджер возьмёт её в ближайшие минуты. Бот напишет на каждом шаге — приложение можно закрыть.',
@@ -241,20 +248,35 @@ export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
     }
 
     let cancelled = false;
-    void get<{ quote: QuoteView | null }>(
-      `/api/quote?${new URLSearchParams({ fromCode, toCode }).toString()}`,
-    )
-      .then((result) => {
-        if (!cancelled) setQuote(result.quote);
-      })
-      // Отсутствие курса — не ошибка экрана: заявку можно подать и без
-      // него, а сказать клиенту нужно то же самое, что при наличных.
-      .catch(() => {
-        if (!cancelled) setQuote(null);
-      });
+    const ask = () => {
+      void get<{ quote: QuoteView | null }>(
+        `/api/quote?${new URLSearchParams({ fromCode, toCode }).toString()}`,
+      )
+        .then((result) => {
+          if (!cancelled) setQuote(result.quote);
+        })
+        // Отсутствие курса — не ошибка экрана: заявку можно подать и без
+        // него, а сказать клиенту нужно то же самое, что при наличных.
+        .catch(() => {
+          if (!cancelled) setQuote(null);
+        });
+    };
+
+    ask();
+    /*
+     * И дальше — по кругу, пока экран открыт.
+     *
+     * Курс на экране не может стоять вечно: заявка уходит по нему, а у
+     * обязательства есть край — слишком старую котировку сервис не
+     * назовёт вовсе, и заявка тогда молча уйдёт без курса. Обновление
+     * дешёвое (сервер отвечает из памяти), а число целое и от мелких
+     * движений рынка не дёргается.
+     */
+    const timer = setInterval(ask, QUOTE_REFRESH_MS);
 
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [kind, fromCode, toCode]);
 
