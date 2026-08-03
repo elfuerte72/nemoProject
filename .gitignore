@@ -12,5 +12,8 @@ coverage/
 .DS_Store
 *.log
 
+# Снимки и логи браузера, которым проверяют вёрстку.
+.playwright-mcp/
+
 .claude/settings.local.json
 *.tsbuildinfo

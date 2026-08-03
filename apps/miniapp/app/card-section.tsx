@@ -26,7 +26,7 @@ const ABOUT = {
   body: 'Заявку ведёт менеджер: оформляет её у провайдера и сообщает о каждом шаге. Карту выпускает провайдер — её номер и баланс живут у него, а приложение показывает только состояние заявки.',
 };
 
-export function CardSection() {
+export function CardSection({ revisit }: { readonly revisit: number }) {
   const [applications, setApplications] = useState<ClientCardApplicationView[]>([]);
   const [about, setAbout] = useState(false);
   const [error, setError] = useState<string>();
@@ -44,7 +44,12 @@ export function CardSection() {
         setLoading(false);
       }
     })();
-  }, []);
+    // Раздел остаётся в ряду и заново не собирается: состояние заявки
+    // ведёт менеджер, и узнать о его шаге можно только спросив. Признак
+    // занятости при этом не поднимается — читается уже показанное, и
+    // подменять его на «Загружаем…» значило бы моргать в ответ на
+    // возвращение.
+  }, [revisit]);
 
   async function cancel(applicationId: string) {
     setError(undefined);
@@ -112,7 +117,7 @@ export function CardSection() {
               держателя читался бы как данные карты, которых у сервиса
               нет.
             */}
-            <span className="plastic__holder">ВЫПУСКАЕТ ПРОВАЙДЕР</span>
+            <span className="plastic__holder">Выпускает провайдер</span>
             <span className="plastic__marks">
               <span className="plastic__mark" />
               <span className="plastic__mark" />
