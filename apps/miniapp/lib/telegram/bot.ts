@@ -1,4 +1,4 @@
-import { Bot, Keyboard, type Context } from 'grammy';
+import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { Money } from '@nemo/types';
 import { renderNotification } from '@nemo/core';
 import { getCore } from '@/lib/core';
@@ -12,11 +12,18 @@ import { referralLink } from '@/lib/referral';
  * показывает ровно в одном месте — курсом по кнопке. Граница сдвинута
  * сознательно: ради одной цифры приложение никто открывать не станет.
  *
- * Постоянная клавиатура — главное меню сервиса: она остаётся под полем
- * ввода, и нужную кнопку не приходится искать в истории переписки.
- * Приходит с каждым ответом бота, а не только с `/start`: у клиента,
- * запускавшего бота раньше, меню появится с первым же ответом — иначе
- * он остался бы с одной старой кнопкой и списком команд.
+ * Главное меню — кнопки в самом сообщении, а не постоянная клавиатура
+ * под полем ввода. Причина не в оформлении: кнопке постоянной
+ * клавиатуры Telegram не передаёт данные запуска
+ * (https://core.telegram.org/bots/webapps), и открытое ею приложение не
+ * знает, кто пришёл, — клиент видел «Откройте приложение из Telegram».
+ * Инлайновая кнопка их передаёт, и сообщение с меню остаётся рабочим в
+ * переписке: его кнопки нажимаются и через неделю.
+ *
+ * Позвать меню заново можно командой `/menu` — она стоит первой в
+ * списке у кнопки рядом с полем ввода. Обменника в самой кнопке нет:
+ * главное меню одно, и второй вход в приложение мимо него разошёлся бы
+ * с ним при первой же правке.
  *
  * Тексты берутся из заготовок, которые администратор правит из панели;
  * значения по умолчанию лежат в коде, и пустой справочник ничего не
@@ -30,6 +37,25 @@ const MENU = {
   referral: 'Реферальная ссылка',
   support: 'Поддержка',
 } as const;
+
+/**
+ * Чем помечено нажатие кнопки меню. Значения короткие и неизменные: они
+ * лежат в уже отправленных сообщениях, и переименование сломало бы
+ * кнопки во всей прошлой переписке.
+ */
+const ACTION = {
+  rates: 'rates',
+  referral: 'referral',
+  support: 'support',
+} as const;
+
+/**
+ * Ответ по существу заодно снимает постоянную клавиатуру: у клиента,
+ * запускавшего бота до переезда меню в сообщение, она осталась
+ * раскрытой, а её кнопка обменника открывала приложение без данных
+ * запуска. Тому, у кого клавиатуры нет, это ничего не делает.
+ */
+const WITHOUT_OLD_KEYBOARD = { reply_markup: { remove_keyboard: true } } as const;
 
 let instance: Bot | undefined;
 
@@ -48,19 +74,17 @@ export function getBot(): Bot {
   const bot = new Bot(token);
 
   /**
-   * Главное меню под полем ввода. Обменник открывается прямо отсюда: на
-   * эту кнопку приходится большинство нажатий, и уводить её в отдельное
-   * сообщение значило бы добавлять шаг к каждому обмену.
+   * Главное меню — кнопки под приветствием. Обменник первой строкой: на
+   * него приходится большинство нажатий, а остальные три кнопки
+   * отвечают в этом же чате.
    */
-  const menu = new Keyboard()
+  const menu = new InlineKeyboard()
     .webApp(MENU.app, appUrl)
     .row()
-    .text(MENU.rates)
-    .text(MENU.referral)
+    .text(MENU.rates, ACTION.rates)
+    .text(MENU.referral, ACTION.referral)
     .row()
-    .text(MENU.support)
-    .resized()
-    .persistent();
+    .text(MENU.support, ACTION.support);
 
   async function greet(ctx: Context): Promise<void> {
     // Реферальный код едет в Mini App параметром `startapp` ссылки, а не
@@ -73,20 +97,45 @@ export function getBot(): Bot {
   }
 
   async function support(ctx: Context): Promise<void> {
-    await ctx.reply(await getCore().getTextTemplate('bot_support'), {
-      reply_markup: menu,
-    });
+    await ctx.reply(await getCore().getTextTemplate('bot_support'), WITHOUT_OLD_KEYBOARD);
   }
 
   bot.command('start', greet);
+  // Меню отдельной командой: сообщение с кнопками уходит вверх
+  // переписки, и звать его перезапуском бота — не то, чего клиент ждёт
+  // от `/start`.
+  bot.command('menu', greet);
 
-  bot.command('rates', (ctx) => showRates(ctx, menu));
-  bot.hears(MENU.rates, (ctx) => showRates(ctx, menu));
-
-  bot.command('referral', (ctx) => sendReferralLink(ctx, menu));
-  bot.hears(MENU.referral, (ctx) => sendReferralLink(ctx, menu));
-
+  bot.command('rates', showRates);
+  bot.command('referral', sendReferralLink);
   bot.command('support', support);
+
+  /*
+   * Нажатие кнопки меню. Telegram ждёт подтверждения приёма, иначе у
+   * клиента на кнопке крутятся часы: отвечаем сразу, до похода за
+   * курсом или в базу.
+   */
+  bot.callbackQuery(ACTION.rates, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await showRates(ctx);
+  });
+  bot.callbackQuery(ACTION.referral, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await sendReferralLink(ctx);
+  });
+  bot.callbackQuery(ACTION.support, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await support(ctx);
+  });
+
+  /*
+   * Подписи кнопок старой постоянной клавиатуры. У тех, кто запускал
+   * бота до переезда меню в сообщение, она осталась раскрытой, и до
+   * первого ответа бота её нажатия приходят обычным текстом — иначе
+   * вопрос про курс ушёл бы менеджеру.
+   */
+  bot.hears(MENU.rates, showRates);
+  bot.hears(MENU.referral, sendReferralLink);
   bot.hears(MENU.support, support);
 
   /*
@@ -95,20 +144,16 @@ export function getBot(): Bot {
    * сообщение череды — иначе разговор выглядит перепиской с
    * автоответчиком.
    */
-  bot.on('message:text', (ctx) => receive(ctx, { body: ctx.message.text }, menu));
+  bot.on('message:text', (ctx) => receive(ctx, { body: ctx.message.text }));
 
   bot.on('message:photo', (ctx) => {
     // Берётся самый крупный размер: Telegram присылает лесенку, и
     // менеджеру нужен тот, на котором видно сумму перевода.
     const largest = ctx.message.photo.at(-1);
-    return receive(
-      ctx,
-      {
-        ...(ctx.message.caption === undefined ? {} : { body: ctx.message.caption }),
-        ...(largest === undefined ? {} : { attachmentFileId: largest.file_id }),
-      },
-      menu,
-    );
+    return receive(ctx, {
+      ...(ctx.message.caption === undefined ? {} : { body: ctx.message.caption }),
+      ...(largest === undefined ? {} : { attachmentFileId: largest.file_id }),
+    });
   });
 
   /*
@@ -119,10 +164,16 @@ export function getBot(): Bot {
    */
   bot.catch(async ({ ctx, error }) => {
     console.error('Бот не смог ответить:', error);
+    // Часы на нажатой кнопке гасятся первыми: пока Telegram не получил
+    // подтверждения, клиент видит не отказ, а зависшее меню.
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery().catch(() => undefined);
+    }
     await ctx
-      .reply('Не получилось ответить прямо сейчас. Попробуйте ещё раз через минуту.', {
-        reply_markup: menu,
-      })
+      .reply(
+        'Не получилось ответить прямо сейчас. Попробуйте ещё раз через минуту.',
+        WITHOUT_OLD_KEYBOARD,
+      )
       .catch(() => undefined);
   });
 
@@ -141,7 +192,6 @@ export function getBot(): Bot {
 async function receive(
   ctx: Context,
   content: { body?: string; attachmentFileId?: string },
-  menu: Keyboard,
 ): Promise<void> {
   const telegramUserId = ctx.from?.id;
   if (telegramUserId === undefined) return;
@@ -153,15 +203,14 @@ async function receive(
   });
 
   // Подтверждение отвечается прямо здесь, а не уходит доставкой: так оно
-  // приходит одним сообщением вместе с меню — клиент, написавший боту
-  // раньше выкатки, увидит клавиатуру с первым же своим вопросом.
-  // Пустой ответ операции означает, что подтверждение уже уходило: два
-  // одинаковых сообщения подряд превратили бы разговор в автоответчик.
+  // приходит тем же ответом на сообщение клиента. Пустой ответ операции
+  // означает, что подтверждение уже уходило: два одинаковых сообщения
+  // подряд превратили бы разговор в автоответчик.
   const acknowledgement = notifications.find(
     (one) => one.kind === 'client-message-received',
   );
   if (acknowledgement) {
-    await ctx.reply(renderNotification(acknowledgement), { reply_markup: menu });
+    await ctx.reply(renderNotification(acknowledgement), WITHOUT_OLD_KEYBOARD);
   }
 }
 
@@ -180,7 +229,7 @@ const RATES_UNAVAILABLE =
  * Две котировки, а не одна с обратным знаком: наценка накладывается на
  * каждое направление отдельно, и покупка с продажей не зеркальны.
  */
-async function showRates(ctx: Context, menu: Keyboard): Promise<void> {
+async function showRates(ctx: Context): Promise<void> {
   const core = getCore();
   const [sell, buy] = await Promise.all([
     core.getQuote({ fromCode: 'USDT', toCode: 'RUB' }),
@@ -188,7 +237,7 @@ async function showRates(ctx: Context, menu: Keyboard): Promise<void> {
   ]);
 
   if (!sell && !buy) {
-    await ctx.reply(RATES_UNAVAILABLE, { reply_markup: menu });
+    await ctx.reply(RATES_UNAVAILABLE, WITHOUT_OLD_KEYBOARD);
     return;
   }
 
@@ -205,18 +254,16 @@ async function showRates(ctx: Context, menu: Keyboard): Promise<void> {
   if (lines.length === 0) {
     // Обе котировки пришли, но считать по ним нечего. Для клиента это то
     // же самое, что молчание источника, и сказать надо то же самое.
-    await ctx.reply(RATES_UNAVAILABLE, { reply_markup: menu });
+    await ctx.reply(RATES_UNAVAILABLE, WITHOUT_OLD_KEYBOARD);
     return;
   }
 
-  // Ответ уходит с тем же меню: его первая кнопка открывает обменник и
-  // стоит прямо под сообщением — отдельная кнопка под ответом дублировала
-  // бы её, а клавиатура при этом не дошла бы до тех, кто спрашивает
-  // только курс.
+  // Кнопки под ответом не дублируются: клиент пришёл сюда из меню, оно
+  // осталось на экране выше, и его кнопка обменника по-прежнему рабочая.
   await ctx.reply(
     `${lines.join('\n')}\n\nКурс с наценкой сервиса: по нему и обменяем — ` +
       'подать заявку можно в обменнике.',
-    { reply_markup: menu },
+    WITHOUT_OLD_KEYBOARD,
   );
 }
 
@@ -224,7 +271,7 @@ async function showRates(ctx: Context, menu: Keyboard): Promise<void> {
  * Реферальная ссылка сообщением: из чата её пересылают одним касанием,
  * а из Mini App только копируют и потом ищут, куда вставить.
  */
-async function sendReferralLink(ctx: Context, menu: Keyboard): Promise<void> {
+async function sendReferralLink(ctx: Context): Promise<void> {
   const telegramUserId = ctx.from?.id;
   if (telegramUserId === undefined) return;
 
@@ -243,7 +290,7 @@ async function sendReferralLink(ctx: Context, menu: Keyboard): Promise<void> {
   if (!link) {
     await ctx.reply(
       'Реферальная ссылка сейчас недоступна. Напишите менеджеру — он её пришлёт.',
-      { reply_markup: menu },
+      WITHOUT_OLD_KEYBOARD,
     );
     return;
   }
@@ -251,7 +298,8 @@ async function sendReferralLink(ctx: Context, menu: Keyboard): Promise<void> {
   // Ссылка отдельной строкой и без разметки: сообщение пересылают
   // целиком, и знакомый должен увидеть её глазами, а не разбирать, где
   // в тексте нажимать.
-  await ctx.reply(`${await getCore().getTextTemplate('bot_referral')}\n${link}`, {
-    reply_markup: menu,
-  });
+  await ctx.reply(
+    `${await getCore().getTextTemplate('bot_referral')}\n${link}`,
+    WITHOUT_OLD_KEYBOARD,
+  );
 }

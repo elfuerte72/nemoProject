@@ -11,7 +11,7 @@
  * обработчиках, покажет клиенту молчание.
  */
 export const BOT_COMMANDS = [
-  { command: 'start', description: 'Меню обменника' },
+  { command: 'menu', description: 'Главное меню' },
   { command: 'rates', description: 'Курс USDT' },
   { command: 'referral', description: 'Реферальная ссылка' },
   { command: 'support', description: 'Задать вопрос менеджеру' },

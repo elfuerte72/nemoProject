@@ -117,7 +117,7 @@ async function main(): Promise<void> {
   console.log(`Вебхук зарегистрирован (${chosen.name}): ${url}`);
 
   if (!admin) {
-    await setUpClientMenu(chosen.token, appUrl);
+    await setUpClientMenu(chosen.token);
   }
 
   console.log(`Проверить: pnpm set-telegram-webhook${admin ? ' --admin' : ''} --info`);
@@ -131,19 +131,19 @@ async function main(): Promise<void> {
  * и выставлять их на каждое обновление значило бы тратить запросы на
  * то, что не меняется.
  *
+ * Кнопка показывает список команд, а не открывает Mini App. Данных
+ * запуска приложению это не стоит — их не передаёт только постоянная
+ * клавиатура, — но вход в обменник тогда оказался бы в двух местах
+ * сразу: в кнопке у поля ввода и в меню, которое бот присылает
+ * сообщением. Первая же правка меню развела бы их.
+ *
  * Список команд у бота входа не трогается: у него одна работа —
  * подтвердить вход, — и меню сервиса в нём было бы обещанием, которого
  * он не выполняет (docs/adr/0005).
  */
-async function setUpClientMenu(token: string, appUrl: string): Promise<void> {
+async function setUpClientMenu(token: string): Promise<void> {
   await call(token, 'setMyCommands', { commands: BOT_COMMANDS });
-  await call(token, 'setChatMenuButton', {
-    menu_button: {
-      type: 'web_app',
-      text: 'Обменник',
-      web_app: { url: appUrl },
-    },
-  });
+  await call(token, 'setChatMenuButton', { menu_button: { type: 'commands' } });
   console.log('Список команд и кнопка меню чата обновлены.');
 }
 
