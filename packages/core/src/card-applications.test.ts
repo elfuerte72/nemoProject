@@ -132,6 +132,21 @@ describe('ведение статуса менеджером', () => {
     ]);
   });
 
+  it('не показывает клиенту номер у провайдера: ссылка служебная', async () => {
+    // Клиент обращается в сервис, а не к провайдеру, и на его экране
+    // этот номер вставал бы на место данных карты, которых нет.
+    const { application } = await core.submitCardApplication(asClient(100n));
+    await core.updateCardApplicationStatus(manager, application.id, {
+      status: 'processing',
+      providerReference: 'PRV-42',
+    });
+
+    const [mine] = await core.listCardApplications(asClient(100n));
+
+    expect(mine).not.toHaveProperty('providerReference');
+    expect(mine?.status).toBe('processing');
+  });
+
   it('не перескакивает через обработку', async () => {
     const { application } = await core.submitCardApplication(asClient(100n));
 

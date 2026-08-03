@@ -318,6 +318,7 @@ export type {
 export type {
   CardApplicationResult,
   CardApplicationView,
+  ClientCardApplicationView,
   UpdateCardApplicationInput,
 } from './card-applications.js';
 export type {

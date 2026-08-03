@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount, formatMoney } from './format.js';
+import { formatAmount, formatDay, formatMoment, formatMoney } from './format.js';
 
 describe('сумма для человека', () => {
   it('разделяет разряды: очередь читают глазами', () => {
@@ -18,5 +18,37 @@ describe('сумма для человека', () => {
 
   it('ставит код валюты после суммы', () => {
     expect(formatMoney('45000', 'RUB')).toBe('45 000 RUB');
+  });
+});
+
+describe('время для человека', () => {
+  const zone = 'Asia/Yekaterinburg';
+  // 3 августа 2026, 15:33 в Тюмени — это 10:33 UTC.
+  const now = new Date('2026-08-03T10:33:00Z');
+
+  it('у сегодняшнего показывает час, а не дату: очередь разбирают за сегодня', () => {
+    expect(formatMoment(new Date('2026-08-03T00:45:00Z'), now, zone)).toBe('05:45');
+  });
+
+  it('считает сутки в поясе менеджера, а не сервера', () => {
+    // Та же отметка по UTC — ещё вчерашняя, а на часах менеджера уже
+    // наступило следующее утро.
+    expect(formatMoment(new Date('2026-08-02T20:10:00Z'), now, zone)).toBe('01:10');
+  });
+
+  it('вчерашнее называет словом', () => {
+    expect(formatMoment(new Date('2026-08-02T09:00:00Z'), now, zone)).toBe('вчера, 14:00');
+  });
+
+  it('давнее показывает датой без года, пока год тот же', () => {
+    expect(formatMoment(new Date('2026-07-28T09:00:00Z'), now, zone)).toBe('28 июл.');
+  });
+
+  it('добавляет год, когда он не этот: иначе июль читается как ближайший', () => {
+    expect(formatMoment(new Date('2025-07-28T09:00:00Z'), now, zone)).toBe('28 июл. 2025 г.');
+  });
+
+  it('у случившегося однажды показывает дату без часа', () => {
+    expect(formatDay(new Date('2026-08-03T00:45:00Z'), now, zone)).toBe('3 авг.');
   });
 });

@@ -30,8 +30,24 @@ export interface CardApplicationView {
   readonly updatedAt: Date;
 }
 
+/**
+ * Та же заявка глазами клиента — без ссылки на систему провайдера.
+ *
+ * Номер там служебный: он нужен менеджеру, чтобы свериться с
+ * провайдером, а клиенту сказать нечего — обращается он в сервис, а не
+ * к провайдеру. На экране карты этот номер к тому же вставал на место
+ * имени держателя и читался как её данные, которых у сервиса нет.
+ */
+export type ClientCardApplicationView = Omit<CardApplicationView, 'providerReference'>;
+
 export interface CardApplicationResult {
   readonly application: CardApplicationView;
+  readonly notifications: readonly Notification[];
+}
+
+/** Клиентский результат: тот же переход, но без служебного номера. */
+export interface ClientCardApplicationResult {
+  readonly application: ClientCardApplicationView;
   readonly notifications: readonly Notification[];
 }
 
@@ -55,6 +71,11 @@ function toView(row: CardApplicationRow): CardApplicationView {
   };
 }
 
+function toClientView(row: CardApplicationRow): ClientCardApplicationView {
+  const { providerReference: _providerReference, ...rest } = toView(row);
+  return rest;
+}
+
 function notificationFor(row: CardApplicationRow): Notification {
   return { kind: 'card-application-status', to: row.clientId, status: row.status };
 }
@@ -70,7 +91,7 @@ function notificationFor(row: CardApplicationRow): Notification {
 export async function submitCardApplication(
   ctx: CoreConfig,
   actor: Actor,
-): Promise<CardApplicationResult> {
+): Promise<ClientCardApplicationResult> {
   const clientId = requireClient(actor);
 
   return ctx.db.transaction(async (tx) => {
@@ -90,7 +111,7 @@ export async function submitCardApplication(
     }
 
     const [row] = await tx.insert(cardApplications).values({ clientId }).returning();
-    return { application: toView(row!), notifications: [notificationFor(row!)] };
+    return { application: toClientView(row!), notifications: [notificationFor(row!)] };
   });
 }
 
@@ -107,7 +128,7 @@ export async function cancelOwnCardApplication(
   ctx: CoreConfig,
   actor: Actor,
   applicationId: string,
-): Promise<CardApplicationResult> {
+): Promise<ClientCardApplicationResult> {
   const clientId = requireClient(actor);
 
   return ctx.db.transaction(async (tx) => {
@@ -134,21 +155,21 @@ export async function cancelOwnCardApplication(
       .where(eq(cardApplications.id, applicationId))
       .returning();
 
-    return { application: toView(updated!), notifications: [notificationFor(updated!)] };
+    return { application: toClientView(updated!), notifications: [notificationFor(updated!)] };
   });
 }
 
 export async function listCardApplications(
   ctx: CoreConfig,
   actor: Actor,
-): Promise<readonly CardApplicationView[]> {
+): Promise<readonly ClientCardApplicationView[]> {
   const clientId = requireClient(actor);
   const rows = await ctx.db
     .select()
     .from(cardApplications)
     .where(eq(cardApplications.clientId, clientId))
     .orderBy(desc(cardApplications.createdAt));
-  return rows.map(toView);
+  return rows.map(toClientView);
 }
 
 /** Очередь менеджера: заявки, по которым ещё нужно вести статус. */

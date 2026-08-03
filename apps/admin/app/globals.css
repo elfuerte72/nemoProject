@@ -262,6 +262,18 @@ a {
   animation: nm-fade-up 0.28s var(--ease) both;
 }
 
+/*
+ * Ширина зависит от того, что на экране, а не от раздела.
+ *
+ * Очередь — таблица: строк десятки, у каждой пять колонок, и место под
+ * них берётся у пустого поля справа. Разговор и карточка заявки —
+ * колонка текста: строка в полтора экрана шириной читается заметно
+ * хуже, чем короткая.
+ */
+.page--wide {
+  max-width: 1560px;
+}
+
 .page--narrow {
   max-width: 760px;
 }
@@ -392,8 +404,7 @@ a {
   transition: background 0.15s ease;
 }
 
-a.row:hover,
-.row--hover:hover {
+a.row:hover {
   background: var(--surface-soft-hover);
 }
 
@@ -436,6 +447,243 @@ a.row:hover,
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+/* ── Очереди ─────────────────────────────────────────────────────── */
+
+/*
+ * Очередь — таблица, а не стопка карточек: заявки читают, сравнивая
+ * между собой — где сумма больше, что подано раньше, — и колонка,
+ * стоящая под колонкой, отвечает на это без чтения.
+ *
+ * Разметка списком, а не `<table>`: у строки бывает раскрытая часть —
+ * реквизиты выплаты, причина отказа, — и в таблице она стала бы
+ * строкой без колонок. Набор колонок поэтому задаётся здесь классом
+ * очереди: шапка и строки берут его из одного места, иначе подпись
+ * колонки разъезжается со своим столбцом при первой же правке.
+ */
+
+.table {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.table__head {
+  display: grid;
+  grid-template-columns: var(--cols);
+  gap: 16px;
+  padding: 0 18px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/*
+ * Подпись столбца внутри самой ячейки: глазами её читают в шапке, а
+ * голосом — здесь, потому что шапка от своего столбца оторвана и
+ * прочитается отдельным набором слов. В узком окне, где шапки нет,
+ * она же становится видимой.
+ */
+.cell__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.table__item {
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  transition: background 0.15s ease;
+}
+
+.table__row {
+  display: grid;
+  grid-template-columns: var(--cols);
+  gap: 16px;
+  align-items: center;
+  /* Цель клика во всю строку: попадать курсором в четыре слова текста
+     тридцать раз подряд менеджеру незачем. */
+  min-height: 54px;
+  padding: 9px 18px;
+  color: inherit;
+}
+
+a.table__row:hover,
+.table__item--clickable:hover {
+  background: var(--surface-soft-hover);
+}
+
+/* Раскрытая часть строки: реквизиты, причина отказа, поле ввода. */
+.table__more {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 18px 14px;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  /* По левому краю, а не во всю ячейку: растянутая пилюля состояния
+     превращается в полосу во весь столбец. */
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cell__value {
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell__note {
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Числа сравнивают взглядом по столбцу — разряд под разрядом. */
+.cell--num .cell__value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Действия — от левого края колонки: так одноимённые кнопки соседних
+   строк стоят одна под другой, и нужную находят не читая. */
+.cell--actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+/*
+ * Ждёт человека — жирным и с золотой отметкой слева.
+ *
+ * Вес шрифта, а не значок: отличать приходится всей строкой, и
+ * различие в начертании видно, не выцеливая шесть точек у края.
+ * Разобранное не сереет до неразличимости — его читают тоже, просто
+ * позже.
+ */
+.table__item--fresh {
+  background: rgba(217, 190, 134, 0.07);
+  box-shadow: inset 2px 0 0 var(--gold), var(--lift);
+}
+
+.table__item--fresh .cell__value {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.table__item--settled .cell__value {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+/* Отметка новизны. У разобранной строки место остаётся занятым:
+   иначе соседние колонки съезжают на ширину точки. */
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--gold);
+}
+
+.dot--off {
+  background: transparent;
+}
+
+/*
+ * Колонки очередей. Числа и состояния — фиксированной ширины, текст —
+ * растяжимой: от ширины окна зависит, сколько видно текста, а не
+ * насколько разъедется столбец с суммой.
+ *
+ * Растяжимые заданы через `minmax(0, …)`, а не голым `fr`: иначе
+ * ширину колонки определяет самое длинное содержимое, а оно у шапки и
+ * у строк разное — и подписи разъезжаются со своими столбцами.
+ */
+.table--exchange {
+  --cols: minmax(0, 1fr) 170px minmax(0, 1fr) 140px 120px;
+}
+
+/* Колонка действий шире самого длинного набора кнопок: перенос кнопки
+   на вторую строку поднимает соседние ряды и ломает столбцы. */
+.table--withdrawals {
+  --cols: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1.2fr) 130px 340px;
+}
+
+.table--cards {
+  --cols: minmax(0, 1fr) 110px minmax(0, 1.4fr) 130px 280px;
+}
+
+.table--chats {
+  --cols: 7px minmax(0, 1fr) minmax(0, 2fr) 180px 110px;
+}
+
+/*
+ * Узкое окно: колонки складываются в строки, и подпись переезжает к
+ * значению. Без неё столбец, потерявший шапку, превращается в число
+ * без имени.
+ */
+@media (max-width: 1180px) {
+  .table__head {
+    display: none;
+  }
+
+  .table__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 14px 18px;
+  }
+
+  .cell__label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .cell--actions {
+    justify-content: flex-start;
+    margin-top: 4px;
+  }
+
+  /* Подпись — над кнопками, а не первой из них в ряду. */
+  .cell--actions .cell__label {
+    flex-basis: 100%;
+  }
+
+  .table--chats {
+    --cols: minmax(0, 1fr);
+  }
 }
 
 /* ── Состояния ───────────────────────────────────────────────────── */
@@ -554,21 +802,6 @@ a.row:hover,
 
 .btn--wide {
   width: 100%;
-}
-
-.link {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--gold-light);
-  cursor: pointer;
-  text-align: left;
-}
-
-.link:hover {
-  color: #f0ddb4;
 }
 
 /* ── Поля ────────────────────────────────────────────────────────── */

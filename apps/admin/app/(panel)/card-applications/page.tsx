@@ -21,21 +21,27 @@ export default async function CardApplicationsPage() {
   const applications = await getCore().listCardApplicationQueue(actor);
 
   return (
-    <main className="page page--narrow">
+    <main className="page page--wide">
       <header className="page__head">
         <div>
           <h1 className="page__title">Заявки на карту</h1>
+          {/*
+            Про номер сказано здесь, а не подсказкой у поля: он уходит
+            клиенту на экран карты, и узнавать об этом задним числом —
+            после того, как в поле написано «для Пети», — поздно.
+          */}
           <p className="page__sub">
-            Состояние приходит от провайдера — панель только записывает то, что он сообщил.
+            Состояние приходит от провайдера — панель только записывает то, что он сообщил. Номер
+            заявки сохраняется вместе с состоянием и виден клиенту в приложении.
           </p>
         </div>
-        <span className="section__count">{applications.length}</span>
       </header>
 
       <CardList
         applications={applications.map((application) => ({
           ...application,
           clientId: application.clientId.toString(),
+          createdAt: application.createdAt.toISOString(),
         }))}
       />
     </main>

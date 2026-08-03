@@ -47,6 +47,11 @@ export interface ConversationView {
   readonly lastMessageBody: string | null;
   /** Последнее сообщение — входящее: клиент ждёт ответа. */
   readonly isUnanswered: boolean;
+  /**
+   * Кто ответил последним. Пусто, пока разговор ждёт ответа: у
+   * входящего сообщения автора из сотрудников нет.
+   */
+  readonly lastAuthorName: string | null;
 }
 
 export interface ReceiveMessageInput {
@@ -276,6 +281,7 @@ export async function listConversations(
         body: clientMessages.body,
         createdAt: clientMessages.createdAt,
         seq: clientMessages.seq,
+        authorStaffId: clientMessages.authorStaffId,
       })
       .from(clientMessages)
       .orderBy(clientMessages.clientId, desc(clientMessages.seq)),
@@ -289,9 +295,14 @@ export async function listConversations(
       lastMessageAt: last.createdAt,
       lastMessageBody: last.body,
       direction: last.direction,
+      // Кто ответил последним. В списке это отличает разобранный
+      // разговор от того, до которого никто не дошёл: очередь общая, и
+      // «отвечено» без имени не говорит, надо ли перечитывать.
+      lastAuthorName: staff.displayName,
     })
     .from(last)
     .innerJoin(clients, eq(clients.telegramUserId, last.clientId))
+    .leftJoin(staff, eq(staff.id, last.authorStaffId))
     // Ждущие ответа сверху: это работа, а не история. Внутри — по
     // сквозному номеру, тому же, которым определяется последнее
     // сообщение: время двух записей в одну миллисекунду не разводит.

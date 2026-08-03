@@ -1,17 +1,23 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { CoreError } from '@nemo/core';
+import { CoreError, type ConversationView } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
-import { pillClass } from '@/lib/labels';
+import { Moment } from '@/app/ui/moment';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Обращения клиентов.
  *
- * Список тех, с кем есть переписка, — ждущие ответа сверху и отмечены
- * пилюлей: менеджер должен видеть работу, не открывая каждый разговор.
+ * Список разделён на то, что ждёт ответа, и то, что уже разобрано:
+ * очередь общая, и первый вопрос менеджера — не «кто писал», а «где я
+ * нужен». Порядок внутри — тот, что задаёт ядро: последнее сообщение
+ * сверху.
+ *
+ * Отдельного «прочитано» здесь нет и не выводится: панель не знает,
+ * читал ли менеджер разговор, — она знает, ответил ли кто-то. Отметка
+ * о прочтении, которую никто не ставит, врала бы о состоянии работы.
  */
 export default async function ConversationsPage() {
   const actor = await requireStaffActorOrNull();
@@ -21,9 +27,11 @@ export default async function ConversationsPage() {
 
   try {
     const conversations = await getCore().listConversations(actor);
+    const waiting = conversations.filter((one) => one.isUnanswered);
+    const settled = conversations.filter((one) => !one.isUnanswered);
 
     return (
-      <main className="page">
+      <main className="page page--wide">
         <header className="page__head">
           <div>
             <h1 className="page__title">Обращения</h1>
@@ -31,33 +39,30 @@ export default async function ConversationsPage() {
               Клиент пишет боту, ответ уходит туда же — тем ботом, которого он запускал.
             </p>
           </div>
-          <span className="section__count">{conversations.length}</span>
         </header>
 
-        {conversations.length === 0 ? (
-          <p className="empty">Клиенты пока не писали.</p>
-        ) : (
-          <ul className="rows">
-            {conversations.map((one) => (
-              <li key={one.clientId.toString()} className="row row--hover">
-                <div className="row__main">
-                  <Link href={`/conversations/${one.clientId}`} className="row__title">
-                    {one.username ? `@${one.username}` : `Клиент ${one.clientId}`}
-                  </Link>
-                  <span className="row__meta">{one.lastMessageBody ?? 'Изображение'}</span>
-                </div>
-                <div className="row__side">
-                  {one.isUnanswered ? (
-                    <span className={pillClass('wait')}>Ждёт ответа</span>
-                  ) : undefined}
-                  <span className="row__meta">
-                    {new Date(one.lastMessageAt).toLocaleString('ru-RU')}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <section className="section">
+          <div className="section__head">
+            <h2 className="section__title">Ждут ответа</h2>
+            <span className="section__count">{waiting.length}</span>
+            <span className="section__rule" />
+          </div>
+          <ConversationTable
+            conversations={waiting}
+            empty="Никто не ждёт ответа."
+          />
+        </section>
+
+        {settled.length > 0 ? (
+          <section className="section">
+            <div className="section__head">
+              <h2 className="section__title">Разобранные</h2>
+              <span className="section__count">{settled.length}</span>
+              <span className="section__rule" />
+            </div>
+            <ConversationTable conversations={settled} empty="Разобранных разговоров нет." />
+          </section>
+        ) : undefined}
       </main>
     );
   } catch (error) {
@@ -71,4 +76,78 @@ export default async function ConversationsPage() {
     }
     throw error;
   }
+}
+
+function ConversationTable({
+  conversations,
+  empty,
+}: {
+  conversations: readonly ConversationView[];
+  empty: string;
+}) {
+  if (conversations.length === 0) {
+    return <p className="empty">{empty}</p>;
+  }
+
+  return (
+    <>
+      <div aria-hidden className="table__head table--chats">
+        <span />
+        <span>Клиент</span>
+        <span>Последнее сообщение</span>
+        <span>Состояние</span>
+        <span>Когда</span>
+      </div>
+      <ul className="table table--chats">
+        {conversations.map((one) => (
+          <li
+            key={one.clientId.toString()}
+            className={
+              one.isUnanswered ? 'table__item table__item--fresh' : 'table__item table__item--settled'
+            }
+          >
+            {/*
+              Ссылка — вся строка, а не имя в ней: имя короткое, строка
+              широкая, и выцеливать курсором надпись менеджеру незачем.
+            */}
+            <Link href={`/conversations/${one.clientId}`} className="table__row">
+              <span className={one.isUnanswered ? 'dot' : 'dot dot--off'} aria-hidden />
+              {/*
+                Имя и номер — обе строки всегда: у клиента без ника
+                строка иначе становится ниже соседних, и список
+                перестаёт читаться столбцом.
+              */}
+              <span className="cell">
+                <span className="cell__label">Клиент</span>
+                <span className="cell__value">
+                  {one.username ? `@${one.username}` : 'Без ника'}
+                </span>
+                <span className="cell__note">{one.clientId.toString()}</span>
+              </span>
+              <span className="cell">
+                <span className="cell__label">Последнее сообщение</span>
+                <span className="cell__note">{one.lastMessageBody ?? 'Изображение'}</span>
+              </span>
+              <span className="cell">
+                <span className="cell__label">Состояние</span>
+                {one.isUnanswered ? (
+                  <span className="cell__value">Ждёт ответа</span>
+                ) : (
+                  <span className="cell__note">
+                    {one.lastAuthorName ? `Ответил ${one.lastAuthorName}` : 'Отвечено'}
+                  </span>
+                )}
+              </span>
+              <span className="cell cell--num">
+                <span className="cell__label">Когда</span>
+                <span className="cell__note">
+                  <Moment at={one.lastMessageAt.toISOString()} />
+                </span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
 }
