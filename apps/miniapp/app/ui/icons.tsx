@@ -172,10 +172,25 @@ export function TabExchangeIcon({ filled }: { filled: boolean }) {
   );
 }
 
+/**
+ * Знак денег, а не абстрактная фигура: баллы копятся ради выплаты, и
+ * вкладку ищут глазами именно по этому.
+ *
+ * Начертание собрано штрихом той же толщины, что и у соседей: залитый
+ * символ рядом с контурными читался бы как выделенный.
+ */
 export function TabBonusIcon({ filled }: { filled: boolean }) {
   return (
     <TabHex filled={filled}>
-      <path d="M8.3 10.3h7.4L12 16Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path
+        d="M13.7 10.2c0-.8-.76-1.4-1.7-1.4s-1.7.6-1.7 1.4.76 1.4 1.7 1.4 1.7.6 1.7 1.4-.76 1.4-1.7 1.4-1.7-.6-1.7-1.4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Черта выходит за края петель — без неё символ читается как «S». */}
+      <path d="M12 7.9v7.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </TabHex>
   );
 }
