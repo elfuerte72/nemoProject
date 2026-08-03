@@ -1090,6 +1090,77 @@ select.input {
   }
 }
 
+/* ── Разговор с клиентом ─────────────────────────────────────────── */
+
+/*
+ * Лента и карточка того, с кем разговор. Лента растяжимая, но не во всю
+ * ширину окна: строку в полтора экрана читать тяжелее короткой, и
+ * ограничивает её сам пузырь. Карточка фиксированная — в ней подписи и
+ * короткие значения, и от ширины окна они не выигрывают.
+ */
+.talk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Карточка не уезжает с лентой: разговор длинный, а «кто это» нужно
+   на любом его месте. */
+.who {
+  position: sticky;
+  top: 24px;
+}
+
+.who__link {
+  color: var(--gold-light);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.who__link:hover {
+  color: #f0ddb4;
+}
+
+/* Значение, которое забирают целиком. Подпись «копировать» появляется
+   при наведении: она подсказка, а не часть значения. */
+.copy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.copy__mark {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.copy:hover .copy__mark,
+.copy:focus-visible .copy__mark {
+  opacity: 1;
+}
+
+@media (max-width: 1100px) {
+  .talk {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .who {
+    position: static;
+    order: -1;
+  }
+}
+
 /* ── Диалоговое окно переписки ───────────────────────────────────── */
 
 /*
@@ -1112,7 +1183,9 @@ select.input {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-width: 76%;
+  /* Доля от ленты, но не шире строки, которую читают за один взгляд:
+     на широком экране 76% — это полтора экрана текста в строку. */
+  max-width: min(76%, 620px);
   padding: 12px 14px;
   border-radius: 14px;
   font-size: 14px;

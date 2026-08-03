@@ -31,7 +31,12 @@ import {
   updateCardApplicationStatus,
   type UpdateCardApplicationInput,
 } from './card-applications.js';
-import { getClient, registerClient, type RegisterClientInput } from './clients.js';
+import {
+  getClient,
+  getClientCard,
+  registerClient,
+  type RegisterClientInput,
+} from './clients.js';
 import type { CoreConfig } from './context.js';
 import {
   expireUnpaidExchangeRequests,
@@ -129,6 +134,8 @@ export function createCore(ctx: CoreConfig) {
   return {
     registerClient: (input: RegisterClientInput) => registerClient(ctx, input),
     getClient: (actor: Actor) => getClient(ctx, actor),
+    /** Карточка клиента для сотрудника: с кем идёт разговор. */
+    getClientCard: (actor: Actor, clientId: bigint) => getClientCard(ctx, actor, clientId),
 
     getExchangeTerms: () => getExchangeTerms(ctx),
     getQuote: (input: QuoteInput) => getQuote(ctx, input),
@@ -288,6 +295,7 @@ export { createDatabase, type Database } from '@nemo/db';
 export type { Actor } from './actor.js';
 export type { CoreConfig } from './context.js';
 export type {
+  ClientCardView,
   ClientView,
   RegisterClientInput,
   RegisterClientResult,
