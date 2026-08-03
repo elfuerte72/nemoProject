@@ -72,6 +72,17 @@ export interface WithdrawalTransitionResult {
   readonly notifications: readonly Notification[];
 }
 
+/**
+ * Та же заявка в очереди менеджера — с ником клиента.
+ *
+ * Ник не поле заявки, а подпись к ней: в очереди из десятка строк
+ * «клиент 379336096» не отличается от соседнего номера. Клиенту это
+ * представление не отдаётся — свой ник он и так знает.
+ */
+export type ManagerWithdrawalView = WithdrawalRequestView & {
+  readonly clientUsername: string | null;
+};
+
 type WithdrawalRow = typeof withdrawalRequests.$inferSelect;
 
 /** Состояния, в которых заявка ещё занимает баллы клиента. */
@@ -226,14 +237,15 @@ export async function listWithdrawalRequests(
 export async function listWithdrawalQueue(
   ctx: CoreConfig,
   actor: Actor,
-): Promise<readonly WithdrawalRequestView[]> {
+): Promise<readonly ManagerWithdrawalView[]> {
   requireStaff(actor);
   const rows = await ctx.db
-    .select()
+    .select({ request: withdrawalRequests, username: clients.username })
     .from(withdrawalRequests)
+    .innerJoin(clients, eq(clients.telegramUserId, withdrawalRequests.clientId))
     .where(inArray(withdrawalRequests.status, OPEN_STATUSES))
     .orderBy(desc(withdrawalRequests.createdAt));
-  return rows.map(toView);
+  return rows.map((row) => ({ ...toView(row.request), clientUsername: row.username }));
 }
 
 async function lockWithdrawal(

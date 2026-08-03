@@ -91,13 +91,13 @@ export function getBot(): Bot {
     // через эту команду: привязка выполняется там, где
     // `telegram_user_id` подтверждён подписью initData. Здесь он ничем
     // не подтверждён.
-    await ctx.reply(await getCore().getTextTemplate('bot_greeting'), {
+    await ctx.reply(getCore().getBotText('greeting'), {
       reply_markup: menu,
     });
   }
 
   async function support(ctx: Context): Promise<void> {
-    await ctx.reply(await getCore().getTextTemplate('bot_support'), WITHOUT_OLD_KEYBOARD);
+    await ctx.reply(getCore().getBotText('support'), WITHOUT_OLD_KEYBOARD);
   }
 
   bot.command('start', greet);
@@ -299,7 +299,7 @@ async function sendReferralLink(ctx: Context): Promise<void> {
   // целиком, и знакомый должен увидеть её глазами, а не разбирать, где
   // в тексте нажимать.
   await ctx.reply(
-    `${await getCore().getTextTemplate('bot_referral')}\n${link}`,
+    `${getCore().getBotText('referral')}\n${link}`,
     WITHOUT_OLD_KEYBOARD,
   );
 }

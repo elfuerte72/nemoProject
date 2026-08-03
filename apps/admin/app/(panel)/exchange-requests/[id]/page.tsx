@@ -30,10 +30,9 @@ export default async function RequestPage({
    * стоило бы. Всё остальное пробрасывается: отказавшая база — как раз
    * авария, и прятать её за «не найдено» значит её потерять.
    */
-  const [request, events, templates] = await Promise.all([
+  const [request, events] = await Promise.all([
     core.getExchangeRequestForStaff(actor, id),
     core.listExchangeRequestEvents(actor, id),
-    core.listTextTemplates(actor),
   ]).catch((error: unknown) => {
     if (error instanceof CoreError && error.code === 'not-found') {
       notFound();
@@ -41,11 +40,32 @@ export default async function RequestPage({
     throw error;
   });
 
+  /*
+   * Карточка клиента — вторым запросом, а не полем заявки: она нужна
+   * менеджеру на экране, но к самой сделке отношения не имеет, и
+   * заявка, таскающая профиль клиента, начала бы расходиться с ним.
+   * Клиента может не быть: заявку подаёт тот, кто уже завёлся, но
+   * запись могли и удалить.
+   */
+  const card = await core.getClientCard(actor, request.clientId).catch((error: unknown) => {
+    if (error instanceof CoreError && error.code === 'not-found') return null;
+    throw error;
+  });
+
   return (
     <ExchangeRequestCard
       request={{ ...request, clientId: request.clientId.toString() }}
       events={events}
-      templates={templates.filter((one) => one.scope === 'payment')}
+      client={
+        card
+          ? {
+              ...card,
+              telegramUserId: card.telegramUserId.toString(),
+              referrerId: card.referrerId?.toString() ?? null,
+              createdAt: card.createdAt.toISOString(),
+            }
+          : null
+      }
       viewerStaffId={actor.staffId}
     />
   );

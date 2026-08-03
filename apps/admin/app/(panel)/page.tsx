@@ -94,18 +94,34 @@ function ExchangeRequestList({
               четыре слова текста тридцать раз подряд менеджеру незачем.
             */}
             <Link href={`/exchange-requests/${request.id}`} className="table__row">
+              {/*
+                Обе стороны сделки: сумма к выдаче посчитана при подаче
+                по курсу заявки — это то самое число, которое увидел
+                клиент. У наличной заявки его нет: курс называет
+                менеджер.
+              */}
               <span className="cell cell--num">
                 <span className="cell__label">Обмен</span>
                 <span className="cell__value">
-                  {formatAmount(request.fromAmount)} {request.fromCode} → {request.toCode}
+                  {formatAmount(request.fromAmount)} {request.fromCode} →{' '}
+                  {request.toAmount ? `${formatAmount(request.toAmount)} ` : ''}
+                  {request.toCode}
                 </span>
               </span>
               <span className="cell">
                 <span className="cell__label">Вид</span>
                 <span className="cell__note">{KIND_LABELS[request.kind]}</span>
               </span>
+              {/*
+                Ник сверху, номер под ним: в очереди из десятка строк
+                номера отличаются друг от друга только цифрами в
+                середине, а ник читается сразу.
+              */}
               <span className="cell">
                 <span className="cell__label">Клиент</span>
+                <span className="cell__value">
+                  {request.clientUsername ? `@${request.clientUsername}` : 'Без ника'}
+                </span>
                 <span className="cell__note">{request.clientId.toString()}</span>
               </span>
               <span className="cell">

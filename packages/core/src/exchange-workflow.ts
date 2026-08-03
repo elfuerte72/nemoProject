@@ -1,5 +1,5 @@
 import { asc, eq, inArray } from 'drizzle-orm';
-import { currencies, exchangeRequestEvents, exchangeRequests } from '@nemo/db';
+import { clients, currencies, exchangeRequestEvents, exchangeRequests } from '@nemo/db';
 import {
   canTransition,
   exchangeRequestStatuses,
@@ -45,6 +45,12 @@ export interface ManagerExchangeRequestView extends ExchangeRequestView {
   readonly assignedManagerId: string | null;
   readonly serviceIncome: Amount | null;
   readonly serviceIncomeCode: string | null;
+  /**
+   * Ник клиента. Не поле заявки, а подпись к ней: в очереди из десятка
+   * строк «клиент 379336096» не отличается от соседнего номера, а
+   * «@elfuertue» отличается.
+   */
+  readonly clientUsername: string | null;
 }
 
 export interface ExchangeRequestEventView {
@@ -86,12 +92,16 @@ const IN_PROGRESS_STATUSES = exchangeRequestStatuses.filter(
   (status) => status !== 'new' && exchangeRequestTransitions[status].length > 0,
 );
 
-export function toManagerView(row: ExchangeRequestRow): ManagerExchangeRequestView {
+export function toManagerView(
+  row: ExchangeRequestRow,
+  clientUsername: string | null = null,
+): ManagerExchangeRequestView {
   return {
     ...toExchangeRequestView(row),
     assignedManagerId: row.assignedManagerId,
     serviceIncome: row.serviceIncome === null ? null : Money.toAmount(row.serviceIncome),
     serviceIncomeCode: row.serviceIncomeCode,
+    clientUsername,
   };
 }
 
@@ -245,11 +255,12 @@ export async function listExchangeRequestQueue(
 ): Promise<readonly ManagerExchangeRequestView[]> {
   requireStaff(actor);
   const rows = await ctx.db
-    .select()
+    .select({ request: exchangeRequests, username: clients.username })
     .from(exchangeRequests)
+    .innerJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
     .where(eq(exchangeRequests.status, 'new'))
     .orderBy(asc(exchangeRequests.createdAt));
-  return rows.map(toManagerView);
+  return rows.map((row) => toManagerView(row.request, row.username));
 }
 
 /**
@@ -266,11 +277,12 @@ export async function listExchangeRequestsInProgress(
 ): Promise<readonly ManagerExchangeRequestView[]> {
   requireStaff(actor);
   const rows = await ctx.db
-    .select()
+    .select({ request: exchangeRequests, username: clients.username })
     .from(exchangeRequests)
+    .innerJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
     .where(inArray(exchangeRequests.status, IN_PROGRESS_STATUSES))
     .orderBy(asc(exchangeRequests.createdAt));
-  return rows.map(toManagerView);
+  return rows.map((row) => toManagerView(row.request, row.username));
 }
 
 export async function getExchangeRequestForStaff(
@@ -280,14 +292,15 @@ export async function getExchangeRequestForStaff(
 ): Promise<ManagerExchangeRequestView> {
   requireStaff(actor);
   const [row] = await ctx.db
-    .select()
+    .select({ request: exchangeRequests, username: clients.username })
     .from(exchangeRequests)
+    .innerJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
     .where(eq(exchangeRequests.id, requestId))
     .limit(1);
   if (!row) {
     throw new NotFoundError('Заявка на обмен не найдена');
   }
-  return toManagerView(row);
+  return toManagerView(row.request, row.username);
 }
 
 export async function listExchangeRequestEvents(
