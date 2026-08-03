@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
-import { createCore } from './index.js';
+import { createCore, ForbiddenError, NotFoundError } from './index.js';
+import { asClient, givenStaff } from './test-support.js';
 
 /**
  * Регистрация клиента и реферальная привязка.
@@ -151,5 +152,42 @@ describe('уведомления о реферале', () => {
     const { notifications } = await core.registerClient({ telegramUserId: 100n });
 
     expect(notifications).toEqual([]);
+  });
+});
+
+describe('карточка клиента для сотрудника', () => {
+  it('называет ник и того, кто привёл: с кем идёт разговор', async () => {
+    const manager = await givenStaff({ displayName: 'Пётр' });
+    const referrer = await core.registerClient({
+      telegramUserId: 100n,
+      username: 'ivan_p',
+    });
+    await core.registerClient({
+      telegramUserId: 200n,
+      username: 'maria_k',
+      referralCode: referrer.client.referralCode,
+    });
+
+    const card = await core.getClientCard(manager, 200n);
+
+    expect(card).toMatchObject({
+      telegramUserId: 200n,
+      username: 'maria_k',
+      referrerId: 100n,
+      referrerUsername: 'ivan_p',
+    });
+  });
+
+  it('не даётся клиенту: чужой профиль читает только сотрудник', async () => {
+    await core.registerClient({ telegramUserId: 100n });
+    await core.registerClient({ telegramUserId: 200n });
+
+    await expect(core.getClientCard(asClient(200n), 100n)).rejects.toThrow(ForbiddenError);
+  });
+
+  it('отказывает по незнакомому номеру, а не выдумывает пустую карточку', async () => {
+    const manager = await givenStaff({ displayName: 'Пётр' });
+
+    await expect(core.getClientCard(manager, 999n)).rejects.toThrow(NotFoundError);
   });
 });
