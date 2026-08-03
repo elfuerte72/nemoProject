@@ -72,7 +72,7 @@ function ExchangeRequestList({
 
   return (
     <>
-      <div className="table__head table--exchange">
+      <div aria-hidden className="table__head table--exchange">
         <span>Обмен</span>
         <span>Вид</span>
         <span>Клиент</span>
@@ -94,23 +94,28 @@ function ExchangeRequestList({
               четыре слова текста тридцать раз подряд менеджеру незачем.
             */}
             <Link href={`/exchange-requests/${request.id}`} className="table__row">
-              <span className="cell cell--num" data-label="Обмен">
+              <span className="cell cell--num">
+                <span className="cell__label">Обмен</span>
                 <span className="cell__value">
                   {formatAmount(request.fromAmount)} {request.fromCode} → {request.toCode}
                 </span>
               </span>
-              <span className="cell" data-label="Вид">
+              <span className="cell">
+                <span className="cell__label">Вид</span>
                 <span className="cell__note">{KIND_LABELS[request.kind]}</span>
               </span>
-              <span className="cell" data-label="Клиент">
+              <span className="cell">
+                <span className="cell__label">Клиент</span>
                 <span className="cell__note">{request.clientId.toString()}</span>
               </span>
-              <span className="cell" data-label="Состояние">
+              <span className="cell">
+                <span className="cell__label">Состояние</span>
                 <span className={pillClass(STATUS_TONES[request.status])}>
                   {STATUS_LABELS[request.status]}
                 </span>
               </span>
-              <span className="cell cell--num" data-label="Подана">
+              <span className="cell cell--num">
+                <span className="cell__label">Подана</span>
                 <span className="cell__note">
                   <Moment at={request.createdAt.toISOString()} />
                 </span>

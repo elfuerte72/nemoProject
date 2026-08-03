@@ -34,10 +34,12 @@ export default async function WithdrawalsPage() {
       {/*
         `clientId` — bigint, и в клиентский компонент он не переезжает:
         сериализация серверных компонентов его не переносит. Время едет
-        строкой: показать его должен браузер, в своих часах.
+        строкой: показать его должен браузер, в своих часах. Дата
+        выплаты не едет вовсе — в этом списке заявок, по которым уже
+        заплатили, не бывает.
       */}
       <WithdrawalList
-        requests={requests.map((request) => ({
+        requests={requests.map(({ paidAt: _paidAt, ...request }) => ({
           ...request,
           clientId: request.clientId.toString(),
           createdAt: request.createdAt.toISOString(),

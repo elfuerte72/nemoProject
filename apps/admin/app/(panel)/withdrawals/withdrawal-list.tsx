@@ -91,7 +91,7 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
         </p>
       ) : undefined}
 
-      <div className="table__head table--withdrawals">
+      <div aria-hidden className="table__head table--withdrawals">
         <span>Сумма</span>
         <span>Клиент</span>
         <span>Куда</span>
@@ -109,14 +109,16 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
               className={waiting ? 'table__item table__item--fresh' : 'table__item table__item--settled'}
             >
               <div className="table__row">
-                <span className="cell cell--num" data-label="Сумма">
+                <span className="cell cell--num">
+                  <span className="cell__label">Сумма</span>
                   <span className="cell__value">{formatAmount(request.amount)} баллов</span>
                   <span className="cell__note">
                     подана <Moment at={request.createdAt} mode="day" />
                   </span>
                 </span>
 
-                <span className="cell" data-label="Клиент">
+                <span className="cell">
+                  <span className="cell__label">Клиент</span>
                   <span className="cell__value">{request.clientId}</span>
                 </span>
 
@@ -125,7 +127,8 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
                   перевод не в ту сеть не возвращается, и увидеть её
                   менеджер должен до того, как откроет адрес.
                 */}
-                <span className="cell" data-label="Куда">
+                <span className="cell">
+                  <span className="cell__label">Куда</span>
                   <span className="cell__value">
                     {WITHDRAWAL_METHOD_LABELS[request.method]}
                     {request.network ? ` · ${request.network}` : ''}
@@ -135,13 +138,15 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
                   </span>
                 </span>
 
-                <span className="cell" data-label="Состояние">
+                <span className="cell">
+                  <span className="cell__label">Состояние</span>
                   <span className={pillClass(WITHDRAWAL_STATUS_TONES[request.status])}>
                     {WITHDRAWAL_STATUS_LABELS[request.status]}
                   </span>
                 </span>
 
-                <span className="cell cell--actions" data-label="Что сделать">
+                <span className="cell cell--actions">
+                  <span className="cell__label">Что сделать</span>
                   {destinations[request.id] === undefined ? (
                     <button
                       type="button"
@@ -170,11 +175,18 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
                     перевода, а не вместо него. Само списание — вторым
                     нажатием, в раскрытой части строки.
                   */}
+                  {/*
+                    Кнопка не гасится открытым подтверждением: погашенная
+                    теряет фокус, и работающий с клавиатуры после нажатия
+                    оказывается в начале страницы. Повторное нажатие
+                    открывает ту же панель — вреда от него нет.
+                  */}
                   {canTransitionWithdrawal(request.status, 'paid') ? (
                     <button
                       type="button"
                       onClick={() => setPending({ id: request.id, action: 'pay' })}
-                      disabled={busy || isPending(pending, request.id, 'pay')}
+                      disabled={busy}
+                      aria-expanded={isPending(pending, request.id, 'pay')}
                       className="btn btn--gold"
                     >
                       Выплачено
@@ -185,18 +197,14 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
                     <button
                       type="button"
                       onClick={() => setPending({ id: request.id, action: 'reject' })}
-                      disabled={busy || isPending(pending, request.id, 'reject')}
+                      disabled={busy}
+                      aria-expanded={isPending(pending, request.id, 'reject')}
                       className="btn btn--ghost btn--danger"
                     >
                       Отклонить
                     </button>
                   ) : undefined}
 
-                  {canTransitionWithdrawal(request.status, 'approved') ||
-                  canTransitionWithdrawal(request.status, 'paid') ||
-                  canTransitionWithdrawal(request.status, 'rejected') ? undefined : (
-                    <span className="cell__note">Заявка закрыта</span>
-                  )}
                 </span>
               </div>
 
@@ -241,9 +249,14 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
                       <label className="label" htmlFor={`reason-${request.id}`}>
                         Причина отказа — её увидит клиент
                       </label>
+                      {/*
+                        Курсор сразу в поле: панель открыта ради него, и
+                        без причины отказа операция всё равно откажет.
+                      */}
                       <input
                         id={`reason-${request.id}`}
                         className="input"
+                        autoFocus
                         value={reasons[request.id] ?? ''}
                         onChange={(event) =>
                           setReasons((current) => ({
@@ -259,10 +272,10 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
                           onClick={() =>
                             act(request.id, {
                               action: 'reject',
-                              reason: reasons[request.id] ?? '',
+                              reason: (reasons[request.id] ?? '').trim(),
                             })
                           }
-                          disabled={busy}
+                          disabled={busy || (reasons[request.id] ?? '').trim() === ''}
                           className="btn btn--danger"
                         >
                           Отклонить заявку
@@ -281,11 +294,12 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
                 </div>
               ) : undefined}
 
-              {request.rejectReason ? (
-                <div className="table__more">
-                  <span className="cell__note">Причина отказа: {request.rejectReason}</span>
-                </div>
-              ) : undefined}
+              {/*
+                Причина отказа здесь не показывается: отклонённая заявка
+                баллов больше не занимает и в очередь не попадает. Место
+                под текст, которого в этом списке не бывает, читается
+                как забытая ветка.
+              */}
             </li>
           );
         })}

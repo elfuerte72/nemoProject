@@ -116,7 +116,7 @@ function NavLink({ item, current }: { item: Item; current: boolean }) {
       {...(current ? { 'aria-current': 'page' as const } : {})}
       // Голосом счётчик читается как число после названия раздела и
       // ничего не значит: вслух он должен называть, чего это число.
-      {...(item.count ? { 'aria-label': `${item.label}: ${item.count} ждёт` } : {})}
+      {...(item.count ? { 'aria-label': `${item.label}, в очереди: ${item.count}` } : {})}
     >
       <span className="sidebar__icon">
         <Icon name={item.icon} />

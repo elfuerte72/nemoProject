@@ -484,6 +484,23 @@ a.row:hover {
   color: var(--text-faint);
 }
 
+/*
+ * Подпись столбца внутри самой ячейки: глазами её читают в шапке, а
+ * голосом — здесь, потому что шапка от своего столбца оторвана и
+ * прочитается отдельным набором слов. В узком окне, где шапки нет,
+ * она же становится видимой.
+ */
+.cell__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .table__item {
   border-radius: var(--radius-control);
   background: var(--surface-soft);
@@ -640,8 +657,13 @@ a.table__row:hover,
     padding: 14px 18px;
   }
 
-  .cell[data-label]::before {
-    content: attr(data-label);
+  .cell__label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
     font-size: 10.5px;
     font-weight: 600;
     letter-spacing: 1.2px;
@@ -655,7 +677,7 @@ a.table__row:hover,
   }
 
   /* Подпись — над кнопками, а не первой из них в ряду. */
-  .cell--actions[data-label]::before {
+  .cell--actions .cell__label {
     flex-basis: 100%;
   }
 

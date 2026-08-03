@@ -52,8 +52,7 @@ export function formatMoment(value: Date, now: Date, timeZone: string): string {
     return time(value, timeZone);
   }
 
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  if (day === dayKey(yesterday, timeZone)) {
+  if (day === dayBefore(today)) {
     return `вчера, ${time(value, timeZone)}`;
   }
 
@@ -81,6 +80,16 @@ function time(value: Date, timeZone: string): string {
 /** Сутки в нужном поясе — тем же способом, каким считается «сегодня». */
 function dayKey(value: Date, timeZone: string): string {
   return value.toLocaleDateString('en-CA', { timeZone });
+}
+
+/**
+ * Предыдущие сутки — по календарю, а не вычитанием суток из отметки
+ * времени: в переводящих часы поясах сутки бывают длиной 23 и 25 часов,
+ * и «минус 24 часа» попадает то во вчера, то в позавчера.
+ */
+function dayBefore(key: string): string {
+  const [year, month, day] = key.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
 }
 
 function year(value: Date, timeZone: string): string {

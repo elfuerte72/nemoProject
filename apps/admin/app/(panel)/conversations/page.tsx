@@ -91,7 +91,7 @@ function ConversationTable({
 
   return (
     <>
-      <div className="table__head table--chats">
+      <div aria-hidden className="table__head table--chats">
         <span />
         <span>Клиент</span>
         <span>Последнее сообщение</span>
@@ -117,16 +117,19 @@ function ConversationTable({
                 строка иначе становится ниже соседних, и список
                 перестаёт читаться столбцом.
               */}
-              <span className="cell" data-label="Клиент">
+              <span className="cell">
+                <span className="cell__label">Клиент</span>
                 <span className="cell__value">
                   {one.username ? `@${one.username}` : 'Без ника'}
                 </span>
                 <span className="cell__note">{one.clientId.toString()}</span>
               </span>
-              <span className="cell" data-label="Последнее сообщение">
+              <span className="cell">
+                <span className="cell__label">Последнее сообщение</span>
                 <span className="cell__note">{one.lastMessageBody ?? 'Изображение'}</span>
               </span>
-              <span className="cell" data-label="Состояние">
+              <span className="cell">
+                <span className="cell__label">Состояние</span>
                 {one.isUnanswered ? (
                   <span className="cell__value">Ждёт ответа</span>
                 ) : (
@@ -135,7 +138,8 @@ function ConversationTable({
                   </span>
                 )}
               </span>
-              <span className="cell cell--num" data-label="Когда">
+              <span className="cell cell--num">
+                <span className="cell__label">Когда</span>
                 <span className="cell__note">
                   <Moment at={one.lastMessageAt.toISOString()} />
                 </span>

@@ -79,7 +79,7 @@ export function CardList({
         </p>
       ) : undefined}
 
-      <div className="table__head table--cards">
+      <div aria-hidden className="table__head table--cards">
         <span>Клиент</span>
         <span>Подана</span>
         <span>Номер у провайдера</span>
@@ -98,42 +98,42 @@ export function CardList({
               className={waiting ? 'table__item table__item--fresh' : 'table__item table__item--settled'}
             >
               <div className="table__row">
-                <span className="cell" data-label="Клиент">
+                <span className="cell">
+                  <span className="cell__label">Клиент</span>
                   <span className="cell__value">{application.clientId}</span>
                 </span>
 
-                <span className="cell cell--num" data-label="Подана">
+                <span className="cell cell--num">
+                  <span className="cell__label">Подана</span>
                   <span className="cell__note">
                     <Moment at={application.createdAt} mode="day" />
                   </span>
                 </span>
 
                 {/*
-                  Номер у провайдера сохраняется вместе с переходом, и на
-                  заявке, которой переходить некуда, сохранить его нечем:
-                  поле, из которого набранное пропадает при обновлении
-                  страницы, хуже отсутствующего.
+                  Номер сохраняется вместе с переходом — своей кнопки у
+                  него нет. Поле доступно всегда, потому что в эту
+                  очередь попадают только заявки, которым есть куда
+                  переходить: закрытые из неё уходят.
                 */}
-                <span className="cell" data-label="Номер у провайдера">
-                  {transitions.length > 0 ? (
-                    <input
-                      className="input"
-                      value={references[application.id] ?? application.providerReference ?? ''}
-                      onChange={(event) =>
-                        setReferences((current) => ({
-                          ...current,
-                          [application.id]: event.target.value,
-                        }))
-                      }
-                      placeholder="Номер у провайдера"
-                      aria-label={`Номер заявки клиента ${application.clientId} у провайдера`}
-                    />
-                  ) : (
-                    <span className="cell__note">{application.providerReference ?? '—'}</span>
-                  )}
+                <span className="cell">
+                  <span className="cell__label">Номер у провайдера</span>
+                  <input
+                    className="input"
+                    value={references[application.id] ?? application.providerReference ?? ''}
+                    onChange={(event) =>
+                      setReferences((current) => ({
+                        ...current,
+                        [application.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="Номер у провайдера"
+                    aria-label={`Номер заявки клиента ${application.clientId} у провайдера`}
+                  />
                 </span>
 
-                <span className="cell" data-label="Состояние">
+                <span className="cell">
+                  <span className="cell__label">Состояние</span>
                   <span className={pillClass(CARD_STATUS_TONES[application.status])}>
                     {CARD_STATUS_LABELS[application.status]}
                   </span>
@@ -144,34 +144,35 @@ export function CardList({
                   приходит от провайдера, и менеджер переносит сюда то, что
                   тот сообщил, — выбирать из полного списка ему незачем.
                 */}
-                <span className="cell cell--actions" data-label="Перевести в">
-                  {transitions.length === 0 ? (
-                    <span className="cell__note">Заявка закрыта</span>
-                  ) : (
-                    transitions.map((next) =>
-                      next === 'rejected' ? (
-                        <button
-                          key={next}
-                          type="button"
-                          onClick={() => setRejecting(application.id)}
-                          disabled={busy || rejecting === application.id}
-                          className="btn btn--ghost btn--danger"
-                        >
-                          {CARD_STATUS_LABELS[next]}
-                        </button>
-                      ) : (
-                        <button
-                          key={next}
-                          type="button"
-                          onClick={() => update(application.id, next)}
-                          disabled={busy}
-                          className="btn btn--soft"
-                          aria-label={`Перевести заявку клиента ${application.clientId} в состояние «${CARD_STATUS_LABELS[next]}»`}
-                        >
-                          {CARD_STATUS_LABELS[next]}
-                        </button>
-                      ),
-                    )
+                <span className="cell cell--actions">
+                  <span className="cell__label">Перевести в</span>
+                  {transitions.map((next) =>
+                    next === 'rejected' ? (
+                      // Кнопка не гасится открытым подтверждением:
+                      // погашенная теряет фокус, и работающий с
+                      // клавиатуры оказывается в начале страницы.
+                      <button
+                        key={next}
+                        type="button"
+                        onClick={() => setRejecting(application.id)}
+                        disabled={busy}
+                        aria-expanded={rejecting === application.id}
+                        className="btn btn--ghost btn--danger"
+                      >
+                        {CARD_STATUS_LABELS[next]}
+                      </button>
+                    ) : (
+                      <button
+                        key={next}
+                        type="button"
+                        onClick={() => update(application.id, next)}
+                        disabled={busy}
+                        className="btn btn--soft"
+                        aria-label={`Перевести заявку клиента ${application.clientId} в состояние «${CARD_STATUS_LABELS[next]}»`}
+                      >
+                        {CARD_STATUS_LABELS[next]}
+                      </button>
+                    ),
                   )}
                 </span>
               </div>
