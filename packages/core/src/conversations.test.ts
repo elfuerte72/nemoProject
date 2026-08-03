@@ -153,6 +153,12 @@ describe('список обращений', () => {
     expect(await core.countUnansweredConversations(manager)).toBe(1);
   });
 
+  it('не называет ответившего, пока разговор ждёт ответа', async () => {
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Вопрос' });
+
+    expect((await core.listConversations(manager))[0]?.lastAuthorName).toBeNull();
+  });
+
   it('перестаёт считать после ответа', async () => {
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'Вопрос' });
     await core.replyToClient(manager, { clientId: 100n, body: 'Ответ' });
@@ -161,6 +167,13 @@ describe('список обращений', () => {
 
     expect(conversation?.isUnanswered).toBe(false);
     expect(await core.countUnansweredConversations(manager)).toBe(0);
+  });
+
+  it('называет ответившего: очередь общая, и разобранное отличается от нетронутого', async () => {
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Вопрос' });
+    await core.replyToClient(manager, { clientId: 100n, body: 'Ответ' });
+
+    expect((await core.listConversations(manager))[0]?.lastAuthorName).toBe('Пётр');
   });
 
   it('считает снова, если клиент написал после ответа', async () => {

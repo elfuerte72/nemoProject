@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { CardApplicationView } from '@nemo/core';
 import { cardApplicationTransitions } from '@nemo/types';
 import { CARD_STATUS_LABELS, CARD_STATUS_TONES, pillClass } from '@/lib/labels';
+import { Moment } from '@/app/ui/moment';
 
 /**
  * Заявки на виртуальную карту.
@@ -14,7 +15,15 @@ import { CARD_STATUS_LABELS, CARD_STATUS_TONES, pillClass } from '@/lib/labels';
  * отказывает операция, — своя копия правил разошлась бы с ядром молча.
  */
 
-type CardApplicationForDisplay = Omit<CardApplicationView, 'clientId'> & { clientId: string };
+/**
+ * Клиент — bigint, время — Date: ни то, ни другое не переезжает в
+ * клиентский компонент само. Строку разбирает уже браузер, и время он
+ * покажет в своих часах, а не в серверных.
+ */
+type CardApplicationForDisplay = Omit<CardApplicationView, 'clientId' | 'createdAt'> & {
+  clientId: string;
+  createdAt: string;
+};
 
 export function CardList({
   applications,
@@ -25,6 +34,8 @@ export function CardList({
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [references, setReferences] = useState<Record<string, string>>({});
+  /** Заявка, по которой нажат отказ и ещё не подтверждён. */
+  const [rejecting, setRejecting] = useState<string>();
 
   async function update(id: string, status: string): Promise<void> {
     setError(undefined);
@@ -43,6 +54,7 @@ export function CardList({
         setError(payload.error ?? 'Действие не выполнено');
         return;
       }
+      setRejecting(undefined);
       router.refresh();
     } catch {
       setError('Не удалось связаться с сервером. Повторите попытку.');
@@ -52,73 +64,150 @@ export function CardList({
   }
 
   if (applications.length === 0) {
-    return <p className="empty">Заявок на карту нет.</p>;
+    return (
+      <p className="empty">
+        Заявок на карту нет. Здесь появятся те, что клиенты подадут из приложения.
+      </p>
+    );
   }
 
   return (
     <>
-      {error ? <p className="error">{error}</p> : undefined}
-      <ul className="rows">
+      {error ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : undefined}
+
+      <div className="table__head table--cards">
+        <span>Клиент</span>
+        <span>Подана</span>
+        <span>Номер у провайдера</span>
+        <span>Состояние</span>
+        <span>Перевести в</span>
+      </div>
+
+      <ul className="table table--cards">
         {applications.map((application) => {
           const transitions = cardApplicationTransitions[application.status];
+          const waiting = CARD_STATUS_TONES[application.status] === 'wait';
 
           return (
-          <li key={application.id} className="row row--stack">
-            <div className="row__side" style={{ justifyContent: 'space-between' }}>
-              <div className="row__main">
-                <span className="row__title">Клиент {application.clientId}</span>
-                <span className="row__meta">
-                  подана {new Date(application.createdAt).toLocaleDateString('ru-RU')}
-                  {application.providerReference
-                    ? ` · у провайдера ${application.providerReference}`
-                    : ''}
+            <li
+              key={application.id}
+              className={waiting ? 'table__item table__item--fresh' : 'table__item table__item--settled'}
+            >
+              <div className="table__row">
+                <span className="cell" data-label="Клиент">
+                  <span className="cell__value">{application.clientId}</span>
+                </span>
+
+                <span className="cell cell--num" data-label="Подана">
+                  <span className="cell__note">
+                    <Moment at={application.createdAt} mode="day" />
+                  </span>
+                </span>
+
+                {/*
+                  Номер у провайдера сохраняется вместе с переходом, и на
+                  заявке, которой переходить некуда, сохранить его нечем:
+                  поле, из которого набранное пропадает при обновлении
+                  страницы, хуже отсутствующего.
+                */}
+                <span className="cell" data-label="Номер у провайдера">
+                  {transitions.length > 0 ? (
+                    <input
+                      className="input"
+                      value={references[application.id] ?? application.providerReference ?? ''}
+                      onChange={(event) =>
+                        setReferences((current) => ({
+                          ...current,
+                          [application.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Номер у провайдера"
+                      aria-label={`Номер заявки клиента ${application.clientId} у провайдера`}
+                    />
+                  ) : (
+                    <span className="cell__note">{application.providerReference ?? '—'}</span>
+                  )}
+                </span>
+
+                <span className="cell" data-label="Состояние">
+                  <span className={pillClass(CARD_STATUS_TONES[application.status])}>
+                    {CARD_STATUS_LABELS[application.status]}
+                  </span>
+                </span>
+
+                {/*
+                  Кнопка на каждый доступный переход: состояние заявки
+                  приходит от провайдера, и менеджер переносит сюда то, что
+                  тот сообщил, — выбирать из полного списка ему незачем.
+                */}
+                <span className="cell cell--actions" data-label="Перевести в">
+                  {transitions.length === 0 ? (
+                    <span className="cell__note">Заявка закрыта</span>
+                  ) : (
+                    transitions.map((next) =>
+                      next === 'rejected' ? (
+                        <button
+                          key={next}
+                          type="button"
+                          onClick={() => setRejecting(application.id)}
+                          disabled={busy || rejecting === application.id}
+                          className="btn btn--ghost btn--danger"
+                        >
+                          {CARD_STATUS_LABELS[next]}
+                        </button>
+                      ) : (
+                        <button
+                          key={next}
+                          type="button"
+                          onClick={() => update(application.id, next)}
+                          disabled={busy}
+                          className="btn btn--soft"
+                          aria-label={`Перевести заявку клиента ${application.clientId} в состояние «${CARD_STATUS_LABELS[next]}»`}
+                        >
+                          {CARD_STATUS_LABELS[next]}
+                        </button>
+                      ),
+                    )
+                  )}
                 </span>
               </div>
-              <span className={pillClass(CARD_STATUS_TONES[application.status])}>
-                {CARD_STATUS_LABELS[application.status]}
-              </span>
-            </div>
 
-            <div className="row__actions">
               {/*
-                Номер у провайдера сохраняется вместе с переходом, и на
-                заявке, которой переходить некуда, сохранить его нечем:
-                поле, из которого набранное пропадает при обновлении
-                страницы, хуже отсутствующего. Проставленный номер при
-                этом виден строкой выше.
+                Отказ подтверждается вторым нажатием: он необратим и
+                уходит клиенту уведомлением, а кнопка стоит в одном ряду
+                с рабочими переходами.
               */}
-              {transitions.length > 0 ? (
-                <input
-                  className="input"
-                  style={{ flex: 1, minWidth: '14rem' }}
-                  value={references[application.id] ?? application.providerReference ?? ''}
-                  onChange={(event) =>
-                    setReferences((current) => ({
-                      ...current,
-                      [application.id]: event.target.value,
-                    }))
-                  }
-                  placeholder="Номер заявки у провайдера"
-                />
+              {rejecting === application.id ? (
+                <div className="table__more">
+                  <p className="muted">
+                    Отклонить заявку клиента {application.clientId}? Клиент получит уведомление, и
+                    вернуть заявку в работу будет нельзя.
+                  </p>
+                  <div className="row__actions">
+                    <button
+                      type="button"
+                      onClick={() => update(application.id, 'rejected')}
+                      disabled={busy}
+                      className="btn btn--danger"
+                    >
+                      Да, отклонить
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRejecting(undefined)}
+                      disabled={busy}
+                      className="btn btn--ghost"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
               ) : undefined}
-              {/*
-                Кнопка на каждый доступный переход: состояние заявки
-                приходит от провайдера, и менеджер переносит сюда то, что
-                тот сообщил, — выбирать из полного списка ему незачем.
-              */}
-              {transitions.map((next) => (
-                <button
-                  key={next}
-                  type="button"
-                  onClick={() => update(application.id, next)}
-                  disabled={busy}
-                  className={next === 'rejected' ? 'btn btn--danger' : 'btn btn--soft'}
-                >
-                  {CARD_STATUS_LABELS[next]}
-                </button>
-              ))}
-            </div>
-          </li>
+            </li>
           );
         })}
       </ul>

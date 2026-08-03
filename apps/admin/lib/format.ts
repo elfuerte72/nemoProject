@@ -31,3 +31,58 @@ export function formatAmount(value: string): string {
 export function formatMoney(value: string, code: string): string {
   return `${formatAmount(value)} ${code}`;
 }
+
+/**
+ * Когда это было — так, как о времени говорят.
+ *
+ * Очередь читают сверху вниз и в первую очередь ищут сегодняшнее:
+ * «03.08.2026, 05:45:46» отвечает на вопрос «какого числа», а менеджер
+ * спрашивает «давно ли». Поэтому сегодняшнее — время, вчерашнее —
+ * словом, остальное — датой; год добавляется, только если он не этот.
+ *
+ * Часовой пояс передаётся явно: панель рисуется на сервере, а сервер
+ * живёт в UTC, и без него менеджеру показывалось бы время, которого на
+ * его часах не было.
+ */
+export function formatMoment(value: Date, now: Date, timeZone: string): string {
+  const day = dayKey(value, timeZone);
+  const today = dayKey(now, timeZone);
+
+  if (day === today) {
+    return time(value, timeZone);
+  }
+
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  if (day === dayKey(yesterday, timeZone)) {
+    return `вчера, ${time(value, timeZone)}`;
+  }
+
+  return formatDay(value, now, timeZone);
+}
+
+/**
+ * Дата без времени: для того, что случается однажды, — заявка подана,
+ * сотрудник заведён. Час подачи в очереди не работа, а шум.
+ */
+export function formatDay(value: Date, now: Date, timeZone: string): string {
+  const sameYear = year(value, timeZone) === year(now, timeZone);
+  return value.toLocaleDateString('ru-RU', {
+    timeZone,
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
+
+function time(value: Date, timeZone: string): string {
+  return value.toLocaleTimeString('ru-RU', { timeZone, hour: '2-digit', minute: '2-digit' });
+}
+
+/** Сутки в нужном поясе — тем же способом, каким считается «сегодня». */
+function dayKey(value: Date, timeZone: string): string {
+  return value.toLocaleDateString('en-CA', { timeZone });
+}
+
+function year(value: Date, timeZone: string): string {
+  return value.toLocaleDateString('en-CA', { timeZone, year: 'numeric' });
+}

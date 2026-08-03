@@ -21,7 +21,7 @@ export default async function WithdrawalsPage() {
   const requests = await getCore().listWithdrawalQueue(actor);
 
   return (
-    <main className="page page--narrow">
+    <main className="page page--wide">
       <header className="page__head">
         <div>
           <h1 className="page__title">Заявки на вывод</h1>
@@ -29,17 +29,18 @@ export default async function WithdrawalsPage() {
             Баллы списываются отметкой о выплате — ставьте её после перевода, а не до.
           </p>
         </div>
-        <span className="section__count">{requests.length}</span>
       </header>
 
       {/*
         `clientId` — bigint, и в клиентский компонент он не переезжает:
-        сериализация серверных компонентов его не переносит.
+        сериализация серверных компонентов его не переносит. Время едет
+        строкой: показать его должен браузер, в своих часах.
       */}
       <WithdrawalList
         requests={requests.map((request) => ({
           ...request,
           clientId: request.clientId.toString(),
+          createdAt: request.createdAt.toISOString(),
         }))}
       />
     </main>
