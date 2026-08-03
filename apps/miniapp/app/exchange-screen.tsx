@@ -289,7 +289,13 @@ export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
     if (!quote) return null;
     const parsed = Money.amountSchema.safeParse(parseAmount(amount));
     if (!parsed.success || Money.isNegative(parsed.data)) return null;
-    return Money.multiply(parsed.data, quote.rate);
+    /*
+     * Вниз до целого — тем же правилом, что и `roundPayout` в ядре.
+     * Своей копией, а не импортом: за `@nemo/core` в браузер приехал бы
+     * драйвер базы. Разойтись они не должны, и проверяет это не типаж, а
+     * то, что обе стороны считают одной и той же `Money`.
+     */
+    return Money.floor(Money.multiply(parsed.data, quote.rate));
   }, [quote, amount]);
 
   /** Развернуть направление можно, только если обратное вообще меняют. */

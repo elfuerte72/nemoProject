@@ -82,6 +82,20 @@ function applyMarkup(rate: Amount, markupBps: number): Amount {
 const MAX_ROUNDING_BPS = 200;
 
 /**
+ * Убрать у числа хвост, оставшийся от деления.
+ *
+ * Курс мельче единицы хранится как частное, и обратное деление
+ * возвращает не 85, а 85,0000000000000012. Округление вверх принимает
+ * этот хвост за настоящую дробь и перескакивает на 86 — курс теряет
+ * лишний процент, которого никто не закладывал. Девяти знаков хватает:
+ * настоящая дробная часть курса крупнее их на порядки, а шум деления
+ * мельче.
+ */
+function withoutDivisionTail(value: Amount): Amount {
+  return Money.toAmount(Money.format(value, 9));
+}
+
+/**
  * Курс до целого — и клиенту, и менеджеру.
  *
  * Число вида «81,487204 ₽ за 1 USDT» не читается и не проверяется в
@@ -113,7 +127,7 @@ function roundRate(rate: Amount): Amount {
         Money.floor(rate)
       : // Курс мельче единицы: крупная сторона — обратная. Её округление
         // вверх означает, что за единицу получаемого клиент отдаёт больше.
-        Money.divide(one, Money.ceil(Money.divide(one, rate)));
+        Money.divide(one, Money.ceil(withoutDivisionTail(Money.divide(one, rate))));
 
   if (Money.isZero(rounded)) return rate;
 
@@ -130,6 +144,23 @@ function roundRate(rate: Amount): Amount {
    */
   const shift = Money.subtract(rate, rounded);
   return Money.compare(shift, Money.percentOf(rate, MAX_ROUNDING_BPS)) > 0 ? rate : rounded;
+}
+
+/**
+ * Сколько клиент получит — целым числом единиц.
+ *
+ * Дробный хвост здесь не точность, а помеха: «588,23529411 USDT»
+ * читается хуже, чем «588», и ни клиенту, ни менеджеру эти знаки ничего
+ * не сообщают. Как и у курса, округляется не показ, а сама величина:
+ * она уходит в заявку и по ней выдают деньги, а число на экране,
+ * разошедшееся с выплатой, — худшее из возможного.
+ *
+ * Вниз, а не к ближайшему: вверх сервис выдавал бы больше, чем купил.
+ * Хвост при этом остаётся у сервиса и на рублёвой стороне не превышает
+ * рубля, а на криптовалютной — единицы монеты.
+ */
+export function roundPayout(amount: Amount): Amount {
+  return Money.isNegative(amount) ? amount : Money.floor(amount);
 }
 
 /** Заведено ли направление безналичного обмена и не выключено ли оно. */
@@ -181,7 +212,7 @@ export async function getQuote(
     rate,
     toAmount:
       fromAmount.success && !Money.isNegative(fromAmount.data)
-        ? Money.multiply(fromAmount.data, rate)
+        ? roundPayout(Money.multiply(fromAmount.data, rate))
         : null,
     markupBps,
     asOf: quoted.asOf,

@@ -13,19 +13,33 @@ interface IconProps {
   readonly size?: number;
 }
 
-/** Знак сервиса обводкой — для тиснения на карте. */
+/**
+ * Знак сервиса обводкой — для тиснения на карте и для заставки.
+ *
+ * Обводка залита градиентом, а не цветом: на карте, где знак с ноготь,
+ * разницы не видно, а на заставке он втрое крупнее, и плоское золото
+ * там выглядит краской. Переход тот же, что у золотых кнопок, — светлое
+ * сверху, тёмное снизу, как у настоящей металлической грани.
+ */
 export function NemoOutline({ size = 22 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="nemo-gold" x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#F0DFB8" />
+          <stop offset="0.65" stopColor="#C9A66B" />
+          <stop offset="1" stopColor="#B18F52" />
+        </linearGradient>
+      </defs>
       <path
         d="M12 1.9 20.7 6.9V16.9L12 21.9 3.3 16.9V6.9Z"
-        stroke="#D9BE86"
+        stroke="url(#nemo-gold)"
         strokeWidth="1.5"
         strokeLinejoin="round"
       />
       <path
         d="M9.4 15.6V8.4l5.2 7.2V8.4"
-        stroke="#D9BE86"
+        stroke="url(#nemo-gold)"
         strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"

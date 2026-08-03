@@ -41,9 +41,15 @@ export function Splash() {
 
   return (
     <div className="splash" role="status">
+      <span className="splash__halo" />
       <span className="splash__mark">
         <NemoOutline size={76} />
       </span>
+      {/*
+        Подпись приходит позже знака. На коротком ожидании читать её
+        некогда, и она успевала бы только мигнуть; появившись отдельно,
+        она сообщает то, ради чего написана: ждать дольше обычного.
+      */}
       <span className="splash__note">Открываем сервис</span>
     </div>
   );
