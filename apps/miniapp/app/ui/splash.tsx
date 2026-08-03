@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { NemoOutline } from './icons';
+import { NemoOutline, NemoRim } from './icons';
 
 /**
  * Заставка на время открытия сессии.
@@ -42,8 +42,31 @@ export function Splash() {
   return (
     <div className="splash" role="status">
       <span className="splash__halo" />
-      <span className="splash__mark">
-        <NemoOutline size={76} />
+      {/*
+        Знак собран из слоёв, а не нарисован один раз.
+
+        Плоскость, повёрнутая в пространстве, на девяноста градусах
+        схлопывается в линию — вращается она честно, но выглядит бумагой.
+        Здесь у знака есть лицо, изнанка и стопка граней между ними: на
+        повороте видно толщину, и он читается жетоном, а не картинкой.
+
+        Изнанка — тот же знак, отражённый: иначе на второй половине
+        оборота буква смотрела бы зеркально и читалась как «И».
+      */}
+      <span className="splash__stage">
+        <span className="splash__mark">
+          <span className="splash__face splash__face--front">
+            <NemoOutline size={76} />
+          </span>
+          {[0, 1, 2].map((layer) => (
+            <span key={layer} className="splash__edge" data-layer={layer}>
+              <NemoRim size={76} />
+            </span>
+          ))}
+          <span className="splash__face splash__face--back">
+            <NemoOutline size={76} />
+          </span>
+        </span>
       </span>
       {/*
         Подпись приходит позже знака. На коротком ожидании читать её
