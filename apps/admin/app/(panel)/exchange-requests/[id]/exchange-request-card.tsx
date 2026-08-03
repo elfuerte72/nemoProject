@@ -47,11 +47,11 @@ export function ExchangeRequestCard({
 
   const [finalRate, setFinalRate] = useState('');
   /*
-   * Сумма к выдаче — та, что клиент увидел при подаче: она посчитана по
-   * курсу заявки и лежит в самой заявке. Пустое поле заставляло бы
-   * менеджера считать её заново и расходиться с обещанным.
+   * Сумма к выдаче набирается только у наличной заявки: у безналичной
+   * она посчитана при подаче и не меняется — там её показывают, а не
+   * спрашивают.
    */
-  const [toAmount, setToAmount] = useState(request.toAmount ?? '');
+  const [toAmount, setToAmount] = useState('');
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [serviceIncome, setServiceIncome] = useState('');
   const [serviceIncomeCode, setServiceIncomeCode] = useState(request.toCode);
@@ -316,15 +316,32 @@ export function ExchangeRequestCard({
                 />
               </label>
             )}
-            <label className="field">
-              <span className="label">К выдаче в {request.toCode}</span>
-              <input
-                className="input"
-                value={toAmount}
-                onChange={(event) => setToAmount(event.target.value)}
-                inputMode="decimal"
-              />
-            </label>
+            {/*
+              У заявки с курсом подачи сумма посчитана при подаче — её
+              видел клиент, и меняться она не может: операция отвергает
+              присланную поверх. Поле ввода обещало бы менеджеру
+              возможность, которой нет, а набранное в нём вернулось бы
+              отказом. Поле остаётся только там, где сумму называет сам
+              менеджер, — у наличной заявки.
+            */}
+            {request.requestRate ? (
+              <div className="field">
+                <span className="label">К выдаче в {request.toCode}</span>
+                <span className="row__title mono">
+                  {request.toAmount ? formatAmount(request.toAmount) : '—'}
+                </span>
+              </div>
+            ) : (
+              <label className="field">
+                <span className="label">К выдаче в {request.toCode}</span>
+                <input
+                  className="input"
+                  value={toAmount}
+                  onChange={(event) => setToAmount(event.target.value)}
+                  inputMode="decimal"
+                />
+              </label>
+            )}
           </div>
           <label className="field">
             <span className="label">Реквизиты для оплаты</span>
@@ -354,8 +371,10 @@ export function ExchangeRequestCard({
               onClick={() =>
                 act({
                   action: 'confirm-rate',
-                  ...(request.requestRate ? {} : { finalRate }),
-                  ...(toAmount ? { toAmount } : {}),
+                  // Ни курс, ни сумма не уходят по заявке с курсом
+                  // подачи: и то и другое там обязательство сервиса, и
+                  // присланное поверх операция отвергает.
+                  ...(request.requestRate ? {} : { finalRate, ...(toAmount ? { toAmount } : {}) }),
                   paymentInstructions,
                 })
               }
