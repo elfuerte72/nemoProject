@@ -33,9 +33,31 @@ export interface SnapshotCacheOptions<T> {
   readonly keep: number;
   /** Чьё молчание попадёт в журнал. */
   readonly provider: string;
+  /**
+   * Сколько раз прогрев пробует достучаться до провайдера.
+   *
+   * Больше одного, потому что провайдер отвечает рвано: у биржи замерено
+   * от 0,15 до 12 секунд, а срок запроса — три. Одна попытка попадает на
+   * медленный ответ и срывается, и тогда первый клиент видит «курс
+   * назовёт менеджер» на пустом кэше — при том, что биржа жива.
+   */
+  readonly warmUpAttempts?: number;
+  /**
+   * Пауза перед следующей попыткой прогрева; растёт с её номером. Лежачий
+   * провайдер не оживает от того, что в него стучат чаще.
+   */
+  readonly warmUpRetryMs?: number;
   /** Подменяется в тестах, чтобы проверить устаревание. */
   readonly now?: () => number;
 }
+
+/**
+ * Четыре попытки с растущей паузой — это около двенадцати секунд, за
+ * которые провайдер должен ответить хоть раз. Первый клиент приходит
+ * заметно позже: между выкаткой и им проходит хотя бы столько же.
+ */
+const DEFAULT_WARM_UP_ATTEMPTS = 4;
+const DEFAULT_WARM_UP_RETRY_MS = 2_000;
 
 export interface SnapshotCache<T> {
   /**
@@ -45,10 +67,10 @@ export interface SnapshotCache<T> {
    */
   read(at?: Date): Promise<Snapshot<T> | undefined>;
   /**
-   * Сходить за данными, не дожидаясь первого клиента. Единственное
-   * ожидание, которое здесь остаётся, — первое обращение после
-   * перезапуска процесса, и прогрев съедает его до того, как кто-то
-   * придёт.
+   * Сходить за данными, не дожидаясь первого клиента, — и не сдаваться с
+   * первого отказа. Ждать прогрев некому, поэтому срок запроса ему не
+   * указ: три секунды поставлены, чтобы биржу не ждал человек у экрана,
+   * а здесь у экрана никого нет.
    */
   warmUp(): void;
 }
@@ -65,6 +87,12 @@ export function createSnapshotCache<T>(options: SnapshotCacheOptions<T>): Snapsh
    * клиент ничего от своего ожидания не выигрывают.
    */
   let waited = false;
+  /**
+   * Начинался ли прогрев. Он один на кэш и на запуск процесса: второй
+   * завёл бы свою цепочку попыток и удвоил стук в провайдера, у которого
+   * есть предел обращений в минуту.
+   */
+  let warmUpStarted = false;
 
   const newest = (): Snapshot<T> | undefined => snapshots[snapshots.length - 1];
 
@@ -145,9 +173,30 @@ export function createSnapshotCache<T>(options: SnapshotCacheOptions<T>): Snapsh
     },
 
     warmUp(): void {
-      void refresh().catch((error: unknown) => {
-        console.error(`${options.provider} не ответила при прогреве`, error);
-      });
+      if (warmUpStarted) return;
+      warmUpStarted = true;
+
+      const attempts = options.warmUpAttempts ?? DEFAULT_WARM_UP_ATTEMPTS;
+      const retryMs = options.warmUpRetryMs ?? DEFAULT_WARM_UP_RETRY_MS;
+
+      void (async () => {
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
+          // Снимок мог появиться и без прогрева — от клиента, пришедшего
+          // раньше, чем провайдер ответил. Греть тогда нечего.
+          if (newest()) return;
+
+          try {
+            await refresh();
+            return;
+          } catch (error) {
+            console.error(`${options.provider} не ответила при прогреве`, error);
+          }
+
+          if (attempt < attempts) {
+            await new Promise((resolve) => setTimeout(resolve, retryMs * attempt));
+          }
+        }
+      })();
     },
   };
 }
