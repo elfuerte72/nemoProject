@@ -13,6 +13,7 @@ import {
 import { requireClient, requireStaff, type Actor } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
 import { bonusBalance } from './bonus-account.js';
+import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import {
   requirePrivateKey,
   requirePublicKey,
@@ -229,7 +230,8 @@ export async function listWithdrawalRequests(
     .select()
     .from(withdrawalRequests)
     .where(eq(withdrawalRequests.clientId, clientId))
-    .orderBy(desc(withdrawalRequests.createdAt));
+    .orderBy(desc(withdrawalRequests.createdAt))
+    .limit(CLIENT_HISTORY_LIMIT);
   return rows.map(toView);
 }
 

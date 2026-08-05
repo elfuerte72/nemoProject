@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { generateRequisiteKeyPair } from '@nemo/crypto';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, ForbiddenError, type Actor } from './index.js';
 import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
@@ -11,7 +12,13 @@ import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
  * знакомый и под каким именем.
  */
 
-const core = createCore({ db: testDatabase() });
+// Ключи нужны заявке на вывод: реквизиты получения шифруются при
+// подаче. Сам кабинет их не трогает.
+const keys = generateRequisiteKeyPair();
+const core = createCore({
+  db: testDatabase(),
+  requisites: { publicKey: keys.publicKey, privateKey: keys.privateKey },
+});
 
 let manager: Actor & { type: 'staff' };
 
@@ -70,6 +77,38 @@ describe('бонусный баланс', () => {
 
     // 5% от 1000 и 5% от 3000 — посчитано вручную от ставки первой линии.
     expect((await core.getBonusAccount(asClient(1n))).balance).toBe('200');
+  });
+});
+
+describe('заработанное за всё время', () => {
+  it('равно нулю, пока начислений не было', async () => {
+    await givenClient(1n);
+
+    expect((await core.getBonusAccount(asClient(1n))).earned).toBe('0');
+  });
+
+  it('не уменьшается от выплаты, в отличие от баланса', async () => {
+    const code = await givenClient(1n);
+    await givenClient(2n, code);
+    // 5% от 40000 — начислено 2000, из них выведена половина.
+    await givenCompletedRequest(2n, '40000');
+
+    const { request } = await core.submitWithdrawalRequest(asClient(1n), {
+      amount: '1000',
+      method: 'bank',
+      destination: '40817810099910004312',
+    });
+    await core.approveWithdrawalRequest(manager, request.id);
+    await core.markWithdrawalPaid(manager, request.id);
+
+    const account = await core.getBonusAccount(asClient(1n));
+
+    // Остаток и заработок — разные числа: подписать выведенное как
+    // незаработанное значит соврать о том, что принесла рефералка.
+    expect({ balance: account.balance, earned: account.earned }).toEqual({
+      balance: '1000',
+      earned: '2000',
+    });
   });
 });
 

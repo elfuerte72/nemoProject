@@ -9,6 +9,7 @@ import {
 } from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
+import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
@@ -333,11 +334,15 @@ export async function listExchangeRequests(
   actor: Actor,
 ): Promise<readonly ExchangeRequestView[]> {
   const clientId = requireClient(actor);
+  // Незакрытая заявка в этот кусок попадает всегда: она живёт часами, а
+  // потолок отсекает полсотни более свежих — столько за это время
+  // руками не подать.
   const rows = await ctx.db
     .select()
     .from(exchangeRequests)
     .where(eq(exchangeRequests.clientId, clientId))
-    .orderBy(desc(exchangeRequests.createdAt));
+    .orderBy(desc(exchangeRequests.createdAt))
+    .limit(CLIENT_HISTORY_LIMIT);
   return rows.map(toExchangeRequestView);
 }
 

@@ -2,6 +2,7 @@ import { and, count, desc, eq, sql } from 'drizzle-orm';
 import { bonusTransactions, clients, referrals } from '@nemo/db';
 import { Money, type Amount, type BonusTransactionKind, type ReferralLine } from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
+import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
 import { NotFoundError } from './errors.js';
 
@@ -34,6 +35,15 @@ export interface BonusTransactionView {
 
 export interface BonusAccountView {
   readonly balance: Amount;
+  /**
+   * Сколько начислено за всё время. Баланс — это остаток, и выведший
+   * половину заработанного видит в нём половину; на вопрос «сколько мне
+   * принесла рефералка» отвечает только это число.
+   *
+   * Считаются одни начисления: ручная правка администратора меняет
+   * баланс, но заработком реферальной программы не является.
+   */
+  readonly earned: Amount;
   /** Полезная нагрузка реферальной ссылки. Саму ссылку собирает приложение. */
   readonly referralCode: string;
   readonly line1Count: number;
@@ -78,6 +88,24 @@ export async function bonusBalance(
     : Money.toAmount(row.total);
 }
 
+/**
+ * Сколько клиенту начислено за всё время.
+ *
+ * Считается запросом, а не сложением выгруженной истории: история
+ * ограничена потолком, и сумма по её видимому куску занижала бы
+ * заработанное ровно у тех, кто заработал больше всех.
+ */
+async function bonusEarned(executor: Executor, clientId: bigint): Promise<Amount> {
+  const [row] = await executor
+    .select({ total: sql<string | null>`sum(${bonusTransactions.amount})` })
+    .from(bonusTransactions)
+    .where(
+      and(eq(bonusTransactions.clientId, clientId), eq(bonusTransactions.kind, 'accrual')),
+    );
+
+  return row?.total === null || row?.total === undefined ? Money.ZERO : Money.toAmount(row.total);
+}
+
 async function countReferrals(
   executor: Executor,
   clientId: bigint,
@@ -105,19 +133,22 @@ export async function getBonusAccount(
     throw new NotFoundError('Клиент не найден');
   }
 
-  const [balance, line1Count, line2Count, history] = await Promise.all([
+  const [balance, earned, line1Count, line2Count, history] = await Promise.all([
     bonusBalance(ctx.db, clientId),
+    bonusEarned(ctx.db, clientId),
     countReferrals(ctx.db, clientId, 1),
     countReferrals(ctx.db, clientId, 2),
     ctx.db
       .select()
       .from(bonusTransactions)
       .where(eq(bonusTransactions.clientId, clientId))
-      .orderBy(desc(bonusTransactions.createdAt), desc(bonusTransactions.id)),
+      .orderBy(desc(bonusTransactions.createdAt), desc(bonusTransactions.id))
+      .limit(CLIENT_HISTORY_LIMIT),
   ]);
 
   return {
     balance,
+    earned,
     referralCode: client.referralCode,
     line1Count,
     line2Count,
