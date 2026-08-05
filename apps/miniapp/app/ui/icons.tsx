@@ -14,56 +14,37 @@ interface IconProps {
 }
 
 /**
- * Знак сервиса обводкой — для тиснения на карте и для заставки.
+ * Знак сервиса — для тиснения на карте и для заставки.
  *
- * Обводка залита градиентом, а не цветом: на карте, где знак с ноготь,
- * разницы не видно, а на заставке он втрое крупнее, и плоское золото
- * там выглядит краской. Переход тот же, что у золотых кнопок, — светлое
- * сверху, тёмное снизу, как у настоящей металлической грани.
+ * Залит, а не обведён: у фирменного знака нет линии, есть тело. Обводка
+ * той же фигуры на мелком размере слипается в пятно, а на крупном
+ * читается как чертёж знака, а не как сам знак.
+ *
+ * Заливка градиентом, а не цветом: на карте, где знак с ноготь, разницы
+ * не видно, а на заставке он вчетверо крупнее, и плоская медь там
+ * выглядит краской. Переход тот же, что у медовых кнопок, — светлое
+ * сверху, тёмное снизу, как у металлической грани.
+ *
+ * Сквозная середина задаётся `evenodd`, а не вторым цветом поверх: знак
+ * стоит и на фоне приложения, и на пластике карты, и залитая подложка
+ * выдавала бы на них квадрат.
  */
-export function NemoOutline({ size = 22 }: IconProps) {
+export function TobeeMark({ size = 22 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <defs>
-        <linearGradient id="nemo-gold" x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#F0DFB8" />
-          <stop offset="0.65" stopColor="#C9A66B" />
-          <stop offset="1" stopColor="#B18F52" />
+        <linearGradient id="tobee-honey" x1="6" y1="3" x2="18" y2="20" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFCF7D" />
+          <stop offset="0.55" stopColor="#FBAA48" />
+          <stop offset="1" stopColor="#F79A33" />
         </linearGradient>
       </defs>
-      <path
-        d="M12 1.9 20.7 6.9V16.9L12 21.9 3.3 16.9V6.9Z"
-        stroke="url(#nemo-gold)"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M9.4 15.6V8.4l5.2 7.2V8.4"
-        stroke="url(#nemo-gold)"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/**
- * Только обод знака, без буквы — грань жетона на заставке.
- *
- * У настоящего жетона на ребре буквы нет: она вычеканена на лице.
- * Повторённая в каждом слое толщины, она двоилась бы на повороте и
- * читалась не как металл, а как сбой отрисовки.
- */
-export function NemoRim({ size = 22 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M12 1.9 20.7 6.9V16.9L12 21.9 3.3 16.9V6.9Z"
-        stroke="url(#nemo-gold)"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
+      <g fill="url(#tobee-honey)" fillRule="evenodd">
+        {/* Верхняя скоба. */}
+        <path d="M12.51 5.16 15.99 7.6Q16.44 7.92 16.44 8.47L16.44 9.3Q16.44 9.6 16.19 9.43L12.41 6.88Q12 6.6 11.59 6.88L7.81 9.43Q7.56 9.6 7.56 9.3L7.56 8.47Q7.56 7.92 8.01 7.6L11.49 5.16Q12 4.8 12.51 5.16Z" />
+        {/* Сота с носиком реплики и сквозной серединой. */}
+        <path d="M12.56 8.34 15.96 10.92Q16.44 11.28 16.44 11.88L16.44 13.8Q16.44 14.4 15.96 14.77L13.28 16.83Q13 17.04 13 17.39L13 18.76Q13 18.96 12.85 18.83L8.02 14.79Q7.56 14.4 7.56 13.8L7.56 11.88Q7.56 11.28 8.04 10.92L11.44 8.34Q12 7.92 12.56 8.34ZM12.96 10.9 14.04 11.96Q15 12.9 14.04 13.84L12.96 14.9Q12 15.84 11.04 14.9L9.96 13.84Q9 12.9 9.96 11.96L11.04 10.9Q12 9.96 12.96 10.9Z" />
+      </g>
     </svg>
   );
 }
@@ -143,7 +124,7 @@ export function ChevronDown({ size = 10 }: IconProps) {
     >
       <path
         d="M1 1l4 4 4-4"
-        stroke="#96918A"
+        stroke="#928BAB"
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -163,7 +144,7 @@ export function ChevronRight({ size = 8 }: IconProps) {
     >
       <path
         d="M1.5 1.5 6.5 6.5l-5 5"
-        stroke="#7E796F"
+        stroke="#6F688A"
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -173,8 +154,8 @@ export function ChevronRight({ size = 8 }: IconProps) {
 }
 
 /**
- * Знаки нижней панели построены на одном шестиугольнике — том же, что в
- * знаке бренда. Активная вкладка заливается, а не подчёркивается: полоса
+ * Знаки нижней панели построены на одной соте — той же, что в знаке
+ * бренда. Активная вкладка заливается, а не подчёркивается: полоса
  * под иконкой на 24 пикселях читается хуже, чем силуэт.
  */
 function TabHex({ children, filled }: { children: React.ReactNode; filled: boolean }) {
@@ -182,7 +163,7 @@ function TabHex({ children, filled }: { children: React.ReactNode; filled: boole
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
         d="M12 2.6 20 7.3V16.7L12 21.4 4 16.7V7.3Z"
-        fill={filled ? 'rgba(217,190,134,.16)' : 'none'}
+        fill={filled ? 'rgba(249,160,60,.18)' : 'none'}
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinejoin="round"

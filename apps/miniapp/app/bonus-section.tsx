@@ -13,6 +13,7 @@ import {
 } from '@/lib/labels';
 import { getWebApp } from '@/lib/telegram/webapp';
 import { InviteIcon, WithdrawIcon } from './ui/icons';
+import { Loading } from './ui/loading';
 import { MarketingConsentToggle } from './marketing-consent';
 import { addressLabel, NetworkPicker } from './ui/network-picker';
 import { NoticeSheet, Sheet } from './ui/sheet';
@@ -98,7 +99,7 @@ export function BonusSection({
   }
 
   if (loading) {
-    return <p className="empty">Загружаем кабинет…</p>;
+    return <Loading />;
   }
 
   if (!account) {

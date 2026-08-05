@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Nemo — обмен валют',
+  title: 'Tobee — обмен валют',
 };
 
 export const viewport: Viewport = {
@@ -17,7 +17,9 @@ export const viewport: Viewport = {
   // Нижняя панель садится на область системных жестов, если её не
   // измерить: `env(safe-area-inset-*)` заполняется только при `cover`.
   viewportFit: 'cover',
-  themeColor: '#0A0A0C',
+  // Тот же индиго, что и у фона: Telegram красит им свою полосу над
+  // приложением, и любой другой цвет читался бы швом поверх экрана.
+  themeColor: '#161224',
 };
 
 /**
@@ -27,6 +29,8 @@ export const viewport: Viewport = {
  */
 const manrope = Manrope({
   subsets: ['latin', 'cyrillic'],
+  // Начертания перечислены списком, но шрифт вариативный: на вес
+  // сборки их число не влияет — файлы те же самые.
   weight: ['400', '500', '600', '700', '800'],
   variable: '--font-manrope',
   display: 'swap',
@@ -41,6 +45,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           и гидрация не должна их дожидаться.
         */}
         <script src="https://telegram.org/js/telegram-web-app.js" />
+        {/*
+          Талисман объявлен заранее, потому что заставка теперь
+          безусловна: он нужен при каждом открытии, и ждать, пока до него
+          доберётся React, значит терять на это всю гидрацию. Объявленный
+          здесь, он едет с первых миллисекунд разбора страницы.
+
+          Раньше так было нельзя: заставки на быстрой сети не бывало
+          вовсе, и объявленная картинка тянулась бы туда, где её никто не
+          увидит, — наперегонки с запросом сессии.
+        */}
+        <link rel="preload" as="image" href="/tobee-mascot.webp" type="image/webp" />
       </head>
       <body>{children}</body>
     </html>

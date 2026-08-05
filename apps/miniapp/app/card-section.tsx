@@ -6,7 +6,8 @@ import type { CardApplicationStatus } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { formatDate } from '@/lib/format';
 import { CARD_STATUS_LABELS } from '@/lib/labels';
-import { NemoOutline } from './ui/icons';
+import { TobeeMark } from './ui/icons';
+import { Loading } from './ui/loading';
 import { NoticeSheet } from './ui/sheet';
 
 /**
@@ -82,7 +83,7 @@ export function CardSection({ revisit }: { readonly revisit: number }) {
   }
 
   if (loading) {
-    return <p className="empty">Загружаем заявки на карту…</p>;
+    return <Loading />;
   }
 
   const current = applications[0];
@@ -101,8 +102,8 @@ export function CardSection({ revisit }: { readonly revisit: number }) {
         <div className="plastic__glow" />
         <div className="plastic__head">
           <span className="plastic__brand">
-            <NemoOutline />
-            NEMO
+            <TobeeMark />
+            TOBEE
           </span>
           <span className="plastic__status">
             {current ? CARD_STATUS_LABELS[current.status] : 'Не оформлена'}
