@@ -49,6 +49,7 @@ import {
   submitExchangeRequest,
   type SubmitExchangeRequestInput,
 } from './exchange-requests.js';
+import { listDirections, setDirectionActive } from './directions.js';
 import {
   listActiveNetworks,
   listNetworks,
@@ -265,6 +266,10 @@ export function createCore(ctx: CoreConfig) {
     setNetworkActive: (actor: Actor, code: string, isActive: boolean) =>
       setNetworkActive(ctx, actor, code, isActive),
 
+    listDirections: (actor: Actor) => listDirections(ctx, actor),
+    setDirectionActive: (actor: Actor, directionId: string, isActive: boolean) =>
+      setDirectionActive(ctx, actor, directionId, isActive),
+
     /*
      * Текст заготовки без исполнителя: его читает бот, чтобы показать
      * клиенту, и права здесь спрашивать не у кого.
@@ -310,6 +315,7 @@ export type {
 } from './exchange-requests.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
 export type { NetworkView } from './networks.js';
+export type { DirectionView } from './directions.js';
 export { botTextKeys, BOT_TEXTS } from './bot-texts.js';
 export type { BotTextKey } from './bot-texts.js';
 export type { BonusAccountView, BonusTransactionView } from './bonus-account.js';

@@ -1,5 +1,5 @@
 import { createCore, createDatabase, type Core } from '@nemo/core';
-import { rapiraFromEnvironment } from '@nemo/rates';
+import { ratesFromEnvironment } from '@nemo/rates';
 
 /**
  * Модуль операций для клиентского приложения.
@@ -9,9 +9,9 @@ import { rapiraFromEnvironment } from '@nemo/rates';
  * уметь прочитать (docs/adr/0002). Операции, требующие расшифровки,
  * здесь отказывают, потому что ключа физически нет.
  *
- * Источник котировок задаётся здесь же: какой именно провайдер стоит за
- * котировками — свойство развёртывания, и заявка на обмен о
- * нём не знает.
+ * Источник котировок задаётся здесь же: какие именно провайдеры стоят за
+ * котировками и сколько их — свойство развёртывания, и заявка на обмен
+ * о них не знает.
  */
 
 let instance: Core | undefined;
@@ -27,7 +27,7 @@ export function getCore(): Core {
   instance = createCore({
     db: createDatabase(url),
     requisites: { publicKey: process.env.REQUISITES_PUBLIC_KEY },
-    rateSource: rapiraFromEnvironment(),
+    rateSource: ratesFromEnvironment(),
   });
   return instance;
 }

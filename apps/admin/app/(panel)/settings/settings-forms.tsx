@@ -3,11 +3,13 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type {
+  DirectionView,
   NetworkView,
   ServiceSettingsView,
   StaffView,
 } from '@nemo/core';
 import type { StaffRole } from '@nemo/types';
+import { KIND_LABELS } from '@/lib/exchange-request-labels';
 import { pillClass, ROLE_LABELS } from '@/lib/labels';
 import { bpsToPercent, percentToBps } from '@/lib/percent';
 
@@ -29,10 +31,12 @@ type StaffForDisplay = Omit<StaffView, 'telegramUserId'> & { telegramUserId: str
 export function SettingsForms({
   settings,
   networks,
+  directions,
   staff,
 }: {
   settings: ServiceSettingsView;
   networks: readonly NetworkView[];
+  directions: readonly DirectionView[];
   staff: readonly StaffForDisplay[];
 }) {
   const router = useRouter();
@@ -187,11 +191,12 @@ export function SettingsForms({
       <section className="card">
         <h2 className="card__title">Экономика обмена</h2>
         <p className="card__note">
-          Наценка одна на весь сервис, задаётся в процентах и действует в обе стороны:
+          Наценка одна на весь сервис, задаётся в процентах и действует во все стороны:
           она вычитается из курса, и клиент видит сумму уже с ней. Минимальная сумма
-          задана в рублях — при наценке в пару процентов мелкий обмен не покрывает
-          комиссию сети, которую сервис платит за клиента. Срок отсчитывается с
-          момента, когда менеджер выдал реквизиты для оплаты.
+          задана в USDT — эту валюту клиент отдаёт или получает в каждом направлении,
+          поэтому порог действует на весь список сразу. При наценке в пару процентов
+          мелкий обмен не покрывает комиссию сети, которую сервис платит за клиента.
+          Срок отсчитывается с момента, когда менеджер выдал реквизиты для оплаты.
         </p>
         <div className="form-row">
           <label className="field">
@@ -204,7 +209,7 @@ export function SettingsForms({
             />
           </label>
           <label className="field">
-            <span className="label">Минимум обмена, ₽</span>
+            <span className="label">Минимум обмена, USDT</span>
             <input
               className="input"
               value={minExchange}
@@ -239,6 +244,8 @@ export function SettingsForms({
           </button>
         </div>
       </section>
+
+      <ExchangeDirections directions={directions} busy={busy} onToggle={send} />
 
       <TransferNetworks networks={networks} busy={busy} onToggle={send} />
 
@@ -368,6 +375,76 @@ export function SettingsForms({
         </ul>
       </section>
     </>
+  );
+}
+
+/**
+ * Направления обмена: флажок на каждое.
+ *
+ * Состав справочника здесь не меняется — его задаёт скрипт
+ * развёртывания: под каждым направлением стоит канал выплаты, и кнопка
+ * «добавить» обещала бы, что канал заведётся сам.
+ *
+ * Гасить, наоборот, приходится срочно. Курс безналичной заявки сервис
+ * фиксирует при подаче и потом не переназывает, а наценка одна на все
+ * направления: там, где сервис отдаёт валюту дороже, чем покупает,
+ * каждая новая заявка — это убыток, и закрыть направление нужно за
+ * секунды, а не за выкатку.
+ */
+function ExchangeDirections({
+  directions,
+  busy,
+  onToggle,
+}: {
+  directions: readonly DirectionView[];
+  busy: boolean;
+  onToggle: (path: string, body: unknown) => Promise<unknown>;
+}) {
+  return (
+    <section className="card">
+      <h2 className="card__title">Направления обмена</h2>
+      <p className="card__note">
+        Выключенное направление сразу исчезает с экрана клиента, а поданные по нему
+        заявки остаются в работе — их доводит менеджер. Выключайте то, на котором цена
+        разошлась с рынком: курс заявки сервис фиксирует при подаче и потом не меняет.
+      </p>
+      {directions.length === 0 ? (
+        <p className="empty">
+          Направления ещё не заведены: их создаёт скрипт развёртывания.
+        </p>
+      ) : (
+        <ul className="rows">
+          {directions.map((direction) => (
+            <li key={direction.id} className="row">
+              <div className="row__main">
+                <span className="row__title">
+                  {direction.fromCode} → {direction.toCode}
+                </span>
+                <span className="row__meta">
+                  {KIND_LABELS[direction.kind]} ·{' '}
+                  {direction.isActive ? 'предлагается клиентам' : 'выключено'}
+                </span>
+              </div>
+              <div className="row__actions">
+                <button
+                  type="button"
+                  disabled={busy}
+                  className={direction.isActive ? 'btn btn--danger' : 'btn btn--ghost'}
+                  onClick={() =>
+                    onToggle('/api/directions', {
+                      directionId: direction.id,
+                      isActive: !direction.isActive,
+                    })
+                  }
+                >
+                  {direction.isActive ? 'Выключить' : 'Включить'}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

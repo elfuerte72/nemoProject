@@ -685,7 +685,63 @@ button {
 .popover--menu {
   width: max-content;
   min-width: 150px;
+  /* Название валюты длиннее кода, и без потолка список растёт за край
+     экрана: «Южноафриканский рэнд» шире, чем телефон. */
+  max-width: min(300px, calc(100vw - 2 * var(--gutter)));
   padding: 6px 14px;
+}
+
+/*
+  Список валют в раскрытой пилюле.
+
+  Пять с половиной строк: обрезанная шестая — единственное, что говорит о
+  продолжении списка, не тратя на это отдельной подписи. Без потолка
+  девять строк уезжали бы за нижний край экрана и накрывали кнопку
+  «Обменять».
+*/
+.popover__menu--tall {
+  max-height: 246px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.popover__menu--tall::-webkit-scrollbar {
+  width: 0;
+}
+
+/* Флаг и код валюты стоят вместе: название уходит к правому краю строки. */
+.currency {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.currency__name {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+  /* Своим цветом, а не унаследованным: выбранная строка красится золотом
+     целиком, и подпись спорила бы с кодом за внимание. */
+  color: var(--text-muted);
+}
+
+/*
+  Флаг в пилюле стоит у самого её края: поле пилюли рассчитано на текст,
+  а круг рядом с ним читается как отступ вдвое больше нужного.
+*/
+.chip > .flag,
+.chip--static > .flag {
+  margin-left: -4px;
+}
+
+.flag {
+  flex-shrink: 0;
+  display: block;
 }
 
 .popover__text {
