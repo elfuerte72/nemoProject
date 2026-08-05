@@ -1002,6 +1002,25 @@ select.input {
   min-height: 48px;
 }
 
+/*
+ * Выдача ключа на входе — тому, кому его ещё не во что было занести.
+ * Отбита от поля для кода рамкой и золотом, теми же, что у карточки
+ * выдачи в панели: это одно и то же действие, показанное с двух сторон.
+ */
+.login__enroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(217, 190, 134, 0.35);
+  border-radius: var(--radius-inner);
+  background: rgba(217, 190, 134, 0.05);
+}
+
+.login__enroll .muted {
+  margin: 0;
+}
+
 /* ── Второй фактор ───────────────────────────────────────────────── */
 
 .secret {

@@ -558,6 +558,15 @@ export const staff = pgTable('staff', {
   displayName: text('display_name').notNull(),
   role: staffRoleEnum('role').default('manager').notNull(),
   totpSecretSealed: bytea('totp_secret_sealed'),
+  /**
+   * Когда выданным ключом впервые вошли. Пусто — ключ выдан, но до
+   * приложения-аутентификатора не доехал, и вход показывает его сам:
+   * код для камеры и строку. Ставится при первом сошедшемся коде и
+   * закрывает этот показ навсегда — иначе получилось бы не «выдать
+   * ключ забывшему его», а «отдать второй фактор любому, кто открыл
+   * вход».
+   */
+  secondFactorConfirmedAt: timestamp('second_factor_confirmed_at', { withTimezone: true }),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });

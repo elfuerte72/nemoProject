@@ -12,6 +12,12 @@ import { disableStaff, givenStaff } from './test-support.js';
  * а сессию — второй фактор, выданный администратором заранее. Отказ во
  * всех случаях одинаков: разные ответы на «не сотрудник» и «второй
  * фактор не выдан» подсказывали бы подбирающему, на каком он шаге.
+ *
+ * Выданный, но ни разу не сработавший ключ вход показывает сам:
+ * администратор видел код для камеры, а заносить ключ в приложение не
+ * ему, и без этого показа сотрудник упирался в поле для кода, который
+ * ему взять неоткуда. Первый сошедшийся код показ закрывает — дальше
+ * ключ выдаётся только заново.
  */
 
 const keys = generateRequisiteKeyPair();
@@ -95,6 +101,57 @@ describe('второй фактор', () => {
     await expect(
       core.completeStaffLogin(staffId, totpCode(enrolled.enrollmentSecret)),
     ).rejects.toThrow(ForbiddenError);
+  });
+});
+
+describe('ключ, до которого сотрудник ещё не добрался', () => {
+  it('выдаётся ему на входе — тот же самый, что показали администратору', async () => {
+    const enrolled = await givenEnrolledStaff(777n);
+    const { secondFactorPending, staffId } = await core.beginStaffLogin(777n);
+
+    expect(secondFactorPending).toBe(true);
+    const claimed = await core.claimSecondFactor(staffId);
+    // Новый ключ обесценил бы код для камеры, уже отданный
+    // администратором: сходился бы он только у последнего открывшего вход.
+    expect(claimed.enrollmentSecret).toBe(enrolled.enrollmentSecret);
+    expect(claimed.otpauthUri).toContain(claimed.enrollmentSecret);
+  });
+
+  it('перестаёт выдаваться, как только им один раз вошли', async () => {
+    const enrolled = await givenEnrolledStaff(777n);
+    const { staffId } = await core.beginStaffLogin(777n);
+    await core.completeStaffLogin(staffId, totpCode(enrolled.enrollmentSecret));
+
+    const next = await core.beginStaffLogin(777n);
+    expect(next.secondFactorPending).toBe(false);
+    await expect(core.claimSecondFactor(staffId)).rejects.toThrow(ForbiddenError);
+  });
+
+  it('не выдаётся отключённому сотруднику', async () => {
+    const { staff } = await givenEnrolledStaff(777n);
+    await disableStaff(staff.id);
+
+    await expect(core.claimSecondFactor(staff.id)).rejects.toThrow(ForbiddenError);
+  });
+
+  it('выдаётся снова после того, как администратор выдал ключ заново', async () => {
+    const enrolled = await givenEnrolledStaff(777n);
+    const { staffId } = await core.beginStaffLogin(777n);
+    await core.completeStaffLogin(staffId, totpCode(enrolled.enrollmentSecret));
+
+    // Потерянный телефон: прежний ключ мёртв, а новый до сотрудника
+    // доедет тем же путём — через его собственный вход.
+    const admin = await core.beginStaffLogin(778n);
+    const reissued = await core.resetStaffSecondFactor(
+      { type: 'staff', staffId: admin.staffId, role: 'admin' },
+      staffId,
+    );
+
+    const next = await core.beginStaffLogin(777n);
+    expect(next.secondFactorPending).toBe(true);
+    expect((await core.claimSecondFactor(staffId)).enrollmentSecret).toBe(
+      reissued.enrollmentSecret,
+    );
   });
 });
 

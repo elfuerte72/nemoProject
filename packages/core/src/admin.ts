@@ -33,13 +33,21 @@ export interface StaffView {
   readonly isActive: boolean;
   /** Ложь, пока администратор не выдал второй фактор: войти нельзя. */
   readonly hasSecondFactor: boolean;
+  /**
+   * Ложь, пока выданным ключом ни разу не вошли. Пока так, вход
+   * показывает сотруднику этот ключ сам — и панель говорит об этом
+   * администратору, иначе он не понимает, почему код для камеры всё
+   * ещё где-то ходит.
+   */
+  readonly secondFactorConfirmed: boolean;
   readonly createdAt: Date;
 }
 
 /**
- * Секрет второго фактора показывается ровно один раз — тому
- * администратору, который его выдал. Он передаёт его сотруднику лично;
- * второй показ не нужен, а хранить секрет в открытом виде негде.
+ * Секрет второго фактора показывается администратору ровно один раз:
+ * второй показ в панели не нужен, а хранить секрет в открытом виде
+ * негде. Сотруднику тот же секрет покажет его первый вход — пока этим
+ * ключом ни разу не входили (`staff.ts`).
  */
 export interface StaffEnrollment {
   readonly staff: StaffView;
@@ -77,6 +85,7 @@ function toStaffView(row: StaffRow): StaffView {
     role: row.role,
     isActive: row.isActive,
     hasSecondFactor: row.totpSecretSealed !== null,
+    secondFactorConfirmed: row.secondFactorConfirmedAt !== null,
     createdAt: row.createdAt,
   };
 }
@@ -216,6 +225,11 @@ export async function setStaffActive(
 /**
  * Выдать второй фактор заново — при потере телефона и при подозрении,
  * что секрет утёк. Прежний перестаёт работать сразу.
+ *
+ * Вместе с ключом снимается и отметка о первом входе: новый ключ до
+ * приложения сотрудника ещё не доехал, и вход покажет его сам
+ * (`staff.ts`). Без этого выдача заново чинила бы только тот случай,
+ * когда администратор и сотрудник сидят рядом.
  */
 export async function resetStaffSecondFactor(
   ctx: CoreConfig,
@@ -229,7 +243,7 @@ export async function resetStaffSecondFactor(
     await requireStaffRow(tx, staffId);
     const [row] = await tx
       .update(staff)
-      .set({ totpSecretSealed: sealed })
+      .set({ totpSecretSealed: sealed, secondFactorConfirmedAt: null })
       .where(eq(staff.id, staffId))
       .returning();
 
@@ -270,7 +284,7 @@ export async function reissueSecondFactorFromConsole(
   return ctx.db.transaction(async (tx) => {
     const [row] = await tx
       .update(staff)
-      .set({ totpSecretSealed: sealed })
+      .set({ totpSecretSealed: sealed, secondFactorConfirmedAt: null })
       .where(eq(staff.telegramUserId, telegramUserId))
       .returning();
 

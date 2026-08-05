@@ -1,0 +1,1 @@
+ALTER TABLE "staff" ADD COLUMN "second_factor_confirmed_at" timestamp with time zone;
