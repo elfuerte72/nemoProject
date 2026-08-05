@@ -249,20 +249,32 @@ function UnknownCurrency(props: FlagProps) {
 }
 
 /**
- * Что сервис знает о валюте: как она называется по-русски и чем
- * подписана. Порядок строк здесь и есть порядок в списке выбора — рубль
- * первым, дальше по алфавиту кода.
+ * Что сервис знает о валюте: как она называется, где ходит и чем
+ * подписана.
+ *
+ * Название и место — не одно и то же, и нужны оба. В строке выбора
+ * стоит место: рядом с флагом оно читается одним движением, а «ZAR ·
+ * ЮАР» узнаётся быстрее, чем «ZAR · Южноафриканский рэнд». Название
+ * уходит в подпись для экранного диктора, который флага не видит вовсе.
+ *
+ * Порядок строк здесь и есть порядок в списке выбора — рубль первым,
+ * дальше по алфавиту кода.
  */
-const CURRENCIES: Record<string, { name: string; flag: (props: FlagProps) => ReactNode }> = {
-  RUB: { name: 'Российский рубль', flag: RussianFlag },
-  CNY: { name: 'Китайский юань', flag: ChineseFlag },
-  EUR: { name: 'Евро', flag: EuropeanFlag },
-  INR: { name: 'Индийская рупия', flag: IndianFlag },
-  THB: { name: 'Тайский бат', flag: ThaiFlag },
-  TRY: { name: 'Турецкая лира', flag: TurkishFlag },
-  USD: { name: 'Доллар США', flag: AmericanFlag },
-  USDT: { name: 'Tether', flag: TetherMark },
-  ZAR: { name: 'Южноафриканский рэнд', flag: SouthAfricanFlag },
+const CURRENCIES: Record<
+  string,
+  { name: string; place: string; flag: (props: FlagProps) => ReactNode }
+> = {
+  RUB: { name: 'Российский рубль', place: 'Россия', flag: RussianFlag },
+  CNY: { name: 'Китайский юань', place: 'Китай', flag: ChineseFlag },
+  EUR: { name: 'Евро', place: 'Еврозона', flag: EuropeanFlag },
+  INR: { name: 'Индийская рупия', place: 'Индия', flag: IndianFlag },
+  THB: { name: 'Тайский бат', place: 'Таиланд', flag: ThaiFlag },
+  TRY: { name: 'Турецкая лира', place: 'Турция', flag: TurkishFlag },
+  USD: { name: 'Доллар США', place: 'США', flag: AmericanFlag },
+  // У стейблкоина страны нет, и придумывать её нельзя: в столбце мест
+  // честнее сказать, что это криптовалюта.
+  USDT: { name: 'Tether', place: 'Криптовалюта', flag: TetherMark },
+  ZAR: { name: 'Южноафриканский рэнд', place: 'ЮАР', flag: SouthAfricanFlag },
 };
 
 const ORDER = Object.keys(CURRENCIES);
@@ -280,6 +292,14 @@ export function CurrencyFlag({ code, size }: { readonly code: string; readonly s
  */
 export function currencyName(code: string): string {
   return CURRENCIES[code.toUpperCase()]?.name ?? code;
+}
+
+/**
+ * Где эта валюта ходит — страна или зона. У незнакомой пусто: строка
+ * останется с одним кодом, и это честнее выдуманной страны.
+ */
+export function currencyPlace(code: string): string {
+  return CURRENCIES[code.toUpperCase()]?.place ?? '';
 }
 
 /**

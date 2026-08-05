@@ -34,10 +34,10 @@ import {
   shortId,
 } from '@/lib/format';
 import { RequisitesSheet } from './requisites-section';
-import { CurrencyFlag, currencyName, sortCurrencies } from './ui/flags';
-import { CardIcon, ChevronDown, ChevronRight, SwapIcon } from './ui/icons';
+import { CurrencyPicker } from './ui/currency-picker';
+import { sortCurrencies } from './ui/flags';
+import { CardIcon, ChevronRight, SwapIcon } from './ui/icons';
 import { Loading } from './ui/loading';
-import { Popover } from './ui/popover';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
 /**
@@ -117,8 +117,6 @@ export function ExchangeScreen({
     readonly view: QuoteView | null;
   }>();
   const [sheet, setSheet] = useState<SheetState>();
-  /** Какой из двух списков валют сейчас раскрыт. */
-  const [picker, setPicker] = useState<'from' | 'to'>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -504,16 +502,11 @@ export function ExchangeScreen({
                   aria-label="Сумма к обмену"
                   className="calc__amount"
                 />
-                <CodePicker
+                <CurrencyPicker
                   label="Что отдаёте"
                   codes={fromCodes}
                   selected={fromCode}
-                  open={picker === 'from'}
-                  onToggle={() => setPicker(picker === 'from' ? undefined : 'from')}
-                  onPick={(code) => {
-                    setFromCode(code);
-                    setPicker(undefined);
-                  }}
+                  onPick={setFromCode}
                 />
               </div>
             </div>
@@ -541,16 +534,11 @@ export function ExchangeScreen({
                 >
                   {toAmount ? formatAmount(toAmount) : '0'}
                 </div>
-                <CodePicker
+                <CurrencyPicker
                   label="Что хотите получить"
                   codes={toCodes}
                   selected={toCode}
-                  open={picker === 'to'}
-                  onToggle={() => setPicker(picker === 'to' ? undefined : 'to')}
-                  onPick={(code) => {
-                    setToCode(code);
-                    setPicker(undefined);
-                  }}
+                  onPick={setToCode}
                 />
               </div>
             </div>
@@ -763,86 +751,6 @@ export function ExchangeScreen({
   );
 }
 
-/**
- * Валюта направления. Список раскрывается у самой кнопки, а не листом
- * снизу: выбор валюты стоит рядом с суммой, ради которой его и делают, и
- * уводить взгляд в другой конец экрана незачем.
- *
- * Валют выдачи девять, и все они в раскрытый список не помещаются:
- * пятью с половиной строками он упирается в свой край и дальше
- * прокручивается. Половина строки внизу — не небрежность, а
- * единственное, что говорит о продолжении списка без отдельной подписи
- * про него.
- *
- * В строке — флаг, код и название словами: код валюты человек узнаёт по
- * флагу быстрее, чем читает, а «ZAR» без подписи не узнаёт вовсе.
- *
- * Когда выбирать не из чего, кнопки нет вовсе — вместо неё та же
- * пилюля, но неподвижная: нажатие, за которым ничего не происходит,
- * читается как поломка.
- */
-function CodePicker({
-  label,
-  codes,
-  selected,
-  open,
-  onToggle,
-  onPick,
-}: {
-  readonly label: string;
-  readonly codes: readonly string[];
-  readonly selected: string;
-  readonly open: boolean;
-  readonly onToggle: () => void;
-  readonly onPick: (code: string) => void;
-}) {
-  if (codes.length < 2) {
-    return (
-      <span className="chip chip--static">
-        <CurrencyFlag code={selected} />
-        {selected}
-      </span>
-    );
-  }
-
-  return (
-    <span className="popover-anchor">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="chip"
-        aria-expanded={open}
-        aria-label={`${label}: ${currencyName(selected)}`}
-      >
-        <CurrencyFlag code={selected} />
-        {selected}
-        <ChevronDown />
-      </button>
-
-      {open ? (
-        <Popover label={label} onClose={onToggle} menu>
-          <div className="popover__menu popover__menu--tall">
-            {codes.map((code) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => onPick(code)}
-                aria-pressed={code === selected}
-                className="popover__item"
-              >
-                <span className="currency">
-                  <CurrencyFlag code={code} size={22} />
-                  {code}
-                </span>
-                <span className="currency__name">{currencyName(code)}</span>
-              </button>
-            ))}
-          </div>
-        </Popover>
-      ) : undefined}
-    </span>
-  );
-}
 
 /**
  * Сторона заявки, с которой сравнивается минимальная сумма обмена, — та,

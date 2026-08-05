@@ -592,141 +592,83 @@ button {
   color: var(--gold-light);
 }
 
-/* ── Подсказка у кнопки ──────────────────────────────────────────── */
+/*
+  Плашка выбора валюты: карточка со строками внутри нижнего листа.
 
-@keyframes nm-pop {
-  from {
-    opacity: 0;
-    transform: scale(0.92) translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+  Строки лежат на своей поверхности, а не прямо на листе: так видно, что
+  это один список, из которого выбирают, а не разделы листа. Отмеченная
+  строка обведена медью и подсвечена ею же — тем самым правилом, по
+  которому золотом красится всё, чего сервис ждёт от клиента.
+*/
+.pick {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 6px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-tile);
+  box-shadow: var(--lift);
 }
 
-.popover__scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 25;
-}
-
-.popover-anchor {
-  position: relative;
-}
-
-.popover {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 26;
-  width: min(300px, calc(100vw - 2 * var(--gutter)));
-  padding: 16px;
-  background: var(--surface);
-  border-radius: 16px;
-  box-shadow:
-    var(--lift),
-    0 22px 44px -22px rgba(8, 5, 20, 1);
-  /* Раскрывается от кнопки, а не из ниоткуда: угол роста показывает, что
-     это ответ именно на неё. */
-  transform-origin: top right;
-  animation: nm-pop 0.18s var(--ease) both;
-}
-
-.popover:focus-visible {
-  outline: none;
-}
-
-/* Носик, упирающийся в кнопку. */
-.popover::before {
-  content: '';
-  position: absolute;
-  top: -5px;
-  right: 12px;
-  width: 12px;
-  height: 12px;
-  background: var(--surface);
-  transform: rotate(45deg);
-  border-radius: 2px;
-}
-
-.popover__menu {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-
-.popover__item {
+.pick__item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  min-height: 44px;
-  padding: 10px 4px;
-  border: none;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-inner);
   background: none;
   color: var(--text);
-  font-size: 15px;
-  font-weight: 600;
   text-align: left;
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
-.popover__item + .popover__item {
-  border-top: 1px solid var(--hairline-soft);
+/* Черта между строками, но не под отмеченной: её рамка и есть граница. */
+.pick li + li .pick__item {
+  border-top-color: var(--hairline-soft);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
-.popover__item:hover,
-.popover__item[aria-pressed='true'] {
+.pick__item:hover {
+  background: var(--surface-soft-hover);
+}
+
+.pick__item[aria-pressed='true'],
+.pick li + li .pick__item[aria-pressed='true'] {
+  background: rgba(249, 160, 60, 0.14);
+  border-color: rgba(249, 160, 60, 0.55);
+  border-radius: var(--radius-inner);
   color: var(--gold-light);
 }
 
-.popover--menu {
-  width: max-content;
-  min-width: 150px;
-  /* Название валюты длиннее кода, и без потолка список растёт за край
-     экрана: «Южноафриканский рэнд» шире, чем телефон. */
-  max-width: min(300px, calc(100vw - 2 * var(--gutter)));
-  padding: 6px 14px;
+.pick__mark {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.pick__code {
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
 }
 
 /*
-  Список валют в раскрытой пилюле.
-
-  Пять с половиной строк: обрезанная шестая — единственное, что говорит о
-  продолжении списка, не тратя на это отдельной подписи. Без потолка
-  девять строк уезжали бы за нижний край экрана и накрывали кнопку
-  «Обменять».
+  Страна уходит к правому краю и остаётся приглушённой даже у отмеченной
+  строки: медью здесь отвечает код валюты, а не подпись к нему.
 */
-.popover__menu--tall {
-  max-height: 246px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-}
-
-.popover__menu--tall::-webkit-scrollbar {
-  width: 0;
-}
-
-/* Флаг и код валюты стоят вместе: название уходит к правому краю строки. */
-.currency {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.currency__name {
-  flex-shrink: 1;
-  min-width: 0;
+.pick__place {
+  margin-left: auto;
+  padding-left: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
-  font-weight: 500;
-  /* Своим цветом, а не унаследованным: выбранная строка красится золотом
-     целиком, и подпись спорила бы с кодом за внимание. */
+  font-size: 14px;
   color: var(--text-muted);
 }
 
@@ -744,14 +686,6 @@ button {
   display: block;
 }
 
-.popover__text {
-  position: relative;
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--text-dim);
-  text-wrap: pretty;
-}
 
 /* ── Типографика ─────────────────────────────────────────────────── */
 
