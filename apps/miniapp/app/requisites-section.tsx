@@ -20,6 +20,12 @@ import { addressLabel, NetworkPicker } from './ui/network-picker';
  * четыре цифры карты и края адреса: полное значение расшифровывает лишь
  * админ-панель (docs/adr/0002). Поэтому «изменить» здесь означает
  * «завести новую запись», а не «поправить существующую».
+ *
+ * Тот же лист служит двум делам: выбрать запись при подаче заявки и
+ * вести их в профиле. Отличает их `onPick` — без него строки не
+ * нажимаются, потому что выбирать в профиле нечего. Двух списков
+ * реквизитов не бывает, и заводить второй ради отсутствующей кнопки
+ * значило бы однажды поправить один и забыть другой.
  */
 export function RequisitesSheet({
   requisites,
@@ -32,11 +38,12 @@ export function RequisitesSheet({
 }: {
   /** Записи, подходящие валюте, которую клиент получает. */
   readonly requisites: readonly RequisitesView[];
-  readonly selectedId: string | undefined;
+  readonly selectedId?: string | undefined;
   /** Способы получения, которыми выдают эту валюту. */
   readonly kinds: readonly RequisiteKind[];
   readonly networks: readonly string[];
-  readonly onPick: (requisites: RequisitesView) => void;
+  /** Есть — лист выбирает запись; нет — просто ведёт список. */
+  readonly onPick?: ((requisites: RequisitesView) => void) | undefined;
   readonly onSaved: (requisites: RequisitesView) => void;
   readonly onRemoved: (requisitesId: string) => void;
 }) {
@@ -76,44 +83,55 @@ export function RequisitesSheet({
   return (
     <>
       <p className="sheet__body">
-        Деньги уйдут на выбранную запись. Номер карты и адрес кошелька хранятся
-        зашифрованными — их видно только по краям.
+        {onPick
+          ? 'Деньги уйдут на выбранную запись. Номер карты и адрес кошелька хранятся зашифрованными — их видно только по краям.'
+          : 'Записи, на которые сервис отправляет вам деньги: по ним приходит и обмен, и выплата баллов. Номер карты и адрес кошелька хранятся зашифрованными — их видно только по краям.'}
       </p>
 
       <ul className="rows">
-        {requisites.map((one) => (
-          <li key={one.id} className="row">
-            <button
-              type="button"
-              onClick={() => onPick(one)}
-              aria-pressed={one.id === selectedId}
-              // Кошелёк в погашенной сети выбрать нельзя, но он остаётся
-              // на месте: пропавшая сама запись выглядела бы потерей, а
-              // сеть могут включить обратно.
-              disabled={!one.isAvailable}
-              className="option option--flush"
-            >
-              <span className="row__body">
-                <span className={one.isAvailable ? 'row__title' : 'row__title row__title--dim'}>
-                  {describeRequisites(one)}
-                </span>
-                <span className="row__sub">
-                  {one.isAvailable
-                    ? REQUISITE_KIND_LABELS[one.kind]
-                    : `${REQUISITE_KIND_LABELS[one.kind]} · сеть временно недоступна`}
-                </span>
+        {requisites.map((one) => {
+          const body = (
+            <span className="row__body">
+              <span className={one.isAvailable ? 'row__title' : 'row__title row__title--dim'}>
+                {describeRequisites(one)}
               </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => void remove(one.id)}
-              disabled={busy}
-              className="link link--muted"
-            >
-              Удалить
-            </button>
-          </li>
-        ))}
+              <span className="row__sub">
+                {one.isAvailable
+                  ? REQUISITE_KIND_LABELS[one.kind]
+                  : `${REQUISITE_KIND_LABELS[one.kind]} · сеть временно недоступна`}
+              </span>
+            </span>
+          );
+
+          return (
+            <li key={one.id} className="row">
+              {onPick ? (
+                <button
+                  type="button"
+                  onClick={() => onPick(one)}
+                  aria-pressed={one.id === selectedId}
+                  // Кошелёк в погашенной сети выбрать нельзя, но он остаётся
+                  // на месте: пропавшая сама запись выглядела бы потерей, а
+                  // сеть могут включить обратно.
+                  disabled={!one.isAvailable}
+                  className="option option--flush"
+                >
+                  {body}
+                </button>
+              ) : (
+                body
+              )}
+              <button
+                type="button"
+                onClick={() => void remove(one.id)}
+                disabled={busy}
+                className="link link--muted"
+              >
+                Удалить
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
       {error ? <p className="error">{error}</p> : undefined}

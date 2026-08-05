@@ -112,6 +112,38 @@ export function formatDate(value: Date | string): string {
     : date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+/**
+ * День, которым подписана группа в ленте истории.
+ *
+ * Свежие дни называются словом, а не числом: «сегодня» клиент читает
+ * быстрее, чем сверяет «5 августа» с сегодняшней датой, — а ищет он в
+ * ленте обычно именно вчерашнее.
+ */
+export function formatDay(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const days = Math.floor((midnight.getTime() - date.getTime()) / 86_400_000);
+
+  if (days < 0) return 'Сегодня';
+  if (days < 1) return 'Вчера';
+  return formatDate(date);
+}
+
+const MONTH_FORMAT = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
+
+/**
+ * Месяц и год — так подписан стаж клиента в профиле. Дня там не нужно:
+ * «с 14 марта 2026» читается как дата события, а событием регистрация
+ * не была.
+ */
+export function formatMonth(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : MONTH_FORMAT.format(date);
+}
+
 /** Короткий номер заявки: полный идентификатор клиенту не нужен. */
 export function shortId(id: string): string {
   return `№ ${id.slice(0, 6)}`;

@@ -171,10 +171,14 @@ describe('чтение реквизитов вывода', () => {
       serviceIncomeCode: 'EUR',
     });
 
+    const card = await core.saveRequisites(asClient(200n), {
+      kind: 'card',
+      bankName: 'Сбербанк',
+      cardNumber: '40817810099910004312',
+    });
     const { request: withdrawal } = await core.submitWithdrawalRequest(asClient(200n), {
       amount: '5000',
-      method: 'bank',
-      destination: '40817810099910004312',
+      requisitesId: card.id,
     });
     return withdrawal.id;
   }

@@ -7,6 +7,7 @@ import {
   type CardApplicationStatus,
 } from '@nemo/types';
 import { requireClient, requireStaff, type Actor } from './actor.js';
+import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
 import { ConflictError, NotFoundError, TransitionNotAllowedError } from './errors.js';
 import type { Notification } from './notifications.js';
@@ -168,7 +169,8 @@ export async function listCardApplications(
     .select()
     .from(cardApplications)
     .where(eq(cardApplications.clientId, clientId))
-    .orderBy(desc(cardApplications.createdAt));
+    .orderBy(desc(cardApplications.createdAt))
+    .limit(CLIENT_HISTORY_LIMIT);
   return rows.map(toClientView);
 }
 

@@ -508,6 +508,16 @@ export const withdrawalRequests = pgTable(
      * реквизитов обмена.
      */
     network: text('network').references(() => transferNetworks.code),
+    /**
+     * Куда перечислить выплату — записью из списка реквизитов клиента.
+     *
+     * Список тот же, из которого выбирают при обмене: двух правд о том,
+     * куда сервису слать клиенту деньги, не бывает. Раньше реквизит
+     * вводился заново прямо в форме вывода и ложился сюда отдельным
+     * шифротекстом — так сделаны заявки, поданные до этого; переписать
+     * их нечем, записи-реквизита у них не было.
+     */
+    requisitesId: uuid('requisites_id').references(() => clientRequisites.id),
     destinationSealed: bytea('destination_sealed'),
     destinationHint: text('destination_hint'),
     status: withdrawalRequestStatusEnum('status').default('new').notNull(),
@@ -530,6 +540,19 @@ export const withdrawalRequests = pgTable(
     check(
       'withdrawal_requests_crypto_network',
       sql`${table.method} <> 'crypto' or ${table.network} is not null`,
+    ),
+    /*
+     * Куда платить — либо запись из списка клиента, либо собственный
+     * шифротекст заявки. Одно из двух, и хотя бы одно: заявка на выплату,
+     * из которой не видно, куда платить, доходит до менеджера и встаёт.
+     *
+     * Оба разом тоже нельзя: два ответа на один вопрос означают, что
+     * однажды выплату сделают не по тому.
+     */
+    check(
+      'withdrawal_requests_destination',
+      sql`(case when ${table.requisitesId} is not null then 1 else 0 end
+        + case when ${table.destinationSealed} is not null then 1 else 0 end) = 1`,
     ),
   ],
 );

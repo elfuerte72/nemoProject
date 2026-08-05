@@ -12,11 +12,11 @@ import {
 import type { ClientView } from '@nemo/core';
 import { ApiError, post } from '@/lib/client-api';
 import { getWebApp } from '@/lib/telegram/webapp';
-import { BonusSection } from './bonus-section';
-import { CardSection } from './card-section';
 import { ExchangeScreen } from './exchange-screen';
+import { HistorySection } from './history-section';
 import { MarketingConsentAsk } from './marketing-consent';
-import { TabBonusIcon, TabCardIcon, TabExchangeIcon } from './ui/icons';
+import { ProfileSection } from './profile-section';
+import { TabExchangeIcon, TabHistoryIcon, TabProfileIcon } from './ui/icons';
 import { Splash } from './ui/splash';
 
 /**
@@ -43,16 +43,22 @@ import { Splash } from './ui/splash';
  * перечитывает своё, не показывая, что занят.
  */
 
-type Tab = 'exchange' | 'bonus' | 'card';
+type Tab = 'exchange' | 'history' | 'profile';
 
+/**
+ * Порядок в ряду — это и порядок под пальцем. История стоит рядом с
+ * обменом, потому что она его продолжение: незакрытая заявка из ленты
+ * ведёт обратно на главную, и дорога между ними должна быть в один
+ * жест. Профиль с краю — туда заходят реже всего.
+ */
 const TABS: readonly {
   id: Tab;
   label: string;
   Icon: (props: { filled: boolean }) => ReactElement;
 }[] = [
   { id: 'exchange', label: 'Обмен', Icon: TabExchangeIcon },
-  { id: 'bonus', label: 'Бонусы', Icon: TabBonusIcon },
-  { id: 'card', label: 'Карта', Icon: TabCardIcon },
+  { id: 'history', label: 'История', Icon: TabHistoryIcon },
+  { id: 'profile', label: 'Профиль', Icon: TabProfileIcon },
 ];
 
 /**
@@ -189,9 +195,22 @@ export function ClientApp() {
   /** Сколько раз в раздел возвращались: по этому числу он перечитывает своё. */
   const [visits, setVisits] = useState<Readonly<Record<Tab, number>>>({
     exchange: 0,
-    bonus: 0,
-    card: 0,
+    history: 0,
+    profile: 0,
   });
+  /**
+   * С каким отбором открыть историю. Ставится профилем — «за что
+   * начислено» ведёт в ленту, уже суженную до баллов.
+   *
+   * Со счётчиком, а не одним значением: клиент может уйти в историю по
+   * этой ссылке, сменить там отбор руками и нажать её снова. Прежнее
+   * значение эффект бы не заметил, и лента осталась бы там, где он её
+   * оставил.
+   */
+  const [historyFocus, setHistoryFocus] = useState<{
+    readonly filter: 'bonus';
+    readonly nonce: number;
+  }>();
   const keyboard = useKeyboardOpen();
   const viewport = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
@@ -315,6 +334,21 @@ export function ClientApp() {
   useEffect(() => {
     latest.current = { index, go, mount, reveal };
   });
+
+  /*
+   * Переход, которым разделы зовут друг друга, — через ту же ссылку.
+   *
+   * Сам `go` пересоздаётся при каждой смене раздела и при заведении
+   * соседа, то есть прямо посреди жеста. Отдай его разделам напрямую —
+   * и сборка разделов перестала бы держаться на мемоизации: ряд под
+   * пальцем перерисовывал бы все три ровно в тот момент, когда от
+   * приложения ждут плавности.
+   */
+  const openExchange = useCallback(() => latest.current.go('exchange'), []);
+  const openBonusHistory = useCallback(() => {
+    setHistoryFocus((was) => ({ filter: 'bonus', nonce: (was?.nonce ?? 0) + 1 }));
+    latest.current.go('history');
+  }, []);
 
   /*
    * Ряд ставится на место записью в узел, а не свойством разметки.
@@ -530,16 +564,24 @@ export function ClientApp() {
           onReady={() => setScreenReady(true)}
         />
       ),
-      bonus: client ? (
-        <BonusSection
-          revisit={visits.bonus}
+      history: (
+        <HistorySection
+          revisit={visits.history}
+          focus={historyFocus}
+          onOpenExchange={openExchange}
+        />
+      ),
+      profile: client ? (
+        <ProfileSection
+          revisit={visits.profile}
+          client={client}
           consent={client.marketingConsent}
           onConsentChanged={(marketingConsent) => setClient({ ...client, marketingConsent })}
+          onOpenBonusHistory={openBonusHistory}
         />
       ) : undefined,
-      card: <CardSection revisit={visits.card} />,
     }),
-    [client, visits],
+    [client, visits, historyFocus, openExchange, openBonusHistory],
   );
 
   return (

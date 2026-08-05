@@ -55,3 +55,31 @@ export const KIND_LABELS: Record<ExchangeKind, string> = {
   electronic: 'Переводом',
   cash: 'Наличными',
 };
+
+/**
+ * Заявка ещё в пути. На главной такая показывается карточкой с оплатой
+ * и отменой, в ленте истории — строкой, которая туда же и ведёт.
+ */
+export function isOpen(status: ExchangeRequestStatus): boolean {
+  return status !== 'completed' && status !== 'cancelled';
+}
+
+/**
+ * Шаг на полосе прогресса. Отмены на ней нет — это не шаг вперёд, а
+ * выход, и карточкой отменённая заявка уже не показывается.
+ */
+export function stepOf(status: ExchangeRequestStatus): RequestStep {
+  return status === 'cancelled' ? 'new' : status;
+}
+
+/**
+ * Исход заявки строкой: в истории отмена — такой же исход, как
+ * исполнение.
+ *
+ * Здесь, а не рядом с экраном: строку эту показывают оба — главная в
+ * своей карточке и лента истории, — и разойдись они, один и тот же
+ * статус назывался бы в приложении двумя словами.
+ */
+export function outcomeOf(status: ExchangeRequestStatus): string {
+  return status === 'cancelled' ? 'Отменена' : STEP_LABELS[stepOf(status)];
+}

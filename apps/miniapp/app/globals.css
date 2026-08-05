@@ -1421,6 +1421,126 @@ button.rates__head:hover {
   text-wrap: pretty;
 }
 
+/* ── История ─────────────────────────────────────────────────────── */
+
+/*
+ * Чипы отбора. Лежат в строку с прокруткой, а не переносятся: перенос
+ * на узком экране двигал бы ленту вниз при каждом появлении четвёртого
+ * чипа, а их число со временем меняется.
+ */
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 2px -20px 4px;
+  padding: 2px 20px 6px;
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--gold-face-soft);
+  color: var(--gold-ink);
+}
+
+/*
+ * Нажимаемая строка ленты. Занимает всю ширину и остаётся строкой:
+ * кнопка внутри списка не должна выглядеть кнопкой — она обещала бы
+ * действие, а ведёт всего лишь на главную.
+ */
+.row__tap {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Незакрытая заявка — единственное в ленте, что ещё требует внимания. */
+.row__state--live {
+  color: var(--gold-light);
+  font-weight: 600;
+}
+
+/* ── Профиль ─────────────────────────────────────────────────────── */
+
+/*
+ * Кто вошёл. Стоит первым в разделе и набрано скромно: это подпись, а
+ * не заголовок — клиент пришёл сюда за баллами и реквизитами, а имя
+ * лишь отвечает на вопрос, тот ли это аккаунт.
+ */
+.whoami {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 4px 0 18px;
+}
+
+.whoami__photo {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface);
+}
+
+/* Без фотографии — первая буква имени: пустой кружок читается как сбой. */
+.whoami__photo--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--gold-light);
+  border: 1px solid var(--hairline);
+}
+
+.whoami__body {
+  min-width: 0;
+}
+
+.whoami__name {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.whoami__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 /* ── Бонусы ──────────────────────────────────────────────────────── */
 
 .balance {
@@ -1454,6 +1574,30 @@ button.rates__head:hover {
   line-height: 1.5;
   color: var(--text-muted);
   text-wrap: pretty;
+}
+
+/*
+ * Заработанное за всё время. Подписью под остатком, а не вторым крупным
+ * числом: распоряжаются балансом, а это — ответ на вопрос «сколько
+ * принесла рефералка». Подчёркнуто, потому что ведёт в историю: серая
+ * строка того же размера, что и соседние, нажимаемой не выглядит.
+ */
+.balance__earned {
+  margin: 8px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-decoration-color: var(--hairline);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.balance__earned:hover {
+  color: var(--gold-light);
 }
 
 .split {

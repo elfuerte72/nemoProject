@@ -5,6 +5,7 @@ import {
   createCore,
   ForbiddenError,
   InvalidInputError,
+  NotFoundError,
   TransitionNotAllowedError,
   type Actor,
 } from './index.js';
@@ -16,6 +17,11 @@ import { asClient, givenCurrencyPair, givenNetwork, givenStaff } from './test-su
  * Выплату исполняет менеджер вручную. Баллы списываются в момент
  * отметки о выплате, поэтому проверки здесь — про то, что нельзя вывести
  * больше, чем есть, и что выплаченное списано ровно один раз.
+ *
+ * Куда платить, заявка не спрашивает отдельно: она ссылается на запись
+ * из списка реквизитов клиента — тот же список, из которого выбирают при
+ * обмене. Отсюда и проверки про чужую и архивную запись: выплата не по
+ * тому реквизиту не возвращается.
  *
  * Минимальная сумма вывода по умолчанию — 1000 баллов: конкретное
  * значение задаёт администратор (блокер B1), но проверки должны знать,
@@ -55,6 +61,25 @@ async function givenClientWithBonuses(balance: number): Promise<void> {
   });
 }
 
+/** Карта клиента: на неё по умолчанию и заявляют выплату. */
+async function givenCard(owner = 1n, tail = '4312'): Promise<string> {
+  const saved = await core.saveRequisites(asClient(owner), {
+    kind: 'card',
+    bankName: 'Сбербанк',
+    cardNumber: `4081781009991000${tail}`,
+  });
+  return saved.id;
+}
+
+async function givenWallet(network = 'TRC20'): Promise<string> {
+  const saved = await core.saveRequisites(asClient(1n), {
+    kind: 'wallet',
+    network,
+    address: 'TXYZabcdef1234567890',
+  });
+  return saved.id;
+}
+
 beforeEach(async () => {
   await resetDatabase();
   await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
@@ -70,8 +95,7 @@ describe('подача заявки на вывод', () => {
 
     const { request, notifications } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'bank',
-      destination: '40817810099910004312',
+      requisitesId: await givenCard(),
     });
 
     expect(request).toMatchObject({ amount: '5000', method: 'bank', status: 'new' });
@@ -86,9 +110,7 @@ describe('подача заявки на вывод', () => {
     await expect(
       core.submitWithdrawalRequest(asClient(1n), {
         amount: '999',
-        method: 'crypto',
-        destination: 'TXYZ',
-        network: 'TRC20',
+        requisitesId: await givenCard(),
       }),
     ).rejects.toThrow(InvalidInputError);
   });
@@ -99,93 +121,83 @@ describe('подача заявки на вывод', () => {
     await expect(
       core.submitWithdrawalRequest(asClient(1n), {
         amount: '5001',
-        method: 'bank',
-        destination: '40817810099910004312',
+        requisitesId: await givenCard(),
       }),
     ).rejects.toThrow(InvalidInputError);
   });
 
-  it('требует сеть у выплаты в криптовалюте', async () => {
-    await givenClientWithBonuses(5000);
-
-    // Один и тот же адрес существует в нескольких сетях, и отправленное
-    // не в ту не возвращается: угадывать её за клиента нельзя.
-    await expect(
-      core.submitWithdrawalRequest(asClient(1n), {
-        amount: '5000',
-        method: 'crypto',
-        destination: 'TXYZabcdef1234567890',
-      }),
-    ).rejects.toThrow(InvalidInputError);
-  });
-
-  it('не подаётся в сети, выключенной администратором', async () => {
-    await givenClientWithBonuses(5000);
-    await givenNetwork('TON', { isActive: false });
-
-    // Справочник сетей один на весь сервис: закрывая сеть, администратор
-    // закрывает её и для реквизитов обмена, и для выплат.
-    await expect(
-      core.submitWithdrawalRequest(asClient(1n), {
-        amount: '5000',
-        method: 'crypto',
-        destination: 'UQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e',
-        network: 'TON',
-      }),
-    ).rejects.toThrow(InvalidInputError);
-  });
-
-  it('не подаётся в сети, которой сервис не знает', async () => {
-    await givenClientWithBonuses(5000);
-
-    await expect(
-      core.submitWithdrawalRequest(asClient(1n), {
-        amount: '5000',
-        method: 'crypto',
-        destination: '0xabcdef1234567890',
-        network: 'ERC20',
-      }),
-    ).rejects.toThrow(InvalidInputError);
-  });
-
-  it('не запоминает сеть у выплаты на счёт: там её нет', async () => {
+  it('берёт способ и сеть у самой записи, а не у клиента', async () => {
     await givenClientWithBonuses(5000);
 
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'bank',
-      destination: '40817810099910004312',
-      network: 'TRC20',
+      requisitesId: await givenWallet(),
+    });
+
+    // Кошелёк исполняется криптовалютой, и сеть у него своя: назвать её
+    // клиент не может — тот же адрес живёт в нескольких, и выбор наугад
+    // означает потерянные деньги.
+    expect(request).toMatchObject({ method: 'crypto', network: 'TRC20' });
+  });
+
+  it('не запоминает сеть у выплаты на карту: там её нет', async () => {
+    await givenClientWithBonuses(5000);
+
+    const { request } = await core.submitWithdrawalRequest(asClient(1n), {
+      amount: '5000',
+      requisitesId: await givenCard(),
     });
 
     expect(request.network).toBeNull();
   });
 
-  it('требует реквизиты получения', async () => {
+  it('не подаётся в сети, выключенной администратором', async () => {
     await givenClientWithBonuses(5000);
+    await givenNetwork('TON');
+    const wallet = await givenWallet('TON');
+    await givenNetwork('TON', { isActive: false });
+
+    // Справочник сетей один на весь сервис: закрывая сеть, администратор
+    // закрывает её и для реквизитов обмена, и для выплат. Запись при
+    // этом остаётся у клиента — сеть могут включить обратно.
+    await expect(
+      core.submitWithdrawalRequest(asClient(1n), { amount: '5000', requisitesId: wallet }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не принимает чужую запись', async () => {
+    await givenClientWithBonuses(5000);
+    const stranger = await givenCard(2n);
+
+    // Чужая запись — «не найдена», а не «запрещена»: отличать одно от
+    // другого значило бы подтверждать её существование перебирающему.
+    await expect(
+      core.submitWithdrawalRequest(asClient(1n), { amount: '5000', requisitesId: stranger }),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it('не принимает удалённую запись', async () => {
+    await givenClientWithBonuses(5000);
+    const card = await givenCard();
+    await core.archiveRequisites(asClient(1n), card);
 
     await expect(
-      core.submitWithdrawalRequest(asClient(1n), {
-        amount: '5000',
-        method: 'bank',
-        destination: '   ',
-      }),
-    ).rejects.toThrow(InvalidInputError);
+      core.submitWithdrawalRequest(asClient(1n), { amount: '5000', requisitesId: card }),
+    ).rejects.toThrow(NotFoundError);
   });
 });
 
 describe('реквизиты получения', () => {
-  it('клиенту видны только хвостом', async () => {
+  it('клиенту видны только подписью', async () => {
     await givenClientWithBonuses(5000);
 
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'bank',
-      destination: '40817810099910004312',
+      requisitesId: await givenCard(),
     });
 
-    expect(request.destinationHint).toBe('…4312');
-    // Ни в одном поле представления: клиентская часть номер счёта
+    expect(request.destinationHint).toBe('Сбербанк · карта •••• 4312');
+    // Ни в одном поле представления: клиентская часть номер карты
     // однажды сохранила и больше видеть его не должна.
     expect(Object.values(request).map(String)).not.toContain('40817810099910004312');
   });
@@ -194,13 +206,24 @@ describe('реквизиты получения', () => {
     await givenClientWithBonuses(5000);
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'crypto',
-      destination: 'TXYZabcdef1234567890',
-      network: 'TRC20',
+      requisitesId: await givenWallet(),
+    });
+
+    // Вместе с сетью: адрес без неё отправить некуда.
+    expect(await core.revealWithdrawalDestination(manager, request.id)).toBe(
+      'TRC20 · TXYZabcdef1234567890',
+    );
+  });
+
+  it('открываются с банком: номер карты без него никуда не отправить', async () => {
+    await givenClientWithBonuses(5000);
+    const { request } = await core.submitWithdrawalRequest(asClient(1n), {
+      amount: '5000',
+      requisitesId: await givenCard(),
     });
 
     expect(await core.revealWithdrawalDestination(manager, request.id)).toBe(
-      'TXYZabcdef1234567890',
+      'Сбербанк · 40817810099910004312',
     );
   });
 
@@ -208,9 +231,7 @@ describe('реквизиты получения', () => {
     await givenClientWithBonuses(5000);
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'crypto',
-      destination: 'TXYZabcdef1234567890',
-      network: 'TRC20',
+      requisitesId: await givenWallet(),
     });
 
     await expect(
@@ -224,8 +245,7 @@ describe('обработка заявки менеджером', () => {
     await givenClientWithBonuses(5000);
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'bank',
-      destination: '40817810099910004312',
+      requisitesId: await givenCard(),
     });
     return request.id;
   }
@@ -312,37 +332,23 @@ describe('обработка заявки менеджером', () => {
 describe('две заявки на одни баллы', () => {
   it('не выводят больше, чем есть на балансе', async () => {
     await givenClientWithBonuses(5000);
-    await core.submitWithdrawalRequest(asClient(1n), {
-      amount: '3000',
-      method: 'bank',
-      destination: '40817810099910004312',
-    });
+    const card = await givenCard();
+    await core.submitWithdrawalRequest(asClient(1n), { amount: '3000', requisitesId: card });
 
     // Первая заявка ещё не выплачена, но её сумма уже занята: иначе обе
     // прошли бы проверку и вместе вывели бы 6000 из 5000.
     await expect(
-      core.submitWithdrawalRequest(asClient(1n), {
-        amount: '3000',
-        method: 'bank',
-        destination: '40817810099910004312',
-      }),
+      core.submitWithdrawalRequest(asClient(1n), { amount: '3000', requisitesId: card }),
     ).rejects.toThrow(InvalidInputError);
   });
 
   it('поданные одновременно, вместе не превышают баланс', async () => {
     await givenClientWithBonuses(5000);
+    const card = await givenCard();
 
     const results = await Promise.allSettled([
-      core.submitWithdrawalRequest(asClient(1n), {
-        amount: '3000',
-        method: 'bank',
-        destination: '40817810099910004312',
-      }),
-      core.submitWithdrawalRequest(asClient(1n), {
-        amount: '3000',
-        method: 'bank',
-        destination: '40817810099910004312',
-      }),
+      core.submitWithdrawalRequest(asClient(1n), { amount: '3000', requisitesId: card }),
+      core.submitWithdrawalRequest(asClient(1n), { amount: '3000', requisitesId: card }),
     ]);
 
     expect(results.filter((one) => one.status === 'fulfilled')).toHaveLength(1);
@@ -350,17 +356,16 @@ describe('две заявки на одни баллы', () => {
 
   it('освобождают баллы, если заявку отклонили', async () => {
     await givenClientWithBonuses(5000);
+    const card = await givenCard();
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'bank',
-      destination: '40817810099910004312',
+      requisitesId: card,
     });
     await core.rejectWithdrawalRequest(manager, request.id, { reason: 'не тот банк' });
 
     const retried = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'bank',
-      destination: '40817810099910004399',
+      requisitesId: await givenCard(1n, '4399'),
     });
 
     expect(retried.request.status).toBe('new');
@@ -372,8 +377,7 @@ describe('очередь выплат', () => {
     await givenClientWithBonuses(5000);
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'bank',
-      destination: '40817810099910004312',
+      requisitesId: await givenCard(),
     });
 
     expect(await core.listWithdrawalQueue(manager)).toHaveLength(1);
@@ -387,8 +391,7 @@ describe('очередь выплат', () => {
     await givenClientWithBonuses(5000);
     await core.submitWithdrawalRequest(asClient(1n), {
       amount: '5000',
-      method: 'bank',
-      destination: '40817810099910004312',
+      requisitesId: await givenCard(),
     });
 
     expect(await core.listWithdrawalRequests(asClient(2n))).toEqual([]);

@@ -188,32 +188,41 @@ export function TabExchangeIcon({ filled }: { filled: boolean }) {
 }
 
 /**
- * Знак денег, а не абстрактная фигура: баллы копятся ради выплаты, и
- * вкладку ищут глазами именно по этому.
- *
- * Начертание собрано штрихом той же толщины, что и у соседей: залитый
- * символ рядом с контурными читался бы как выделенный.
+ * Часы, а не список строк: история — это про «когда», и стопка полосок
+ * на 24 пикселях не отличается от знака настроек.
  */
-export function TabBonusIcon({ filled }: { filled: boolean }) {
+export function TabHistoryIcon({ filled }: { filled: boolean }) {
   return (
     <TabHex filled={filled}>
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.6" />
+      {/* Стрелки от центра вверх и вправо: время читается по их углу. */}
       <path
-        d="M13.7 10.2c0-.8-.76-1.4-1.7-1.4s-1.7.6-1.7 1.4.76 1.4 1.7 1.4 1.7.6 1.7 1.4-.76 1.4-1.7 1.4-1.7-.6-1.7-1.4"
+        d="M12 9.8V12l1.7 1.1"
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* Черта выходит за края петель — без неё символ читается как «S». */}
-      <path d="M12 7.9v7.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </TabHex>
   );
 }
 
-export function TabCardIcon({ filled }: { filled: boolean }) {
+/**
+ * Силуэт человека: профиль — единственное место, где приложение говорит
+ * о самом клиенте, и знак у него тот же, каким это принято обозначать
+ * везде. Своя фигура здесь стоила бы узнаваемости.
+ */
+export function TabProfileIcon({ filled }: { filled: boolean }) {
   return (
     <TabHex filled={filled}>
-      <path d="M5.1 10.2h13.8M9 14.4h3.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="12" cy="10.1" r="2.1" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M8.5 16c.5-1.7 1.8-2.6 3.5-2.6s3 .9 3.5 2.6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </TabHex>
   );
 }

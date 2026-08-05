@@ -1,28 +1,26 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { open, seal } from '@nemo/crypto';
-import { bonusTransactions, clients, withdrawalRequests } from '@nemo/db';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { open } from '@nemo/crypto';
+import { bonusTransactions, clientRequisites, clients, withdrawalRequests } from '@nemo/db';
 import {
   canTransitionWithdrawal,
   Money,
   withdrawalRequestStatuses,
   isWithdrawalOpen,
   type Amount,
+  type RequisiteKind,
   type WithdrawalMethod,
   type WithdrawalRequestStatus,
 } from '@nemo/types';
 import { requireClient, requireStaff, type Actor } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
 import { bonusBalance } from './bonus-account.js';
-import {
-  requirePrivateKey,
-  requirePublicKey,
-  type CoreConfig,
-  type Executor,
-} from './context.js';
+import { CLIENT_HISTORY_LIMIT } from './client-history.js';
+import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
 import { InvalidInputError, NotFoundError, TransitionNotAllowedError } from './errors.js';
 import { requireActiveNetwork } from './networks.js';
 import type { Notification } from './notifications.js';
 import { logRequisiteAccess } from './requisite-access.js';
+import { describeRequisites } from './requisites.js';
 import { readServiceSettings } from './settings.js';
 
 /**
@@ -60,11 +58,15 @@ export interface WithdrawalRequestView {
 
 export interface SubmitWithdrawalInput {
   readonly amount: string;
-  readonly method: WithdrawalMethod;
-  /** Счёт или адрес кошелька. Наружу больше не отдаётся. */
-  readonly destination: string;
-  /** Сеть перевода. Обязательна для криптовалюты и бессмысленна для счёта. */
-  readonly network?: string | undefined;
+  /**
+   * Куда перечислить — запись из списка реквизитов клиента, того же, из
+   * которого он выбирает при обмене.
+   *
+   * Ни способа, ни сети рядом нет: и то и другое у записи уже есть, а
+   * присланное поверх означало бы, что клиент может назвать сети
+   * кошелька не ту, в которой кошелёк заведён.
+   */
+  readonly requisitesId: string;
 }
 
 export interface WithdrawalTransitionResult {
@@ -114,13 +116,45 @@ function notificationFor(row: WithdrawalRow): Notification {
 }
 
 /**
- * Хвост реквизита — чтобы клиент и менеджер узнавали, куда заявлен
- * вывод, не открывая сам реквизит. Номер счёта и адрес кошелька
- * различаются длиной, но узнаётся и то и другое по последним знакам.
+ * Каким способом уходит выплата — решает вид записи, а не клиент.
+ *
+ * Перевод по телефону и на карту исполняются одинаково: менеджер
+ * отправляет деньги через банк. Кошелёк — это криптовалюта, и другого
+ * способа у него нет.
  */
-function hint(destination: string): string {
-  const tail = destination.slice(-4);
-  return destination.length > 4 ? `…${tail}` : tail;
+function methodOf(kind: RequisiteKind): WithdrawalMethod {
+  return kind === 'wallet' ? 'crypto' : 'bank';
+}
+
+/**
+ * Реквизит одной строкой — так, как его читает менеджер перед выплатой.
+ *
+ * Целиком, а не одним расшифрованным номером: банк без номера карты
+ * бесполезен, номер без банка — тоже. У перевода по телефону
+ * расшифровывать нечего, там оба поля и так открыты.
+ */
+function revealed(
+  requisites: typeof clientRequisites.$inferSelect,
+  privateKey: string,
+): string {
+  switch (requisites.kind) {
+    case 'phone':
+      return [requisites.bankName, requisites.phone].filter(Boolean).join(' · ');
+    case 'card':
+      return [
+        requisites.bankName,
+        requisites.cardSealed ? open(privateKey, requisites.cardSealed) : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    case 'wallet':
+      return [
+        requisites.network,
+        requisites.addressSealed ? open(privateKey, requisites.addressSealed) : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+  }
 }
 
 /**
@@ -156,23 +190,34 @@ export async function submitWithdrawalRequest(
 ): Promise<WithdrawalTransitionResult> {
   const clientId = requireClient(actor);
   const amount = requirePositiveAmount(input.amount, 'Сумма вывода');
-  const destination = input.destination.trim();
-  if (!destination) {
-    throw new InvalidInputError('Укажите, куда перечислить выплату');
-  }
-  // Сеть у криптоперевода обязательна: тот же адрес существует в
-  // нескольких, и отправленное не в ту не возвращается. Ограничение
-  // повторено в базе — здесь оно нужно ради внятного отказа.
-  if (input.method === 'crypto' && !input.network) {
-    throw new InvalidInputError('Выберите сеть, в которой ждёте перевод');
-  }
-  const sealed = seal(requirePublicKey(ctx), destination);
 
   return ctx.db.transaction(async (tx) => {
-    // Сеть — из общего справочника, и выключенную администратором
-    // сервис не примет: заявку в неё некому исполнить.
-    if (input.method === 'crypto' && input.network) {
-      await requireActiveNetwork(tx, input.network);
+    /*
+     * Реквизит берётся из списка клиента и проверяется здесь же: чужая
+     * запись — это выплата не тому, а архивная — та, которой клиент уже
+     * не пользуется. Отбор по владельцу, а не проверка после чтения:
+     * «не найдено» для чужой записи не подтверждает, что она есть.
+     */
+    const [requisites] = await tx
+      .select()
+      .from(clientRequisites)
+      .where(
+        and(
+          eq(clientRequisites.id, input.requisitesId),
+          eq(clientRequisites.clientId, clientId),
+          isNull(clientRequisites.archivedAt),
+        ),
+      )
+      .limit(1);
+    if (!requisites) {
+      throw new NotFoundError('Реквизиты не найдены');
+    }
+
+    // Сеть могла быть выключена после того, как клиент завёл кошелёк:
+    // принять такую заявку значит завести выплату, которую некому
+    // исполнить.
+    if (requisites.network) {
+      await requireActiveNetwork(tx, requisites.network);
     }
 
     // Строка клиента блокируется на время подсчёта: две заявки,
@@ -207,12 +252,15 @@ export async function submitWithdrawalRequest(
       .values({
         clientId,
         amount,
-        method: input.method,
-        // У банковского счёта сети нет: пришедшую вместе с ним не
-        // сохраняем, иначе она попадёт в карточку заявки и собьёт с толку.
-        network: input.method === 'crypto' ? (input.network ?? null) : null,
-        destinationSealed: sealed,
-        destinationHint: hint(destination),
+        method: methodOf(requisites.kind),
+        // Сеть — только у кошелька: у карты и телефона её нет, и «TRC20»
+        // рядом с номером карты читался бы как ошибка ввода.
+        network: requisites.network,
+        requisitesId: requisites.id,
+        // Подпись та же, по которой запись называется клиенту и в
+        // журнале доступа: менеджер видит, куда заявлен вывод, не
+        // открывая сам реквизит.
+        destinationHint: describeRequisites(requisites),
       })
       .returning();
 
@@ -229,7 +277,8 @@ export async function listWithdrawalRequests(
     .select()
     .from(withdrawalRequests)
     .where(eq(withdrawalRequests.clientId, clientId))
-    .orderBy(desc(withdrawalRequests.createdAt));
+    .orderBy(desc(withdrawalRequests.createdAt))
+    .limit(CLIENT_HISTORY_LIMIT);
   return rows.map(toView);
 }
 
@@ -382,6 +431,7 @@ export async function revealWithdrawalDestination(
     const [row] = await tx
       .select({
         clientId: withdrawalRequests.clientId,
+        requisitesId: withdrawalRequests.requisitesId,
         destinationSealed: withdrawalRequests.destinationSealed,
       })
       .from(withdrawalRequests)
@@ -391,9 +441,6 @@ export async function revealWithdrawalDestination(
     if (!row) {
       throw new NotFoundError('Заявка на вывод не найдена');
     }
-    if (!row.destinationSealed) {
-      throw new NotFoundError('У заявки на вывод не сохранены реквизиты получения');
-    }
 
     await logRequisiteAccess(tx, {
       staffId: staff.staffId,
@@ -401,6 +448,27 @@ export async function revealWithdrawalDestination(
       withdrawalRequestId: requestId,
     });
 
+    /*
+     * Заявка ссылается на запись клиента — открывается она. Собственный
+     * шифротекст остался у заявок, поданных до того, как список стал
+     * общим: у них записи-реквизита нет, и читать нечего, кроме него.
+     */
+    if (row.requisitesId) {
+      const [requisites] = await tx
+        .select()
+        .from(clientRequisites)
+        .where(eq(clientRequisites.id, row.requisitesId))
+        .limit(1);
+      if (!requisites) {
+        throw new NotFoundError('Реквизиты не найдены');
+      }
+
+      return revealed(requisites, privateKey);
+    }
+
+    if (!row.destinationSealed) {
+      throw new NotFoundError('У заявки на вывод не сохранены реквизиты получения');
+    }
     return open(privateKey, row.destinationSealed);
   });
 }
