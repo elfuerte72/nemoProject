@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { InvalidInputError } from '@nemo/core';
-import { networkCodeSchema, withdrawalMethodSchema } from '@nemo/types';
 import { botToken, deliverNotifications } from '@nemo/telegram';
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
@@ -11,21 +10,18 @@ export const dynamic = 'force-dynamic';
 /**
  * Заявки на вывод бонусных баллов.
  *
- * Реквизиты получения уходят сюда открытыми и дальше в ответах не
- * появляются: наружу возвращается только хвост. Логировать тело этого
- * запроса нельзя — здесь единственное место, где реквизит вообще виден.
+ * Реквизитов в теле запроса больше нет: заявка ссылается на запись из
+ * списка клиента, а сама запись заводится через `/api/requisites`. Туда
+ * же переехало и единственное место, где реквизит виден открытым.
  */
 
 const submitSchema = z.object({
   // Сумма строкой: через `number` дробная часть потерялась бы ещё до
   // проверки.
   amount: z.string(),
-  method: withdrawalMethodSchema,
-  destination: z.string().min(1).max(200),
-  // Обязательность сети для криптовалюты и то, что она вообще заведена и
-  // включена, проверяет операция: справочник сетей — её дело, а не
-  // разбора запроса.
-  network: networkCodeSchema.optional(),
+  // Чья это запись, не архивна ли она и жива ли её сеть — дело операции,
+  // а не разбора запроса.
+  requisitesId: z.string().uuid(),
 });
 
 export async function GET(request: Request): Promise<Response> {

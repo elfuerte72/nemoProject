@@ -2,17 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import type { BonusAccountView, ClientView, RequisitesView, WithdrawalRequestView } from '@nemo/core';
-import { requisiteKinds, type WithdrawalMethod } from '@nemo/types';
+import { requisiteKinds } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { referralLink } from '@/lib/referral';
-import { formatAmount, formatMonth, parseAmount } from '@/lib/format';
-import { WITHDRAWAL_METHOD_LABELS } from '@/lib/labels';
+import { describeRequisites, formatAmount, formatMonth, parseAmount } from '@/lib/format';
+import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { getTelegramUser, getWebApp } from '@/lib/telegram/webapp';
 import { CardIcon, ChevronRight, InviteIcon, WithdrawIcon } from './ui/icons';
 import { Loading } from './ui/loading';
 import { MarketingConsentToggle } from './marketing-consent';
 import { RequisitesSheet } from './requisites-section';
-import { addressLabel, NetworkPicker } from './ui/network-picker';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
 /**
@@ -249,8 +248,10 @@ export function ProfileSection({
       {sheet?.kind === 'withdraw' ? (
         <WithdrawSheet
           balance={account.balance}
+          requisites={requisites}
           onClose={() => setSheet(undefined)}
           onSubmitted={() => setSheet({ kind: 'notice', ...SUBMITTED })}
+          onAddRequisites={() => setSheet({ kind: 'requisites' })}
         />
       ) : undefined}
 
@@ -304,42 +305,43 @@ export function ProfileSection({
   );
 }
 
-/** Заявка на вывод: сколько и куда. */
+/**
+ * Заявка на вывод: сколько и на какую из сохранённых записей.
+ *
+ * Реквизит здесь больше не вводят — его выбирают из того же списка, что
+ * и при обмене. Ввод заново означал бы, что клиент, однажды сохранивший
+ * карту, набирает её номер второй раз, а сервис хранит два ответа на
+ * вопрос, куда ему платить.
+ *
+ * Способ выплаты из формы тоже ушёл: его знает сама запись — телефон и
+ * карта уходят банковским переводом, кошелёк криптовалютой.
+ */
 function WithdrawSheet({
   balance,
+  requisites,
   onClose,
   onSubmitted,
+  onAddRequisites,
 }: {
   readonly balance: string;
+  readonly requisites: readonly RequisitesView[];
   readonly onClose: () => void;
   readonly onSubmitted: () => void;
+  /** Записей нет — заводить их лист вывода не умеет, это дело профиля. */
+  readonly onAddRequisites: () => void;
 }) {
   const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<WithdrawalMethod>('bank');
-  const [network, setNetwork] = useState('');
-  const [destination, setDestination] = useState('');
+  const [selected, setSelected] = useState<string>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
-  /*
-   * Сети берутся из справочника, а не из перечисления в коде: сеть, в
-   * которой кошелёк сервиса временно недоступен, администратор гасит из
-   * панели, и предлагать её клиенту после этого нельзя.
-   */
-  const [networks, setNetworks] = useState<string[]>([]);
-
-  useEffect(() => {
-    void get<{ networks: string[] }>('/api/networks')
-      .then((result) => {
-        setNetworks(result.networks);
-        setNetwork((current) => current || (result.networks[0] ?? ''));
-      })
-      // Молчание справочника — не поломка формы: выплату на счёт оно не
-      // трогает, а про криптовалюту скажет пустой список сетей.
-      .catch(() => setNetworks([]));
-  }, []);
+  // Погашенная сеть выбирается не больше, чем при обмене: заявку в неё
+  // некому исполнить.
+  const offered = requisites.filter((one) => one.isAvailable);
+  const picked = selected ?? offered[0]?.id;
 
   async function submit() {
+    if (!picked) return;
     setError(undefined);
     setBusy(true);
     try {
@@ -347,9 +349,7 @@ function WithdrawSheet({
       // истории, и туда она попадёт при следующем заходе в раздел.
       await post<{ request: WithdrawalRequestView }>('/api/withdrawals', {
         amount: parseAmount(amount),
-        method,
-        destination: destination.trim(),
-        ...(method === 'crypto' ? { network } : {}),
+        requisitesId: picked,
       });
       onSubmitted();
     } catch (failure) {
@@ -362,23 +362,9 @@ function WithdrawSheet({
   return (
     <Sheet title="Вывод баллов" onClose={onClose}>
       <p className="sheet__body">
-        Доступно {formatAmount(balance)} баллов. Реквизиты сохранятся зашифрованными — дальше
-        видны будут только последние знаки, а выплату исполнит менеджер.
+        Доступно {formatAmount(balance)} баллов. Выплату исполнит менеджер вручную — на ту же
+        запись, на которую приходят обмены.
       </p>
-
-      <div className="segment">
-        {(Object.keys(WITHDRAWAL_METHOD_LABELS) as WithdrawalMethod[]).map((value) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setMethod(value)}
-            aria-pressed={method === value}
-            className="segment__item"
-          >
-            {value === 'bank' ? 'На счёт' : 'В криптовалюте'}
-          </button>
-        ))}
-      </div>
 
       <div className="form">
         <label className="field">
@@ -391,45 +377,52 @@ function WithdrawSheet({
             className="input"
           />
         </label>
-        {method === 'crypto' ? (
-          <NetworkPicker
-            networks={networks}
-            selected={network}
-            empty="Сети временно недоступны — выплату можно получить на счёт или спросить менеджера."
-            onPick={setNetwork}
-          />
-        ) : undefined}
-        <label className="field">
-          <span className="field__label">
-            {method === 'bank' ? 'Счёт или карта' : addressLabel(network)}
-          </span>
-          <input
-            value={destination}
-            onChange={(event) => setDestination(event.target.value)}
-            placeholder={method === 'bank' ? '0000 0000 0000 0000' : 'Адрес кошелька'}
-            className="input"
-          />
-        </label>
       </div>
+
+      {offered.length === 0 ? (
+        <p className="empty">
+          Выплату некуда отправить: заведите реквизиты — карту, перевод по телефону или кошелёк.
+        </p>
+      ) : (
+        <>
+          <div className="section-title">Куда перечислить</div>
+          <ul className="rows">
+            {offered.map((one) => (
+              <li key={one.id} className="row">
+                <button
+                  type="button"
+                  onClick={() => setSelected(one.id)}
+                  aria-pressed={one.id === picked}
+                  className="option option--flush"
+                >
+                  <span className="row__body">
+                    <span className="row__title">{describeRequisites(one)}</span>
+                    <span className="row__sub">{REQUISITE_KIND_LABELS[one.kind]}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       {error ? <p className="error">{error}</p> : undefined}
 
       <div className="sheet__actions">
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={
-            busy ||
-            !amount.trim() ||
-            !destination.trim() ||
-            // Криптоперевод без сети отправить некуда: тот же адрес
-            // живёт в нескольких, и выбор наугад — потерянные деньги.
-            (method === 'crypto' && !network)
-          }
-          className="btn btn--gold"
-        >
-          Подать заявку на вывод
-        </button>
+        {offered.length === 0 ? (
+          <button type="button" onClick={onAddRequisites} className="btn btn--gold">
+            Завести реквизиты
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={busy || !amount.trim() || !picked}
+            className="btn btn--gold"
+          >
+            Подать заявку на вывод
+          </button>
+        )}
       </div>
     </Sheet>
   );

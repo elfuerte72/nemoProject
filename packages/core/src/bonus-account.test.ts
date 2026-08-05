@@ -93,10 +93,14 @@ describe('заработанное за всё время', () => {
     // 5% от 40000 — начислено 2000, из них выведена половина.
     await givenCompletedRequest(2n, '40000');
 
+    const card = await core.saveRequisites(asClient(1n), {
+      kind: 'card',
+      bankName: 'Сбербанк',
+      cardNumber: '40817810099910004312',
+    });
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '1000',
-      method: 'bank',
-      destination: '40817810099910004312',
+      requisitesId: card.id,
     });
     await core.approveWithdrawalRequest(manager, request.id);
     await core.markWithdrawalPaid(manager, request.id);

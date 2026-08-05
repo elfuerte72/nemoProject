@@ -262,9 +262,14 @@ function Entry({
               Вывод {formatAmount(request.amount)} баллов
             </span>
             <span className="row__sub">
-              {WITHDRAWAL_METHOD_LABELS[request.method]}
-              {request.network ? ` · ${request.network}` : ''}
-              {request.destinationHint ? ` · ${request.destinationHint}` : ''}
+              {/*
+                Подпись реквизита говорит и куда ушло, и чем: «Сбербанк ·
+                карта •••• 4312», «TRC20 · TN1s…kQ7f». Способ рядом с ней
+                повторял бы сказанное. Он остаётся у заявок, поданных до
+                того, как список реквизитов стал общим: у них подписи
+                нет, а «…4312» само по себе не говорит ничего.
+              */}
+              {request.destinationHint ?? WITHDRAWAL_METHOD_LABELS[request.method]}
               {request.rejectReason ? ` · ${request.rejectReason}` : ''}
             </span>
           </span>

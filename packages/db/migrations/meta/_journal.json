@@ -92,6 +92,13 @@
       "when": 1785930468602,
       "tag": "0012_min_exchange_in_usdt",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785943613106,
+      "tag": "0013_premium_miracleman",
+      "breakpoints": true
     }
   ]
 }

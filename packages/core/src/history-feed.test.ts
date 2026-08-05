@@ -64,10 +64,14 @@ describe('лента истории', () => {
 
   it('сводит все четыре потока в один список', async () => {
     await givenBonuses('40000');
+    const card = await core.saveRequisites(asClient(1n), {
+      kind: 'card',
+      bankName: 'Сбербанк',
+      cardNumber: '40817810099910004312',
+    });
     await core.submitWithdrawalRequest(asClient(1n), {
       amount: '1000',
-      method: 'bank',
-      destination: '40817810099910004312',
+      requisitesId: card.id,
     });
     await core.submitCardApplication(asClient(1n));
     await core.submitExchangeRequest(asClient(1n), {
