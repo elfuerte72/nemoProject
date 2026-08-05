@@ -16,7 +16,27 @@ import { CloseIcon } from './icons';
  * экраны въезжают анимацией `transform`, а такой предок становится
  * системой отсчёта для `position: fixed` — лист внутри него перестаёт
  * закрывать нижнюю панель.
+ *
+ * Закрывается тремя способами, и это не роскошь: крестик у заголовка,
+ * промах мимо панели, потяг вниз за полоску сверху. Панель поднимается
+ * почти во весь экран, и один только промах оставлял бы целью полоску в
+ * пару сантиметров под системной кнопкой Telegram, которая закрывает всё
+ * приложение целиком.
  */
+
+/** Сколько надо утянуть лист вниз, чтобы отпускание его закрыло. */
+const DRAG_CLOSE_PX = 96;
+
+/**
+ * С какой скоростью бросок закрывает лист, не дотянув до порога. Пиксели
+ * на миллисекунду: короткий резкий жест — это тоже «закрой», и требовать
+ * от него полного хода значит не понимать его вовсе.
+ */
+const FLICK_PX_PER_MS = 0.5;
+
+/** Сколько лист уезжает вниз, прежде чем его снимут. */
+const DRAG_SETTLE_MS = 180;
+
 export function Sheet({
   title,
   onClose,
@@ -28,6 +48,7 @@ export function Sheet({
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  const grip = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     panel.current?.focus();
@@ -44,6 +65,87 @@ export function Sheet({
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.body.classList.remove('sheet-open');
+    };
+  }, [onClose]);
+
+  /*
+   * Потяг вниз за полоску.
+   *
+   * Указателем, а не касанием: один и тот же код ведёт и палец на
+   * телефоне, и мышь на десктопе — а Mini App открывают и там. Отдельная
+   * ветка под мышь означала бы две правды об одном жесте.
+   *
+   * Ручкой служит только полоска сверху, а не вся панель: внутри листа
+   * лежат прокручиваемые списки, и жест, начатый на них, принадлежит им.
+   */
+  useEffect(() => {
+    const handle = grip.current;
+    const node = panel.current;
+    if (!handle || !node) return;
+
+    let startY = 0;
+    let startedAt = 0;
+    let offset = 0;
+    let dragging = false;
+    let frame = 0;
+
+    const paint = () => {
+      frame = 0;
+      node.style.transform = `translate3d(0, ${offset}px, 0)`;
+    };
+
+    const down = (event: PointerEvent) => {
+      // Правая кнопка мыши лист не тянет.
+      if (event.button !== 0) return;
+      dragging = true;
+      startY = event.clientY;
+      startedAt = event.timeStamp;
+      offset = 0;
+      handle.setPointerCapture(event.pointerId);
+      // Появление листа объявлено анимацией, а её конечный кадр сильнее
+      // любого значения в самом узле: не сняв её, панель не сдвинуть.
+      node.style.animation = 'none';
+      node.dataset.dragging = '';
+    };
+
+    const move = (event: PointerEvent) => {
+      if (!dragging) return;
+      // Вверх лист не идёт: выше его края ничего нет, и тянуть туда
+      // значит обещать содержимое, которого не будет.
+      offset = Math.max(0, event.clientY - startY);
+      if (!frame) frame = requestAnimationFrame(paint);
+    };
+
+    const up = (event: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      handle.releasePointerCapture(event.pointerId);
+      delete node.dataset.dragging;
+
+      const speed = offset / Math.max(1, event.timeStamp - startedAt);
+      if (offset > DRAG_CLOSE_PX || (offset > 20 && speed > FLICK_PX_PER_MS)) {
+        // Лист уходит за нижний край и только потом снимается: исчезнуть
+        // на полпути — значит мигнуть там, где ждут движения.
+        node.style.transform = `translate3d(0, ${node.offsetHeight}px, 0)`;
+        setTimeout(onClose, DRAG_SETTLE_MS);
+        return;
+      }
+      // Не дотянули — лист возвращается на место сам.
+      node.style.transform = '';
+    };
+
+    handle.addEventListener('pointerdown', down);
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      handle.removeEventListener('pointerdown', down);
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
     };
   }, [onClose]);
 
@@ -64,7 +166,13 @@ export function Sheet({
         aria-labelledby={titleId}
         tabIndex={-1}
       >
-        <div className="sheet__grabber" />
+        {/*
+          Полоска сама по себе — цель в четыре пикселя высотой. Тянут за
+          поле вокруг неё: видно полоску, а работает вся полоса.
+        */}
+        <div ref={grip} className="sheet__grip">
+          <div className="sheet__grabber" />
+        </div>
         {/*
           Крестик, а не одна лишь подложка вокруг. Панель поднимается до
           88% высоты окна, и мимо неё остаётся полоска в пару
