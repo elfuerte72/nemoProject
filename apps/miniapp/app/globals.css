@@ -1793,6 +1793,12 @@ button.rates__head:hover {
   box-shadow: inset 0 1px 0 rgba(214, 205, 255, 0.12);
   animation: nm-sheet-in 0.26s var(--ease) both;
   scrollbar-width: none;
+  /* Возврат недотянутого листа на место. Под пальцем доводки нет. */
+  transition: transform 0.22s var(--ease);
+}
+
+.sheet__panel[data-dragging] {
+  transition: none;
 }
 
 .sheet__panel::-webkit-scrollbar {
@@ -1805,21 +1811,46 @@ button.rates__head:hover {
   outline: none;
 }
 
+/*
+ * За что лист тянут вниз. Полоска высотой в четыре пикселя целью быть не
+ * может, поэтому ловит жест поле вокруг неё — во всю ширину панели и с
+ * запасом сверху, где палец и оказывается, потянув от края.
+ *
+ * `touch-action: none` — чтобы браузер не забрал движение себе под
+ * прокрутку: лист прокручивается, и без этого он поехал бы содержимым
+ * вместо того, чтобы закрываться.
+ */
+.sheet__grip {
+  margin: -22px calc(-1 * var(--gutter)) 0;
+  padding: 22px var(--gutter) 8px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.sheet__grip:active {
+  cursor: grabbing;
+}
+
 .sheet__grabber {
   width: 36px;
   height: 4px;
   border-radius: 999px;
   background: rgba(214, 205, 255, 0.22);
-  margin: 0 auto 18px;
+  margin: 0 auto 10px;
 }
 
 /*
  * Заголовок и выход из листа в одной строке. Крестик справа — там, где
  * его ищут; заголовок при этом остаётся первым для экранного диктора.
  */
+/*
+ * Заголовок и выход в одной строке. По центру, а не по верхнему краю:
+ * кнопка выше строки заголовка, и выровненная по верху она садится
+ * ниже его середины — глаз ловит этот сдвиг как перекос.
+ */
 .sheet__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
 }
@@ -1844,7 +1875,8 @@ button.rates__head:hover {
   justify-content: center;
   width: 34px;
   height: 34px;
-  margin: -4px -6px 0 0;
+  /* Вправо до края поля листа: справа от неё пустого места быть не должно. */
+  margin-right: -6px;
   padding: 0;
   border: none;
   border-radius: 50%;
