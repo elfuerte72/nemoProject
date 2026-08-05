@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { CloseIcon } from './icons';
 
 /**
  * Нижний лист.
@@ -64,9 +65,22 @@ export function Sheet({
         tabIndex={-1}
       >
         <div className="sheet__grabber" />
-        <h2 id={titleId} className="sheet__title">
-          {title}
-        </h2>
+        {/*
+          Крестик, а не одна лишь подложка вокруг. Панель поднимается до
+          88% высоты окна, и мимо неё остаётся полоска в пару
+          сантиметров — а в Telegram поверх неё ещё и системная шапка с
+          «Закрыть», которая закрывает не лист, а всё приложение. Выход
+          из листа не должен быть попаданием по узкой цели рядом с
+          кнопкой, стоящей дороже.
+        */}
+        <div className="sheet__head">
+          <h2 id={titleId} className="sheet__title">
+            {title}
+          </h2>
+          <button type="button" onClick={onClose} className="sheet__close" aria-label="Закрыть">
+            <CloseIcon />
+          </button>
+        </div>
         {children}
       </div>
     </div>

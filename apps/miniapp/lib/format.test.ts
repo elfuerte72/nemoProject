@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { formatAmount, formatRate, formatRateValue, normalizeTyped, parseAmount } from './format';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  formatAmount,
+  formatDay,
+  formatMonth,
+  formatRate,
+  formatRateValue,
+  normalizeTyped,
+  parseAmount,
+} from './format';
 
 /**
  * Суммы приходят десятичными строками произвольной точности, и путь
@@ -98,5 +106,60 @@ describe('normalizeTyped', () => {
     expect(normalizeTyped('abc')).toBe('abc');
     expect(normalizeTyped('1.2.3')).toBe('1.2.3');
     expect(normalizeTyped('')).toBe('');
+  });
+});
+
+/**
+ * Подписи дней в ленте истории. Считаются от полуночи, а не вычитанием
+ * суток из «сейчас»: заявка, поданная сегодня в час ночи, вчерашней не
+ * становится оттого, что смотрят на неё в полдень.
+ */
+describe('formatDay', () => {
+  /*
+   * Часы остановлены: подпись считается от полуночи по «сейчас», и
+   * прогон, попавший на смену суток, увидел бы «Вчера» там, где секунду
+   * назад было «Сегодня». Такой тест падает раз в тысячу прогонов и
+   * ровно ночью — то есть тогда, когда разбираться с ним некому.
+   */
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 5, 14, 30));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('называет сегодняшнее словом', () => {
+    expect(formatDay(new Date(2026, 7, 5, 9, 15))).toBe('Сегодня');
+  });
+
+  it('называет вчерашнее словом, в котором бы час оно ни было', () => {
+    // Минута до полуночи — уже вчера, и час после начала тех суток тоже.
+    expect(formatDay(new Date(2026, 7, 4, 23, 59))).toBe('Вчера');
+    expect(formatDay(new Date(2026, 7, 4, 1, 0))).toBe('Вчера');
+  });
+
+  it('дальше вчерашнего называет датой', () => {
+    expect(formatDay(new Date(2026, 7, 1, 12, 0))).toBe('1 августа');
+  });
+
+  it('переживает то, что датой не является', () => {
+    expect(formatDay('не дата')).toBe('');
+  });
+});
+
+describe('formatMonth', () => {
+  /*
+   * Родительный падеж, а не именительный: подпись стоит в предложении
+   * «с марта 2026», и «с март 2026» там читается как опечатка.
+   */
+  it('называет месяц и год так, как это стоит в строке «с …»', () => {
+    expect(formatMonth(new Date(2026, 2, 14))).toBe('марта 2026');
+    expect(formatMonth(new Date(2026, 7, 1))).toBe('августа 2026');
+  });
+
+  it('переживает то, что датой не является', () => {
+    expect(formatMonth('не дата')).toBe('');
   });
 });
