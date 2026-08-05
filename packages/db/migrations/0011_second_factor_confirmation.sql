@@ -1,0 +1,2 @@
+ALTER TABLE "staff" ADD COLUMN "second_factor_confirmed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "staff" ADD CONSTRAINT "staff_second_factor_confirmed_needs_secret" CHECK ("staff"."second_factor_confirmed_at" is null or "staff"."totp_secret_sealed" is not null);

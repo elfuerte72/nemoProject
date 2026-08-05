@@ -78,7 +78,12 @@ import {
   type SaveRequisitesInput,
 } from './requisites.js';
 import { botText, type BotTextKey } from './bot-texts.js';
-import { beginStaffLogin, completeStaffLogin, getActiveStaff } from './staff.js';
+import {
+  beginStaffLogin,
+  claimSecondFactor,
+  completeStaffLogin,
+  getActiveStaff,
+} from './staff.js';
 import {
   approveWithdrawalRequest,
   listWithdrawalQueue,
@@ -227,6 +232,8 @@ export function createCore(ctx: CoreConfig) {
       listRequisiteAccessLog(ctx, actor, filter),
 
     beginStaffLogin: (telegramUserId: bigint) => beginStaffLogin(ctx, telegramUserId),
+    // Только после проверенной подписи Telegram Login — см. `staff.ts`.
+    claimSecondFactor: (staffId: string) => claimSecondFactor(ctx, staffId),
     completeStaffLogin: (staffId: string, code: string) =>
       completeStaffLogin(ctx, staffId, code),
     getActiveStaff: (staffId: string) => getActiveStaff(ctx, staffId),
@@ -333,7 +340,7 @@ export type {
   ReplyInput,
 } from './conversations.js';
 export type { BroadcastProgress, BroadcastView, StartedBroadcast } from './broadcasts.js';
-export type { StaffSession } from './staff.js';
+export type { SecondFactorEnrollment, StaffLoginStart, StaffSession } from './staff.js';
 export type {
   AddStaffInput,
   SettingsAuditEntry,

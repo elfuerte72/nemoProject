@@ -103,8 +103,10 @@ export function SettingsForms({
           <h2 className="card__title">Второй фактор для «{secret.name}»</h2>
           <p className="card__note">
             Наведите камеру приложения-аутентификатора — Google Authenticator, Яндекс
-            Ключ, 1Password. Показывается один раз: закроете — придётся выдавать заново.
-            Запись в приложении подписана Telegram сотрудника и его ролью.
+            Ключ, 1Password. Здесь ключ показывается один раз, но передавать его из рук
+            в руки не обязательно: пока этим ключом ни разу не входили, сотрудник
+            увидит тот же код на своём первом входе. Запись в приложении подписана
+            Telegram сотрудника и его ролью.
           </p>
           {secret.qr ? (
             // Разметка кода приходит с сервера и содержит только фигуры,
@@ -310,6 +312,15 @@ export function SettingsForms({
                   {one.hasSecondFactor ? undefined : (
                     <span className={pillClass('wait')}>Без второго фактора</span>
                   )}
+                  {/*
+                    Ключ выдан, но сотрудник им ещё не входил — значит,
+                    вход покажет ему этот ключ сам. Администратору это
+                    видно здесь: иначе он не поймёт, отчего один
+                    сотрудник видит на входе код для камеры, а другой нет.
+                  */}
+                  {one.hasSecondFactor && !one.secondFactorConfirmed ? (
+                    <span className={pillClass('wait')}>Ключ не занесён</span>
+                  ) : undefined}
                 </div>
               </div>
               <div className="row__actions">

@@ -8,10 +8,17 @@ import { useEffect, useRef, useState } from 'react';
  * Пароля нет и не будет — заводить его пришлось бы каждому сотруднику,
  * а хранить сервису. Telegram Login отвечает за «это точно вы», код из
  * приложения-аутентификатора — за «это точно не угнанный аккаунт».
+ *
+ * Тому, чей ключ ещё ни разу не срабатывал, вместе с полем для кода
+ * приходит и сам ключ: кодом для камеры и строкой. Иначе сотрудник
+ * упирается в поле, а взять код ему неоткуда, — так и было, пока ключ
+ * видел только заводивший его администратор. Отдаёт ключ ядро и только
+ * до первого сошедшегося кода (`packages/core/src/staff.ts`).
  */
 export function LoginForm() {
   const widgetRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<'telegram' | 'code'>('telegram');
+  const [enrollment, setEnrollment] = useState<{ secret: string; qr: string }>();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -30,11 +37,15 @@ export function LoginForm() {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        const body = (await response.json()) as { error?: string };
+        const body = (await response.json()) as {
+          error?: string;
+          enrollment?: { secret: string; qr: string };
+        };
         if (!response.ok) {
           setError(body.error ?? 'Вход не выполнен');
           return;
         }
+        setEnrollment(body.enrollment);
         setStage('code');
       } catch {
         setError('Вход не выполнен');
@@ -95,6 +106,38 @@ export function LoginForm() {
           </>
         ) : (
           <form onSubmit={submitCode} className="login__form">
+            {enrollment ? (
+              /*
+               * Ключ показывается выше поля, потому что порядок действий
+               * такой: сначала завести его в приложении, потом брать
+               * оттуда код. Поле для кода над кодом для камеры читалось
+               * бы как «введите то, чего у вас нет».
+               */
+              <div className="login__enroll">
+                <span className="label">Сначала добавьте ключ в приложение</span>
+                <p className="muted">
+                  Установите Google Authenticator (или Яндекс Ключ, 1Password) и наведите
+                  его камеру на код. Запись появится под названием «nemo» и будет
+                  подписана вашим Telegram и ролью.
+                </p>
+                {/*
+                  Разметка кода приходит с сервера и содержит только
+                  фигуры, собранные из ключа, — ни ввода пользователя, ни
+                  ссылок.
+                */}
+                <div
+                  className="secret__qr"
+                  dangerouslySetInnerHTML={{ __html: enrollment.qr }}
+                />
+                <span className="label">Если камеры нет — ключ вручную</span>
+                <code className="secret__key mono">{enrollment.secret}</code>
+                <p className="muted">
+                  Показывается, пока ключом ни разу не вошли: первый сошедшийся код
+                  закрывает этот показ. Потерянный после этого ключ выдаёт заново
+                  администратор.
+                </p>
+              </div>
+            ) : undefined}
             <label className="field">
               <span className="label">Код из приложения</span>
               <input
@@ -106,19 +149,22 @@ export function LoginForm() {
                 autoComplete="one-time-code"
                 maxLength={7}
                 placeholder="000000"
-                autoFocus
+                // Фокус уводит экран к полю, а над полем в этот раз стоит
+                // код для камеры, ради которого экран и открыт.
+                autoFocus={!enrollment}
               />
             </label>
             {/*
               Иначе человек ждёт код в сообщении и не находит его: слово
               «приложение» он читает как Telegram, а больше на экране
               подсказок нет. Запись в приложении подписана его Telegram и
-              ролью — по ней он и найдёт нужную строку.
+              ролью — по ней он и найдёт нужную строку. Тому, кто только
+              что завёл ключ, всё это уже сказано выше.
             */}
             <p className="muted">
-              Шесть цифр из Google Authenticator, Яндекс Ключа или другого приложения,
-              куда добавлен ваш ключ — запись подписана «nemo». Код меняется каждые
-              30 секунд и никуда не присылается: приложение считает его само.
+              {enrollment
+                ? 'Шесть цифр, которые показывает приложение под записью «nemo». Код меняется каждые 30 секунд и никуда не присылается: приложение считает его само.'
+                : 'Шесть цифр из Google Authenticator, Яндекс Ключа или другого приложения, куда добавлен ваш ключ — запись подписана «nemo». Код меняется каждые 30 секунд и никуда не присылается: приложение считает его само.'}
             </p>
             <button type="submit" disabled={busy} className="btn btn--gold btn--wide">
               Войти
