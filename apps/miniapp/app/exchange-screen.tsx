@@ -34,6 +34,7 @@ import {
   shortId,
 } from '@/lib/format';
 import { RequisitesSheet } from './requisites-section';
+import { CurrencyFlag, currencyName, sortCurrencies } from './ui/flags';
 import { CardIcon, ChevronDown, ChevronRight, SwapIcon } from './ui/icons';
 import { Loading } from './ui/loading';
 import { Popover } from './ui/popover';
@@ -53,6 +54,13 @@ import { NoticeSheet, Sheet } from './ui/sheet';
 
 /** С чего открывается экран, если такое направление заведено. */
 const PREFERRED_FROM = 'USDT';
+
+/**
+ * И чем оно оканчивается. Валют выдачи девять, справочник отдаёт их по
+ * алфавиту, и без этой строки экран открывался бы на юане — просто
+ * потому, что «CNY» стоит в алфавите раньше «RUB».
+ */
+const PREFERRED_TO = 'RUB';
 
 /**
  * Как часто перечитывается курс, пока экран открыт. Полминуты: чаще
@@ -94,7 +102,20 @@ export function ExchangeScreen({
   const [toCode, setToCode] = useState('');
   const [kind, setKind] = useState<ExchangeKind>('electronic');
   const [amount, setAmount] = useState('');
-  const [quote, setQuote] = useState<QuoteView | null>(null);
+  /**
+   * Ответ о курсе вместе с направлением, на которое его спрашивали.
+   *
+   * Направление хранится рядом с курсом, потому что между сменой валюты
+   * и ответом сервера проходит вздох, и всё это время у экрана на руках
+   * курс от прошлой пары. Пока валют было две, разница между ними была
+   * незаметна; с батом на месте рубля клиент успел бы увидеть рублёвую
+   * сумму, подписанную батами. Чужой курс к показу не допускается вовсе
+   * — ни к сумме, ни к порогу, ни к подаче.
+   */
+  const [quote, setQuote] = useState<{
+    readonly pair: string;
+    readonly view: QuoteView | null;
+  }>();
   const [sheet, setSheet] = useState<SheetState>();
   /** Какой из двух списков валют сейчас раскрыт. */
   const [picker, setPicker] = useState<'from' | 'to'>();
@@ -134,10 +155,11 @@ export function ExchangeScreen({
         // Встречная валюта ставится здесь же, а не отдельным проходом:
         // от неё зависит, показывать ли выбор валюты вообще, и лишний
         // кадр без неё мигнул бы списком там, где выбора нет.
-        setToCode(
-          (current) =>
-            current || (conditions.terms.pairs.find((pair) => pair.fromCode === from)?.toCode ?? ''),
-        );
+        const counter = conditions.terms.pairs
+          .filter((pair) => pair.fromCode === from)
+          .map((pair) => pair.toCode);
+        const to = counter.includes(PREFERRED_TO) ? PREFERRED_TO : (counter[0] ?? '');
+        setToCode((current) => current || to);
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить данные');
       } finally {
@@ -178,11 +200,17 @@ export function ExchangeScreen({
    * показывается подпись. Появится третья валюта — выбор вернётся сам.
    */
   const fromCodes = useMemo(
-    () => [...new Set(pairs.map((pair) => pair.fromCode))].filter((code) => code !== toCode),
+    () =>
+      sortCurrencies(
+        [...new Set(pairs.map((pair) => pair.fromCode))].filter((code) => code !== toCode),
+      ),
     [pairs, toCode],
   );
   const toCodes = useMemo(
-    () => [...new Set(pairs.filter((pair) => pair.fromCode === fromCode).map((p) => p.toCode))],
+    () =>
+      sortCurrencies([
+        ...new Set(pairs.filter((pair) => pair.fromCode === fromCode).map((p) => p.toCode)),
+      ]),
     [pairs, fromCode],
   );
   const kinds = useMemo(
@@ -244,6 +272,17 @@ export function ExchangeScreen({
     setSelected(lastUsed ?? offered[0]?.id);
   }, [offered, requests, toCode, selected]);
 
+  /** Направление одной строкой: им помечается ответ о курсе. */
+  const pairKey = `${fromCode}/${toCode}/${kind}`;
+
+  /**
+   * Курс этого направления — или его отсутствие. `undefined` означает
+   * «ответ ещё не пришёл», и это не то же самое, что «курса нет»:
+   * говорить клиенту, что курс недоступен, пока его просто не успели
+   * спросить, — значит пугать его на ровном месте.
+   */
+  const rate = quote?.pair === pairKey ? quote.view : undefined;
+
   /*
    * Курс спрашивается на направление, а не на сумму.
    *
@@ -261,7 +300,7 @@ export function ExchangeScreen({
     // У наличных курса нет: там финальный курс называет менеджер, и
     // спрашивать провайдера незачем.
     if (kind !== 'electronic' || !fromCode || !toCode) {
-      setQuote(null);
+      setQuote({ pair: pairKey, view: null });
       return;
     }
 
@@ -271,12 +310,12 @@ export function ExchangeScreen({
         `/api/quote?${new URLSearchParams({ fromCode, toCode }).toString()}`,
       )
         .then((result) => {
-          if (!cancelled) setQuote(result.quote);
+          if (!cancelled) setQuote({ pair: pairKey, view: result.quote });
         })
         // Отсутствие курса — не ошибка экрана: заявку можно подать и без
         // него, а сказать клиенту нужно то же самое, что при наличных.
         .catch(() => {
-          if (!cancelled) setQuote(null);
+          if (!cancelled) setQuote({ pair: pairKey, view: null });
         });
     };
 
@@ -296,7 +335,7 @@ export function ExchangeScreen({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [kind, fromCode, toCode]);
+  }, [kind, fromCode, toCode, pairKey]);
 
   /**
    * Сколько клиент получит. Считается здесь же, без обращения к
@@ -304,7 +343,7 @@ export function ExchangeScreen({
    * округление, и точность те же самые.
    */
   const toAmount = useMemo(() => {
-    if (!quote) return null;
+    if (!rate) return null;
     const parsed = Money.amountSchema.safeParse(parseAmount(amount));
     if (!parsed.success || Money.isNegative(parsed.data)) return null;
     /*
@@ -313,8 +352,8 @@ export function ExchangeScreen({
      * драйвер базы. Разойтись они не должны, и проверяет это не типаж, а
      * то, что обе стороны считают одной и той же `Money`.
      */
-    return Money.floor(Money.multiply(parsed.data, quote.rate));
-  }, [quote, amount]);
+    return Money.floor(Money.multiply(parsed.data, rate.rate));
+  }, [rate, amount]);
 
   /** Развернуть направление можно, только если обратное вообще меняют. */
   const canSwap = pairs.some((pair) => pair.fromCode === toCode && pair.toCode === fromCode);
@@ -337,8 +376,9 @@ export function ExchangeScreen({
         fromAmount: parseAmount(amount),
         // Отметка курса, который клиент сейчас видит на экране: по нему
         // заявка и уйдёт. Без неё ядро спросило бы курс заново, и между
-        // взглядом и нажатием он успел бы обновиться.
-        ...(quote ? { quotedAt: quote.asOf } : {}),
+        // взглядом и нажатием он успел бы обновиться. Отметка чужого
+        // направления сюда попасть не может — курс берётся только свой.
+        ...(rate ? { quotedAt: rate.asOf } : {}),
         // Наличные клиент получает на руки: реквизиты для перевода при
         // этом способе не нужны и не запрашиваются.
         ...(kind === 'electronic' && selected ? { requisitesId: selected } : {}),
@@ -402,22 +442,21 @@ export function ExchangeScreen({
   const electronic = kind === 'electronic';
 
   /**
-   * Действует ли минимальная сумма на эту заявку. Рубли клиент либо
-   * отдаёт — тогда рублёвая сторона это введённая сумма, — либо
+   * Действует ли минимальная сумма на эту заявку. Валюту порога клиент
+   * либо отдаёт — тогда его сторона это введённая сумма, — либо
    * получает, и тогда её называет курс. Без курса стороны нет, и ядро
    * порога не проверяет; экран о нём тогда молчит, потому что число, ни
    * на что не влияющее, читается как обещание.
    */
   const minimumApplies = Boolean(
     terms &&
-      (fromCode === terms.minAmountCode ||
-        (toCode === terms.minAmountCode && quote !== null)),
+      (fromCode === terms.minAmountCode || (toCode === terms.minAmountCode && rate)),
   );
-  const rubles = terms
-    ? rubleSide(terms.minAmountCode, { fromCode, toCode }, amount, toAmount)
+  const measured = terms
+    ? thresholdSide(terms.minAmountCode, { fromCode, toCode }, amount, toAmount)
     : null;
   const belowMinimum = Boolean(
-    terms && rubles && Money.compare(rubles, terms.minAmount) < 0,
+    terms && measured && Money.compare(measured, terms.minAmount) < 0,
   );
 
   const ready =
@@ -570,10 +609,15 @@ export function ExchangeScreen({
           </button>
 
           <p className="hint">
+            {/*
+              Пока ответ о курсе не пришёл, строка остаётся прежней:
+              между сменой валюты и ответом проходит вздох, и мигать за
+              него «курс недоступен» значит пугать на ровном месте.
+            */}
             {electronic
-              ? quote
-                ? 'По этому курсу и обменяем: он фиксируется в заявке.'
-                : 'Курс сейчас недоступен — его назовёт менеджер после подачи заявки.'
+              ? rate === null
+                ? 'Курс сейчас недоступен — его назовёт менеджер после подачи заявки.'
+                : 'По этому курсу и обменяем: он фиксируется в заявке.'
               : 'Курс по наличным называет менеджер.'}
             {/*
               Минимум называется до подачи, а не в отказе после неё:
@@ -721,8 +765,17 @@ export function ExchangeScreen({
 
 /**
  * Валюта направления. Список раскрывается у самой кнопки, а не листом
- * снизу: выбор из трёх строк не стоит того, чтобы уводить взгляд в
- * другой конец экрана.
+ * снизу: выбор валюты стоит рядом с суммой, ради которой его и делают, и
+ * уводить взгляд в другой конец экрана незачем.
+ *
+ * Валют выдачи девять, и все они в раскрытый список не помещаются:
+ * пятью с половиной строками он упирается в свой край и дальше
+ * прокручивается. Половина строки внизу — не небрежность, а
+ * единственное, что говорит о продолжении списка без отдельной подписи
+ * про него.
+ *
+ * В строке — флаг, код и название словами: код валюты человек узнаёт по
+ * флагу быстрее, чем читает, а «ZAR» без подписи не узнаёт вовсе.
  *
  * Когда выбирать не из чего, кнопки нет вовсе — вместо неё та же
  * пилюля, но неподвижная: нажатие, за которым ничего не происходит,
@@ -744,7 +797,12 @@ function CodePicker({
   readonly onPick: (code: string) => void;
 }) {
   if (codes.length < 2) {
-    return <span className="chip chip--static">{selected}</span>;
+    return (
+      <span className="chip chip--static">
+        <CurrencyFlag code={selected} />
+        {selected}
+      </span>
+    );
   }
 
   return (
@@ -754,15 +812,16 @@ function CodePicker({
         onClick={onToggle}
         className="chip"
         aria-expanded={open}
-        aria-label={`${label}: ${selected}`}
+        aria-label={`${label}: ${currencyName(selected)}`}
       >
+        <CurrencyFlag code={selected} />
         {selected}
         <ChevronDown />
       </button>
 
       {open ? (
         <Popover label={label} onClose={onToggle} menu>
-          <div className="popover__menu">
+          <div className="popover__menu popover__menu--tall">
             {codes.map((code) => (
               <button
                 key={code}
@@ -771,7 +830,11 @@ function CodePicker({
                 aria-pressed={code === selected}
                 className="popover__item"
               >
-                {code}
+                <span className="currency">
+                  <CurrencyFlag code={code} size={22} />
+                  {code}
+                </span>
+                <span className="currency__name">{currencyName(code)}</span>
               </button>
             ))}
           </div>
@@ -782,26 +845,27 @@ function CodePicker({
 }
 
 /**
- * Рублёвая сторона заявки — та, с которой сравнивается минимальная
- * сумма обмена.
+ * Сторона заявки, с которой сравнивается минимальная сумма обмена, — та,
+ * что выражена в валюте порога. Валюту называет сервер вместе с самим
+ * порогом: она у него константа, но экран о ней догадываться не должен.
  *
- * Зеркалит правило ядра (`rubleSideOf` в `exchange-requests.ts`):
+ * Зеркалит правило ядра (`thresholdSideOf` в `exchange-requests.ts`):
  * отказывает всё равно операция, а экран лишь не даёт подать заявку,
  * про которую уже известно, что её отвергнут.
  */
-function rubleSide(
-  rubleCode: string,
+function thresholdSide(
+  thresholdCode: string,
   direction: { fromCode: string; toCode: string },
   amount: string,
   toAmount: Amount | null,
 ): Amount | null {
-  if (direction.fromCode === rubleCode) {
+  if (direction.fromCode === thresholdCode) {
     // Введённое человеком проверяется той же схемой, что и на сервере:
     // до первой цифры и на полпути к ней в поле лежит не число.
     const typed = Money.amountSchema.safeParse(parseAmount(amount));
     return typed.success ? typed.data : null;
   }
-  if (direction.toCode === rubleCode) return toAmount;
+  if (direction.toCode === thresholdCode) return toAmount;
   return null;
 }
 

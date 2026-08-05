@@ -210,17 +210,17 @@ async function requireActivePair(
 }
 
 /**
- * Рублёвая сторона заявки — та, с которой сравнивается минимальная
- * сумма обмена.
+ * Сторона заявки, с которой сравнивается минимальная сумма обмена, — та,
+ * что выражена в валюте порога (`MIN_EXCHANGE_CODE`).
  *
- * Рубли клиент либо отдаёт, и тогда это сумма подачи, либо получает — и
- * тогда её нужно посчитать по курсу. Курса может не быть вовсе: у
+ * Эту валюту клиент либо отдаёт, и тогда это сумма подачи, либо получает
+ * — и тогда её нужно посчитать по курсу. Курса может не быть вовсе: у
  * наличных его нет до разговора с менеджером, а провайдер котировок
  * может молчать. В этом случае стороны нет, и порог не проверяется:
  * отказ по числу, которого у сервиса в этот момент не существует,
  * выглядел бы для клиента поломкой.
  */
-function rubleSideOf(
+function thresholdSideOf(
   input: { fromCode: string; toCode: string },
   fromAmount: Amount,
   rate: Amount | null,
@@ -278,8 +278,8 @@ export async function submitExchangeRequest(
     }
 
     const settings = await readServiceSettings(tx);
-    const rubles = rubleSideOf(input, fromAmount, requestRate);
-    if (rubles !== null && Money.compare(rubles, settings.minExchangeAmount) < 0) {
+    const measured = thresholdSideOf(input, fromAmount, requestRate);
+    if (measured !== null && Money.compare(measured, settings.minExchangeAmount) < 0) {
       throw new InvalidInputError(
         `Минимальная сумма обмена — ${settings.minExchangeAmount} ${MIN_EXCHANGE_CODE}`,
       );

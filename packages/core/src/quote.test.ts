@@ -268,8 +268,8 @@ describe('поданная заявка', () => {
       kind: 'electronic',
       fromCode: 'USDT',
       toCode: 'RUB',
-      // Сотня USDT по курсу 98 — 9800 ₽, выше минимальной суммы обмена:
-      // проверяется здесь запись курса, а не порог.
+      // Сотня USDT — выше минимальной суммы обмена: проверяется здесь
+      // запись курса, а не порог.
       fromAmount: '100',
       requisitesId: requisites.id,
     });
@@ -287,7 +287,7 @@ describe('поданная заявка', () => {
       kind: 'cash',
       fromCode: 'USDT',
       toCode: 'RUB',
-      fromAmount: '10',
+      fromAmount: '100',
     });
 
     expect(request.requestRate).toBeNull();
