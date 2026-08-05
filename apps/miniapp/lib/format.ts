@@ -132,7 +132,27 @@ export function formatDay(value: Date | string): string {
   return formatDate(date);
 }
 
-const MONTH_FORMAT = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
+/**
+ * Месяцы в родительном падеже: подпись читается как «с марта 2026».
+ *
+ * Списком, а не через `Intl`: с одним лишь месяцем он даёт именительный
+ * — «март 2026 г.», — и в предложении получается «с март 2026». Падеж
+ * появляется только рядом с числом дня, а день здесь и не нужен.
+ */
+const MONTHS_OF = [
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+];
 
 /**
  * Месяц и год — так подписан стаж клиента в профиле. Дня там не нужно:
@@ -141,7 +161,8 @@ const MONTH_FORMAT = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'nu
  */
 export function formatMonth(value: Date | string): string {
   const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : MONTH_FORMAT.format(date);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${MONTHS_OF[date.getMonth()]} ${date.getFullYear()}`;
 }
 
 /** Короткий номер заявки: полный идентификатор клиенту не нужен. */

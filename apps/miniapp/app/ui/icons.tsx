@@ -133,6 +133,23 @@ export function ChevronDown({ size = 10 }: IconProps) {
   );
 }
 
+/**
+ * Крестик закрытия. Своим цветом не красится — берёт его у кнопки, в
+ * которой стоит: у листа она приглушена и разгорается под пальцем.
+ */
+export function CloseIcon({ size = 13 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 13 13" fill="none" aria-hidden="true">
+      <path
+        d="M1.5 1.5l10 10M11.5 1.5l-10 10"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function ChevronRight({ size = 8 }: IconProps) {
   return (
     <svg

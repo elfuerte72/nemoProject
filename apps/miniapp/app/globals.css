@@ -1813,12 +1813,49 @@ button.rates__head:hover {
   margin: 0 auto 18px;
 }
 
+/*
+ * Заголовок и выход из листа в одной строке. Крестик справа — там, где
+ * его ищут; заголовок при этом остаётся первым для экранного диктора.
+ */
+.sheet__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
 .sheet__title {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.4px;
   text-wrap: balance;
+}
+
+/*
+ * Цель под палец, а не под курсор: 34 пикселя — нижняя граница, ниже
+ * которой промахиваются. Крестик внутри мельче самой кнопки, и поле
+ * вокруг него работает так же, как он сам.
+ */
+.sheet__close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin: -4px -6px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(214, 205, 255, 0.08);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sheet__close:active {
+  background: rgba(214, 205, 255, 0.16);
+  color: var(--text);
 }
 
 .sheet__body {
