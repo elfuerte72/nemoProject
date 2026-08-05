@@ -552,24 +552,40 @@ export const cardApplications = pgTable(
  * Сотрудник. Вход в админку — Telegram Login, допуск только для
  * `telegram_user_id` из этой таблицы, плюс одноразовый код.
  */
-export const staff = pgTable('staff', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  telegramUserId: bigint('telegram_user_id', { mode: 'bigint' }).notNull().unique(),
-  displayName: text('display_name').notNull(),
-  role: staffRoleEnum('role').default('manager').notNull(),
-  totpSecretSealed: bytea('totp_secret_sealed'),
-  /**
-   * Когда выданным ключом впервые вошли. Пусто — ключ выдан, но до
-   * приложения-аутентификатора не доехал, и вход показывает его сам:
-   * код для камеры и строку. Ставится при первом сошедшемся коде и
-   * закрывает этот показ навсегда — иначе получилось бы не «выдать
-   * ключ забывшему его», а «отдать второй фактор любому, кто открыл
-   * вход».
-   */
-  secondFactorConfirmedAt: timestamp('second_factor_confirmed_at', { withTimezone: true }),
-  isActive: boolean('is_active').default(true).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const staff = pgTable(
+  'staff',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    telegramUserId: bigint('telegram_user_id', { mode: 'bigint' }).notNull().unique(),
+    displayName: text('display_name').notNull(),
+    role: staffRoleEnum('role').default('manager').notNull(),
+    totpSecretSealed: bytea('totp_secret_sealed'),
+    /**
+     * Когда выданным ключом впервые вошли. Пусто — ключ выдан, но до
+     * приложения-аутентификатора не доехал, и вход показывает его сам:
+     * код для камеры и строку. Ставится при первом сошедшемся коде и
+     * закрывает этот показ навсегда — иначе получилось бы не «выдать
+     * ключ забывшему его», а «отдать второй фактор любому, кто открыл
+     * вход».
+     */
+    secondFactorConfirmedAt: timestamp('second_factor_confirmed_at', { withTimezone: true }),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    /*
+     * «Ключа нет, но им уже входили» — состояние, которого не бывает:
+     * отметку ставит только сошедшийся код, а он берётся из ключа.
+     * Правило держит база: снять секрет и оставить отметку — это ровно
+     * тот случай, когда вход перестанет показывать ключ, которого нет,
+     * и сотрудник упрётся в поле для кода. С этого и начиналось.
+     */
+    check(
+      'staff_second_factor_confirmed_needs_secret',
+      sql`${table.secondFactorConfirmedAt} is null or ${table.totpSecretSealed} is not null`,
+    ),
+  ],
+);
 
 /**
  * Журнал изменений настроек сервиса.

@@ -50,18 +50,28 @@ export async function POST(request: Request): Promise<Response> {
       maxAge: PENDING_TTL_SECONDS,
     });
 
+    /*
+     * Ответ несёт второй фактор целиком, и осесть в хранилище по дороге
+     * он не должен. Ответы на POST по умолчанию и так никто не кэширует,
+     * но здесь цена ошибки — чужой второй фактор, а запрет стоит строки.
+     */
+    const noStore = { headers: { 'cache-control': 'no-store' } };
+
     if (!secondFactorPending) {
-      return json({ ok: true });
+      return json({ ok: true }, noStore);
     }
 
     const enrollment = await core.claimSecondFactor(staffId);
-    return json({
-      ok: true,
-      enrollment: {
-        secret: enrollment.enrollmentSecret,
-        qr: await enrollmentQr(enrollment.otpauthUri),
+    return json(
+      {
+        ok: true,
+        enrollment: {
+          secret: enrollment.enrollmentSecret,
+          qr: await enrollmentQr(enrollment.otpauthUri),
+        },
       },
-    });
+      noStore,
+    );
   } catch (error) {
     return errorResponse(error);
   }

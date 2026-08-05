@@ -1,5 +1,5 @@
 {
-  "id": "43017919-896f-4c64-a3c1-39aacd936e91",
+  "id": "4faf03fa-c80b-4c07-b118-ddb8e3c6d6fc",
   "prevId": "6ade1cc2-443c-42fb-86ee-680ddb6c135d",
   "version": "7",
   "dialect": "postgresql",
@@ -1686,7 +1686,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "staff_second_factor_confirmed_needs_secret": {
+          "name": "staff_second_factor_confirmed_needs_secret",
+          "value": "\"staff\".\"second_factor_confirmed_at\" is null or \"staff\".\"totp_secret_sealed\" is not null"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.text_templates": {
