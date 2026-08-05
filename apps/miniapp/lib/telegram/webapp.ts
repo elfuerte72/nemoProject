@@ -7,8 +7,29 @@
  * содержимое `window.Telegram` отвечает загруженный с их стороны скрипт.
  */
 
+/**
+ * Кто открыл приложение — так, как это называет сам Telegram.
+ *
+ * Всё необязательно, и это не осторожность в типах: клиент постарше
+ * кладёт сюда меньше, а фотографии у аккаунта может не быть вовсе или
+ * она закрыта настройками приватности.
+ */
+export interface TelegramUser {
+  readonly first_name?: string;
+  readonly last_name?: string;
+  readonly username?: string;
+  readonly photo_url?: string;
+}
+
 interface TelegramWebApp {
   initData: string;
+  /**
+   * То же, что в `initData`, но разобранное самим Telegram и без
+   * подписи. Имени и фотографии в подписанной строке не проверить, и
+   * серверу они поэтому не отдаются — но нарисовать шапку профиля
+   * этого достаточно: она ничего не решает, а данные и так свои.
+   */
+  initDataUnsafe?: { user?: TelegramUser };
   ready(): void;
   expand(): void;
   /** Открыть ссылку t.me внутри Telegram, а не во внешнем браузере. */
@@ -41,6 +62,15 @@ declare global {
 
 export function getWebApp(): TelegramWebApp | undefined {
   return typeof window === 'undefined' ? undefined : window.Telegram?.WebApp;
+}
+
+/**
+ * Имя и фотография открывшего приложение. Берутся у Telegram на месте:
+ * запрашивать их у сервера незачем — он их не хранит, а показать нужно
+ * ровно тому, чьи они и есть.
+ */
+export function getTelegramUser(): TelegramUser | undefined {
+  return getWebApp()?.initDataUnsafe?.user;
 }
 
 /**

@@ -118,6 +118,27 @@ async function countReferrals(
   return row?.value ?? 0;
 }
 
+/**
+ * Движения по баллам сами по себе — без остатка, сети и ссылки.
+ *
+ * Кабинету они нужны вместе со всем этим, ленте истории — отдельно и
+ * рядом с заявками. Запрос один и тот же, и повторять его на месте
+ * значило бы завести вторую правду о том, в каком порядке читается
+ * история баллов.
+ */
+export async function listBonusTransactions(
+  executor: Executor,
+  clientId: bigint,
+): Promise<readonly BonusTransactionView[]> {
+  const rows = await executor
+    .select()
+    .from(bonusTransactions)
+    .where(eq(bonusTransactions.clientId, clientId))
+    .orderBy(desc(bonusTransactions.createdAt), desc(bonusTransactions.id))
+    .limit(CLIENT_HISTORY_LIMIT);
+  return rows.map(toView);
+}
+
 export async function getBonusAccount(
   ctx: CoreConfig,
   actor: Actor,
@@ -138,12 +159,7 @@ export async function getBonusAccount(
     bonusEarned(ctx.db, clientId),
     countReferrals(ctx.db, clientId, 1),
     countReferrals(ctx.db, clientId, 2),
-    ctx.db
-      .select()
-      .from(bonusTransactions)
-      .where(eq(bonusTransactions.clientId, clientId))
-      .orderBy(desc(bonusTransactions.createdAt), desc(bonusTransactions.id))
-      .limit(CLIENT_HISTORY_LIMIT),
+    listBonusTransactions(ctx.db, clientId),
   ]);
 
   return {
@@ -152,6 +168,6 @@ export async function getBonusAccount(
     referralCode: client.referralCode,
     line1Count,
     line2Count,
-    history: history.map(toView),
+    history,
   };
 }

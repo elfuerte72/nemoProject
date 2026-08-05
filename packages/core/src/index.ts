@@ -49,6 +49,7 @@ import {
   submitExchangeRequest,
   type SubmitExchangeRequestInput,
 } from './exchange-requests.js';
+import { getClientHistory } from './history-feed.js';
 import { listDirections, setDirectionActive } from './directions.js';
 import {
   listActiveNetworks,
@@ -143,6 +144,7 @@ export function createCore(ctx: CoreConfig) {
     submitExchangeRequest: (actor: Actor, input: SubmitExchangeRequestInput) =>
       submitExchangeRequest(ctx, actor, input),
     listExchangeRequests: (actor: Actor) => listExchangeRequests(ctx, actor),
+    getClientHistory: (actor: Actor) => getClientHistory(ctx, actor),
     getExchangeRequest: (actor: Actor, requestId: string) =>
       getExchangeRequest(ctx, actor, requestId),
 
@@ -319,6 +321,7 @@ export type { DirectionView } from './directions.js';
 export { botTextKeys, BOT_TEXTS } from './bot-texts.js';
 export type { BotTextKey } from './bot-texts.js';
 export type { BonusAccountView, BonusTransactionView } from './bonus-account.js';
+export type { ClientHistoryEntry, ClientHistoryView } from './history-feed.js';
 export type { ServiceSettingsView } from './settings.js';
 export type { QuoteInput, QuoteView, RatePair, RateQuote, RateSource } from './rates.js';
 export type {

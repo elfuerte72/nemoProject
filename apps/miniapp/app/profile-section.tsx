@@ -1,34 +1,50 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { BonusAccountView, WithdrawalRequestView } from '@nemo/core';
-import type { WithdrawalMethod } from '@nemo/types';
+import type { BonusAccountView, ClientView, RequisitesView, WithdrawalRequestView } from '@nemo/core';
+import { requisiteKinds, type WithdrawalMethod } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { referralLink } from '@/lib/referral';
-import { formatAmount, formatDate, parseAmount, shortId } from '@/lib/format';
-import {
-  BONUS_KIND_LABELS,
-  WITHDRAWAL_METHOD_LABELS,
-  WITHDRAWAL_STATUS_LABELS,
-} from '@/lib/labels';
-import { getWebApp } from '@/lib/telegram/webapp';
-import { InviteIcon, WithdrawIcon } from './ui/icons';
+import { formatAmount, formatMonth, parseAmount } from '@/lib/format';
+import { WITHDRAWAL_METHOD_LABELS } from '@/lib/labels';
+import { getTelegramUser, getWebApp } from '@/lib/telegram/webapp';
+import { CardIcon, ChevronRight, InviteIcon, WithdrawIcon } from './ui/icons';
 import { Loading } from './ui/loading';
 import { MarketingConsentToggle } from './marketing-consent';
+import { RequisitesSheet } from './requisites-section';
 import { addressLabel, NetworkPicker } from './ui/network-picker';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
 /**
- * Реферальный кабинет: сколько заработал, скольких привёл и как это
- * получить деньгами.
+ * Профиль клиента: кто он для сервиса, что принесла ему рефералка и
+ * куда сервис отправляет ему деньги.
+ *
+ * Раздел вырос из реферального кабинета и остался на его месте в ряду:
+ * баллы — единственное, что у клиента в сервисе накапливается, и
+ * прятать их вглубь профиля значило бы прятать причину звать друзей.
  *
  * О самих рефералах здесь только количество. Их имена — не награда за
  * приглашение: человек, пришедший по ссылке, не соглашался быть
  * показанным тому, кто её прислал.
+ *
+ * Движения по баллам и заявки на вывод отсюда уехали в историю: они
+ * рассказывают, что было, а профиль отвечает, что есть сейчас. Дорогу
+ * назад держит ссылка под балансом — она открывает ту же историю,
+ * сразу отобранную по баллам.
  */
 
 /** Сколько «Скопировано» держится на месте кнопки. */
 const COPIED_MS = 1600;
+
+/** «1 запись», «2 записи», «5 записей» — иначе число выглядит опечаткой. */
+function plural(count: number): string {
+  const tens = count % 100;
+  const ones = count % 10;
+  if (tens > 10 && tens < 20) return 'записей';
+  if (ones === 1) return 'запись';
+  if (ones > 1 && ones < 5) return 'записи';
+  return 'записей';
+}
 
 const SUBMITTED = {
   title: 'Заявка на вывод принята',
@@ -38,19 +54,26 @@ const SUBMITTED = {
 type SheetState =
   | { readonly kind: 'withdraw' }
   | { readonly kind: 'invite' }
+  | { readonly kind: 'requisites' }
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
-export function BonusSection({
+export function ProfileSection({
   revisit,
+  client,
   consent,
   onConsentChanged,
+  onOpenBonusHistory,
 }: {
   readonly revisit: number;
+  readonly client: ClientView;
   readonly consent: boolean;
   readonly onConsentChanged: (consent: boolean) => void;
+  /** Открыть историю, отобранную по баллам: там видно, за что начислено. */
+  readonly onOpenBonusHistory: () => void;
 }) {
   const [account, setAccount] = useState<BonusAccountView>();
-  const [withdrawals, setWithdrawals] = useState<WithdrawalRequestView[]>([]);
+  const [requisites, setRequisites] = useState<RequisitesView[]>([]);
+  const [networks, setNetworks] = useState<string[]>([]);
   const [sheet, setSheet] = useState<SheetState>();
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string>();
@@ -59,14 +82,18 @@ export function BonusSection({
   useEffect(() => {
     void (async () => {
       try {
-        const [bonus, mine] = await Promise.all([
+        const [bonus, mine, known] = await Promise.all([
           get<{ account: BonusAccountView }>('/api/bonus-account'),
-          get<{ requests: WithdrawalRequestView[] }>('/api/withdrawals'),
+          get<{ requisites: RequisitesView[] }>('/api/requisites'),
+          // Справочник сетей нужен форме нового кошелька. Его молчание —
+          // не поломка профиля: карту и телефон оно не трогает.
+          get<{ networks: string[] }>('/api/networks').catch(() => ({ networks: [] })),
         ]);
         setAccount(bonus.account);
-        setWithdrawals(mine.requests);
+        setRequisites(mine.requisites);
+        setNetworks(known.networks);
       } catch (failure) {
-        setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить кабинет');
+        setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить профиль');
       } finally {
         setLoading(false);
       }
@@ -77,6 +104,9 @@ export function BonusSection({
     // показанное, и подменять баланс на «Загружаем…» значило бы моргать
     // числом в ответ на возвращение.
   }, [revisit]);
+
+  const telegram = getTelegramUser();
+  const name = [telegram?.first_name, telegram?.last_name].filter(Boolean).join(' ');
 
   const link = account ? referralLink(account.referralCode) : undefined;
 
@@ -103,20 +133,49 @@ export function BonusSection({
   }
 
   if (!account) {
-    return <p className="error">{error ?? 'Не удалось загрузить кабинет'}</p>;
+    return <p className="error">{error ?? 'Не удалось загрузить профиль'}</p>;
   }
 
   return (
     <>
+      <div className="whoami">
+        {/*
+          Фотография берётся у Telegram по его же ссылке. Обычный `img`,
+          а не оптимизатор Next: тот проксирует картинку через сервер
+          приложения, и ради одного аватара пришлось бы завести туда
+          домен Telegram — вместе с ответственностью за то, что сервис
+          отдаёт чужие фотографии со своего адреса.
+        */}
+        {telegram?.photo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={telegram.photo_url} alt="" className="whoami__photo" />
+        ) : (
+          <span className="whoami__photo whoami__photo--empty" aria-hidden="true">
+            {(name || client.username || '?').slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <span className="whoami__body">
+          <span className="whoami__name">{name || client.username || 'Вы'}</span>
+          <span className="whoami__sub">
+            {client.username ? `@${client.username} · ` : ''}с {formatMonth(client.createdAt)}
+          </span>
+        </span>
+      </div>
+
       <div className="balance">
-        <div className="eyebrow">Бонусный баланс</div>
+        <div className="eyebrow">Реферальные бонусы</div>
         <div className="balance__value">
           <span className="balance__number">{formatAmount(account.balance)}</span>
           <span className="balance__unit">баллов</span>
         </div>
-        <p className="balance__note">
-          Процент от того, что сервис заработал на сделках приглашённых.
-        </p>
+        {/*
+          Заработанное стоит рядом с остатком, а не вместо него: выведший
+          половину видит в балансе половину, и без второго числа это
+          читается как «столько рефералка и принесла».
+        */}
+        <button type="button" onClick={onOpenBonusHistory} className="balance__earned">
+          Заработано всего {formatAmount(account.earned)} — за что начислено
+        </button>
       </div>
 
       <div className="quick-row">
@@ -160,77 +219,38 @@ export function BonusSection({
 
       {error ? <p className="error">{error}</p> : undefined}
 
-      {withdrawals.length > 0 ? (
-        <>
-          <div className="section-title">Заявки на вывод</div>
-          <ul className="rows">
-            {withdrawals.map((request) => (
-              <li key={request.id} className="row">
-                <span className="row__body">
-                  <span className="row__title">
-                    {formatAmount(request.amount)} баллов ·{' '}
-                    {WITHDRAWAL_METHOD_LABELS[request.method]}
-                  </span>
-                  <span className="row__sub">
-                    {formatDate(request.createdAt)}
-                    {request.network ? ` · ${request.network}` : ''}
-                    {request.destinationHint ? ` · ${request.destinationHint}` : ''}
-                    {request.rejectReason ? ` · ${request.rejectReason}` : ''}
-                  </span>
-                </span>
-                <span className="row__state">{WITHDRAWAL_STATUS_LABELS[request.status]}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : undefined}
-
-      <div className="section-title">Движение баллов</div>
-      {account.history.length === 0 ? (
-        <p className="empty">Движений по баллам пока нет.</p>
-      ) : (
-        <ul className="rows">
-          {account.history.map((entry) => (
-            <li key={entry.id} className="row">
-              <span className="row__body">
-                <span className="row__title">
-                  {entry.line
-                    ? `${entry.line === 1 ? 'Первая' : 'Вторая'} линия`
-                    : BONUS_KIND_LABELS[entry.kind]}
-                </span>
-                <span className="row__sub">
-                  {entry.exchangeRequestId ? `Заявка ${shortId(entry.exchangeRequestId)} · ` : ''}
-                  {formatDate(entry.createdAt)}
-                  {entry.comment ? ` · ${entry.comment}` : ''}
-                </span>
-              </span>
-              <span
-                className={
-                  entry.amount.startsWith('-') ? 'row__amount row__amount--out' : 'row__amount'
-                }
-              >
-                {entry.amount.startsWith('-') ? '' : '+'}
-                {formatAmount(entry.amount)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
       {/*
-        Рассылка — про самого клиента, а не про его баллы, но кабинет
-        здесь единственное место, где вообще есть что-то о нём.
+        Реквизиты — про самого клиента, а не про его баллы: по ним
+        приходит и обмен, и выплата. Список один на оба дела, и живёт он
+        здесь, потому что заводить его посреди подачи заявки — не то
+        место, где о нём вспоминают заранее.
       */}
+      <button
+        type="button"
+        onClick={() => setSheet({ kind: 'requisites' })}
+        className="tile"
+      >
+        <span className="tile__icon">
+          <CardIcon />
+        </span>
+        <span className="tile__body">
+          <span className="tile__label">Мои реквизиты</span>
+          <span className="tile__value">
+            {requisites.length === 0
+              ? 'Пока не заведены'
+              : `${requisites.length} ${plural(requisites.length)}`}
+          </span>
+        </span>
+        <ChevronRight />
+      </button>
+
       <MarketingConsentToggle consent={consent} onAnswered={onConsentChanged} />
 
       {sheet?.kind === 'withdraw' ? (
         <WithdrawSheet
           balance={account.balance}
           onClose={() => setSheet(undefined)}
-          onSubmitted={(request) => {
-            setWithdrawals((current) => [request, ...current]);
-            setSheet({ kind: 'notice', ...SUBMITTED });
-          }}
+          onSubmitted={() => setSheet({ kind: 'notice', ...SUBMITTED })}
         />
       ) : undefined}
 
@@ -263,6 +283,20 @@ export function BonusSection({
         </Sheet>
       ) : undefined}
 
+      {sheet?.kind === 'requisites' ? (
+        <Sheet title="Мои реквизиты" onClose={() => setSheet(undefined)}>
+          <RequisitesSheet
+            requisites={requisites}
+            // Все три способа, а не подходящие одной валюте: здесь запись
+            // заводят заранее, ещё не выбрав, что менять.
+            kinds={requisiteKinds}
+            networks={networks}
+            onSaved={(saved) => setRequisites((current) => [saved, ...current])}
+            onRemoved={(id) => setRequisites((current) => current.filter((one) => one.id !== id))}
+          />
+        </Sheet>
+      ) : undefined}
+
       {sheet?.kind === 'notice' ? (
         <NoticeSheet title={sheet.title} body={sheet.body} onClose={() => setSheet(undefined)} />
       ) : undefined}
@@ -278,7 +312,7 @@ function WithdrawSheet({
 }: {
   readonly balance: string;
   readonly onClose: () => void;
-  readonly onSubmitted: (request: WithdrawalRequestView) => void;
+  readonly onSubmitted: () => void;
 }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<WithdrawalMethod>('bank');
@@ -309,13 +343,15 @@ function WithdrawSheet({
     setError(undefined);
     setBusy(true);
     try {
-      const created = await post<{ request: WithdrawalRequestView }>('/api/withdrawals', {
+      // Поданная заявка отсюда никуда не кладётся: её место — в
+      // истории, и туда она попадёт при следующем заходе в раздел.
+      await post<{ request: WithdrawalRequestView }>('/api/withdrawals', {
         amount: parseAmount(amount),
         method,
         destination: destination.trim(),
         ...(method === 'crypto' ? { network } : {}),
       });
-      onSubmitted(created.request);
+      onSubmitted();
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на вывод');
     } finally {

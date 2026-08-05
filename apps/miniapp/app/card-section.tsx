@@ -1,22 +1,27 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ClientCardApplicationView } from '@nemo/core';
 import type { CardApplicationStatus } from '@nemo/types';
-import { ApiError, get, post } from '@/lib/client-api';
+import { ApiError, post } from '@/lib/client-api';
 import { formatDate } from '@/lib/format';
 import { CARD_STATUS_LABELS } from '@/lib/labels';
 import { TobeeMark } from './ui/icons';
-import { Loading } from './ui/loading';
 import { NoticeSheet } from './ui/sheet';
 
 /**
  * Заявка на виртуальную карту.
  *
- * Экран честно говорит, чего сервис не делает: карту он не выпускает,
+ * Лист честно говорит, чего сервис не делает: карту он не выпускает,
  * её данных не хранит и операций по ней не проводит. Поэтому на плашке
  * нет ни номера, ни имени держателя — там нечего показать, и
  * нарисованные «•••• 4821» обещали бы карту, которой в приложении нет.
+ *
+ * Своего раздела у карты больше нет: её место — в «Дополнительно» на
+ * главной, среди прочего, что сервис делает помимо обмена. Заявки лист
+ * не загружает и держит их снаружи: строка в «Дополнительно» показывает
+ * то же состояние, и два запроса об одном означали бы, что подпись и
+ * лист однажды разойдутся.
  */
 
 /** Путь заявки к выпущенной карте. Отказ — выход из него, а не шаг. */
@@ -27,30 +32,16 @@ const ABOUT = {
   body: 'Заявку ведёт менеджер: оформляет её у провайдера и сообщает о каждом шаге. Карту выпускает провайдер — её номер и баланс живут у него, а приложение показывает только состояние заявки.',
 };
 
-export function CardSection({ revisit }: { readonly revisit: number }) {
-  const [applications, setApplications] = useState<ClientCardApplicationView[]>([]);
+export function CardSection({
+  applications,
+  onChanged,
+}: {
+  readonly applications: readonly ClientCardApplicationView[];
+  readonly onChanged: (applications: readonly ClientCardApplicationView[]) => void;
+}) {
   const [about, setAbout] = useState(false);
   const [error, setError] = useState<string>();
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const mine = await get<{ applications: ClientCardApplicationView[] }>('/api/card-applications');
-        setApplications(mine.applications);
-      } catch (failure) {
-        setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить заявки');
-      } finally {
-        setLoading(false);
-      }
-    })();
-    // Раздел остаётся в ряду и заново не собирается: состояние заявки
-    // ведёт менеджер, и узнать о его шаге можно только спросив. Признак
-    // занятости при этом не поднимается — читается уже показанное, и
-    // подменять его на «Загружаем…» значило бы моргать в ответ на
-    // возвращение.
-  }, [revisit]);
 
   async function cancel(applicationId: string) {
     setError(undefined);
@@ -59,8 +50,8 @@ export function CardSection({ revisit }: { readonly revisit: number }) {
       const cancelled = await post<{ application: ClientCardApplicationView }>(
         `/api/card-applications/${applicationId}/cancel`,
       );
-      setApplications((current) =>
-        current.map((one) => (one.id === applicationId ? cancelled.application : one)),
+      onChanged(
+        applications.map((one) => (one.id === applicationId ? cancelled.application : one)),
       );
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Не удалось отозвать заявку');
@@ -74,16 +65,12 @@ export function CardSection({ revisit }: { readonly revisit: number }) {
     setBusy(true);
     try {
       const created = await post<{ application: ClientCardApplicationView }>('/api/card-applications');
-      setApplications((current) => [created.application, ...current]);
+      onChanged([created.application, ...applications]);
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на карту');
     } finally {
       setBusy(false);
     }
-  }
-
-  if (loading) {
-    return <Loading />;
   }
 
   const current = applications[0];

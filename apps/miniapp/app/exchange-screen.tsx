@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type {
+  ClientCardApplicationView,
   ExchangeRequestView,
   ExchangeTermsView,
   QuoteView,
@@ -13,26 +14,27 @@ import {
   requisiteKindSuits,
   type Amount,
   type ExchangeKind,
-  type ExchangeRequestStatus,
 } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import {
+  isOpen,
   KIND_LABELS,
   REQUEST_STEPS,
   STEP_LABELS,
   STEP_NOTES,
-  type RequestStep,
+  stepOf,
 } from '@/lib/exchange-request-labels';
+import { CARD_STATUS_LABELS } from '@/lib/labels';
 import {
   describeRequisites,
   formatAmount,
-  formatDate,
   formatMoney,
   formatRate,
   normalizeTyped,
   parseAmount,
   shortId,
 } from '@/lib/format';
+import { CardSection } from './card-section';
 import { RequisitesSheet } from './requisites-section';
 import { CurrencyPicker } from './ui/currency-picker';
 import { sortCurrencies } from './ui/flags';
@@ -77,6 +79,7 @@ const SUBMITTED = {
 /** Ввод реквизитов и подтверждения уводятся в лист: на экране им места нет. */
 type SheetState =
   | { readonly kind: 'requisites' }
+  | { readonly kind: 'card' }
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
 /**
@@ -98,6 +101,8 @@ export function ExchangeScreen({
   /** Куда уйдут деньги по этой заявке. */
   const [selected, setSelected] = useState<string>();
   const [networks, setNetworks] = useState<string[]>([]);
+  /** Заявки на карту — ради состояния в «Дополнительно» и самого листа. */
+  const [cards, setCards] = useState<readonly ClientCardApplicationView[]>([]);
   const [fromCode, setFromCode] = useState('');
   const [toCode, setToCode] = useState('');
   const [kind, setKind] = useState<ExchangeKind>('electronic');
@@ -180,6 +185,16 @@ export function ExchangeScreen({
       .then((result) => setNetworks(result.networks))
       .catch(() => setNetworks([]));
   }, []);
+
+  useEffect(() => {
+    // Тоже отдельно и по той же причине: карта — не обмен, и её
+    // молчание не должно задерживать первый экран. Строка в
+    // «Дополнительно» до ответа стоит без состояния, а не отсутствует:
+    // пропасть и появиться она успела бы прямо под пальцем.
+    void get<{ applications: ClientCardApplicationView[] }>('/api/card-applications')
+      .then((result) => setCards(result.applications))
+      .catch(() => setCards([]));
+  }, [revisit]);
 
   useEffect(() => {
     // Раз в полминуты: отсчёт показывается минутами, и чаще незачем.
@@ -411,10 +426,20 @@ export function ExchangeScreen({
   }
 
   // Заявок в работе может быть несколько; карточкой показывается свежая,
-  // остальные остаются в истории. Две карточки подряд спорили бы за то,
+  // остальные видны в истории. Две карточки подряд спорили бы за то,
   // какая из них «та самая».
-  const active = requests.find((request) => isOpen(request));
-  const history = requests.filter((request) => request !== active);
+  const active = requests.find((request) => isOpen(request.status));
+
+  /**
+   * Что написано под «Иностранной картой». Состояние — только у живой
+   * заявки: у отозванной и отклонённой оно уже ничего клиенту не
+   * говорит, а строка снова зовёт подать.
+   */
+  const card = cards[0];
+  const cardLine =
+    card && card.status !== 'cancelled' && card.status !== 'rejected'
+      ? CARD_STATUS_LABELS[card.status]
+      : undefined;
 
   /** Что клиент может сделать с заявкой прямо сейчас — и ничего сверх того. */
   const actions: { readonly label: string; readonly run: () => void }[] = [];
@@ -690,32 +715,24 @@ export function ExchangeScreen({
         </div>
       ) : undefined}
 
-      <div className="section-title">История</div>
-      {history.length === 0 ? (
-        <p className="empty">Заявок на обмен пока нет.</p>
-      ) : (
-        <ul className="rows">
-          {history.map((request) => (
-            <li key={request.id} className="row">
-              <span className="row__body">
-                <span
-                  className={
-                    request.status === 'cancelled' ? 'row__title row__title--dim' : 'row__title'
-                  }
-                >
-                  {formatMoney(request.fromAmount, request.fromCode)} →{' '}
-                  {request.toAmount ? formatMoney(request.toAmount, request.toCode) : request.toCode}
-                </span>
-                <span className="row__sub">
-                  {KIND_LABELS[request.kind]} · {formatDate(request.createdAt)}
-                  {request.cancelReason ? ` · ${request.cancelReason}` : ''}
-                </span>
-              </span>
-              <span className="row__state">{outcomeOf(request.status)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/*
+        Что сервис делает помимо обмена. Пока здесь одна карта — на
+        месте уехавшей в свой раздел истории; отсюда же со временем
+        оплатят отель и покупку.
+      */}
+      <div className="section-title">Дополнительно</div>
+      <button type="button" onClick={() => setSheet({ kind: 'card' })} className="tile">
+        <span className="tile__icon">
+          <CardIcon />
+        </span>
+        <span className="tile__body">
+          <span className="tile__label">Иностранная карта</span>
+          <span className="tile__value">
+            {cardLine ?? 'Оформит менеджер у провайдера'}
+          </span>
+        </span>
+        <ChevronRight />
+      </button>
 
       {sheet?.kind === 'requisites' ? (
         <Sheet title="Куда отправить деньги" onClose={() => setSheet(undefined)}>
@@ -741,6 +758,12 @@ export function ExchangeScreen({
               setSelected((current) => (current === removedId ? undefined : current));
             }}
           />
+        </Sheet>
+      ) : undefined}
+
+      {sheet?.kind === 'card' ? (
+        <Sheet title="Иностранная карта" onClose={() => setSheet(undefined)}>
+          <CardSection applications={cards} onChanged={setCards} />
         </Sheet>
       ) : undefined}
 
@@ -805,20 +828,3 @@ function timeLeftToPay(
   return `На оплату остаётся ${Math.ceil(left / 60_000)} мин: курс держится до конца срока.`;
 }
 
-/** Заявка ещё в пути: показывается карточкой, а не строкой истории. */
-function isOpen(request: ExchangeRequestView): boolean {
-  return request.status !== 'completed' && request.status !== 'cancelled';
-}
-
-/**
- * Шаг на полосе прогресса. Отмены на ней нет — это не шаг вперёд, а
- * выход, и карточкой отменённая заявка уже не показывается.
- */
-function stepOf(status: ExchangeRequestStatus): RequestStep {
-  return status === 'cancelled' ? 'new' : status;
-}
-
-/** Состояние строки в истории: там отмена — такой же исход, как исполнение. */
-function outcomeOf(status: ExchangeRequestStatus): string {
-  return status === 'cancelled' ? 'Отменена' : STEP_LABELS[stepOf(status)];
-}
