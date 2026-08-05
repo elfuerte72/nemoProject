@@ -35,6 +35,7 @@ import {
 } from '@/lib/format';
 import { RequisitesSheet } from './requisites-section';
 import { CardIcon, ChevronDown, ChevronRight, SwapIcon } from './ui/icons';
+import { Loading } from './ui/loading';
 import { Popover } from './ui/popover';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
@@ -70,7 +71,19 @@ type SheetState =
   | { readonly kind: 'requisites' }
   | { readonly kind: 'notice'; readonly title: string; readonly body: string };
 
-export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
+/**
+ * `onReady` зовётся, когда экран показал бы себя целиком. Оболочка
+ * держит на нём заставку: без этого клиент видел бы её уход, а под ним —
+ * строку «загружаем» вместо экрана, и приветствие оканчивалось бы тем,
+ * от чего оно и прикрывает.
+ */
+export function ExchangeScreen({
+  revisit,
+  onReady,
+}: {
+  readonly revisit: number;
+  readonly onReady?: () => void;
+}) {
   const [terms, setTerms] = useState<ExchangeTermsView>();
   const [requests, setRequests] = useState<ExchangeRequestView[]>([]);
   const [requisites, setRequisites] = useState<RequisitesView[]>([]);
@@ -129,9 +142,14 @@ export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить данные');
       } finally {
         setLoading(false);
+        // И на отказе тоже: оболочке важно, что экран досказал своё, а
+        // не что он это сделал успешно. Иначе заставка осталась бы
+        // висеть над сообщением об ошибке, которого никто не увидит.
+        onReady?.();
       }
     })();
     // Заявки ведёт менеджер, и его шаг виден только по запросу.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revisit]);
 
   useEffect(() => {
@@ -419,7 +437,7 @@ export function ExchangeScreen({ revisit }: { readonly revisit: number }) {
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
 
   if (loading) {
-    return <p className="empty">Загружаем направления обмена…</p>;
+    return <Loading />;
   }
 
   return (

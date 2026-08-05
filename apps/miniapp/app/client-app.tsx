@@ -100,6 +100,33 @@ const IDLE_DEADLINE_MS = 2500;
 const IDLE_FALLBACK_MS = 1500;
 
 /**
+ * Сколько заставка держится, даже если сессия открылась быстрее.
+ *
+ * Сессия отвечает за доли секунды, и без этого срока приветствие
+ * мелькало бы: клиент успевает заметить движение и не успевает понять,
+ * что это было. Две с половиной секунды — столько, чтобы талисмана
+ * узнали, и не столько, чтобы вход начал раздражать.
+ *
+ * Срок именно нижний, а не показ по таймеру: сессия бывает и медленнее,
+ * и тогда заставка остаётся до ответа.
+ */
+const SPLASH_HOLD_MS = 2500;
+
+/**
+ * Сколько заставка ждёт первый экран, прежде чем уйти без него.
+ *
+ * У запросов нет срока, и зависший ответ держал бы приветствие до
+ * закрытия приложения: клиент смотрел бы на дышащий свет, не зная, что
+ * всё сломалось. По этому потолку заставка уходит и отдаёт экран как
+ * есть — со своей строкой о загрузке. Строка эта хуже приветствия, но
+ * она хотя бы говорит правду о том, что происходит.
+ *
+ * Отсчёт от запуска, а не от конца срока показа: считать нужно то,
+ * сколько клиент смотрит на экран, а не сколько ждёт приложение.
+ */
+const SPLASH_LIMIT_MS = 7000;
+
+/**
  * Открыта ли экранная клавиатура.
  *
  * Спрашивается у окна, а не у полей ввода: полей на экранах много, они
@@ -147,7 +174,16 @@ export function ClientApp() {
   const [tab, setTab] = useState<Tab>('exchange');
   const [client, setClient] = useState<ClientView>();
   const [error, setError] = useState<string>();
-
+  /** Отстояла ли заставка свой срок. */
+  const [greeted, setGreeted] = useState(false);
+  /** Вышло ли время, которое заставка ждёт первый экран. */
+  const [waited, setWaited] = useState(false);
+  /**
+   * Досказал ли своё первый экран. Заставка ждёт и этого: она лежит
+   * поверх, экран грузится под ней, и уйти ей можно только тогда, когда
+   * под ней уже не «загружаем направления обмена», а сам обмен.
+   */
+  const [screenReady, setScreenReady] = useState(false);
   /** Разделы, заведённые в ряду. Порядок в ряду задаёт `TABS`. */
   const [mounted, setMounted] = useState<readonly Tab[]>(['exchange']);
   /** Сколько раз в раздел возвращались: по этому числу он перечитывает своё. */
@@ -161,6 +197,46 @@ export function ClientApp() {
   const track = useRef<HTMLDivElement>(null);
 
   const index = TABS.findIndex((one) => one.id === tab);
+
+  /**
+   * Ряд разделов стоит под заставкой с той минуты, как появился клиент:
+   * первый экран спрашивает своё, пока идёт приветствие, и к его концу
+   * уже готов. Раньше ряда под заставкой не было вовсе — экран начинал
+   * грузиться после её ухода, и клиент видел вместо него строку
+   * «загружаем».
+   */
+  const shown = Boolean(client);
+
+  /**
+   * Сессия не ответила и не отказала за отведённое время.
+   *
+   * Отказ приходит сообщением, ответ — клиентом, а молчание не приходит
+   * никак: у запроса нет срока, и ждать его можно до закрытия
+   * приложения. Приветствие в этом случае висело бы вечно и выглядело
+   * бы работающим — самый плохой вид поломки из возможных.
+   */
+  const stalled = waited && !client && !error;
+
+  /**
+   * Пора ли снимать заставку: срок вышел и есть что показать вместо неё.
+   *
+   * «Есть что показать» — готовый экран, отказ сессии (сообщение и есть
+   * ответ), её молчание или вышедший потолок ожидания под уже стоящим
+   * экраном. Последнее условие именно с проверкой клиента: снимать
+   * заставку, когда под ней пусто, значило бы менять приветствие на
+   * пустое поле.
+   */
+  const greetingOver =
+    greeted && (screenReady || Boolean(error) || stalled || (Boolean(client) && waited));
+
+  useEffect(() => {
+    const hold = setTimeout(() => setGreeted(true), SPLASH_HOLD_MS);
+    const limit = setTimeout(() => setWaited(true), SPLASH_LIMIT_MS);
+    return () => {
+      clearTimeout(hold);
+      clearTimeout(limit);
+    };
+  }, []);
 
   useEffect(() => {
     const webApp = getWebApp();
@@ -310,18 +386,18 @@ export function ClientApp() {
     from.current = index;
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [settle, reveal, index, client]);
+  }, [settle, reveal, index, shown]);
 
   // Доводка кончилась — уехавшее больше не рисуем.
   useEffect(() => {
     const node = track.current;
-    if (!node || !client) return;
+    if (!node || !shown) return;
     const done = (event: TransitionEvent) => {
       if (event.target === node && event.propertyName === 'transform') reveal();
     };
     node.addEventListener('transitionend', done);
     return () => node.removeEventListener('transitionend', done);
-  }, [reveal, client]);
+  }, [reveal, shown]);
 
   /*
    * Перенос пальцем.
@@ -333,7 +409,7 @@ export function ClientApp() {
   useEffect(() => {
     const frame = viewport.current;
     const node = track.current;
-    if (!frame || !node || !client) return;
+    if (!frame || !node || !shown) return;
 
     let startX = 0;
     let startY = 0;
@@ -438,7 +514,7 @@ export function ClientApp() {
       frame.removeEventListener('touchend', end);
       frame.removeEventListener('touchcancel', end);
     };
-  }, [client, settle]);
+  }, [shown, settle]);
 
   /*
    * Разделы собираются здесь и не пересобираются на каждый пиксель
@@ -448,7 +524,12 @@ export function ClientApp() {
    */
   const screens = useMemo<Readonly<Record<Tab, ReactNode>>>(
     () => ({
-      exchange: <ExchangeScreen revisit={visits.exchange} />,
+      exchange: (
+        <ExchangeScreen
+          revisit={visits.exchange}
+          onReady={() => setScreenReady(true)}
+        />
+      ),
       bonus: client ? (
         <BonusSection
           revisit={visits.bonus}
@@ -473,16 +554,25 @@ export function ClientApp() {
       */}
       <div className="app__safe-top" />
 
-      {error ? (
+      {error || stalled ? (
         <div className="app__center">
-          <p className="error">{error}</p>
+          <p className="error">
+            {error ?? 'Сервис не отвечает. Закройте приложение и откройте снова.'}
+          </p>
         </div>
-      ) : !client ? (
-        // Пока клиента нет, разделы не показываются: они спрашивают у
-        // сервера то, что принадлежит клиенту, и получили бы отказ.
-        <Splash />
-      ) : (
-        <div className="frame" ref={viewport}>
+      ) : !client ? undefined : (
+        <div
+          className="frame"
+          ref={viewport}
+          /*
+            Пока сверху заставка, кадра под ней для клиента нет. Она
+            закрывает его собой, но собой же и только: не сказав этого,
+            мы оставили бы под ней живой экран — с фокусом, который
+            уходит в невидимые кнопки, и с диктором, который читает
+            заслонённое приветствием.
+          */
+          inert={!greetingOver}
+        >
           {/*
             Ни положения, ни признака переноса в разметке нет: и то и
             другое меняется по многу раз в секунду и живёт записью в
@@ -507,15 +597,24 @@ export function ClientApp() {
       )}
 
       {/*
+        Заставка лежит поверх, а не вместо: под ней уже стоит первый
+        экран и спрашивает своё. Уходит она, когда сошлись оба условия —
+        отстоян срок и экрану есть что показать; иначе приветствие
+        оканчивалось бы строкой «загружаем», то есть ровно тем, от чего
+        оно и прикрывает.
+      */}
+      {greetingOver ? undefined : <Splash />}
+
+      {/*
         Под открытой клавиатурой панель садится ей на крышку и закрывает
         то самое поле, ради которого клавиатуру и вызвали. Переключать
         разделы посреди ввода суммы всё равно незачем.
 
-        До клиента её нет по другой причине: разделы в этот момент не
-        показываются, и нажатие ничего бы не сделало. Панель под
-        заставкой обещала бы переход, которого не будет.
+        Под заставкой её нет по другой причине: разделы в этот момент не
+        показываются, и нажатие ничего бы не сделало. Панель поверх
+        приветствия обещала бы переход, которого не будет.
       */}
-      {keyboard || !client ? undefined : (
+      {keyboard || !greetingOver || !client ? undefined : (
         <nav className="tabbar">
           {TABS.map(({ id, label, Icon }) => (
             <button
@@ -535,9 +634,10 @@ export function ClientApp() {
       {/*
         Вопрос висит, пока клиент на него не ответил, и поверх любого
         раздела: закрывший приложение до ответа иначе не увидел бы его
-        больше никогда.
+        больше никогда. Но не поверх приветствия: спрошенное раньше, чем
+        клиент увидел, куда попал, — вопрос от неизвестно кого.
       */}
-      {client && !client.marketingConsentAsked ? (
+      {greetingOver && client && !client.marketingConsentAsked ? (
         <MarketingConsentAsk
           onAnswered={(marketingConsent) =>
             setClient({ ...client, marketingConsent, marketingConsentAsked: true })
