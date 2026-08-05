@@ -59,6 +59,12 @@ export function createSnapshotCache<T>(options: SnapshotCacheOptions<T>): Snapsh
   /** Снимки, новейший последний. */
   const snapshots: Snapshot<T>[] = [];
   let inFlight: Promise<Snapshot<T>> | undefined;
+  /**
+   * Ждал ли уже кто-нибудь ответа на пустом кэше. Ожидание здесь ровно
+   * одно на запуск процесса: пока показывать нечего, второй и третий
+   * клиент ничего от своего ожидания не выигрывают.
+   */
+  let waited = false;
 
   const newest = (): Snapshot<T> | undefined => snapshots[snapshots.length - 1];
 
@@ -87,8 +93,24 @@ export function createSnapshotCache<T>(options: SnapshotCacheOptions<T>): Snapsh
   async function current(): Promise<Snapshot<T> | undefined> {
     const known = newest();
     if (!known) {
+      if (waited) {
+        /*
+         * Ждали и не дождались. Дальше не ждёт никто: пока провайдер
+         * лежит, каждый следующий клиент платил бы за это своим сроком
+         * ожидания — и платил бы зря, потому что ответ всё равно один и
+         * тот же. Обновление уходит в фон, и первый удавшийся запрос
+         * вернёт курс всем сразу.
+         */
+        void refresh().catch((error: unknown) => {
+          console.error(`${options.provider} не ответила`, error);
+        });
+        return undefined;
+      }
+
       // Показывать нечего вовсе — это первое обращение после запуска
-      // процесса, и только здесь кто-то ждёт чужой сервер.
+      // процесса, и только здесь кто-то ждёт чужой сервер. В рабочем
+      // деплое это ожидание съедает прогрев.
+      waited = true;
       try {
         return await refresh();
       } catch (error) {

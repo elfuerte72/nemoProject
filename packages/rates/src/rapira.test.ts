@@ -76,6 +76,31 @@ describe('пара, которой биржа не котирует', () => {
 });
 
 describe('недоступность провайдера', () => {
+  it('не заставляет ждать себя дважды', async () => {
+    // Первый клиент на пустом кэше биржу ждёт — это единственное
+    // ожидание на запуск процесса, и в рабочем деплое его съедает
+    // прогрев. Второй уже не ждёт: ответ ему всё равно был бы тот же.
+    let calls = 0;
+    let resolveSecond = () => {};
+    const held = new Promise<void>((resolve) => {
+      resolveSecond = resolve;
+    });
+    const fetch = (async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('сеть недоступна');
+      // Второй запрос висит: если бы клиент его ждал, он не ответил бы.
+      await held;
+      return { ok: true, status: 200, json: async () => ({ data: [] }) } as Response;
+    }) as typeof globalThis.fetch;
+    const source = createRapiraRateSource({ fetch });
+
+    expect(await source.quote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
+    expect(await source.quote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
+    expect(calls).toBe(2);
+
+    resolveSecond();
+  });
+
   it('оборачивается пустой котировкой, а не ошибкой', async () => {
     const fetch = (async () => {
       throw new Error('сеть недоступна');
