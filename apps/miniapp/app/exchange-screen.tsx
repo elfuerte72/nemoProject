@@ -40,8 +40,16 @@ import {
 import { CardSection } from './card-section';
 import { InquirySheet, type InquiryTopic } from './inquiry-sheet';
 import { RequisitesSheet } from './requisites-section';
+import { SubscriptionsSheet } from './subscriptions-sheet';
 import { CurrencyPicker } from './ui/currency-picker';
-import { CardIcon, CartIcon, ChevronRight, HotelIcon, SwapIcon } from './ui/icons';
+import {
+  CardIcon,
+  CartIcon,
+  ChevronRight,
+  HotelIcon,
+  SubscriptionIcon,
+  SwapIcon,
+} from './ui/icons';
 import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';
 import { ConfirmSheet, NoticeSheet, Sheet } from './ui/sheet';
@@ -125,6 +133,8 @@ type SheetState =
   | { readonly kind: 'cancel' }
   /** Просьба оплатить бронь или покупку — уходит обращением к менеджеру. */
   | { readonly kind: 'inquiry'; readonly topic: InquiryTopic }
+  /** Подписки: сервис их не оплачивает, и лист ведёт к тому, кто это делает. */
+  | { readonly kind: 'subscriptions' }
   | {
       readonly kind: 'notice';
       readonly title: string;
@@ -1129,6 +1139,22 @@ export function ExchangeScreen({
           </span>
           <span className="abroad__label">Оплатить покупку</span>
         </button>
+        {/*
+          Подписки стоят в том же ряду, хотя ведут к партнёру, а не к
+          менеджеру: клиент ищет их там же, где остальное, что не берёт
+          российскую карту, — и не найдя, спросит в чате. Про то, что
+          сервис другой, лист говорит прямо.
+        */}
+        <button
+          type="button"
+          onClick={() => setSheet({ kind: 'subscriptions' })}
+          className="abroad__item"
+        >
+          <span className="abroad__icon">
+            <SubscriptionIcon />
+          </span>
+          <span className="abroad__label">Оплатить подписку</span>
+        </button>
       </div>
 
       {/*
@@ -1265,6 +1291,10 @@ export function ExchangeScreen({
           }
           onClose={() => setSheet(undefined)}
         />
+      ) : undefined}
+
+      {sheet?.kind === 'subscriptions' ? (
+        <SubscriptionsSheet onClose={() => setSheet(undefined)} />
       ) : undefined}
 
       {sheet?.kind === 'notice' ? (
