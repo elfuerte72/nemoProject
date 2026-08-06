@@ -740,6 +740,21 @@ button {
   text-wrap: pretty;
 }
 
+/*
+ * Условие, которое пока не выполнено: слишком малая сумма, невыбранные
+ * реквизиты. Медью, а не красным: ничего не сломалось и никто не
+ * ошибся — сервису просто нужно ещё одно действие, и красный на этом
+ * месте пугал бы там, где надо позвать.
+ */
+.notice {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--gold-light);
+  text-align: center;
+  text-wrap: pretty;
+}
+
 .section-title {
   margin: 30px 0 2px;
   font-size: 12px;

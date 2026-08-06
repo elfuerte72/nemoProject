@@ -679,6 +679,20 @@ export function ExchangeScreen({
   const paymentLeft =
     active && terms ? timeLeftToPay(active, terms.unpaidTtlMinutes, now) : undefined;
 
+  /**
+   * Что мешает подать заявку — то самое, из-за чего не горит кнопка.
+   *
+   * Только названное словами: пустое поле и не пришедший ещё курс сюда
+   * не идут — первое клиент видит сам, второе живёт полвздоха, и строка
+   * под кнопкой мигала бы на каждой смене валюты.
+   */
+  const obstacle =
+    belowMinimum && terms
+      ? `Меньше минимальной суммы обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
+      : electronic && selected === undefined
+        ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
+        : undefined;
+
   const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
   const support = supportLink();
@@ -854,6 +868,14 @@ export function ExchangeScreen({
             {electronic ? 'Обменять' : 'Заказать наличные'}
           </button>
 
+          {/*
+            Что мешает подать заявку прямо сейчас — отдельной строкой и
+            в цвет. Погашенная кнопка сама по себе не объясняет ничего:
+            причин у неё несколько, и клиент, набравший слишком мало,
+            видел ровно то же, что клиент без реквизитов.
+          */}
+          {obstacle ? <p className="notice">{obstacle}</p> : undefined}
+
           <p className="hint">
             {/*
               Сам курс называет строка на черте калькулятора, и повторять
@@ -871,15 +893,13 @@ export function ExchangeScreen({
                   'Курс фиксируется в заявке: по нему и обменяем.'
               : 'Наличные считает менеджер: курс и сумму он назовёт, когда возьмёт заявку.'}
             {/*
-              Минимум называется до подачи, а не в отказе после неё:
-              заявку, которую сервис заведомо не примет, клиент не должен
-              успеть подать.
+              Минимум называется заранее — как справка, а не как упрёк.
+              Нарушенный, он уходит наверх отдельной строкой: там он
+              отвечает на вопрос «почему не нажимается», и повторять его
+              здесь значило бы сказать одно и то же дважды.
             */}
-            {terms && minimumApplies
+            {terms && minimumApplies && !belowMinimum
               ? ` Минимальная сумма обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
-              : ''}
-            {electronic && selected === undefined
-              ? ` Чтобы подать заявку, укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
               : ''}
           </p>
         </>
