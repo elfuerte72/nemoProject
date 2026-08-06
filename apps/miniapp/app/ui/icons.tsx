@@ -113,6 +113,36 @@ export function CardIcon({ size = 20 }: IconProps) {
   );
 }
 
+/** Кровать под навесом: отель узнаётся по ней, а не по зданию. */
+export function HotelIcon({ size = 20 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 18V7M4 12h16v6M4 15h16M8.5 11.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Zm4-3.2H20"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Корзина: покупка в чужом магазине узнаётся по ней везде. */
+export function CartIcon({ size = 20 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3.5 5h2.2l2 9.5h9.6l2-6.8H7.1M9.5 19.2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm7 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /**
  * Реплика — тем же носиком, что у знака сервиса: разговор с менеджером
  * идёт в том же чате, которым сервис и представлен.

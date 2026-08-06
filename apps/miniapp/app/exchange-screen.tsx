@@ -37,10 +37,11 @@ import {
   shortId,
 } from '@/lib/format';
 import { CardSection } from './card-section';
+import { InquirySheet, type InquiryTopic } from './inquiry-sheet';
 import { RequisitesSheet } from './requisites-section';
 import { CurrencyPicker } from './ui/currency-picker';
 import { sortCurrencies } from './ui/flags';
-import { CardIcon, ChevronRight, SwapIcon } from './ui/icons';
+import { CardIcon, CartIcon, ChevronRight, HotelIcon, SwapIcon } from './ui/icons';
 import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';
 import { ConfirmSheet, NoticeSheet, Sheet } from './ui/sheet';
@@ -110,6 +111,8 @@ type SheetState =
       readonly requisitesLine: string | undefined;
     }
   | { readonly kind: 'cancel' }
+  /** Просьба оплатить бронь или покупку — уходит обращением к менеджеру. */
+  | { readonly kind: 'inquiry'; readonly topic: InquiryTopic }
   | {
       readonly kind: 'notice';
       readonly title: string;
@@ -1057,23 +1060,46 @@ export function ExchangeScreen({
       ) : undefined}
 
       {/*
-        Что сервис делает помимо обмена. Пока здесь одна карта — на
-        месте уехавшей в свой раздел истории; отсюда же со временем
-        оплатят отель и покупку.
+        Что сервис делает, когда российская карта за границей не
+        работает. Общий знаменатель у всех трёх пунктов один, и назван
+        он местом, а не порядком: «Дополнительно» говорило о положении
+        блока в списке, а не о том, зачем сюда заходят.
+
+        Сеткой, а не строками: строк было бы три по семьдесят пикселей,
+        и блок уезжал бы за нижний край под карточкой заявки. В плитке
+        только название и состояние там, где оно есть, — подписи вроде
+        «оформит менеджер» повторяют то, что и так верно про всё здесь.
       */}
-      <div className="section-title">Дополнительно</div>
-      <button type="button" onClick={() => setSheet({ kind: 'card' })} className="tile">
-        <span className="tile__icon">
-          <CardIcon />
-        </span>
-        <span className="tile__body">
-          <span className="tile__label">Иностранная карта</span>
-          <span className="tile__value">
-            {cardLine ?? 'Оформит менеджер у провайдера'}
+      <div className="section-title">За границей</div>
+      <div className="abroad">
+        <button type="button" onClick={() => setSheet({ kind: 'card' })} className="abroad__item">
+          <span className="abroad__icon">
+            <CardIcon />
           </span>
-        </span>
-        <ChevronRight />
-      </button>
+          <span className="abroad__label">Иностранная карта</span>
+          {cardLine ? <span className="abroad__state">{cardLine}</span> : undefined}
+        </button>
+        <button
+          type="button"
+          onClick={() => setSheet({ kind: 'inquiry', topic: 'hotel' })}
+          className="abroad__item"
+        >
+          <span className="abroad__icon">
+            <HotelIcon />
+          </span>
+          <span className="abroad__label">Оплатить отель</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setSheet({ kind: 'inquiry', topic: 'purchase' })}
+          className="abroad__item"
+        >
+          <span className="abroad__icon">
+            <CartIcon />
+          </span>
+          <span className="abroad__label">Оплатить покупку</span>
+        </button>
+      </div>
 
       {/*
         Подтверждение перед подачей. Показывает то, что запишет ядро, а
@@ -1193,6 +1219,20 @@ export function ExchangeScreen({
         <Sheet title="Иностранная карта" onClose={() => setSheet(undefined)}>
           <CardSection applications={cards} onChanged={setCards} />
         </Sheet>
+      ) : undefined}
+
+      {sheet?.kind === 'inquiry' ? (
+        <InquirySheet
+          topic={sheet.topic}
+          onSent={() =>
+            setSheet({
+              kind: 'notice',
+              title: 'Менеджер получил просьбу',
+              body: 'Он посчитает и ответит в чате — приложение для этого держать открытым не нужно.',
+            })
+          }
+          onClose={() => setSheet(undefined)}
+        />
       ) : undefined}
 
       {sheet?.kind === 'notice' ? (
