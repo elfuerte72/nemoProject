@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { ManagerCardApplicationView } from '@nemo/core';
 import { cardApplicationTransitions } from '@nemo/types';
 import { CARD_STATUS_LABELS, CARD_STATUS_TONES, pillClass } from '@/lib/labels';
+import { LiveQueue } from '@/app/ui/live-queue';
 import { Moment } from '@/app/ui/moment';
 
 /**
@@ -30,8 +31,11 @@ type CardApplicationForDisplay = Omit<
 
 export function CardList({
   applications,
+  fetchedAt,
 }: {
   applications: readonly CardApplicationForDisplay[];
+  /** Когда список прочитали: очередь обновляется сама, и это видно. */
+  fetchedAt: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
@@ -39,6 +43,12 @@ export function CardList({
   const [references, setReferences] = useState<Record<string, string>>({});
   /** Заявка, по которой нажат отказ и ещё не подтверждён. */
   const [rejecting, setRejecting] = useState<string>();
+  /**
+   * В каком поле стоит курсор. По фокусу, а не по набранному: человек,
+   * который только занёс руки над пустым полем, работает так же, как
+   * тот, кто уже набрал полстроки, — а строки под ним ездить не должны.
+   */
+  const [editing, setEditing] = useState<string>();
 
   async function update(id: string, status: string): Promise<void> {
     setError(undefined);
@@ -66,16 +76,32 @@ export function CardList({
     }
   }
 
+  /*
+   * Пока набирают номер у провайдера или ждёт подтверждения отказ,
+   * тихое обновление ждёт: перерисовка уносит набранное вместе с
+   * раскрытой строкой.
+   */
+  const typing =
+    rejecting !== undefined ||
+    editing !== undefined ||
+    Object.values(references).some((reference) => reference.trim().length > 0);
+
   if (applications.length === 0) {
     return (
-      <p className="empty">
-        Заявок на карту нет. Здесь появятся те, что клиенты подадут из приложения.
-      </p>
+      <>
+        <LiveQueue fetchedAt={fetchedAt} busy={busy} typing={typing} />
+        <p className="empty">
+          Заявок на карту нет. Здесь появятся те, что клиенты подадут из приложения; экран
+          перечитывает очередь сам.
+        </p>
+      </>
     );
   }
 
   return (
     <>
+      <LiveQueue fetchedAt={fetchedAt} busy={busy} typing={typing} />
+
       {error ? (
         <p className="error" role="alert">
           {error}
@@ -133,7 +159,10 @@ export function CardList({
                         [application.id]: event.target.value,
                       }))
                     }
+                    onFocus={() => setEditing(application.id)}
+                    onBlur={() => setEditing(undefined)}
                     placeholder="Номер у провайдера"
+                    inputMode="numeric"
                     aria-label={`Номер заявки клиента ${application.clientId} у провайдера`}
                   />
                 </span>

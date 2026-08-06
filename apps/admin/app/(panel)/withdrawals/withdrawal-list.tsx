@@ -11,6 +11,7 @@ import {
   WITHDRAWAL_STATUS_LABELS,
   WITHDRAWAL_STATUS_TONES,
 } from '@/lib/labels';
+import { LiveQueue } from '@/app/ui/live-queue';
 import { Moment } from '@/app/ui/moment';
 
 /**
@@ -38,7 +39,14 @@ function isPending(pending: Pending, id: string, action: 'pay' | 'reject'): bool
   return pending?.id === id && pending.action === action;
 }
 
-export function WithdrawalList({ requests }: { requests: readonly WithdrawalForDisplay[] }) {
+export function WithdrawalList({
+  requests,
+  fetchedAt,
+}: {
+  requests: readonly WithdrawalForDisplay[];
+  /** Когда список прочитали: очередь обновляется сама, и это видно. */
+  fetchedAt: string;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -50,6 +58,12 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
    * и стоят они в одном ряду с безобидными кнопками.
    */
   const [pending, setPending] = useState<{ id: string; action: 'pay' | 'reject' }>();
+  /**
+   * В каком поле стоит курсор. По фокусу, а не по набранному: человек,
+   * который только занёс руки над пустым полем, работает так же, как
+   * тот, кто уже набрал полстроки, — а строки под ним ездить не должны.
+   */
+  const [editing, setEditing] = useState<string>();
 
   async function act(id: string, body: Record<string, string>): Promise<void> {
     setError(undefined);
@@ -78,16 +92,32 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
     }
   }
 
+  /*
+   * Пока в раскрытой строке набирают причину отказа или ждёт
+   * подтверждения необратимое, тихое обновление ждёт: перерисовка
+   * посреди этого уносит набранное вместе с раскрытой строкой.
+   */
+  const typing =
+    pending !== undefined ||
+    editing !== undefined ||
+    Object.values(reasons).some((reason) => reason.trim().length > 0);
+
   if (requests.length === 0) {
     return (
-      <p className="empty">
-        Заявок на вывод нет. Здесь появятся те, что клиенты подадут со своего бонусного счёта.
-      </p>
+      <>
+        <LiveQueue fetchedAt={fetchedAt} busy={busy} typing={typing} />
+        <p className="empty">
+          Заявок на вывод нет. Здесь появятся те, что клиенты подадут со своего бонусного
+          счёта; экран перечитывает очередь сам.
+        </p>
+      </>
     );
   }
 
   return (
     <>
+      <LiveQueue fetchedAt={fetchedAt} busy={busy} typing={typing} />
+
       {error ? (
         <p className="error" role="alert">
           {error}
@@ -144,11 +174,20 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
                   </span>
                 </span>
 
+                {/*
+                  Кто ведёт выплату — рядом с состоянием: одобренная
+                  заявка уже чья-то, и второй менеджер, взявшийся за
+                  неё, звонит клиенту вторым. Пока никто не взялся,
+                  строка пуста — это и значит «свободна».
+                */}
                 <span className="cell">
                   <span className="cell__label">Состояние</span>
                   <span className={pillClass(WITHDRAWAL_STATUS_TONES[request.status])}>
                     {WITHDRAWAL_STATUS_LABELS[request.status]}
                   </span>
+                  {request.managerName ? (
+                    <span className="cell__note">ведёт {request.managerName}</span>
+                  ) : undefined}
                 </span>
 
                 <span className="cell cell--actions">
@@ -270,6 +309,8 @@ export function WithdrawalList({ requests }: { requests: readonly WithdrawalForD
                             [request.id]: event.target.value,
                           }))
                         }
+                        onFocus={() => setEditing(request.id)}
+                        onBlur={() => setEditing(undefined)}
                         placeholder="Например: реквизиты не принадлежат клиенту"
                       />
                       <div className="row__actions">

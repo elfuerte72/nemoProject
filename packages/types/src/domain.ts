@@ -142,6 +142,21 @@ export type CurrencyKind = z.infer<typeof currencyKindSchema>;
  * и делать это по своей копии правила означало бы разойтись с ядром
  * молча.
  */
+/**
+ * Состояния заявки, которую уже начали вести и ещё не закрыли.
+ *
+ * Выводится из таблицы переходов: завершённое состояние — то, из
+ * которого перейти некуда. Перечисли их руками — и новое состояние
+ * молча попало бы в список работ, ничего при этом не сломав.
+ *
+ * Живёт здесь, а не в ядре: по этому же набору панель наполняет список
+ * состояний в фильтре очереди, и вторая копия разошлась бы с выборкой —
+ * фильтр предлагал бы состояние, которого в списке не бывает.
+ */
+export const inProgressExchangeStatuses = exchangeRequestStatuses.filter(
+  (status) => status !== 'new' && exchangeRequestTransitions[status].length > 0,
+);
+
 export function requisiteKindSuits(kind: RequisiteKind, currency: CurrencyKind): boolean {
   return currency === 'crypto' ? kind === 'wallet' : kind !== 'wallet';
 }

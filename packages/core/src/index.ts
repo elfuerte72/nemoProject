@@ -111,6 +111,8 @@ import {
   cancelOwnExchangeRequest,
   claimExchangeRequest,
   completeExchangeRequest,
+  countExchangeRequestQueue,
+  countExchangeRequestsInProgress,
   confirmExchangeRate,
   getExchangeRequestForStaff,
   listExchangeRequestEvents,
@@ -119,6 +121,7 @@ import {
   markPaymentReceived,
   type CompleteExchangeRequestInput,
   type ConfirmExchangeRateInput,
+  type ExchangeQueueFilter,
 } from './exchange-workflow.js';
 
 /**
@@ -208,9 +211,19 @@ export function createCore(ctx: CoreConfig) {
       warnAboutExpiringExchangeRequests(ctx, at),
     expireUnpaidExchangeRequests: (at: Date) => expireUnpaidExchangeRequests(ctx, at),
 
-    listExchangeRequestQueue: (actor: Actor) => listExchangeRequestQueue(ctx, actor),
-    listExchangeRequestsInProgress: (actor: Actor) =>
-      listExchangeRequestsInProgress(ctx, actor),
+    listExchangeRequestQueue: (actor: Actor, filter?: ExchangeQueueFilter) =>
+      listExchangeRequestQueue(ctx, actor, filter),
+    /*
+     * Счётчики — отдельным запросом, а не длиной выборки: у выборки
+     * есть предел, и счётчик по ней врал бы ровно тогда, когда его
+     * читают чаще всего.
+     */
+    countExchangeRequestQueue: (actor: Actor, filter?: ExchangeQueueFilter) =>
+      countExchangeRequestQueue(ctx, actor, filter),
+    countExchangeRequestsInProgress: (actor: Actor, filter?: ExchangeQueueFilter) =>
+      countExchangeRequestsInProgress(ctx, actor, filter),
+    listExchangeRequestsInProgress: (actor: Actor, filter?: ExchangeQueueFilter) =>
+      listExchangeRequestsInProgress(ctx, actor, filter),
     getExchangeRequestForStaff: (actor: Actor, requestId: string) =>
       getExchangeRequestForStaff(ctx, actor, requestId),
     listExchangeRequestEvents: (actor: Actor, requestId: string) =>
@@ -397,6 +410,7 @@ export type {
   ClientTransitionResult,
   CompleteExchangeRequestInput,
   ConfirmExchangeRateInput,
+  ExchangeQueueFilter,
   ExchangeRequestEventView,
   ManagerExchangeRequestView,
   TransitionResult,

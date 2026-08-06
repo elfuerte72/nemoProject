@@ -479,7 +479,28 @@ export const exchangeRequests = pgTable(
   },
   (table) => [
     index('exchange_requests_client_idx').on(table.clientId),
-    index('exchange_requests_status_idx').on(table.status),
+    /*
+     * Очередь читается состоянием и упорядочена по времени подачи, и
+     * страницу отдаёт курсор по паре «время, идентификатор» — то есть
+     * по этому индексу целиком. Одного состояния мало: на нём выборка
+     * сортировала бы всё найденное заново при каждой подгрузке.
+     */
+    index('exchange_requests_status_created_idx').on(
+      table.status,
+      table.createdAt,
+      table.id,
+    ),
+    /**
+     * «Что моё» — первый вопрос смены, и спрашивается он не реже
+     * очереди. Идентификатор в хвосте по той же причине, что и выше:
+     * порядок выборки — пара «время, идентификатор», и без него
+     * сортировка считается заново.
+     */
+    index('exchange_requests_manager_idx').on(
+      table.assignedManagerId,
+      table.createdAt,
+      table.id,
+    ),
     check(
       'exchange_requests_income_on_completion',
       sql`${table.status} <> 'completed' or ${table.serviceIncome} is not null`,

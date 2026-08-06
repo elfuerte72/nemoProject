@@ -1,6 +1,12 @@
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { open } from '@nemo/crypto';
-import { bonusTransactions, clientRequisites, clients, withdrawalRequests } from '@nemo/db';
+import {
+  bonusTransactions,
+  clientRequisites,
+  clients,
+  staff,
+  withdrawalRequests,
+} from '@nemo/db';
 import {
   canTransitionWithdrawal,
   Money,
@@ -83,6 +89,12 @@ export interface WithdrawalTransitionResult {
  */
 export type ManagerWithdrawalView = WithdrawalRequestView & {
   readonly clientUsername: string | null;
+  /**
+   * Кто ведёт выплату — именем. Очередь общая, и «кто взял» здесь не
+   * приватность, а рабочая информация: без неё двое звонят одному
+   * клиенту.
+   */
+  readonly managerName: string | null;
 };
 
 type WithdrawalRow = typeof withdrawalRequests.$inferSelect;
@@ -289,12 +301,21 @@ export async function listWithdrawalQueue(
 ): Promise<readonly ManagerWithdrawalView[]> {
   requireStaff(actor);
   const rows = await ctx.db
-    .select({ request: withdrawalRequests, username: clients.username })
+    .select({
+      request: withdrawalRequests,
+      username: clients.username,
+      managerName: staff.displayName,
+    })
     .from(withdrawalRequests)
     .innerJoin(clients, eq(clients.telegramUserId, withdrawalRequests.clientId))
+    .leftJoin(staff, eq(staff.id, withdrawalRequests.managerId))
     .where(inArray(withdrawalRequests.status, OPEN_STATUSES))
     .orderBy(desc(withdrawalRequests.createdAt));
-  return rows.map((row) => ({ ...toView(row.request), clientUsername: row.username }));
+  return rows.map((row) => ({
+    ...toView(row.request),
+    clientUsername: row.username,
+    managerName: row.managerName,
+  }));
 }
 
 async function lockWithdrawal(
