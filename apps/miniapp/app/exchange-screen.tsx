@@ -92,7 +92,22 @@ const SUBMITTED = {
 type SheetState =
   | { readonly kind: 'requisites' }
   | { readonly kind: 'card' }
-  | { readonly kind: 'confirm' }
+  /**
+   * Подтверждение подачи — со снимком того, что клиент в нём прочёл.
+   *
+   * Живыми эти величины быть не могут: курс перечитывается каждые
+   * полминуты, и лист, открытый на минуту, успевал бы поменять числа под
+   * читающим. Подтверждают то, что видят, и заявка уходит по этому же
+   * снимку — вплоть до отметки курса.
+   */
+  | {
+      readonly kind: 'confirm';
+      readonly give: Amount;
+      readonly payout: Amount | null;
+      readonly rate: QuoteView | null;
+      readonly requisitesId: string | undefined;
+      readonly requisitesLine: string | undefined;
+    }
   | { readonly kind: 'cancel' }
   | {
       readonly kind: 'notice';
@@ -500,13 +515,14 @@ export function ExchangeScreen({
     setSwaps(swaps + 1);
   }
 
-  async function submit() {
-    // Отданная сторона и есть заявка: при вводе с обратной стороны она
-    // посчитана делением вверх — по ней ядро вернёт ровно ту сумму
-    // получения, которую клиент назвал.
-    const fromAmount = sides.give;
-    if (!fromAmount) return;
-
+  /**
+   * Подать заявку ровно по тому снимку, который клиент подтвердил.
+   *
+   * Не по живым величинам экрана: пока лист открыт, курс успевает
+   * обновиться, а вместе с ним — и сумма получения. Заявка должна уйти
+   * по прочитанному, иначе подтверждение перестаёт что-либо значить.
+   */
+  async function submit(confirmed: Extract<SheetState, { kind: 'confirm' }>) {
     setError(undefined);
     setBusy(true);
     try {
@@ -514,15 +530,17 @@ export function ExchangeScreen({
         kind,
         fromCode,
         toCode,
-        fromAmount,
-        // Отметка курса, который клиент сейчас видит на экране: по нему
+        fromAmount: confirmed.give,
+        // Отметка курса, который клиент видел в подтверждении: по нему
         // заявка и уйдёт. Без неё ядро спросило бы курс заново, и между
         // взглядом и нажатием он успел бы обновиться. Отметка чужого
         // направления сюда попасть не может — курс берётся только свой.
-        ...(rate ? { quotedAt: rate.asOf } : {}),
+        ...(confirmed.rate ? { quotedAt: confirmed.rate.asOf } : {}),
         // Наличные клиент получает на руки: реквизиты для перевода при
         // этом способе не нужны и не запрашиваются.
-        ...(kind === 'electronic' && selected ? { requisitesId: selected } : {}),
+        ...(kind === 'electronic' && confirmed.requisitesId
+          ? { requisitesId: confirmed.requisitesId }
+          : {}),
       });
       setRequests((current) => [created.request, ...current]);
       setSide('give');
@@ -867,10 +885,20 @@ export function ExchangeScreen({
           <button
             type="button"
             onClick={() => {
+              if (!sides.give) return;
               // Отказ прошлой попытки к новой не относится: лист
               // открылся бы с чужим сообщением под кнопкой подачи.
               setError(undefined);
-              setSheet({ kind: 'confirm' });
+              // Снимок берётся здесь: дальше он не меняется, что бы ни
+              // пришло с сервера, — и по нему же уходит заявка.
+              setSheet({
+                kind: 'confirm',
+                give: sides.give,
+                payout,
+                rate: rate ?? null,
+                requisitesId: electronic ? selected : undefined,
+                requisitesLine: electronic && chosen ? describeRequisites(chosen) : undefined,
+              });
             }}
             disabled={!ready}
             className="btn btn--gold exchange__submit"
@@ -1026,7 +1054,7 @@ export function ExchangeScreen({
         от отданной стороны и может разойтись с названной на хвост
         округления.
       */}
-      {sheet?.kind === 'confirm' && sides.give ? (
+      {sheet?.kind === 'confirm' ? (
         <Sheet title="Проверьте заявку" onClose={() => setSheet(undefined)}>
           <p className="sheet__body">
             {electronic
@@ -1038,20 +1066,20 @@ export function ExchangeScreen({
             <div className="summary__row">
               <span className="summary__label">Отдаю</span>
               <span className="summary__value summary__value--strong">
-                {formatMoney(sides.give, fromCode)}
+                {formatMoney(sheet.give, fromCode)}
               </span>
             </div>
             <div className="summary__row">
               <span className="summary__label">Получаю</span>
               <span className="summary__value summary__value--strong">
-                {payout ? formatMoney(payout, toCode) : `${toCode} — назовёт менеджер`}
+                {sheet.payout ? formatMoney(sheet.payout, toCode) : `${toCode} — назовёт менеджер`}
               </span>
             </div>
-            {rate ? (
+            {sheet.rate ? (
               <div className="summary__row">
                 <span className="summary__label">Курс</span>
                 <span className="summary__value">
-                  {formatRate(rate.rate, fromCode, toCode)}
+                  {formatRate(sheet.rate.rate, fromCode, toCode)}
                 </span>
               </div>
             ) : undefined}
@@ -1059,10 +1087,10 @@ export function ExchangeScreen({
               <span className="summary__label">Способ</span>
               <span className="summary__value">{KIND_LABELS[kind]}</span>
             </div>
-            {electronic && chosen ? (
+            {sheet.requisitesLine ? (
               <div className="summary__row">
                 <span className="summary__label">Деньги придут на</span>
-                <span className="summary__value">{describeRequisites(chosen)}</span>
+                <span className="summary__value">{sheet.requisitesLine}</span>
               </div>
             ) : undefined}
           </div>
@@ -1077,7 +1105,7 @@ export function ExchangeScreen({
           <div className="sheet__actions">
             <button
               type="button"
-              onClick={() => void submit()}
+              onClick={() => void submit(sheet)}
               disabled={busy}
               className="btn btn--gold"
             >
@@ -1101,6 +1129,7 @@ export function ExchangeScreen({
           body="Отменённую не вернуть — придётся подать новую, а курс к тому времени будет другим. Если передумали менять прямо сейчас, заявку можно просто оставить: она ждёт менеджера."
           confirm={busy ? 'Отменяем…' : 'Отменить заявку'}
           busy={busy}
+          error={error}
           onConfirm={() => void cancel(active.id)}
           onClose={() => setSheet(undefined)}
         />

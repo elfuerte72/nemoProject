@@ -161,6 +161,7 @@ export function RequisitesSheet({
           body={`${describeRequisites(removing)} — запись уйдёт из списка, и подать на неё новую заявку будет нельзя. Уже поданные останутся как есть: деньги по ним придут туда же.`}
           confirm={busy ? 'Удаляем…' : 'Удалить'}
           busy={busy}
+          error={error}
           onConfirm={() => void remove(removing.id)}
           onClose={() => setRemoving(undefined)}
         />

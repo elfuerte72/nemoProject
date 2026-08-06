@@ -67,6 +67,14 @@ describe('Amount', () => {
     expect(compare(floor(multiply(up, rate)), toAmount('100'))).toBeGreaterThanOrEqual(0);
   });
 
+  it('не берётся считать от отрицательных', () => {
+    // «Вверх» у отрицательных значит и «прочь от нуля», и «к большему»,
+    // и ответы у этих прочтений разные. Обратный счёт идёт от суммы,
+    // которую клиент получает, а её отрицательной не бывает.
+    expect(() => divideCeil(toAmount('-50000'), toAmount('81'), 8)).toThrow(RangeError);
+    expect(() => divideCeil(toAmount('50000'), toAmount('-81'), 8)).toThrow(RangeError);
+  });
+
   it('держит заданное число знаков и отвергает недопустимое', () => {
     expect(divideCeil(toAmount('1'), toAmount('3'), 8)).toBe('0.33333334');
     expect(divideCeil(toAmount('1'), toAmount('3'), 0)).toBe('1');

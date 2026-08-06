@@ -86,6 +86,18 @@ export function divideCeil(a: Amount, b: Amount, decimals = SCALE): Amount {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > SCALE) {
     throw new RangeError(`Знаков после запятой должно быть от 0 до ${SCALE}: ${decimals}`);
   }
+  /*
+   * Отрицательные не принимаются вовсе.
+   *
+   * «Вверх» у них имеет два прочтения — прочь от нуля и к большему
+   * числу, — и они дают разный ответ. Спор этот здесь решать нечем:
+   * обратный счёт идёт от суммы, которую клиент хочет получить, а
+   * отрицательных сумм не бывает. Отказ честнее молчаливого выбора
+   * одного из двух смыслов.
+   */
+  if (new Decimal(a).isNegative() || new Decimal(b).isNegative()) {
+    throw new RangeError('Обратный счёт идёт от неотрицательных величин');
+  }
   return new Decimal(a)
     .dividedBy(b)
     .toDecimalPlaces(decimals, Decimal.ROUND_UP)

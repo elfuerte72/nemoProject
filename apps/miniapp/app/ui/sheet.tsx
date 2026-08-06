@@ -334,6 +334,7 @@ export function ConfirmSheet({
   body,
   confirm,
   busy,
+  error,
   onConfirm,
   onClose,
 }: {
@@ -342,12 +343,19 @@ export function ConfirmSheet({
   /** Что написано на кнопке согласия: «Отменить заявку», «Удалить». */
   readonly confirm: string;
   readonly busy?: boolean | undefined;
+  /**
+   * Отказ операции. Показывается здесь, а не под листом: лист закрывает
+   * собой экран, и сообщение под ним клиент увидел бы, только закрыв
+   * его, — то есть решив, что действие состоялось.
+   */
+  readonly error?: string | undefined;
   readonly onConfirm: () => void;
   readonly onClose: () => void;
 }) {
   return (
     <Sheet title={title} onClose={onClose}>
       <p className="sheet__body">{body}</p>
+      {error ? <p className="error">{error}</p> : undefined}
       <div className="sheet__actions">
         <button type="button" onClick={onConfirm} disabled={busy} className="btn btn--gold">
           {confirm}

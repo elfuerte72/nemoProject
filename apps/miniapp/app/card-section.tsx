@@ -211,6 +211,7 @@ export function CardSection({
           body="Отозванную не вернуть — придётся подать новую и ждать провайдера с начала. Если просто хотите узнать, что происходит, спросите менеджера: заявка при этом останется в работе."
           confirm={busy ? 'Отзываем…' : 'Отозвать заявку'}
           busy={busy}
+          error={error}
           onConfirm={() => void cancel(current.id)}
           onClose={() => setCancelling(false)}
         />
