@@ -38,6 +38,10 @@ const FLICK_PX_PER_MS = 0.5;
 /** Сколько лист уезжает вниз, прежде чем его снимут. */
 const DRAG_SETTLE_MS = 180;
 
+/** По чему ходит клавиша обхода внутри листа. */
+const FOCUSABLE =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 export function Sheet({
   title,
   onClose,
@@ -52,10 +56,43 @@ export function Sheet({
   const grip = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    panel.current?.focus();
+    const node = panel.current;
+    // Кто открыл лист: туда же вернётся фокус, когда лист уйдёт. Без
+    // этого работающий с клавиатуры оказывается в начале страницы и
+    // ищет заново ту кнопку, которую только что нажал.
+    const opener = document.activeElement;
+    node?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      /*
+       * Обход по клавише не уходит из листа.
+       *
+       * Лист объявлен модальным, и для экранного диктора этого хватает —
+       * но клавиша обхода про объявление не знает: фокус уезжал за
+       * панель, в кнопки под ней, и следующее нажатие приходилось в
+       * экран, которого клиент не видит.
+       */
+      if (event.key !== 'Tab' || !node) return;
+
+      const stops = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (one) => !one.hasAttribute('disabled') && one.offsetParent !== null,
+      );
+      const first = stops[0];
+      const last = stops.at(-1);
+      if (!first || !last) return;
+
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || active === node)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
     document.addEventListener('keydown', onKeyDown);
 
@@ -66,6 +103,7 @@ export function Sheet({
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.body.classList.remove('sheet-open');
+      if (opener instanceof HTMLElement) opener.focus();
     };
   }, [onClose]);
 
@@ -89,6 +127,8 @@ export function Sheet({
     let offset = 0;
     let dragging = false;
     let frame = 0;
+    /** Отложенный уход листа: его надо снять, если лист закрыли иначе. */
+    let settling: ReturnType<typeof setTimeout> | undefined;
 
     const paint = () => {
       frame = 0;
@@ -130,23 +170,45 @@ export function Sheet({
         // Лист уходит за нижний край и только потом снимается: исчезнуть
         // на полпути — значит мигнуть там, где ждут движения.
         node.style.transform = `translate3d(0, ${node.offsetHeight}px, 0)`;
-        setTimeout(onClose, DRAG_SETTLE_MS);
+        settling = setTimeout(onClose, DRAG_SETTLE_MS);
         return;
       }
       // Не дотянули — лист возвращается на место сам.
       node.style.transform = '';
     };
 
+    /*
+     * Жест отняли — лист возвращается, а не закрывается.
+     *
+     * Отмена приходит не от клиента: её шлёт система, забрав указатель
+     * себе, — жестом от края, звонком, сменой приложения. Считать это
+     * за «закрой» значит закрывать лист тогда, когда клиент ничего для
+     * этого не сделал, а решение принималось бы по тому, сколько лист
+     * успел проехать до перехвата.
+     */
+    const cancel = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      delete node.dataset.dragging;
+      node.style.transform = '';
+    };
+
     handle.addEventListener('pointerdown', down);
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
-    handle.addEventListener('pointercancel', up);
+    handle.addEventListener('pointercancel', cancel);
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      // Уход листа отложен на время доводки, и за неё лист успевают
+      // закрыть иначе — крестиком, промахом, ответом сервера. Сработав
+      // после этого, отложенный вызов закрыл бы уже следующий лист.
+      clearTimeout(settling);
       handle.removeEventListener('pointerdown', down);
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
-      handle.removeEventListener('pointercancel', up);
+      handle.removeEventListener('pointercancel', cancel);
     };
   }, [onClose]);
 
