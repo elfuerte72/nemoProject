@@ -1,7 +1,13 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { addressEdges, lastFour, seal } from '@nemo/crypto';
 import { clientRequisites, currencies, transferNetworks } from '@nemo/db';
-import { requisiteKindSuits, type RequisiteKind } from '@nemo/types';
+import {
+  looksLikeCardNumber,
+  looksLikePhone,
+  looksLikeWalletAddress,
+  requisiteKindSuits,
+  type RequisiteKind,
+} from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
 import { requirePublicKey, type CoreConfig, type Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
@@ -121,6 +127,25 @@ function required(value: string, subject: string): string {
   return trimmed;
 }
 
+/**
+ * Проверка поля на правдоподобие — там же, где проверка на пустоту.
+ *
+ * Непустая строка ещё не реквизит: недобитый адрес, номер с двумя
+ * переставленными цифрами и телефон, вписанный в поле карты, проходят её
+ * все. Отправленный по такому реквизиту перевод не возвращается, и
+ * ловить опечатку после отправки поздно.
+ *
+ * Проверяет операция, а не только форма: записи заводятся не одним
+ * экраном, и правило, живущее лишь в разметке, обходится любым другим
+ * путём.
+ */
+function plausible(value: string, ok: (value: string) => boolean, complaint: string): string {
+  if (!ok(value)) {
+    throw new InvalidInputError(complaint);
+  }
+  return value;
+}
+
 function sealCard(ctx: CoreConfig, cardNumber: string): { last4: string; sealed: Buffer } {
   const publicKey = requirePublicKey(ctx);
   try {
@@ -153,10 +178,21 @@ function rowFor(
         bankName: required(input.bankName, 'Банк'),
         // Телефон остаётся открытым: по нему менеджер и отправляет
         // перевод, а прячется то, чем можно распорядиться напрямую.
-        phone: required(input.phone, 'Телефон для перевода'),
+        phone: plausible(
+          required(input.phone, 'Телефон для перевода'),
+          looksLikePhone,
+          'Телефон не похож на номер: в нём должно быть от 10 до 15 цифр',
+        ),
       };
     case 'card': {
-      const card = sealCard(ctx, required(input.cardNumber, 'Номер карты'));
+      const card = sealCard(
+        ctx,
+        plausible(
+          required(input.cardNumber, 'Номер карты'),
+          looksLikeCardNumber,
+          'Номер карты не сходится по контрольной цифре — проверьте, не переставлены ли цифры',
+        ),
+      );
       return {
         clientId,
         kind: 'card',
@@ -166,11 +202,16 @@ function rowFor(
       };
     }
     case 'wallet': {
-      const address = required(input.address, 'Адрес кошелька');
+      const network = required(input.network, 'Сеть');
+      const address = plausible(
+        required(input.address, 'Адрес кошелька'),
+        (value) => looksLikeWalletAddress(network, value),
+        `Адрес не похож на адрес сети ${network} — проверьте, целиком ли он скопирован`,
+      );
       return {
         clientId,
         kind: 'wallet',
-        network: required(input.network, 'Сеть'),
+        network,
         addressSealed: seal(requirePublicKey(ctx), address),
         addressHint: addressEdges(address),
       };

@@ -39,7 +39,14 @@
   --text: #f4f1fb;
   --text-dim: #c6c0dd;
   --text-muted: #928bab;
-  --text-faint: #5c5578;
+  /*
+   * Самый тусклый из тёмных — подсказка в пустом поле и ноль на месте
+   * ненабранной суммы. Поднят с прежнего: на поверхности карточки он
+   * давал 2,15 к одному, то есть не дотягивал даже до порога для
+   * крупного текста. А ноль в строке «получаю» — не украшение поля: это
+   * значение, которое читают.
+   */
+  --text-faint: #7d7699;
 
   /*
    * Медовый акцент бренда. Имена оставлены золотыми: цвет сменился,
@@ -145,6 +152,33 @@ button {
 }
 
 @keyframes nm-swap-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Те же две — под вторым именем. Дубль здесь не небрежность: перезапуск
+ * анимации без пересборки узла делается сменой её имени, а другого
+ * способа выразить «то же самое, но заново» в CSS нет.
+ */
+@keyframes nm-swap-down-again {
+  from {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes nm-swap-up-again {
   from {
     opacity: 0;
     transform: translateY(18px);
@@ -274,10 +308,15 @@ button {
   height: 0;
 }
 
-/* Нижней панели нет — незачем и место под неё. */
-.track__slot--bare {
-  padding-bottom: 24px;
-}
+/*
+ * Место под нижнюю панель остаётся и без панели.
+ *
+ * Раньше отступ снизу ужимался с появлением клавиатуры — «панели нет,
+ * незачем и место», — но менялся он в тот самый момент, когда клиент
+ * попадает в поле: раскладка пересчитывалась под пальцем, и содержимое
+ * дёргалось вверх на восемьдесят пикселей. Лишний отступ при этом
+ * прячется под самой клавиатурой, то есть не виден вовсе.
+ */
 
 .app__center {
   flex: 1;
@@ -321,6 +360,32 @@ button {
    * свет, талисман, подпись, строка состояния, — и общий наплыв поверх
    * этой очереди сдвигал бы всё разом, стирая её.
    */
+}
+
+/*
+ * Короткое приветствие — то, что клиент видит, зайдя второй раз за день.
+ *
+ * Очередь появления снята: она длиннее полутора секунд, а показ здесь
+ * втрое короче — приветствие обрывалось бы на полуслове. Части
+ * проступают разом и быстро; заставка при этом остаётся собой, потому
+ * что дело её тут другое — прикрыть сборку первого экрана, а не
+ * знакомить.
+ */
+.splash--brief .splash__halo {
+  animation:
+    nm-halo-in 0.35s var(--ease) both,
+    nm-breathe 3.6s 0.35s ease-in-out infinite;
+}
+
+.splash--brief .splash__mascot {
+  transition:
+    opacity 0.3s var(--ease),
+    transform 0.4s var(--ease);
+}
+
+.splash--brief .splash__wordmark,
+.splash--brief .splash__note {
+  animation: nm-fade-up 0.3s var(--ease) 0.1s both;
 }
 
 /*
@@ -686,6 +751,16 @@ button {
   display: block;
 }
 
+/*
+ * Знаки раскрытия и перехода. Приглушены в одном месте на всё
+ * приложение: их четыре штуки в разных строках, и вписанный в фигуру
+ * цвет расходился бы с окружением при первой же смене поверхности.
+ */
+.chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
 
 /* ── Типографика ─────────────────────────────────────────────────── */
 
@@ -699,8 +774,7 @@ button {
  * появится следующее меняющееся число, его припишут сюда.
  */
 .calc__amount,
-.rates__value,
-.rates__row-value,
+.calc__rate,
 .balance__number,
 .split__value,
 .row__amount,
@@ -741,6 +815,21 @@ button {
   text-wrap: pretty;
 }
 
+/*
+ * Условие, которое пока не выполнено: слишком малая сумма, невыбранные
+ * реквизиты. Медью, а не красным: ничего не сломалось и никто не
+ * ошибся — сервису просто нужно ещё одно действие, и красный на этом
+ * месте пугал бы там, где надо позвать.
+ */
+.notice {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--gold-light);
+  text-align: center;
+  text-wrap: pretty;
+}
+
 .section-title {
   margin: 30px 0 2px;
   font-size: 12px;
@@ -775,6 +864,15 @@ button {
 
 button.tile {
   cursor: pointer;
+}
+
+/*
+ * Плитки, стоящие подряд, разделены зазором: вплотную они читаются одной
+ * сдвоенной поверхностью, и граница между двумя разными делами
+ * пропадает.
+ */
+.tile + .tile {
+  margin-top: 10px;
 }
 
 button.tile:hover {
@@ -884,7 +982,15 @@ button.tile:hover {
   color: #ffd694;
 }
 
+/*
+ * Приглушённая ссылка — «Удалить» в строке реквизита. Поле вокруг
+ * текста добавлено полем, а не размером: сама подпись должна остаться
+ * мельче названия записи, рядом с которой стоит, а промахнуться по
+ * тринадцати пикселям высоты проще, чем попасть.
+ */
 .link--muted {
+  padding: 10px 4px;
+  margin: -10px -4px;
   color: var(--text-muted);
   text-decoration: underline;
   font-weight: 500;
@@ -899,6 +1005,11 @@ button.tile:hover {
   margin: 22px 0 24px;
 }
 
+/*
+ * Быстрое действие: знак в кружке и подпись под ним. Цвет знака берётся
+ * из палитры, а не подобран рядом с ней: прежний тёплый бежевый не
+ * встречался в приложении больше нигде и жил сам по себе.
+ */
 .quick {
   display: flex;
   flex-direction: column;
@@ -908,7 +1019,7 @@ button.tile:hover {
   border: none;
   padding: 0;
   cursor: pointer;
-  color: #f0e6c4;
+  color: var(--gold-light);
   font-size: 12.5px;
   font-weight: 600;
   transition:
@@ -941,104 +1052,6 @@ button.tile:hover {
   color: var(--text-dim);
 }
 
-/* ── Курсы ───────────────────────────────────────────────────────── */
-
-.rates {
-  border-radius: 14px;
-  background: rgba(214, 205, 255, 0.07);
-  box-shadow: var(--lift);
-  overflow: hidden;
-}
-
-.rates__head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 48px;
-  padding: 12px 16px;
-  border: none;
-  background: none;
-  color: var(--text);
-  text-align: left;
-  transition: background 0.15s ease;
-}
-
-button.rates__head {
-  cursor: pointer;
-}
-
-button.rates__head:hover {
-  background: var(--surface-soft);
-}
-
-.rates__pair {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-.rates__rule {
-  flex: 1;
-  height: 1px;
-  background: var(--hairline);
-}
-
-.rates__value {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  white-space: nowrap;
-}
-
-.rates__value--absent {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 0;
-}
-
-.rates__chevron {
-  flex-shrink: 0;
-  transition: transform 0.18s ease;
-}
-
-.rates__chevron--open {
-  transform: rotate(180deg);
-}
-
-.rates__list {
-  padding: 2px 16px 6px;
-}
-
-.rates__row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 0;
-  border-top: 1px solid var(--hairline-soft);
-}
-
-.rates__row-pair {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-dim);
-}
-
-.rates__row-value {
-  margin-left: auto;
-  font-size: 14.5px;
-  font-weight: 600;
-}
-
-.rates__row-value--absent {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
 /* ── Калькулятор обмена ──────────────────────────────────────────── */
 
 .calc {
@@ -1063,12 +1076,26 @@ button.rates__head:hover {
   margin-top: 8px;
 }
 
-.calc__line--give {
+/*
+ * Разворот направления. Имён у каждой анимации два, и они чередуются:
+ * строку эту нельзя пересобирать ради перезапуска — она несёт поле
+ * ввода, и пересборка уносила бы фокус вместе с клавиатурой, — а одно и
+ * то же имя браузер вторично не проигрывает.
+ */
+.calc__line--give-a {
   animation: nm-swap-down 0.34s var(--ease) both;
 }
 
-.calc__line--get {
+.calc__line--give-b {
+  animation: nm-swap-down-again 0.34s var(--ease) both;
+}
+
+.calc__line--get-a {
   animation: nm-swap-up 0.34s var(--ease) both;
+}
+
+.calc__line--get-b {
+  animation: nm-swap-up-again 0.34s var(--ease) both;
 }
 
 .calc__amount {
@@ -1094,8 +1121,22 @@ button.rates__head:hover {
   outline: none;
 }
 
-.calc__amount--empty {
-  color: var(--text-faint);
+/*
+ * Ступени набора для длинных сумм.
+ *
+ * Обратный счёт — «сколько отдать, чтобы вышло ровно столько» — даёт
+ * восемь знаков после запятой, и такое число в кегль, рассчитанный на
+ * «100», не помещается. Обрезать его нельзя: это ровно та сумма, которую
+ * клиент отдаёт, и увиденная наполовину она хуже, чем набранная мельче.
+ */
+.calc__amount--small {
+  font-size: 26px;
+  letter-spacing: -0.8px;
+}
+
+.calc__amount--tiny {
+  font-size: 21px;
+  letter-spacing: -0.4px;
 }
 
 .calc__divider {
@@ -1105,8 +1146,40 @@ button.rates__head:hover {
   padding: 0 18px;
 }
 
+/*
+ * Курс между строками калькулятора.
+ *
+ * Стоит на самой черте, разделяющей отданное и полученное: она и есть
+ * место, где одно превращается в другое. Отдельной строкой под карточкой
+ * он читался бы примечанием, а курс — то, ради чего обменник и
+ * открывают: сумма получения отвечает «сколько дадут», но не «дорого ли
+ * это», и сравнивают сервисы именно им.
+ *
+ * Пустая строка убирается совсем, а не гасится: у ряда есть зазор, и
+ * схлопнутый до нуля span оставил бы его дважды — черта отъехала бы от
+ * кнопки на ровном месте.
+ */
+.calc__rate {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.calc__rate:empty {
+  display: none;
+}
+
+/* Отсутствие курса — не число, и весом оно с ним не спорит. */
+.calc__rate--absent {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 .calc__rule {
   flex: 1;
+  min-width: 0;
   height: 1px;
   background: var(--hairline);
 }
@@ -1147,6 +1220,13 @@ button.rates__head:hover {
   transition: transform 0.42s var(--ease);
 }
 
+/*
+ * Пилюля валюты в строке калькулятора: флаг, код и знак раскрытия.
+ *
+ * Набрана крупно и в полный цвет: это не подпись к сумме, а орган
+ * управления направлением сделки — тот же по весу, что и само число
+ * рядом.
+ */
 .chip {
   flex-shrink: 0;
   display: flex;
@@ -1168,11 +1248,16 @@ button.rates__head:hover {
     transform 0.15s ease;
 }
 
-.chip:hover:not(:disabled) {
+/*
+ * Отзывается только та пилюля, которую можно нажать. Неподвижная
+ * отличается классом, а не тегом: правило, писанное на `button`,
+ * пришлось бы держать в уме при каждой смене разметки.
+ */
+.chip:not(.chip--static):hover:not(:disabled) {
   background: rgba(214, 205, 255, 0.16);
 }
 
-.chip:active:not(:disabled) {
+.chip:not(.chip--static):active:not(:disabled) {
   transform: scale(0.96);
 }
 
@@ -1180,18 +1265,14 @@ button.rates__head:hover {
   cursor: default;
 }
 
-/* Та же пилюля, но без обещания, что на неё нажимают. */
+/*
+ * Та же пилюля, но без обещания, что на неё нажимают: ставится рядом с
+ * `.chip`, а не вместо него, и потому описывает одни отличия. Своей
+ * копией всех свойств она была, пока курсор над ней оставался пальцем —
+ * то самое обещание он и держал.
+ */
 .chip--static {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 15px;
-  border-radius: 999px;
-  background: var(--surface-soft-strong);
-  box-shadow: var(--lift-strong);
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--text);
+  cursor: default;
 }
 
 /* ── Переключатель способа ───────────────────────────────────────── */
@@ -1345,6 +1426,19 @@ button.rates__head:hover {
   margin-top: 14px;
 }
 
+/*
+ * Выход в чат с менеджером снизу карточки. Строкой и по центру: это не
+ * третье действие над заявкой, а уход из приложения — по весу он ниже
+ * оплаты и отмены, и стоять с ними в ряду не должен.
+ */
+.active__support {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 6px 0;
+  text-align: center;
+}
+
 /* Тайл и кнопка подачи идут следом за калькулятором, а не сами по себе. */
 .exchange__requisites,
 .bonus__link {
@@ -1353,6 +1447,80 @@ button.rates__head:hover {
 
 .exchange__submit {
   margin-top: 16px;
+}
+
+/* ── За границей ─────────────────────────────────────────────────── */
+
+/*
+ * Что сервис делает, когда российская карта за границей не работает.
+ *
+ * Сеткой, а не строками: строк было бы три по семьдесят пикселей, и на
+ * экране с карточкой заявки блок уезжал бы за нижний край. Колонок две,
+ * а не три: в треть узкого экрана «Иностранная карта» переносится в три
+ * строки и плитки перестают быть одного роста.
+ *
+ * Ряд у плиток заведомо не заполнен целиком — третья стоит одна. Это не
+ * дефект сетки: пунктов здесь ровно столько, сколько сервис умеет, и
+ * четвёртый ради симметрии был бы обещанием.
+ */
+.abroad {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.abroad__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 104px;
+  padding: 14px;
+  border: none;
+  border-radius: var(--radius-tile);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.abroad__item:hover {
+  background: var(--surface-soft-hover);
+}
+
+.abroad__item:active {
+  background: var(--surface-soft-strong);
+}
+
+.abroad__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  /* 12 + 12 отступа плитки: внешний радиус плитки на два больше суммы,
+     и на глаз угол внутри её угла лежит ровно. */
+  border-radius: var(--radius-inner);
+  background: rgba(249, 160, 60, 0.12);
+  color: var(--gold-light);
+}
+
+.abroad__label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+
+/* Состояние есть только там, где оно есть: у поданной заявки на карту. */
+.abroad__state {
+  margin-top: -4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold-light);
 }
 
 /* ── Ряды списков ────────────────────────────────────────────────── */
@@ -1421,27 +1589,50 @@ button.rates__head:hover {
   text-wrap: pretty;
 }
 
+/*
+ * Разделу нечего показать: запрос не дошёл. Стоит по центру и с отступом
+ * сверху — на месте содержимого, а не поверх него: содержимого в этот
+ * момент нет вовсе.
+ */
+.failure {
+  margin: max(26px, 12vh) 0 0;
+  text-align: center;
+}
+
+.failure__retry {
+  width: auto;
+  min-width: 200px;
+  margin: 18px auto 0;
+}
+
 /* ── История ─────────────────────────────────────────────────────── */
 
 /*
- * Чипы отбора. Лежат в строку с прокруткой, а не переносятся: перенос
+ * Отбор ленты. Лежит в строку с прокруткой, а не переносится: перенос
  * на узком экране двигал бы ленту вниз при каждом появлении четвёртого
  * чипа, а их число со временем меняется.
+ *
+ * Имя своё, а не общее с пилюлей валюты и с выбором сети: три разные
+ * вещи под одним классом уже разъезжались — последнее правило в файле
+ * молча перекрашивало пилюлю на экране обмена в этот самый отбор.
+ *
+ * Ряд выходит за поля раздела и возвращает их себе отступом: чип у края
+ * должен доезжать до края экрана, иначе прокрутка выглядит обрезанной.
  */
-.chips {
+.filters {
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  margin: 2px -20px 4px;
-  padding: 2px 20px 6px;
+  margin: 2px calc(-1 * var(--gutter)) 4px;
+  padding: 2px var(--gutter) 6px;
   scrollbar-width: none;
 }
 
-.chips::-webkit-scrollbar {
+.filters::-webkit-scrollbar {
   display: none;
 }
 
-.chip {
+.filter {
   flex-shrink: 0;
   padding: 8px 14px;
   border: 1px solid var(--hairline);
@@ -1453,7 +1644,7 @@ button.rates__head:hover {
   cursor: pointer;
 }
 
-.chip[aria-pressed='true'] {
+.filter[aria-pressed='true'] {
   border-color: transparent;
   background: var(--gold-face-soft);
   color: var(--gold-ink);
@@ -1629,6 +1820,19 @@ button.rates__head:hover {
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text-muted);
+}
+
+/*
+ * Ставка линии — под числом приглашённых, медью. Она и есть ответ на
+ * единственный вопрос к реферальной программе: сколько за это платят.
+ */
+.split__rate {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--gold-light);
+  text-wrap: pretty;
 }
 
 /* ── Карта ───────────────────────────────────────────────────────── */
@@ -1864,8 +2068,9 @@ button.rates__head:hover {
 }
 
 /*
- * Цель под палец, а не под курсор: 34 пикселя — нижняя граница, ниже
- * которой промахиваются. Крестик внутри мельче самой кнопки, и поле
+ * Цель под палец, а не под курсор. Сорок четыре пикселя — та мера, к
+ * которой сведены и остальные цели приложения: пилюля валюты, кнопка
+ * разворота, ряд списка. Крестик внутри мельче самой кнопки, и поле
  * вокруг него работает так же, как он сам.
  */
 .sheet__close {
@@ -1873,8 +2078,8 @@ button.rates__head:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   /* Вправо до края поля листа: справа от неё пустого места быть не должно. */
   margin-right: -6px;
   padding: 0;
@@ -1898,6 +2103,34 @@ button.rates__head:hover {
   text-wrap: pretty;
 }
 
+/*
+ * Тело листа, набранное менеджером, — реквизиты для оплаты.
+ *
+ * Переносы строк сохраняются: «Сбербанк», номер карты и имя держателя
+ * набраны в три строки, и слипшиеся в одну они читаются как сплошное
+ * число. Свои переносы браузеру при этом оставлены — на узком экране
+ * длинная строка иначе уехала бы за край.
+ *
+ * Набрано в полный цвет и крупнее обычного текста листа: это данные,
+ * которые сверяют по цифре, а не пояснение к ним. По той же причине
+ * лежит на своей поверхности — так видно, где реквизит начинается и где
+ * кончается.
+ */
+.sheet__body--data {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius-inner);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  color: var(--text);
+  font-size: 15px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  text-wrap: initial;
+  /* Номер карты сверяют по группам цифр: табличные держат их ровно. */
+  font-variant-numeric: tabular-nums;
+}
+
 .sheet__tile {
   margin-top: 16px;
 }
@@ -1918,8 +2151,60 @@ button.rates__head:hover {
   margin-top: 0;
 }
 
+/* ── Сводка перед подачей ────────────────────────────────────────── */
+
+/*
+ * Что клиент подтверждает: стороны сделки, курс, способ и куда придут
+ * деньги. Подпись слева приглушена, значение справа в полный цвет —
+ * сверяют значения, а подписи только называют, что именно сверяют.
+ *
+ * Суммы набраны крупнее прочего: ошибиться можно в любой строке, но
+ * дорого — только в них.
+ */
+.summary {
+  margin-top: 18px;
+}
+
+.summary__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.summary__row:first-child {
+  border-top: none;
+}
+
+.summary__label {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.summary__value {
+  font-size: 14.5px;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.summary__value--strong {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Выбор одного из многих ──────────────────────────────────────── */
 
+/*
+ * Ряд равнозначных вариантов внутри формы — сети перевода. В отличие от
+ * отбора ленты, переносится: список короткий, лежит в листе, и прокрутка
+ * вбок там читалась бы как продолжение самой формы.
+ */
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -2059,13 +2344,45 @@ button.rates__head:hover {
   font-weight: 500;
 }
 
+/*
+ * Подсказка в поле формы приглушена слабее, чем ноль в калькуляторе, и
+ * это не разнобой: там она набрана тридцатью двумя пикселями, а здесь
+ * шестнадцатью, и порог читаемости у крупного и обычного текста разный.
+ * Один цвет на оба места не проходил бы ни там, ни тут — или проходил бы
+ * ценой подсказки, неотличимой от набранного.
+ */
 .input::placeholder {
-  color: var(--text-faint);
+  color: var(--text-muted);
+}
+
+/*
+ * Поле в несколько строк — просьба оплатить бронь или покупку. Растёт
+ * оно только по воле клиента: сама форма живёт в листе, который и так
+ * прокручивается, и поле, растущее под набором, двигало бы кнопку
+ * отправки из-под пальца.
+ */
+.input--area {
+  min-height: 96px;
+  padding: 12px 16px;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 .input:focus {
   outline: none;
   border-color: rgba(249, 160, 60, 0.55);
+}
+
+/*
+ * Поле, в котором набрано непохожее на правду. Красной рамкой, а не
+ * заливкой: набранное надо перечитать, и подложка под цифрами этому
+ * мешает. Держится и в фокусе — вернувшийся в поле клиент пришёл
+ * исправлять, и снимать отметку под его пальцем значит говорить, что
+ * всё в порядке.
+ */
+.input--wrong,
+.input--wrong:focus {
+  border-color: rgba(242, 104, 95, 0.6);
 }
 
 .options {
@@ -2116,4 +2433,15 @@ button.rates__head:hover {
   min-height: 0;
   padding: 0;
   border-top: none;
+}
+
+/*
+ * «Вывести всё» под полем суммы. Ссылкой, а не кнопкой: это не действие
+ * над заявкой, а подстановка числа — того самого, что стоит строкой
+ * выше.
+ */
+.withdraw__all {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 4px 0;
 }

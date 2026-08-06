@@ -2,14 +2,28 @@
 
 import { useEffect, useState } from 'react';
 import type { BonusAccountView, ClientView, RequisitesView, WithdrawalRequestView } from '@nemo/core';
-import { requisiteKinds } from '@nemo/types';
+import { Money, requisiteKinds } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { referralLink } from '@/lib/referral';
-import { describeRequisites, formatAmount, formatMonth, parseAmount } from '@/lib/format';
+import {
+  describeRequisites,
+  formatAmount,
+  formatBps,
+  formatMonth,
+  parseAmount,
+} from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
-import { getTelegramUser, getWebApp } from '@/lib/telegram/webapp';
-import { CardIcon, ChevronRight, InviteIcon, WithdrawIcon } from './ui/icons';
+import {
+  getTelegramUser,
+  haptic,
+  openSupport,
+  openTelegram,
+  supportLink,
+} from '@/lib/telegram/webapp';
+import { CardIcon, ChevronRight, InviteIcon, SupportIcon, WithdrawIcon } from './ui/icons';
+import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';
+import { useCopied } from './ui/use-copied';
 import { MarketingConsentToggle } from './marketing-consent';
 import { RequisitesSheet } from './requisites-section';
 import { NoticeSheet, Sheet } from './ui/sheet';
@@ -31,9 +45,6 @@ import { NoticeSheet, Sheet } from './ui/sheet';
  * назад держит ссылка под балансом — она открывает ту же историю,
  * сразу отобранную по баллам.
  */
-
-/** Сколько «Скопировано» держится на месте кнопки. */
-const COPIED_MS = 1600;
 
 /** «1 запись», «2 записи», «5 записей» — иначе число выглядит опечаткой. */
 function plural(count: number): string {
@@ -74,9 +85,11 @@ export function ProfileSection({
   const [requisites, setRequisites] = useState<RequisitesView[]>([]);
   const [networks, setNetworks] = useState<string[]>([]);
   const [sheet, setSheet] = useState<SheetState>();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  /** Счётчик попыток: им же заводится повторное чтение после отказа. */
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     void (async () => {
@@ -91,6 +104,7 @@ export function ProfileSection({
         setAccount(bonus.account);
         setRequisites(mine.requisites);
         setNetworks(known.networks);
+        setError(undefined);
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить профиль');
       } finally {
@@ -102,29 +116,21 @@ export function ProfileSection({
     // счёта. Признак занятости при этом не поднимается — читается уже
     // показанное, и подменять баланс на «Загружаем…» значило бы моргать
     // числом в ответ на возвращение.
-  }, [revisit]);
+  }, [revisit, attempt]);
 
   const telegram = getTelegramUser();
   const name = [telegram?.first_name, telegram?.last_name].filter(Boolean).join(' ');
+  const support = supportLink();
 
   const link = account ? referralLink(account.referralCode) : undefined;
 
-  function copy() {
-    if (!link) return;
-    void navigator.clipboard?.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), COPIED_MS);
+  function copyLink() {
+    if (link) copy(link);
   }
 
   function share() {
     if (!link) return;
-    const url = `https://t.me/share/url?url=${encodeURIComponent(link)}`;
-    const webApp = getWebApp();
-    if (webApp?.openTelegramLink) {
-      webApp.openTelegramLink(url);
-    } else {
-      window.open(url, '_blank');
-    }
+    openTelegram(`https://t.me/share/url?url=${encodeURIComponent(link)}`);
   }
 
   if (loading) {
@@ -132,7 +138,18 @@ export function ProfileSection({
   }
 
   if (!account) {
-    return <p className="error">{error ?? 'Не удалось загрузить профиль'}</p>;
+    return (
+      <Failure
+        message={error ?? 'Не удалось загрузить профиль'}
+        onRetry={() => {
+          // Ожидание поднимается здесь: раздел показывает талисмана
+          // вместо отказа, и вид с кнопкой уходит вместе с первым
+          // нажатием — второго по нему уже не сделать.
+          setLoading(true);
+          setAttempt((was) => was + 1);
+        }}
+      />
+    );
   }
 
   return (
@@ -177,6 +194,14 @@ export function ProfileSection({
         </button>
       </div>
 
+      {/*
+        Отказ стоит под тем, что не удалось прочитать, а не в середине
+        списка плиток: разделив их собой, он рвал бы зазор между ними —
+        а стоя рядом с балансом, он говорит ровно о том, чего в нём не
+        хватает.
+      */}
+      {error ? <p className="error">{error}</p> : undefined}
+
       <div className="quick-row">
         <button type="button" onClick={() => setSheet({ kind: 'withdraw' })} className="quick">
           <span className="quick__circle">
@@ -192,20 +217,28 @@ export function ProfileSection({
         </button>
       </div>
 
+      {/*
+        Сколько привёл и по какой ставке. Ставка стоит рядом с числом
+        приглашённых, а не в тексте где-то ниже: без неё в этой плашке
+        два числа, которые ни о чём не говорят, — а вопрос к
+        реферальной программе один, «сколько мне за это платят».
+      */}
       <div className="split">
         <div className="split__cell">
           <div className="split__value">{account.line1Count}</div>
           <div className="split__label">первая линия</div>
+          <div className="split__rate">{formatBps(account.line1Bps)} с их обменов</div>
         </div>
         <div className="split__rule" />
         <div className="split__cell">
           <div className="split__value">{account.line2Count}</div>
           <div className="split__label">вторая линия</div>
+          <div className="split__rate">{formatBps(account.line2Bps)} с их обменов</div>
         </div>
       </div>
 
       {link ? (
-        <button type="button" onClick={copy} className="tile bonus__link">
+        <button type="button" onClick={copyLink} className="tile bonus__link">
           <span className="tile__body">
             <span className="tile__label">Ваша ссылка</span>
             <span className="tile__value">{link.replace('https://', '')}</span>
@@ -215,8 +248,6 @@ export function ProfileSection({
       ) : (
         <p className="empty">Реферальная ссылка появится, когда бот будет настроен.</p>
       )}
-
-      {error ? <p className="error">{error}</p> : undefined}
 
       {/*
         Реквизиты — про самого клиента, а не про его баллы: по ним
@@ -243,11 +274,33 @@ export function ProfileSection({
         <ChevronRight />
       </button>
 
+      {/*
+        Разговор с менеджером — здесь же, рядом с прочим о самом клиенте.
+        Приложение пять раз отсылает к менеджеру словами: за курсом по
+        наличным, за старыми записями истории, за переводом в погашенной
+        сети, — и ни одна из этих строк не была кнопкой. Ведёт она в тот
+        самый чат, где клиента и читают: своего адреса поддержки у
+        сервиса нет, обращение живёт в переписке.
+      */}
+      {support ? (
+        <button type="button" onClick={openSupport} className="tile">
+          <span className="tile__icon">
+            <SupportIcon />
+          </span>
+          <span className="tile__body">
+            <span className="tile__label">Поддержка</span>
+            <span className="tile__value">Написать менеджеру</span>
+          </span>
+          <ChevronRight />
+        </button>
+      ) : undefined}
+
       <MarketingConsentToggle consent={consent} onAnswered={onConsentChanged} />
 
       {sheet?.kind === 'withdraw' ? (
         <WithdrawSheet
           balance={account.balance}
+          minimum={account.minWithdrawalAmount}
           requisites={requisites}
           onClose={() => setSheet(undefined)}
           onSubmitted={() => setSheet({ kind: 'notice', ...SUBMITTED })}
@@ -257,10 +310,21 @@ export function ProfileSection({
 
       {sheet?.kind === 'invite' ? (
         <Sheet title="Пригласить" onClose={() => setSheet(undefined)}>
+          {/*
+            Условия названы числами, а не «процентом» вообще: программа,
+            в которой не видно ставки, не работает — звать знакомых, не
+            зная, сколько за это платят, никто не станет.
+
+            База начисления названа тоже. Процент считается от дохода
+            сервиса по заявке, а не от её суммы (docs/adr/0003), и клиент,
+            прочитавший «5% с обмена», ждал бы пять процентов от
+            обменянного миллиона.
+          */}
           <p className="sheet__body">
-            Отправьте свою ссылку в любой чат. Как только приглашённый сделает первый обмен, вам
-            начислятся баллы — и половина этого же процента пойдёт с обменов тех, кого приведёт
-            он.
+            Отправьте свою ссылку в любой чат. Когда приглашённый обменяет — вам начислится{' '}
+            {formatBps(account.line1Bps)} того, что сервис заработал на его заявке. С обменов
+            тех, кого приведёт он, начисляется {formatBps(account.line2Bps)}. Баллы выводятся
+            деньгами на любой из ваших реквизитов.
           </p>
           {link ? (
             <>
@@ -273,7 +337,7 @@ export function ProfileSection({
                 <button type="button" onClick={share} className="btn btn--gold">
                   Переслать
                 </button>
-                <button type="button" onClick={copy} className="btn btn--soft">
+                <button type="button" onClick={copyLink} className="btn btn--soft">
                   {copied ? 'Скопировано' : 'Копировать'}
                 </button>
               </div>
@@ -318,12 +382,15 @@ export function ProfileSection({
  */
 function WithdrawSheet({
   balance,
+  minimum,
   requisites,
   onClose,
   onSubmitted,
   onAddRequisites,
 }: {
   readonly balance: string;
+  /** Ниже этого сервис заявку не примет — сказать надо до подачи. */
+  readonly minimum: string;
   readonly requisites: readonly RequisitesView[];
   readonly onClose: () => void;
   readonly onSubmitted: () => void;
@@ -340,6 +407,28 @@ function WithdrawSheet({
   const offered = requisites.filter((one) => one.isAvailable);
   const picked = selected ?? offered[0]?.id;
 
+  /**
+   * Что не так с набранной суммой — по тем же двум границам, по которым
+   * откажет операция. Раньше о них не говорилось нигде: клиент вводил
+   * число, нажимал и получал отказ сервера — про порог, о котором
+   * приложение молчало, и про баланс, который тут же и показан.
+   */
+  const wanted = Money.amountSchema.safeParse(parseAmount(amount));
+  const complaint = !amount.trim()
+    ? undefined
+    : !wanted.success || Money.isNegative(wanted.data) || Money.isZero(wanted.data)
+      ? 'Введите сумму числом'
+      : Money.compare(wanted.data, Money.toAmount(balance)) > 0
+        ? `На счету только ${formatAmount(balance)} баллов`
+        : Money.compare(wanted.data, Money.toAmount(minimum)) < 0
+          ? `Меньше минимума вывода — ${formatAmount(minimum)} баллов`
+          : undefined;
+
+  /** Весь остаток разом: самый частый вывод — «забрать всё, что есть». */
+  function takeAll() {
+    setAmount(formatAmount(balance));
+  }
+
   async function submit() {
     if (!picked) return;
     setError(undefined);
@@ -351,8 +440,10 @@ function WithdrawSheet({
         amount: parseAmount(amount),
         requisitesId: picked,
       });
+      haptic('success');
       onSubmitted();
     } catch (failure) {
+      haptic('error');
       setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на вывод');
     } finally {
       setBusy(false);
@@ -362,8 +453,8 @@ function WithdrawSheet({
   return (
     <Sheet title="Вывод баллов" onClose={onClose}>
       <p className="sheet__body">
-        Доступно {formatAmount(balance)} баллов. Выплату исполнит менеджер вручную — на ту же
-        запись, на которую приходят обмены.
+        Доступно {formatAmount(balance)} баллов, вывести можно от {formatAmount(minimum)}.
+        Выплату исполнит менеджер вручную — на ту же запись, на которую приходят обмены.
       </p>
 
       <div className="form">
@@ -374,10 +465,21 @@ function WithdrawSheet({
             onChange={(event) => setAmount(event.target.value)}
             inputMode="decimal"
             placeholder="0"
-            className="input"
+            aria-invalid={Boolean(complaint)}
+            className={complaint ? 'input input--wrong' : 'input'}
           />
         </label>
+        {/*
+          Весь остаток — одним нажатием. Набирать баланс вручную клиент
+          вынужден был по цифре, сверяясь со строкой выше, и ошибался в
+          последнем знаке чаще, чем попадал.
+        */}
+        <button type="button" onClick={takeAll} className="link withdraw__all">
+          Вывести всё — {formatAmount(balance)}
+        </button>
       </div>
+
+      {complaint ? <p className="notice">{complaint}</p> : undefined}
 
       {offered.length === 0 ? (
         <p className="empty">
@@ -417,7 +519,7 @@ function WithdrawSheet({
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={busy || !amount.trim() || !picked}
+            disabled={busy || !amount.trim() || Boolean(complaint) || !picked}
             className="btn btn--gold"
           >
             Подать заявку на вывод

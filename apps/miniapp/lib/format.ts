@@ -21,7 +21,7 @@ const GROUP_SEPARATOR = '\u202F';
  * никто: хранение допускает восемнадцать, но такой хвост — свойство
  * арифметики, а не сумма, которую человек различает.
  */
-const MAX_FRACTION_DIGITS = 8;
+export const MAX_FRACTION_DIGITS = 8;
 
 /** Сумма для показа: `1234.5000` → `1 234,5`, `100.000000` → `100`. */
 export function formatAmount(value: string): string {
@@ -163,6 +163,18 @@ export function formatMonth(value: Date | string): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return `${MONTHS_OF[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+/**
+ * Ставка в процентах: сервис хранит её целыми базисными пунктами.
+ *
+ * Своя, а не общая с панелью администратора: там это значение для поля
+ * ввода — «2.5», — а здесь строка в предложении, где дробная часть
+ * отделяется запятой и за числом стоит знак процента.
+ */
+export function formatBps(bps: number): string {
+  const percent = Math.round(bps) / 100;
+  return `${String(percent).replace('.', ',')}%`;
 }
 
 /** Короткий номер заявки: полный идентификатор клиенту не нужен. */

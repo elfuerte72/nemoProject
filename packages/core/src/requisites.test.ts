@@ -19,7 +19,8 @@ const keys = generateRequisiteKeyPair();
 const db = testDatabase();
 const core = createCore({ db, requisites: { publicKey: keys.publicKey } });
 
-const CARD = '4276 3800 1234 5678';
+/** Номер сходится по контрольной цифре: иначе его отвергнет сама операция. */
+const CARD = '4276 3800 1234 5679';
 const ADDRESS = 'TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e';
 
 beforeEach(async () => {
@@ -41,7 +42,7 @@ describe('перевод на карту', () => {
       cardNumber: CARD,
     });
 
-    expect(saved.cardLast4).toBe('5678');
+    expect(saved.cardLast4).toBe('5679');
     expect(JSON.stringify(saved)).not.toContain('4276');
   });
 
@@ -79,6 +80,19 @@ describe('перевод на карту', () => {
     ).rejects.toThrow(InvalidInputError);
   });
 
+  it('отвергает номер с переставленными цифрами', async () => {
+    // Тот же номер, но две соседние цифры поменялись местами. Формально
+    // это непустая строка нужной длины — и без контрольной суммы такая
+    // запись сохранилась бы, а перевод по ней ушёл бы в никуда.
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'card',
+        bankName: 'Тинькофф',
+        cardNumber: '4276 3800 1234 5697',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
   it('не сохраняется там, где нет ключа шифрования', async () => {
     const withoutKey = createCore({ db });
 
@@ -108,6 +122,16 @@ describe('перевод по номеру телефона', () => {
 
     expect(saved.phone).toBe('+79990000000');
     expect(saved.cardLast4).toBeNull();
+  });
+
+  it('отвергает номер, в котором не хватает цифр', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'phone',
+        bankName: 'Сбербанк',
+        phone: '+7999000',
+      }),
+    ).rejects.toThrow(InvalidInputError);
   });
 });
 
@@ -142,6 +166,28 @@ describe('перевод на кошелёк', () => {
   it('не сохраняется без адреса', async () => {
     await expect(
       core.saveRequisites(asClient(100n), { kind: 'wallet', network: 'TRC20', address: ' ' }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('отвергает адрес, скопированный не целиком', async () => {
+    // Хвост потерялся при копировании — длина не сошлась. Такой адрес
+    // непуст и сеть у него та самая, но перевод по нему уйдёт в никуда.
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'wallet',
+        network: 'TRC20',
+        address: ADDRESS.slice(0, 30),
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('отвергает адрес чужой сети', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'wallet',
+        network: 'TRC20',
+        address: '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
+      }),
     ).rejects.toThrow(InvalidInputError);
   });
 

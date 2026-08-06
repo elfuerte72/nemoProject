@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { generateRequisiteKeyPair } from '@nemo/crypto';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
+import { looksLikeCardNumber } from '@nemo/types';
 import {
   createCore,
   ForbiddenError,
@@ -61,21 +62,42 @@ async function givenClientWithBonuses(balance: number): Promise<void> {
   });
 }
 
+/**
+ * Номер карты, оканчивающийся нужными цифрами и сходящийся по
+ * контрольной сумме: несходящийся операция отвергает, а хвост нужен
+ * тестам — по нему в подписи реквизита клиент узнаёт свою запись.
+ */
+function cardEndingWith(tail: string): string {
+  for (let digit = 0; digit <= 9; digit += 1) {
+    const candidate = `40817810099${digit}${tail}`;
+    if (looksLikeCardNumber(candidate)) return candidate;
+  }
+  throw new Error(`Не удалось построить номер, оканчивающийся на ${tail}`);
+}
+
+const CARD = cardEndingWith('4312');
+
 /** Карта клиента: на неё по умолчанию и заявляют выплату. */
 async function givenCard(owner = 1n, tail = '4312'): Promise<string> {
   const saved = await core.saveRequisites(asClient(owner), {
     kind: 'card',
     bankName: 'Сбербанк',
-    cardNumber: `4081781009991000${tail}`,
+    cardNumber: cardEndingWith(tail),
   });
   return saved.id;
 }
+
+/** Адрес по форме своей сети: чужую операция отвергает как опечатку. */
+const ADDRESSES: Readonly<Record<string, string>> = {
+  TRC20: 'TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e',
+  TON: 'EQCD39VS5jcptHL8vMjEXrzGaRcCVYto7HUn4bpAOg8xqB2N',
+};
 
 async function givenWallet(network = 'TRC20'): Promise<string> {
   const saved = await core.saveRequisites(asClient(1n), {
     kind: 'wallet',
     network,
-    address: 'TXYZabcdef1234567890',
+    address: ADDRESSES[network] ?? ADDRESSES.TRC20!,
   });
   return saved.id;
 }
@@ -199,7 +221,7 @@ describe('реквизиты получения', () => {
     expect(request.destinationHint).toBe('Сбербанк · карта •••• 4312');
     // Ни в одном поле представления: клиентская часть номер карты
     // однажды сохранила и больше видеть его не должна.
-    expect(Object.values(request).map(String)).not.toContain('40817810099910004312');
+    expect(Object.values(request).map(String)).not.toContain(CARD);
   });
 
   it('менеджеру открываются целиком — ему исполнять выплату', async () => {
@@ -211,7 +233,7 @@ describe('реквизиты получения', () => {
 
     // Вместе с сетью: адрес без неё отправить некуда.
     expect(await core.revealWithdrawalDestination(manager, request.id)).toBe(
-      'TRC20 · TXYZabcdef1234567890',
+      'TRC20 · TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e',
     );
   });
 
@@ -223,7 +245,7 @@ describe('реквизиты получения', () => {
     });
 
     expect(await core.revealWithdrawalDestination(manager, request.id)).toBe(
-      'Сбербанк · 40817810099910004312',
+      `Сбербанк · ${CARD}`,
     );
   });
 

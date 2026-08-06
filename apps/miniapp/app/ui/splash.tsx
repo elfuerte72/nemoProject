@@ -30,7 +30,7 @@ import { TobeeMark } from './icons';
  * сервис подписан снаружи, — одно и то же изображение.
  */
 
-export function Splash() {
+export function Splash({ brief }: { readonly brief?: boolean }) {
   const [mascot, setMascot] = useState(false);
   const image = useRef<HTMLImageElement>(null);
 
@@ -48,7 +48,15 @@ export function Splash() {
   }, []);
 
   return (
-    <div className="splash" role="status">
+    /*
+      Знакомая заставка собирается очередью — свет, талисман, подпись,
+      строка состояния, — и очередь эта длиннее полутора секунд. При
+      коротком показе она не успевает дойти до конца, и приветствие
+      обрывалось бы на полуслове: талисман проявился наполовину, подписи
+      нет вовсе. Поэтому в коротком режиме очереди нет — всё появляется
+      разом и быстро.
+    */
+    <div className={brief ? 'splash splash--brief' : 'splash'} role="status">
       <div className="splash__scene">
         <span className="splash__halo" />
         {/*

@@ -113,6 +113,59 @@ export function CardIcon({ size = 20 }: IconProps) {
   );
 }
 
+/** Кровать под навесом: отель узнаётся по ней, а не по зданию. */
+export function HotelIcon({ size = 20 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 18V7M4 12h16v6M4 15h16M8.5 11.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Zm4-3.2H20"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Корзина: покупка в чужом магазине узнаётся по ней везде. */
+export function CartIcon({ size = 20 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3.5 5h2.2l2 9.5h9.6l2-6.8H7.1M9.5 19.2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm7 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Реплика — тем же носиком, что у знака сервиса: разговор с менеджером
+ * идёт в том же чате, которым сервис и представлен.
+ */
+export function SupportIcon({ size = 20 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20 12.3c0 3.8-3.6 6.8-8 6.8-.8 0-1.6-.1-2.4-.3l-4.6 1.7 1.3-3.4A6.6 6.6 0 0 1 4 12.3c0-3.8 3.6-6.8 8-6.8s8 3 8 6.8Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Знаки раскрытия и перехода. Цвет у них общий и приглушённый, но задан
+ * он классом, а не вписан в фигуру: вписанный, он не отзывался ни на
+ * наведение, ни на выключенное состояние того, внутри чего стоит, — и
+ * противоречил правилу, объявленному в шапке этого файла.
+ */
 export function ChevronDown({ size = 10 }: IconProps) {
   return (
     <svg
@@ -121,10 +174,11 @@ export function ChevronDown({ size = 10 }: IconProps) {
       viewBox="0 0 10 6"
       fill="none"
       aria-hidden="true"
+      className="chevron"
     >
       <path
         d="M1 1l4 4 4-4"
-        stroke="#928BAB"
+        stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -158,10 +212,11 @@ export function ChevronRight({ size = 8 }: IconProps) {
       viewBox="0 0 8 13"
       fill="none"
       aria-hidden="true"
+      className="chevron"
     >
       <path
         d="M1.5 1.5 6.5 6.5l-5 5"
-        stroke="#6F688A"
+        stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"

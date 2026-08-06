@@ -96,7 +96,7 @@ describe('заработанное за всё время', () => {
     const card = await core.saveRequisites(asClient(1n), {
       kind: 'card',
       bankName: 'Сбербанк',
-      cardNumber: '40817810099910004312',
+      cardNumber: '4081781009991000',
     });
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '1000',
@@ -143,6 +143,23 @@ describe('размер сети', () => {
     // за какую заявку начислено, но не за кого именно.
     expect(JSON.stringify(account)).not.toContain('user2');
     expect(JSON.stringify(account)).not.toContain('"2"');
+  });
+});
+
+describe('ставки линий', () => {
+  it('отдаются клиенту: программа без названной ставки не работает', async () => {
+    await givenClient(1n);
+
+    const account = await core.getBonusAccount(asClient(1n));
+
+    // Те самые, по которым начисляет ядро, — из настроек сервиса, а не
+    // числом в приложении: разойдясь, они пообещали бы клиенту не то,
+    // что он получит.
+    const settings = await core.getServiceSettings(await givenStaff({ role: 'admin' }));
+    expect({ line1: account.line1Bps, line2: account.line2Bps }).toEqual({
+      line1: settings.referralLine1Bps,
+      line2: settings.referralLine2Bps,
+    });
   });
 });
 

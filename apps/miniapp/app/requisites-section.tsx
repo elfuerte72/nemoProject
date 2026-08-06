@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import type { RequisitesView } from '@nemo/core';
-import type { RequisiteKind } from '@nemo/types';
+import {
+  looksLikeCardNumber,
+  looksLikePhone,
+  looksLikeWalletAddress,
+  type RequisiteKind,
+} from '@nemo/types';
 import { ApiError, del, post } from '@/lib/client-api';
 import { describeRequisites } from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { addressLabel, NetworkPicker } from './ui/network-picker';
+import { ConfirmSheet } from './ui/sheet';
 
 /**
  * Куда клиенту отправить деньги.
@@ -52,12 +58,19 @@ export function RequisitesSheet({
   const [adding, setAdding] = useState(requisites.length === 0);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /**
+   * Запись, о которой спрашивают перед удалением. Кнопка «Удалить»
+   * стоит в строке рядом с самим выбором, и палец на телефоне попадает
+   * в неё вместо записи.
+   */
+  const [removing, setRemoving] = useState<RequisitesView>();
 
   async function remove(requisitesId: string) {
     setError(undefined);
     setBusy(true);
     try {
       await del(`/api/requisites/${requisitesId}`);
+      setRemoving(undefined);
       onRemoved(requisitesId);
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Не удалось удалить реквизиты');
@@ -123,7 +136,7 @@ export function RequisitesSheet({
               )}
               <button
                 type="button"
-                onClick={() => void remove(one.id)}
+                onClick={() => setRemoving(one)}
                 disabled={busy}
                 className="link link--muted"
               >
@@ -141,8 +154,32 @@ export function RequisitesSheet({
           Добавить реквизиты
         </button>
       </div>
+
+      {removing ? (
+        <ConfirmSheet
+          title="Удалить реквизиты?"
+          body={`${describeRequisites(removing)} — запись уйдёт из списка, и подать на неё новую заявку будет нельзя. Уже поданные останутся как есть: деньги по ним придут туда же.`}
+          confirm={busy ? 'Удаляем…' : 'Удалить'}
+          busy={busy}
+          error={error}
+          onConfirm={() => void remove(removing.id)}
+          onClose={() => setRemoving(undefined)}
+        />
+      ) : undefined}
     </>
   );
+}
+
+/**
+ * Номер карты группами по четыре — так он напечатан на пластике, с
+ * которым его и сверяют. Лишние цифры отбрасываются на девятнадцатой:
+ * длиннее карт не бывает, а набранное сверх — это уже не номер.
+ */
+function groupCardDigits(value: string): string {
+  return value
+    .replace(/\D/g, '')
+    .slice(0, 19)
+    .replace(/(\d{4})(?=\d)/g, '$1 ');
 }
 
 /** Ввод новой записи: сначала способ, потом ровно его поля. */
@@ -165,6 +202,13 @@ function RequisitesForm({
   const [address, setAddress] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /**
+   * Досмотрел ли клиент поле до конца. Замечание показывается только
+   * после этого: номер карты на четвёртой цифре не сходится по
+   * контрольной сумме ни у кого, и красная строка под ним всё время
+   * набора — это придирка, а не помощь.
+   */
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     // Справочник сетей приходит отдельным запросом и может опоздать к
@@ -187,11 +231,28 @@ function RequisitesForm({
   }
 
   /**
-   * Кнопка гаснет, пока не заполнено всё, что нужно этому способу:
-   * отказ операции на неполной записи читался бы как поломка, а не как
-   * «заполните поля».
+   * Что не так с набранным — по тем же правилам, по которым откажет
+   * операция. Своей копии правил здесь нет: они живут в доменных типах,
+   * и разойтись с отказом ядра эта строка не может.
+   *
+   * Пустое поле замечания не получает: незаполненное — ещё не ошибка, и
+   * кнопка о нём говорит тем, что не горит.
    */
-  const ready = Object.values(body()).every((value) => value.length > 0);
+  const complaint =
+    kind === 'phone' && phone.trim() && !looksLikePhone(phone)
+      ? 'В номере телефона от 10 до 15 цифр'
+      : kind === 'card' && cardNumber.trim() && !looksLikeCardNumber(cardNumber)
+        ? 'Номер не сходится по контрольной цифре — проверьте, не переставлены ли цифры'
+        : kind === 'wallet' && address.trim() && !looksLikeWalletAddress(network, address)
+          ? `Не похоже на адрес в сети ${network}: проверьте, целиком ли он скопирован`
+          : undefined;
+
+  /**
+   * Кнопка гаснет, пока не заполнено всё, что нужно этому способу, и
+   * пока набранное не похоже на правду: отказ операции на такой записи
+   * читался бы как поломка, а не как «проверьте номер».
+   */
+  const ready = !complaint && Object.values(body()).every((value) => value.length > 0);
 
   async function save() {
     setError(undefined);
@@ -225,7 +286,13 @@ function RequisitesForm({
             <button
               key={value}
               type="button"
-              onClick={() => setKind(value)}
+              onClick={() => {
+                setKind(value);
+                // Досмотр относится к полю, а не к форме: не сбросив
+                // его, новое поле встречало бы клиента замечанием ещё до
+                // того, как он набрал в нём первый знак.
+                setChecked(false);
+              }}
               aria-pressed={kind === value}
               className="option"
             >
@@ -254,9 +321,11 @@ function RequisitesForm({
             <input
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
+              onBlur={() => setChecked(true)}
               placeholder="+7"
               inputMode="tel"
-              className="input"
+              aria-invalid={checked && Boolean(complaint)}
+              className={checked && complaint ? 'input input--wrong' : 'input'}
             />
           </label>
         ) : undefined}
@@ -266,11 +335,16 @@ function RequisitesForm({
             <span className="field__label">Номер карты</span>
             <input
               value={cardNumber}
-              onChange={(event) => setCardNumber(event.target.value)}
+              // Цифры разбиваются по четыре прямо под пальцем: номер
+              // сверяют с пластиком, а он напечатан группами. Сплошные
+              // шестнадцать цифр приходится читать по одной.
+              onChange={(event) => setCardNumber(groupCardDigits(event.target.value))}
+              onBlur={() => setChecked(true)}
               placeholder="0000 0000 0000 0000"
               inputMode="numeric"
               autoComplete="cc-number"
-              className="input"
+              aria-invalid={checked && Boolean(complaint)}
+              className={checked && complaint ? 'input input--wrong' : 'input'}
             />
           </label>
         ) : undefined}
@@ -288,13 +362,22 @@ function RequisitesForm({
               <input
                 value={address}
                 onChange={(event) => setAddress(event.target.value)}
+                onBlur={() => setChecked(true)}
                 placeholder="Адрес кошелька"
-                className="input"
+                aria-invalid={checked && Boolean(complaint)}
+                className={checked && complaint ? 'input input--wrong' : 'input'}
               />
             </label>
           </>
         ) : undefined}
       </div>
+
+      {/*
+        Замечание к набранному — раньше сохранения, а не отказом после
+        него. Отправленный по такому реквизиту перевод не возвращается, и
+        поймать опечатку нужно здесь.
+      */}
+      {checked && complaint ? <p className="error">{complaint}</p> : undefined}
 
       {error ? <p className="error">{error}</p> : undefined}
 

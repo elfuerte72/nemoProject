@@ -5,6 +5,7 @@ import { requireClient, type Actor } from './actor.js';
 import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
 import { NotFoundError } from './errors.js';
+import { readServiceSettings } from './settings.js';
 
 /**
  * Реферальный кабинет клиента: сколько заработал, скольких привёл и за
@@ -48,6 +49,29 @@ export interface BonusAccountView {
   readonly referralCode: string;
   readonly line1Count: number;
   readonly line2Count: number;
+  /**
+   * Ставки линий в базисных пунктах — те же, по которым начисляет ядро.
+   *
+   * Клиенту их называют: реферальная программа, условий которой не
+   * видно, не работает — звать знакомых, не зная, сколько за это
+   * платят, никто не станет. Приложение переводит их в проценты, как это
+   * делает и панель администратора.
+   *
+   * Отдаются текущие, а не те, по которым начислено: ставка каждого
+   * начисления сохранена в самом движении, и прошлое от смены настроек
+   * не меняется.
+   */
+  readonly line1Bps: number;
+  readonly line2Bps: number;
+  /**
+   * Минимальная сумма вывода — та же, по которой отказывает операция.
+   *
+   * Клиенту её называют до подачи: заявка, отвергнутая по порогу, о
+   * котором нигде не сказано, читается как поломка. Отдаётся вместе со
+   * счётом, потому что смысл имеет только рядом с балансом — вывести
+   * можно то, что есть, и не меньше этого.
+   */
+  readonly minWithdrawalAmount: Amount;
   readonly history: readonly BonusTransactionView[];
 }
 
@@ -154,12 +178,13 @@ export async function getBonusAccount(
     throw new NotFoundError('Клиент не найден');
   }
 
-  const [balance, earned, line1Count, line2Count, history] = await Promise.all([
+  const [balance, earned, line1Count, line2Count, history, settings] = await Promise.all([
     bonusBalance(ctx.db, clientId),
     bonusEarned(ctx.db, clientId),
     countReferrals(ctx.db, clientId, 1),
     countReferrals(ctx.db, clientId, 2),
     listBonusTransactions(ctx.db, clientId),
+    readServiceSettings(ctx.db),
   ]);
 
   return {
@@ -168,6 +193,9 @@ export async function getBonusAccount(
     referralCode: client.referralCode,
     line1Count,
     line2Count,
+    line1Bps: settings.referralLine1Bps,
+    line2Bps: settings.referralLine2Bps,
+    minWithdrawalAmount: settings.minWithdrawalAmount,
     history,
   };
 }

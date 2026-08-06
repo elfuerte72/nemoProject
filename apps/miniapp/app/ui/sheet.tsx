@@ -2,7 +2,9 @@
 
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { getWebApp } from '@/lib/telegram/webapp';
 import { CloseIcon } from './icons';
+import { useCopied } from './use-copied';
 
 /**
  * Нижний лист.
@@ -37,6 +39,24 @@ const FLICK_PX_PER_MS = 0.5;
 /** Сколько лист уезжает вниз, прежде чем его снимут. */
 const DRAG_SETTLE_MS = 180;
 
+/** По чему ходит клавиша обхода внутри листа. */
+const FOCUSABLE =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Сколько листов открыто сейчас.
+ *
+ * Листы вкладываются друг в друга: подтверждение удаления встаёт поверх
+ * списка реквизитов, отзыв заявки — поверх карты. Считать их приходится
+ * по двум причинам, и обе видны только на вложенных.
+ *
+ * Первая — прокрутка фона: её запрещает класс на теле страницы, и
+ * закрывшийся верхний лист снимал бы его из-под ещё открытого нижнего.
+ * Вторая — клавиша выхода: слушают её оба листа, и одно нажатие
+ * закрывало бы сразу оба, хотя клиент отвечал только на верхний вопрос.
+ */
+let openSheets = 0;
+
 export function Sheet({
   title,
   onClose,
@@ -49,14 +69,92 @@ export function Sheet({
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const grip = useRef<HTMLDivElement>(null);
+  /*
+   * Закрытие — за ссылкой, а не в зависимостях.
+   *
+   * Обработчик приходит новой функцией при каждом рендере того, кто лист
+   * открыл, а рендерится он сам по себе: экран обмена перечитывает
+   * заявку каждые двадцать секунд и курс каждые тридцать. Опиши мы
+   * зависимость честно — оба эффекта снимались бы и вставали заново по
+   * этому таймеру, а вместе с ними возвращался бы фокус «тому, кто
+   * открыл»: набирающий реквизиты терял бы поле посреди слова.
+   */
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  });
 
   useEffect(() => {
-    panel.current?.focus();
+    const node = panel.current;
+    // Кто открыл лист: туда же вернётся фокус, когда лист уйдёт. Без
+    // этого работающий с клавиатуры оказывается в начале страницы и
+    // ищет заново ту кнопку, которую только что нажал.
+    const opener = document.activeElement;
+    node?.focus();
+
+    openSheets += 1;
+    /** Какой это лист по счёту: верхний отвечает на клавиши за всех. */
+    const depth = openSheets;
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
+      // Нижние листы молчат: вопрос задаёт верхний, ему и отвечают.
+      if (depth !== openSheets) return;
+
+      if (event.key === 'Escape') {
+        close.current();
+        return;
+      }
+      /*
+       * Обход по клавише не уходит из листа.
+       *
+       * Лист объявлен модальным, и для экранного диктора этого хватает —
+       * но клавиша обхода про объявление не знает: фокус уезжал за
+       * панель, в кнопки под ней, и следующее нажатие приходилось в
+       * экран, которого клиент не видит.
+       */
+      if (event.key !== 'Tab' || !node) return;
+
+      const stops = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (one) => !one.hasAttribute('disabled') && one.offsetParent !== null,
+      );
+      const first = stops[0];
+      const last = stops.at(-1);
+      if (!first || !last) return;
+
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || active === node)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
     document.addEventListener('keydown', onKeyDown);
+
+    /*
+     * Кнопка возврата Telegram закрывает лист, а не приложение.
+     *
+     * На Android к ней приводит системный жест «назад» — тот самый,
+     * которым выходят из любого экрана. Без объявленной кнопки он
+     * закрывал весь Mini App: клиент, отвечавший на вопрос в листе,
+     * терял вместо ответа всё приложение вместе с набранным.
+     *
+     * Обработчик у каждого листа свой и снимается вместе с ним, а
+     * прячется кнопка последним уходящим: под вложенным листом остаётся
+     * открытым нижний, и возврат из него нужен так же.
+     */
+    const back = getWebApp()?.BackButton;
+    const goBack = () => {
+      if (depth === openSheets) close.current();
+    };
+    try {
+      back?.onClick(goBack);
+      back?.show();
+    } catch {
+      // Клиент постарше кнопки не знает — лист закрывают крестиком,
+      // промахом и потягом, и все три на месте.
+    }
 
     // Фон под листом не прокручивается: иначе палец, промахнувшийся
     // мимо панели, уводит экран под ней.
@@ -64,9 +162,19 @@ export function Sheet({
 
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      document.body.classList.remove('sheet-open');
+      openSheets -= 1;
+      try {
+        back?.offClick(goBack);
+        if (openSheets === 0) back?.hide();
+      } catch {
+        // Кнопки нет — снимать нечего.
+      }
+      // Класс снимает последний уходящий: снятый верхним, он вернул бы
+      // прокрутку фону под ещё открытым нижним листом.
+      if (openSheets === 0) document.body.classList.remove('sheet-open');
+      if (opener instanceof HTMLElement) opener.focus();
     };
-  }, [onClose]);
+  }, []);
 
   /*
    * Потяг вниз за полоску.
@@ -88,6 +196,8 @@ export function Sheet({
     let offset = 0;
     let dragging = false;
     let frame = 0;
+    /** Отложенный уход листа: его надо снять, если лист закрыли иначе. */
+    let settling: ReturnType<typeof setTimeout> | undefined;
 
     const paint = () => {
       frame = 0;
@@ -129,25 +239,47 @@ export function Sheet({
         // Лист уходит за нижний край и только потом снимается: исчезнуть
         // на полпути — значит мигнуть там, где ждут движения.
         node.style.transform = `translate3d(0, ${node.offsetHeight}px, 0)`;
-        setTimeout(onClose, DRAG_SETTLE_MS);
+        settling = setTimeout(() => close.current(), DRAG_SETTLE_MS);
         return;
       }
       // Не дотянули — лист возвращается на место сам.
       node.style.transform = '';
     };
 
+    /*
+     * Жест отняли — лист возвращается, а не закрывается.
+     *
+     * Отмена приходит не от клиента: её шлёт система, забрав указатель
+     * себе, — жестом от края, звонком, сменой приложения. Считать это
+     * за «закрой» значит закрывать лист тогда, когда клиент ничего для
+     * этого не сделал, а решение принималось бы по тому, сколько лист
+     * успел проехать до перехвата.
+     */
+    const cancel = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      delete node.dataset.dragging;
+      node.style.transform = '';
+    };
+
     handle.addEventListener('pointerdown', down);
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
-    handle.addEventListener('pointercancel', up);
+    handle.addEventListener('pointercancel', cancel);
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      // Уход листа отложен на время доводки, и за неё лист успевают
+      // закрыть иначе — крестиком, промахом, ответом сервера. Сработав
+      // после этого, отложенный вызов закрыл бы уже следующий лист.
+      clearTimeout(settling);
       handle.removeEventListener('pointerdown', down);
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
-      handle.removeEventListener('pointercancel', up);
+      handle.removeEventListener('pointercancel', cancel);
     };
-  }, [onClose]);
+  }, []);
 
   const markup = (
     <div
@@ -200,23 +332,102 @@ export function Sheet({
 }
 
 /**
- * Лист с одним сообщением и кнопкой «Понятно» — подтверждение подачи,
- * пояснение к шагу, ответ поддержки.
+ * Лист-вопрос перед необратимым: отменить заявку, удалить запись.
+ *
+ * Спрашивается то, чего не отыграть назад. Отменённую заявку не вернуть —
+ * подают новую, а курс к тому времени другой; удалённая запись уходит из
+ * списка. Нажатие на такое приходится и случайно: кнопки стоят в ряд с
+ * обычными, и палец на телефоне промахивается.
+ *
+ * Согласие набрано обычной кнопкой, а не красной: клиент пришёл сюда
+ * сам и знает, чего хочет, — пугать его в ответ на собственное намерение
+ * незачем. Опасность объясняет текст, а не цвет.
  */
-export function NoticeSheet({
+export function ConfirmSheet({
   title,
   body,
+  confirm,
+  busy,
+  error,
+  onConfirm,
   onClose,
 }: {
   readonly title: string;
   readonly body: string;
+  /** Что написано на кнопке согласия: «Отменить заявку», «Удалить». */
+  readonly confirm: string;
+  readonly busy?: boolean | undefined;
+  /**
+   * Отказ операции. Показывается здесь, а не под листом: лист закрывает
+   * собой экран, и сообщение под ним клиент увидел бы, только закрыв
+   * его, — то есть решив, что действие состоялось.
+   */
+  readonly error?: string | undefined;
+  readonly onConfirm: () => void;
   readonly onClose: () => void;
 }) {
   return (
-    <Sheet title={title} onClose={onClose}>
+    /*
+      Пока операция идёт, лист не закрывается ничем — ни крестиком, ни
+      промахом, ни потягом, ни клавишей. Закрытый на полпути, он оставил
+      бы клиента без ответа о том, что случилось с необратимым действием,
+      которое он только что подтвердил.
+    */
+    <Sheet title={title} onClose={busy ? () => {} : onClose}>
       <p className="sheet__body">{body}</p>
+      {error ? <p className="error">{error}</p> : undefined}
       <div className="sheet__actions">
-        <button type="button" onClick={onClose} className="btn btn--gold">
+        <button type="button" onClick={onConfirm} disabled={busy} className="btn btn--gold">
+          {confirm}
+        </button>
+        <button type="button" onClick={onClose} disabled={busy} className="btn btn--soft">
+          Не надо
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * Лист с одним сообщением и кнопкой «Понятно» — подтверждение подачи,
+ * пояснение к шагу, реквизиты для оплаты.
+ *
+ * Реквизиты отличаются от остальных сообщений тем, что их не читают, а
+ * переносят: номер карты набирают в банковском приложении. Поэтому у
+ * листа есть необязательная кнопка копирования — и набор строк в теле
+ * сохраняется как есть. Без этого «Сбербанк / 1234 5678 9012 3456 /
+ * Иван И.», набранный менеджером в три строки, слипался в одну, а
+ * скопировать номер можно было только выделив его пальцем внутри Mini
+ * App.
+ */
+export function NoticeSheet({
+  title,
+  body,
+  copyable,
+  onClose,
+}: {
+  readonly title: string;
+  readonly body: string;
+  /** Есть — тело листа считается данными: переносы целы, копирование доступно. */
+  readonly copyable?: boolean | undefined;
+  readonly onClose: () => void;
+}) {
+  const { copied, copy } = useCopied();
+
+  return (
+    <Sheet title={title} onClose={onClose}>
+      <p className={copyable ? 'sheet__body sheet__body--data' : 'sheet__body'}>{body}</p>
+      <div className="sheet__actions">
+        {copyable ? (
+          <button type="button" onClick={() => copy(body)} className="btn btn--gold">
+            {copied ? 'Скопировано' : 'Скопировать'}
+          </button>
+        ) : undefined}
+        <button
+          type="button"
+          onClick={onClose}
+          className={copyable ? 'btn btn--soft' : 'btn btn--gold'}
+        >
           Понятно
         </button>
       </div>

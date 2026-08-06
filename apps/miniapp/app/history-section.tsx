@@ -11,6 +11,7 @@ import {
   WITHDRAWAL_METHOD_LABELS,
   WITHDRAWAL_STATUS_LABELS,
 } from '@/lib/labels';
+import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';
 
 /**
@@ -84,6 +85,8 @@ export function HistorySection({
   const [filter, setFilter] = useState<Filter>('all');
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  /** Счётчик попыток: им же заводится повторное чтение после отказа. */
+  const [attempt, setAttempt] = useState(0);
 
   // Отбор ставится приведшим сюда, а дальше клиент волен его менять:
   // чип — это его инструмент, а не режим, в котором раздел заперт.
@@ -96,6 +99,9 @@ export function HistorySection({
       try {
         const loaded = await get<{ history: ClientHistoryView }>('/api/history');
         setHistory(loaded.history);
+        // Прошлый отказ снимается: лента прочитана, и держать под ней
+        // сообщение о неудаче незачем.
+        setError(undefined);
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить историю');
       } finally {
@@ -107,7 +113,7 @@ export function HistorySection({
     // меняется без участия клиента. Признак занятости при этом не
     // поднимается: читается уже показанное, и подменять ленту на
     // «Загружаем…» значило бы моргать ею в ответ на возвращение.
-  }, [revisit]);
+  }, [revisit, attempt]);
 
   /**
    * Лента разложена по дням. Группы считаются здесь, а не в разметке:
@@ -131,19 +137,30 @@ export function HistorySection({
   }
 
   if (!history) {
-    return <p className="error">{error ?? 'Не удалось загрузить историю'}</p>;
+    return (
+      <Failure
+        message={error ?? 'Не удалось загрузить историю'}
+        onRetry={() => {
+          // Ожидание поднимается здесь: раздел показывает талисмана
+          // вместо отказа, и вид с кнопкой уходит вместе с первым
+          // нажатием — второго по нему уже не сделать.
+          setLoading(true);
+          setAttempt((was) => was + 1);
+        }}
+      />
+    );
   }
 
   return (
     <>
-      <div className="chips" role="group" aria-label="Что показывать">
+      <div className="filters" role="group" aria-label="Что показывать">
         {FILTERS.map(({ id, label }) => (
           <button
             key={id}
             type="button"
             onClick={() => setFilter(id)}
             aria-pressed={filter === id}
-            className="chip"
+            className="filter"
           >
             {label}
           </button>

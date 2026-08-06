@@ -34,6 +34,8 @@ interface TelegramWebApp {
   expand(): void;
   /** Открыть ссылку t.me внутри Telegram, а не во внешнем браузере. */
   openTelegramLink?(url: string): void;
+  /** Закрыть Mini App. Клиент остаётся там, откуда его открыл. */
+  close?(): void;
   /**
    * Запретить закрытие приложения свайпом вниз. Экраны здесь длиннее
    * окна, и жест прокрутки от верхнего края Telegram принимает за
@@ -52,6 +54,26 @@ interface TelegramWebApp {
    * приходит в `--tg-content-safe-area-inset-top`.
    */
   requestFullscreen?(): void;
+  /**
+   * Кнопка возврата в шапке Telegram — и системный жест «назад» на
+   * Android, который к ней и приводит.
+   *
+   * Без неё этот жест закрывает всё приложение целиком: клиент,
+   * привыкший так выходить из любого экрана, терял вместо открытого
+   * листа весь Mini App вместе с набранным.
+   */
+  BackButton?: {
+    show(): void;
+    hide(): void;
+    onClick(handler: () => void): void;
+    offClick(handler: () => void): void;
+  };
+  /** Тактильный отклик. Появился в Bot API 6.1. */
+  HapticFeedback?: {
+    impactOccurred?(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'): void;
+    notificationOccurred?(type: 'error' | 'success' | 'warning'): void;
+    selectionChanged?(): void;
+  };
 }
 
 declare global {
@@ -71,6 +93,90 @@ export function getWebApp(): TelegramWebApp | undefined {
  */
 export function getTelegramUser(): TelegramUser | undefined {
   return getWebApp()?.initDataUnsafe?.user;
+}
+
+/**
+ * Тактильный отклик на то, что произошло.
+ *
+ * Скупо и по делу: отклик на каждое касание перестаёт что-либо значить
+ * уже через минуту работы. Отвечаем только на исход операции — заявка
+ * подана, отказ пришёл — и на два жеста, у которых нет другого
+ * подтверждения: разворот направления и копирование.
+ *
+ * Отсутствие — рабочий случай: на десктопе телефона нет, в клиенте
+ * постарше нет метода. Приложение от этого не меняется ничем.
+ */
+export function haptic(kind: 'success' | 'error' | 'warning' | 'light'): void {
+  const api = getWebApp()?.HapticFeedback;
+  if (!api) return;
+  try {
+    if (kind === 'light') api.impactOccurred?.('light');
+    else api.notificationOccurred?.(kind);
+  } catch {
+    // Этот клиент так не умеет — молча, как и остальные необязательные
+    // возможности Telegram.
+  }
+}
+
+/**
+ * Открыть ссылку Telegram — внутри клиента, а не во внешнем браузере.
+ *
+ * Одна на всё приложение: так пересылают реферальную ссылку и так же
+ * уходят в чат с ботом. Своя ветка под каждое место означала бы, что
+ * однажды одно из них откроет чат в браузере, где клиент не залогинен.
+ *
+ * Запасной путь — обычное окно: Mini App открывают и на десктопе, где
+ * старый клиент этого метода не знает.
+ */
+export function openTelegram(url: string): void {
+  const webApp = getWebApp();
+  if (webApp?.openTelegramLink) webApp.openTelegramLink(url);
+  else window.open(url, '_blank');
+}
+
+/**
+ * Чат, в котором клиента читает менеджер, — тот самый бот, которого
+ * клиент запускал сам. Отдельного адреса поддержки у сервиса нет и не
+ * должно быть: обращение живёт в переписке, одной на клиента.
+ *
+ * Пусто, когда имя бота не задано развёртыванием: кнопка, ведущая в
+ * никуда, хуже её отсутствия.
+ */
+export function supportLink(): string | undefined {
+  const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+  return bot ? `https://t.me/${bot}` : undefined;
+}
+
+/**
+ * Уйти в чат с менеджером.
+ *
+ * Не просто «открыть ссылку»: чат этот — с тем же ботом, из которого
+ * приложение и запущено, то есть он лежит прямо под ним. А открытие
+ * ссылки с Bot API 7.0 приложение не закрывает — Telegram послушно
+ * переходит в чат, но Mini App остаётся поверх, и снаружи это выглядит
+ * как несработавшая кнопка.
+ *
+ * Поэтому сначала переход, потом закрытие. Переход нужен на случай,
+ * когда приложение открыли не из чата бота — прямой ссылкой или из
+ * вложения в другом чате; закрытие — чтобы клиент этот чат увидел. В
+ * клиенте постарше, где открытие само закрывало приложение, второй вызов
+ * просто ни к чему не приводит.
+ */
+export function openSupport(): void {
+  const url = supportLink();
+  if (!url) return;
+
+  const webApp = getWebApp();
+  // Закрываем приложение только вслед за состоявшимся переходом. Клиент
+  // постарше `openTelegramLink` не знает, и закрытие вслепую оставило бы
+  // его без Mini App и без чата разом — то есть хуже, чем до нажатия.
+  if (webApp?.openTelegramLink) {
+    webApp.openTelegramLink(url);
+    webApp.close?.();
+    return;
+  }
+
+  window.open(url, '_blank');
 }
 
 /**

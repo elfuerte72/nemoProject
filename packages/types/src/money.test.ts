@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { add, compare, divide, format, multiply, percentOf, toAmount } from './money.js';
+import {
+  add,
+  compare,
+  divide,
+  divideCeil,
+  floor,
+  format,
+  multiply,
+  percentOf,
+  toAmount,
+} from './money.js';
 
 describe('Amount', () => {
   it('складывает суммы без потери точности на дробях, где ломается float', () => {
@@ -34,6 +44,43 @@ describe('Amount', () => {
 
   it('бросает при делении на ноль вместо возврата бесконечности', () => {
     expect(() => divide(toAmount('1'), toAmount('0'))).toThrow(RangeError);
+    expect(() => divideCeil(toAmount('1'), toAmount('0'))).toThrow(RangeError);
+  });
+
+  it('делит вверх так, что обратное умножение возвращает названное', () => {
+    // Клиент просит 50 000 рублей по курсу 81. Обычное деление даёт
+    // хвост вниз, и сумма к выдаче выходит на рубль меньше просимого.
+    const rate = toAmount('81');
+    const wanted = toAmount('50000');
+
+    const down = divide(wanted, rate);
+    expect(floor(multiply(down, rate))).toBe('49999');
+
+    const up = divideCeil(wanted, rate, 8);
+    expect(floor(multiply(up, rate))).toBe('50000');
+  });
+
+  it('делит вверх и на курсе мельче единицы', () => {
+    // Обратная сторона той же пары: рубли за USDT.
+    const rate = toAmount('0.0123');
+    const up = divideCeil(toAmount('100'), rate, 8);
+    expect(compare(floor(multiply(up, rate)), toAmount('100'))).toBeGreaterThanOrEqual(0);
+  });
+
+  it('не берётся считать от отрицательных', () => {
+    // «Вверх» у отрицательных значит и «прочь от нуля», и «к большему»,
+    // и ответы у этих прочтений разные. Обратный счёт идёт от суммы,
+    // которую клиент получает, а её отрицательной не бывает.
+    expect(() => divideCeil(toAmount('-50000'), toAmount('81'), 8)).toThrow(RangeError);
+    expect(() => divideCeil(toAmount('50000'), toAmount('-81'), 8)).toThrow(RangeError);
+  });
+
+  it('держит заданное число знаков и отвергает недопустимое', () => {
+    expect(divideCeil(toAmount('1'), toAmount('3'), 8)).toBe('0.33333334');
+    expect(divideCeil(toAmount('1'), toAmount('3'), 0)).toBe('1');
+    expect(() => divideCeil(toAmount('1'), toAmount('3'), 19)).toThrow(RangeError);
+    expect(() => divideCeil(toAmount('1'), toAmount('3'), -1)).toThrow(RangeError);
+    expect(() => divideCeil(toAmount('1'), toAmount('3'), 1.5)).toThrow(RangeError);
   });
 
   it('сравнивает как числа, а не как строки', () => {

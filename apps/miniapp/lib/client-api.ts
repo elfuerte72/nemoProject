@@ -9,6 +9,16 @@ import { getInitData } from '@/lib/telegram/webapp';
  * способ узнать клиента.
  */
 
+/**
+ * Сколько ждать ответа.
+ *
+ * У запроса без срока его нет вовсе: молчащая сеть — обычное дело в
+ * метро и роуминге, и там приложение висело бы с крутящимся ожиданием до
+ * закрытия. Пятнадцать секунд: дольше человек и так не ждёт, а короче
+ * рвало бы честно медленные ответы на плохой связи.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -18,20 +28,49 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Срок для запроса. Отсутствие поддержки — рабочий случай: в старом
+ * webview запрос остаётся бессрочным, то есть ведёт себя как раньше.
+ */
+function deadline(): AbortSignal | undefined {
+  return typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    : undefined;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const initData = getInitData();
   if (!initData) {
     throw new ApiError(401, 'Откройте приложение из Telegram');
   }
 
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `tma ${initData}`,
-      ...init.headers,
-    },
-  });
+  const signal = deadline();
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      ...(signal ? { signal } : {}),
+      headers: {
+        'content-type': 'application/json',
+        authorization: `tma ${initData}`,
+        ...init.headers,
+      },
+    });
+  } catch (failure) {
+    /*
+     * Сеть не ответила — это не то же самое, что отказ сервера, и
+     * сказать об этом надо иначе: сервер жив, а связь пропала, и
+     * помогает здесь не обращение к менеджеру, а повторная попытка.
+     *
+     * Ноль вместо кода: кода нет, потому что ответа не было.
+     */
+    throw new ApiError(
+      0,
+      failure instanceof DOMException && failure.name === 'TimeoutError'
+        ? 'Сервис не ответил вовремя. Проверьте связь и попробуйте снова.'
+        : 'Нет связи с сервисом. Проверьте интернет и попробуйте снова.',
+    );
+  }
 
   const payload: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
