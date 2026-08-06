@@ -63,6 +63,15 @@ export interface BonusAccountView {
    */
   readonly line1Bps: number;
   readonly line2Bps: number;
+  /**
+   * Минимальная сумма вывода — та же, по которой отказывает операция.
+   *
+   * Клиенту её называют до подачи: заявка, отвергнутая по порогу, о
+   * котором нигде не сказано, читается как поломка. Отдаётся вместе со
+   * счётом, потому что смысл имеет только рядом с балансом — вывести
+   * можно то, что есть, и не меньше этого.
+   */
+  readonly minWithdrawalAmount: Amount;
   readonly history: readonly BonusTransactionView[];
 }
 
@@ -186,6 +195,7 @@ export async function getBonusAccount(
     line2Count,
     line1Bps: settings.referralLine1Bps,
     line2Bps: settings.referralLine2Bps,
+    minWithdrawalAmount: settings.minWithdrawalAmount,
     history,
   };
 }

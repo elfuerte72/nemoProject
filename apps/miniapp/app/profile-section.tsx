@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { BonusAccountView, ClientView, RequisitesView, WithdrawalRequestView } from '@nemo/core';
-import { requisiteKinds } from '@nemo/types';
+import { Money, requisiteKinds } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { referralLink } from '@/lib/referral';
 import {
@@ -288,6 +288,7 @@ export function ProfileSection({
       {sheet?.kind === 'withdraw' ? (
         <WithdrawSheet
           balance={account.balance}
+          minimum={account.minWithdrawalAmount}
           requisites={requisites}
           onClose={() => setSheet(undefined)}
           onSubmitted={() => setSheet({ kind: 'notice', ...SUBMITTED })}
@@ -369,12 +370,15 @@ export function ProfileSection({
  */
 function WithdrawSheet({
   balance,
+  minimum,
   requisites,
   onClose,
   onSubmitted,
   onAddRequisites,
 }: {
   readonly balance: string;
+  /** Ниже этого сервис заявку не примет — сказать надо до подачи. */
+  readonly minimum: string;
   readonly requisites: readonly RequisitesView[];
   readonly onClose: () => void;
   readonly onSubmitted: () => void;
@@ -390,6 +394,28 @@ function WithdrawSheet({
   // некому исполнить.
   const offered = requisites.filter((one) => one.isAvailable);
   const picked = selected ?? offered[0]?.id;
+
+  /**
+   * Что не так с набранной суммой — по тем же двум границам, по которым
+   * откажет операция. Раньше о них не говорилось нигде: клиент вводил
+   * число, нажимал и получал отказ сервера — про порог, о котором
+   * приложение молчало, и про баланс, который тут же и показан.
+   */
+  const wanted = Money.amountSchema.safeParse(parseAmount(amount));
+  const complaint = !amount.trim()
+    ? undefined
+    : !wanted.success || Money.isNegative(wanted.data) || Money.isZero(wanted.data)
+      ? 'Введите сумму числом'
+      : Money.compare(wanted.data, Money.toAmount(balance)) > 0
+        ? `На счету только ${formatAmount(balance)} баллов`
+        : Money.compare(wanted.data, Money.toAmount(minimum)) < 0
+          ? `Меньше минимума вывода — ${formatAmount(minimum)} баллов`
+          : undefined;
+
+  /** Весь остаток разом: самый частый вывод — «забрать всё, что есть». */
+  function takeAll() {
+    setAmount(formatAmount(balance));
+  }
 
   async function submit() {
     if (!picked) return;
@@ -415,8 +441,8 @@ function WithdrawSheet({
   return (
     <Sheet title="Вывод баллов" onClose={onClose}>
       <p className="sheet__body">
-        Доступно {formatAmount(balance)} баллов. Выплату исполнит менеджер вручную — на ту же
-        запись, на которую приходят обмены.
+        Доступно {formatAmount(balance)} баллов, вывести можно от {formatAmount(minimum)}.
+        Выплату исполнит менеджер вручную — на ту же запись, на которую приходят обмены.
       </p>
 
       <div className="form">
@@ -427,10 +453,21 @@ function WithdrawSheet({
             onChange={(event) => setAmount(event.target.value)}
             inputMode="decimal"
             placeholder="0"
-            className="input"
+            aria-invalid={Boolean(complaint)}
+            className={complaint ? 'input input--wrong' : 'input'}
           />
         </label>
+        {/*
+          Весь остаток — одним нажатием. Набирать баланс вручную клиент
+          вынужден был по цифре, сверяясь со строкой выше, и ошибался в
+          последнем знаке чаще, чем попадал.
+        */}
+        <button type="button" onClick={takeAll} className="link withdraw__all">
+          Вывести всё — {formatAmount(balance)}
+        </button>
       </div>
+
+      {complaint ? <p className="notice">{complaint}</p> : undefined}
 
       {offered.length === 0 ? (
         <p className="empty">
@@ -470,7 +507,7 @@ function WithdrawSheet({
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={busy || !amount.trim() || !picked}
+            disabled={busy || !amount.trim() || Boolean(complaint) || !picked}
             className="btn btn--gold"
           >
             Подать заявку на вывод

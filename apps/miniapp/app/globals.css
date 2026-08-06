@@ -2263,3 +2263,14 @@ button.tile:hover {
   padding: 0;
   border-top: none;
 }
+
+/*
+ * «Вывести всё» под полем суммы. Ссылкой, а не кнопкой: это не действие
+ * над заявкой, а подстановка числа — того самого, что стоит строкой
+ * выше.
+ */
+.withdraw__all {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 4px 0;
+}
