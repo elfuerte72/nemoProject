@@ -674,7 +674,7 @@ export function ClientApp() {
             {TABS.map(({ id }) => (
               <div
                 key={id}
-                className={keyboard ? 'track__slot track__slot--bare' : 'track__slot'}
+                className="track__slot"
                 // Соседний раздел стоит рядом и остаётся деревом
                 // страницы: без этого диктор читал бы все три подряд, а
                 // клавиша перехода уводила бы фокус за край кадра.

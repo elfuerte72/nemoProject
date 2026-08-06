@@ -761,7 +761,14 @@ export function ExchangeScreen({
           <div className="calc">
             <div className="calc__give">
               <div className="eyebrow">Отдаю</div>
-              <div key={`give-${swaps}`} className={swaps ? 'calc__line calc__line--give' : 'calc__line'}>
+              {/*
+                Анимация разворота заводится чередованием имени, а не
+                пересборкой строки. Пересобранная, она уносила с собой
+                поле ввода: фокус слетал, клавиатура закрывалась, и
+                клиент, развернувший направление посреди набора,
+                возвращался к нему заново.
+              */}
+              <div className={swapClass('give', swaps)}>
                 <input
                   value={shown('give')}
                   onChange={(event) => type('give', event.target.value)}
@@ -823,7 +830,7 @@ export function ExchangeScreen({
 
             <div className="calc__get">
               <div className="eyebrow">Получаю</div>
-              <div key={`get-${swaps}`} className={swaps ? 'calc__line calc__line--get' : 'calc__line'}>
+              <div className={swapClass('get', swaps)}>
                 {/*
                   Тоже поле ввода, а не подпись: сумму получения называют
                   так же часто, как отданную, — по счёту за отель, по
@@ -1200,6 +1207,19 @@ export function ExchangeScreen({
   );
 }
 
+
+/**
+ * Класс строки калькулятора с анимацией разворота.
+ *
+ * Анимация перезапускается сменой имени, а не пересборкой узла: строка
+ * несёт поле ввода, и пересобранная она уносила бы с собой фокус вместе
+ * с клавиатурой. Одно и то же имя браузер вторично не проигрывает,
+ * поэтому их два и они чередуются по чётности разворота.
+ */
+function swapClass(side: 'give' | 'get', swaps: number): string {
+  if (!swaps) return 'calc__line';
+  return `calc__line calc__line--${side}-${swaps % 2 === 0 ? 'a' : 'b'}`;
+}
 
 /**
  * Сторона заявки, с которой сравнивается минимальная сумма обмена, — та,
