@@ -163,17 +163,20 @@ export function supportLink(): string | undefined {
  * просто ни к чему не приводит.
  */
 export function openSupport(): void {
-  const webApp = getWebApp();
   const url = supportLink();
   if (!url) return;
 
-  if (!webApp) {
-    window.open(url, '_blank');
+  const webApp = getWebApp();
+  // Закрываем приложение только вслед за состоявшимся переходом. Клиент
+  // постарше `openTelegramLink` не знает, и закрытие вслепую оставило бы
+  // его без Mini App и без чата разом — то есть хуже, чем до нажатия.
+  if (webApp?.openTelegramLink) {
+    webApp.openTelegramLink(url);
+    webApp.close?.();
     return;
   }
 
-  webApp.openTelegramLink?.(url);
-  webApp.close?.();
+  window.open(url, '_blank');
 }
 
 /**

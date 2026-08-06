@@ -109,6 +109,18 @@ type SheetState =
       readonly rate: QuoteView | null;
       readonly requisitesId: string | undefined;
       readonly requisitesLine: string | undefined;
+      /*
+       * Направление и способ — тоже часть снимка.
+       *
+       * Их меняет не только клиент: раздел перечитывает условия при
+       * каждом возвращении, и если валюта или способ пропали из
+       * справочника, экран подставляет первые уцелевшие сам. Лист
+       * перехватывает нажатия, но не эти подстановки — и заявка ушла бы
+       * с подтверждённой суммой по неподтверждённой паре.
+       */
+      readonly exchange: ExchangeKind;
+      readonly fromCode: string;
+      readonly toCode: string;
     }
   | { readonly kind: 'cancel' }
   /** Просьба оплатить бронь или покупку — уходит обращением к менеджеру. */
@@ -535,9 +547,9 @@ export function ExchangeScreen({
     setBusy(true);
     try {
       const created = await post<{ request: ExchangeRequestView }>('/api/exchange-requests', {
-        kind,
-        fromCode,
-        toCode,
+        kind: confirmed.exchange,
+        fromCode: confirmed.fromCode,
+        toCode: confirmed.toCode,
         fromAmount: confirmed.give,
         // Отметка курса, который клиент видел в подтверждении: по нему
         // заявка и уйдёт. Без неё ядро спросило бы курс заново, и между
@@ -546,7 +558,7 @@ export function ExchangeScreen({
         ...(confirmed.rate ? { quotedAt: confirmed.rate.asOf } : {}),
         // Наличные клиент получает на руки: реквизиты для перевода при
         // этом способе не нужны и не запрашиваются.
-        ...(kind === 'electronic' && confirmed.requisitesId
+        ...(confirmed.exchange === 'electronic' && confirmed.requisitesId
           ? { requisitesId: confirmed.requisitesId }
           : {}),
       });
@@ -943,6 +955,9 @@ export function ExchangeScreen({
                 rate: rate ?? null,
                 requisitesId: electronic ? selected : undefined,
                 requisitesLine: electronic && chosen ? describeRequisites(chosen) : undefined,
+                exchange: kind,
+                fromCode,
+                toCode,
               });
             }}
             disabled={!ready}
@@ -1125,7 +1140,7 @@ export function ExchangeScreen({
       {sheet?.kind === 'confirm' ? (
         <Sheet title="Проверьте заявку" onClose={() => setSheet(undefined)}>
           <p className="sheet__body">
-            {electronic
+            {sheet.exchange === 'electronic'
               ? 'Менеджер возьмёт заявку и выдаст реквизиты для оплаты. Курс уже зафиксирован.'
               : 'Курс и сумму по наличным менеджер назовёт, когда возьмёт заявку.'}
           </p>
@@ -1134,26 +1149,28 @@ export function ExchangeScreen({
             <div className="summary__row">
               <span className="summary__label">Отдаю</span>
               <span className="summary__value summary__value--strong">
-                {formatMoney(sheet.give, fromCode)}
+                {formatMoney(sheet.give, sheet.fromCode)}
               </span>
             </div>
             <div className="summary__row">
               <span className="summary__label">Получаю</span>
               <span className="summary__value summary__value--strong">
-                {sheet.payout ? formatMoney(sheet.payout, toCode) : `${toCode} — назовёт менеджер`}
+                {sheet.payout
+                  ? formatMoney(sheet.payout, sheet.toCode)
+                  : `${sheet.toCode} — назовёт менеджер`}
               </span>
             </div>
             {sheet.rate ? (
               <div className="summary__row">
                 <span className="summary__label">Курс</span>
                 <span className="summary__value">
-                  {formatRate(sheet.rate.rate, fromCode, toCode)}
+                  {formatRate(sheet.rate.rate, sheet.fromCode, sheet.toCode)}
                 </span>
               </div>
             ) : undefined}
             <div className="summary__row">
               <span className="summary__label">Способ</span>
-              <span className="summary__value">{KIND_LABELS[kind]}</span>
+              <span className="summary__value">{KIND_LABELS[sheet.exchange]}</span>
             </div>
             {sheet.requisitesLine ? (
               <div className="summary__row">

@@ -286,7 +286,13 @@ function RequisitesForm({
             <button
               key={value}
               type="button"
-              onClick={() => setKind(value)}
+              onClick={() => {
+                setKind(value);
+                // Досмотр относится к полю, а не к форме: не сбросив
+                // его, новое поле встречало бы клиента замечанием ещё до
+                // того, как он набрал в нём первый знак.
+                setChecked(false);
+              }}
               aria-pressed={kind === value}
               className="option"
             >

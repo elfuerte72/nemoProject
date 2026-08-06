@@ -77,6 +77,15 @@ describe('looksLikeWalletAddress', () => {
     expect(looksLikeWalletAddress('TON', 'EQCD39VS5jcptHL8vMjEXrzGaRcCVYto7HUn4bpAOg8xqB2N')).toBe(
       true,
     );
+    // Дружественный адрес приходит и в обычном base64: кошельки отдают
+    // его с «+» и «/», и отвергнутый настоящий адрес хуже пропущенной
+    // опечатки — по нему клиент вовсе не сможет получить деньги.
+    expect(looksLikeWalletAddress('TON', 'EQCD39VS5jcptHL8vMjEXrzGaRcCVYto7HUn4bpA+g8xqB2N')).toBe(
+      true,
+    );
+    expect(looksLikeWalletAddress('TON', 'EQCD39VS5jcptHL8vMjEXrzGaRcCVYto7HUn4bpA/g8xqB2N')).toBe(
+      true,
+    );
     expect(
       looksLikeWalletAddress(
         'TON',
