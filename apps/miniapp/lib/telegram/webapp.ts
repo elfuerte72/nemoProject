@@ -34,6 +34,8 @@ interface TelegramWebApp {
   expand(): void;
   /** Открыть ссылку t.me внутри Telegram, а не во внешнем браузере. */
   openTelegramLink?(url: string): void;
+  /** Закрыть Mini App. Клиент остаётся там, откуда его открыл. */
+  close?(): void;
   /**
    * Запретить закрытие приложения свайпом вниз. Экраны здесь длиннее
    * окна, и жест прокрутки от верхнего края Telegram принимает за
@@ -143,6 +145,35 @@ export function openTelegram(url: string): void {
 export function supportLink(): string | undefined {
   const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
   return bot ? `https://t.me/${bot}` : undefined;
+}
+
+/**
+ * Уйти в чат с менеджером.
+ *
+ * Не просто «открыть ссылку»: чат этот — с тем же ботом, из которого
+ * приложение и запущено, то есть он лежит прямо под ним. А открытие
+ * ссылки с Bot API 7.0 приложение не закрывает — Telegram послушно
+ * переходит в чат, но Mini App остаётся поверх, и снаружи это выглядит
+ * как несработавшая кнопка.
+ *
+ * Поэтому сначала переход, потом закрытие. Переход нужен на случай,
+ * когда приложение открыли не из чата бота — прямой ссылкой или из
+ * вложения в другом чате; закрытие — чтобы клиент этот чат увидел. В
+ * клиенте постарше, где открытие само закрывало приложение, второй вызов
+ * просто ни к чему не приводит.
+ */
+export function openSupport(): void {
+  const webApp = getWebApp();
+  const url = supportLink();
+  if (!url) return;
+
+  if (!webApp) {
+    window.open(url, '_blank');
+    return;
+  }
+
+  webApp.openTelegramLink?.(url);
+  webApp.close?.();
 }
 
 /**

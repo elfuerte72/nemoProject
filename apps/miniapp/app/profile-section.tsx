@@ -13,7 +13,13 @@ import {
   parseAmount,
 } from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
-import { getTelegramUser, haptic, openTelegram, supportLink } from '@/lib/telegram/webapp';
+import {
+  getTelegramUser,
+  haptic,
+  openSupport,
+  openTelegram,
+  supportLink,
+} from '@/lib/telegram/webapp';
 import { CardIcon, ChevronRight, InviteIcon, SupportIcon, WithdrawIcon } from './ui/icons';
 import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';
@@ -277,7 +283,7 @@ export function ProfileSection({
         сервиса нет, обращение живёт в переписке.
       */}
       {support ? (
-        <button type="button" onClick={() => openTelegram(support)} className="tile">
+        <button type="button" onClick={openSupport} className="tile">
           <span className="tile__icon">
             <SupportIcon />
           </span>

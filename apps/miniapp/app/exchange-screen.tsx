@@ -16,7 +16,7 @@ import {
   type ExchangeKind,
 } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
-import { haptic, openTelegram, supportLink } from '@/lib/telegram/webapp';
+import { haptic, openSupport, supportLink } from '@/lib/telegram/webapp';
 import {
   isOpen,
   KIND_LABELS,
@@ -1065,7 +1065,7 @@ export function ExchangeScreen({
           {support ? (
             <button
               type="button"
-              onClick={() => openTelegram(support)}
+              onClick={openSupport}
               className="link active__support"
             >
               Написать менеджеру
