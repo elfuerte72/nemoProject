@@ -41,6 +41,7 @@ import { RequisitesSheet } from './requisites-section';
 import { CurrencyPicker } from './ui/currency-picker';
 import { sortCurrencies } from './ui/flags';
 import { CardIcon, ChevronRight, SwapIcon } from './ui/icons';
+import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';
 import { ConfirmSheet, NoticeSheet, Sheet } from './ui/sheet';
 
@@ -170,6 +171,8 @@ export function ExchangeScreen({
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  /** Счётчик попыток: им же заводится повторное чтение после отказа. */
+  const [attempt, setAttempt] = useState(0);
   /** Счётчик разворотов: им же заводятся анимации обеих строк и поворот кнопки. */
   const [swaps, setSwaps] = useState(0);
   /**
@@ -208,6 +211,8 @@ export function ExchangeScreen({
           .map((pair) => pair.toCode);
         const to = counter.includes(PREFERRED_TO) ? PREFERRED_TO : (counter[0] ?? '');
         setToCode((current) => current || to);
+        // Прошлый отказ снимается: условия прочитаны.
+        setError(undefined);
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить данные');
       } finally {
@@ -220,7 +225,7 @@ export function ExchangeScreen({
     })();
     // Заявки ведёт менеджер, и его шаг виден только по запросу.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revisit]);
+  }, [revisit, attempt]);
 
   useEffect(() => {
     // Отдельным запросом, а не вместе с остальным: молчание справочника
@@ -727,6 +732,21 @@ export function ExchangeScreen({
 
   if (loading) {
     return <Loading />;
+  }
+
+  /*
+   * Условий нет — значит запрос не дошёл, и сказать надо именно это.
+   * Раньше на этом месте стояло «направления обмена ещё не заведены»:
+   * при отказе сети справочник тоже пуст, и клиент читал о решении
+   * сервиса вместо сообщения о связи.
+   */
+  if (!terms) {
+    return (
+      <Failure
+        message={error ?? 'Не удалось загрузить условия обмена'}
+        onRetry={() => setAttempt((was) => was + 1)}
+      />
+    );
   }
 
   return (

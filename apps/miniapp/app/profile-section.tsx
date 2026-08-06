@@ -15,6 +15,7 @@ import {
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { getTelegramUser, haptic, openTelegram, supportLink } from '@/lib/telegram/webapp';
 import { CardIcon, ChevronRight, InviteIcon, SupportIcon, WithdrawIcon } from './ui/icons';
+import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';
 import { useCopied } from './ui/use-copied';
 import { MarketingConsentToggle } from './marketing-consent';
@@ -81,6 +82,8 @@ export function ProfileSection({
   const { copied, copy } = useCopied();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  /** Счётчик попыток: им же заводится повторное чтение после отказа. */
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     void (async () => {
@@ -95,6 +98,7 @@ export function ProfileSection({
         setAccount(bonus.account);
         setRequisites(mine.requisites);
         setNetworks(known.networks);
+        setError(undefined);
       } catch (failure) {
         setError(failure instanceof ApiError ? failure.message : 'Не удалось загрузить профиль');
       } finally {
@@ -106,7 +110,7 @@ export function ProfileSection({
     // счёта. Признак занятости при этом не поднимается — читается уже
     // показанное, и подменять баланс на «Загружаем…» значило бы моргать
     // числом в ответ на возвращение.
-  }, [revisit]);
+  }, [revisit, attempt]);
 
   const telegram = getTelegramUser();
   const name = [telegram?.first_name, telegram?.last_name].filter(Boolean).join(' ');
@@ -128,7 +132,12 @@ export function ProfileSection({
   }
 
   if (!account) {
-    return <p className="error">{error ?? 'Не удалось загрузить профиль'}</p>;
+    return (
+      <Failure
+        message={error ?? 'Не удалось загрузить профиль'}
+        onRetry={() => setAttempt((was) => was + 1)}
+      />
+    );
   }
 
   return (
