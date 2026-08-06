@@ -699,8 +699,7 @@ button {
  * появится следующее меняющееся число, его припишут сюда.
  */
 .calc__amount,
-.rates__value,
-.rates__row-value,
+.calc__rate,
 .balance__number,
 .split__value,
 .row__amount,
@@ -941,104 +940,6 @@ button.tile:hover {
   color: var(--text-dim);
 }
 
-/* ── Курсы ───────────────────────────────────────────────────────── */
-
-.rates {
-  border-radius: 14px;
-  background: rgba(214, 205, 255, 0.07);
-  box-shadow: var(--lift);
-  overflow: hidden;
-}
-
-.rates__head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 48px;
-  padding: 12px 16px;
-  border: none;
-  background: none;
-  color: var(--text);
-  text-align: left;
-  transition: background 0.15s ease;
-}
-
-button.rates__head {
-  cursor: pointer;
-}
-
-button.rates__head:hover {
-  background: var(--surface-soft);
-}
-
-.rates__pair {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-.rates__rule {
-  flex: 1;
-  height: 1px;
-  background: var(--hairline);
-}
-
-.rates__value {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  white-space: nowrap;
-}
-
-.rates__value--absent {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 0;
-}
-
-.rates__chevron {
-  flex-shrink: 0;
-  transition: transform 0.18s ease;
-}
-
-.rates__chevron--open {
-  transform: rotate(180deg);
-}
-
-.rates__list {
-  padding: 2px 16px 6px;
-}
-
-.rates__row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 0;
-  border-top: 1px solid var(--hairline-soft);
-}
-
-.rates__row-pair {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-dim);
-}
-
-.rates__row-value {
-  margin-left: auto;
-  font-size: 14.5px;
-  font-weight: 600;
-}
-
-.rates__row-value--absent {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
 /* ── Калькулятор обмена ──────────────────────────────────────────── */
 
 .calc {
@@ -1105,8 +1006,40 @@ button.rates__head:hover {
   padding: 0 18px;
 }
 
+/*
+ * Курс между строками калькулятора.
+ *
+ * Стоит на самой черте, разделяющей отданное и полученное: она и есть
+ * место, где одно превращается в другое. Отдельной строкой под карточкой
+ * он читался бы примечанием, а курс — то, ради чего обменник и
+ * открывают: сумма получения отвечает «сколько дадут», но не «дорого ли
+ * это», и сравнивают сервисы именно им.
+ *
+ * Пустая строка убирается совсем, а не гасится: у ряда есть зазор, и
+ * схлопнутый до нуля span оставил бы его дважды — черта отъехала бы от
+ * кнопки на ровном месте.
+ */
+.calc__rate {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.calc__rate:empty {
+  display: none;
+}
+
+/* Отсутствие курса — не число, и весом оно с ним не спорит. */
+.calc__rate--absent {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 .calc__rule {
   flex: 1;
+  min-width: 0;
   height: 1px;
   background: var(--hairline);
 }
