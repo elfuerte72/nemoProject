@@ -10,6 +10,7 @@ import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { getTelegramUser, getWebApp } from '@/lib/telegram/webapp';
 import { CardIcon, ChevronRight, InviteIcon, WithdrawIcon } from './ui/icons';
 import { Loading } from './ui/loading';
+import { useCopied } from './ui/use-copied';
 import { MarketingConsentToggle } from './marketing-consent';
 import { RequisitesSheet } from './requisites-section';
 import { NoticeSheet, Sheet } from './ui/sheet';
@@ -31,9 +32,6 @@ import { NoticeSheet, Sheet } from './ui/sheet';
  * назад держит ссылка под балансом — она открывает ту же историю,
  * сразу отобранную по баллам.
  */
-
-/** Сколько «Скопировано» держится на месте кнопки. */
-const COPIED_MS = 1600;
 
 /** «1 запись», «2 записи», «5 записей» — иначе число выглядит опечаткой. */
 function plural(count: number): string {
@@ -74,7 +72,7 @@ export function ProfileSection({
   const [requisites, setRequisites] = useState<RequisitesView[]>([]);
   const [networks, setNetworks] = useState<string[]>([]);
   const [sheet, setSheet] = useState<SheetState>();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
 
@@ -109,11 +107,8 @@ export function ProfileSection({
 
   const link = account ? referralLink(account.referralCode) : undefined;
 
-  function copy() {
-    if (!link) return;
-    void navigator.clipboard?.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), COPIED_MS);
+  function copyLink() {
+    if (link) copy(link);
   }
 
   function share() {
@@ -205,7 +200,7 @@ export function ProfileSection({
       </div>
 
       {link ? (
-        <button type="button" onClick={copy} className="tile bonus__link">
+        <button type="button" onClick={copyLink} className="tile bonus__link">
           <span className="tile__body">
             <span className="tile__label">Ваша ссылка</span>
             <span className="tile__value">{link.replace('https://', '')}</span>
@@ -273,7 +268,7 @@ export function ProfileSection({
                 <button type="button" onClick={share} className="btn btn--gold">
                   Переслать
                 </button>
-                <button type="button" onClick={copy} className="btn btn--soft">
+                <button type="button" onClick={copyLink} className="btn btn--soft">
                   {copied ? 'Скопировано' : 'Копировать'}
                 </button>
               </div>

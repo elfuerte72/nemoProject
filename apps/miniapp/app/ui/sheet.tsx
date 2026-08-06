@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { CloseIcon } from './icons';
+import { useCopied } from './use-copied';
 
 /**
  * Нижний лист.
@@ -201,22 +202,44 @@ export function Sheet({
 
 /**
  * Лист с одним сообщением и кнопкой «Понятно» — подтверждение подачи,
- * пояснение к шагу, ответ поддержки.
+ * пояснение к шагу, реквизиты для оплаты.
+ *
+ * Реквизиты отличаются от остальных сообщений тем, что их не читают, а
+ * переносят: номер карты набирают в банковском приложении. Поэтому у
+ * листа есть необязательная кнопка копирования — и набор строк в теле
+ * сохраняется как есть. Без этого «Сбербанк / 1234 5678 9012 3456 /
+ * Иван И.», набранный менеджером в три строки, слипался в одну, а
+ * скопировать номер можно было только выделив его пальцем внутри Mini
+ * App.
  */
 export function NoticeSheet({
   title,
   body,
+  copyable,
   onClose,
 }: {
   readonly title: string;
   readonly body: string;
+  /** Есть — тело листа считается данными: переносы целы, копирование доступно. */
+  readonly copyable?: boolean | undefined;
   readonly onClose: () => void;
 }) {
+  const { copied, copy } = useCopied();
+
   return (
     <Sheet title={title} onClose={onClose}>
-      <p className="sheet__body">{body}</p>
+      <p className={copyable ? 'sheet__body sheet__body--data' : 'sheet__body'}>{body}</p>
       <div className="sheet__actions">
-        <button type="button" onClick={onClose} className="btn btn--gold">
+        {copyable ? (
+          <button type="button" onClick={() => copy(body)} className="btn btn--gold">
+            {copied ? 'Скопировано' : 'Скопировать'}
+          </button>
+        ) : undefined}
+        <button
+          type="button"
+          onClick={onClose}
+          className={copyable ? 'btn btn--soft' : 'btn btn--gold'}
+        >
           Понятно
         </button>
       </div>

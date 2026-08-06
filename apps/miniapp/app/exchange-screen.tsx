@@ -80,7 +80,13 @@ const SUBMITTED = {
 type SheetState =
   | { readonly kind: 'requisites' }
   | { readonly kind: 'card' }
-  | { readonly kind: 'notice'; readonly title: string; readonly body: string };
+  | {
+      readonly kind: 'notice';
+      readonly title: string;
+      readonly body: string;
+      /** Реквизиты для оплаты: их переносят в банк, а не читают. */
+      readonly copyable?: boolean;
+    };
 
 /**
  * `onReady` зовётся, когда экран показал бы себя целиком. Оболочка
@@ -451,7 +457,13 @@ export function ExchangeScreen({
     if (instructions) {
       actions.push({
         label: 'Реквизиты для оплаты',
-        run: () => setSheet({ kind: 'notice', title: 'Реквизиты для оплаты', body: instructions }),
+        run: () =>
+          setSheet({
+            kind: 'notice',
+            title: 'Реквизиты для оплаты',
+            body: instructions,
+            copyable: true,
+          }),
       });
     }
     // Отменить можно, только пока заявку не взяли: дальше в работе
@@ -488,6 +500,12 @@ export function ExchangeScreen({
     Boolean(toCode) &&
     Boolean(amount.trim()) &&
     !belowMinimum &&
+    // Пока ответ о курсе не пришёл, подавать нечего: на экране в этот
+    // момент нет ни курса, ни суммы получения, а заявка ушла бы без
+    // отметки — то есть по курсу, который ядро спросит заново и которого
+    // клиент не видел. Отсутствие курса (`null`) — другое дело: это
+    // рабочее состояние, и заявка по нему подаётся.
+    (!electronic || rate !== undefined) &&
     // Электронный перевод без реквизитов отправлять некуда, а наличные
     // клиент получает на руки — там их и не спрашивают.
     (!electronic || selected !== undefined);
@@ -795,7 +813,12 @@ export function ExchangeScreen({
       ) : undefined}
 
       {sheet?.kind === 'notice' ? (
-        <NoticeSheet title={sheet.title} body={sheet.body} onClose={() => setSheet(undefined)} />
+        <NoticeSheet
+          title={sheet.title}
+          body={sheet.body}
+          copyable={sheet.copyable}
+          onClose={() => setSheet(undefined)}
+        />
       ) : undefined}
     </>
   );
