@@ -16,8 +16,14 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request): Promise<Response> {
   try {
     const initData = requireInitData(request);
-    const body: unknown = await request.json().catch(() => ({}));
-    const input = body as { topic?: unknown; details?: unknown };
+    // Тело приводится к объекту до чтения полей: разбор отдаёт и `null`,
+    // и число, и строку — всё это законный JSON, и обращение к полю у
+    // любого из них уронило бы маршрут пятисотой вместо внятного отказа.
+    const parsed: unknown = await request.json().catch(() => undefined);
+    const input =
+      typeof parsed === 'object' && parsed !== null
+        ? (parsed as { topic?: unknown; details?: unknown })
+        : {};
 
     const { notifications } = await getCore().submitInquiry({
       telegramUserId: initData.telegramUserId,

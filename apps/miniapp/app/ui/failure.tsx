@@ -1,7 +1,5 @@
 'use client';
 
-import { useState } from 'react';
-
 /**
  * Раздел, которому нечего показать: запрос не дошёл.
  *
@@ -22,29 +20,19 @@ export function Failure({
   readonly message: string;
   readonly onRetry: () => void;
 }) {
-  /**
-   * Повторяем один раз за нажатие.
+  /*
+   * Своего «пробуем» у кнопки нет: повтор поднимает признак ожидания в
+   * самом разделе, и вместо этого вида встаёт талисман — тот же, что при
+   * первой загрузке. Ожидание на месте содержимого честнее ожидания на
+   * кнопке: ждут не её.
    *
-   * Раздел показывает этот вид, пока ему нечего показать, — то есть и во
-   * время самой повторной попытки. Без отметки клиент, не увидевший
-   * мгновенной перемены, нажимал бы снова и снова, и каждое нажатие
-   * заводило бы ещё один запрос.
+   * Оттого и повторных нажатий не бывает: вид уходит вместе с первым.
    */
-  const [retrying, setRetrying] = useState(false);
-
   return (
     <div className="failure">
       <p className="error">{message}</p>
-      <button
-        type="button"
-        onClick={() => {
-          setRetrying(true);
-          onRetry();
-        }}
-        disabled={retrying}
-        className="btn btn--soft failure__retry"
-      >
-        {retrying ? 'Пробуем…' : 'Попробовать снова'}
+      <button type="button" onClick={onRetry} className="btn btn--soft failure__retry">
+        Попробовать снова
       </button>
     </div>
   );

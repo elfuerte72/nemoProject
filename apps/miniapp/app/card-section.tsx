@@ -173,7 +173,12 @@ export function CardSection({
               {canCancel && current ? (
                 <button
                   type="button"
-                  onClick={() => setCancelling(true)}
+                  onClick={() => {
+                    // Отказ прошлой попытки к новой не относится: лист
+                    // открылся бы с чужим сообщением.
+                    setError(undefined);
+                    setCancelling(true);
+                  }}
                   disabled={busy}
                   className="btn btn--soft"
                 >

@@ -140,7 +140,13 @@ export function HistorySection({
     return (
       <Failure
         message={error ?? 'Не удалось загрузить историю'}
-        onRetry={() => setAttempt((was) => was + 1)}
+        onRetry={() => {
+          // Ожидание поднимается здесь: раздел показывает талисмана
+          // вместо отказа, и вид с кнопкой уходит вместе с первым
+          // нажатием — второго по нему уже не сделать.
+          setLoading(true);
+          setAttempt((was) => was + 1);
+        }}
       />
     );
   }
