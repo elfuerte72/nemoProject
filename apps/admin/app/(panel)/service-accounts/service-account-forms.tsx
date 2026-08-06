@@ -231,7 +231,12 @@ export function ServiceAccountForms({
           </p>
 
           <div className="form-row">
-            <label className="field field--narrow">
+            {/*
+              Способ — поле пошире: «перевод по номеру телефона» в
+              колонку на сто семьдесят пикселей не помещается, а
+              обрезанное название способа приёма читается наугад.
+            */}
+            <label className="field field--wide">
               <span className="label">Способ</span>
               <select
                 className="input"

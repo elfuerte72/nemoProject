@@ -66,7 +66,7 @@ export const CARD_STATUS_TONES: Record<CardApplicationStatus, PillTone> = {
 };
 
 /**
- * Чем счёт сервиса узнаётся в списке — одной строкой и в одном месте.
+ * Чем счёт сервиса узнаётся — одной строкой и в одном месте.
  *
  * Своя копия подписи из ядра, как и у реквизитов клиента в Mini App:
  * ядро тянет за собой драйвер базы, и импорт функции оттуда увёз бы его
@@ -74,21 +74,26 @@ export const CARD_STATUS_TONES: Record<CardApplicationStatus, PillTone> = {
  * экранах, и разойдись они, один и тот же счёт назывался бы в списке и
  * в заявке по-разному.
  *
- * Заметка идёт последней: она объясняет, чем счёт отличается от
- * соседнего, и без самого счёта перед ней читается как чужая строка.
+ * Заметки здесь нет: в списке счетов она стоит своей строкой, а в
+ * выборе — приклеивается к подписи, потому что строка там одна.
  */
 export function describeServiceAccount(account: ServiceAccountView): string {
-  const what = (() => {
-    switch (account.kind) {
-      case 'phone':
-        return [account.bankName, account.phone, account.holderName];
-      case 'card':
-        return [account.bankName, `карта •••• ${account.cardLast4 ?? ''}`, account.holderName];
-      case 'wallet':
-        return [account.network, account.addressHint];
-    }
-  })();
-  return [...what, account.note].filter(Boolean).join(' · ');
+  switch (account.kind) {
+    case 'phone':
+      return [account.bankName, account.phone, account.holderName]
+        .filter(Boolean)
+        .join(' · ');
+    case 'card':
+      return [
+        account.bankName,
+        `карта •••• ${account.cardLast4 ?? ''}`.trim(),
+        account.holderName,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    case 'wallet':
+      return [account.network, account.addressHint].filter(Boolean).join(' · ');
+  }
 }
 
 /** Класс пилюли по её цвету: разметка не решает, каким он бывает. */

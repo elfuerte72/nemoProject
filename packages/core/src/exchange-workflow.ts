@@ -187,7 +187,9 @@ function requireOwnership(row: ExchangeRequestRow, actor: Actor): string {
   // затенение её местной переменной читается как ошибка.
   const who = requireStaff(actor);
   if (row.assignedManagerId !== null && row.assignedManagerId !== who.staffId) {
-    throw new ForbiddenError('Заявку на обмен ведёт другой менеджер');
+    throw new ForbiddenError(
+      'Заявку на обмен ведёт другой менеджер — напишите ему или ответьте клиенту в переписке',
+    );
   }
   return who.staffId;
 }
@@ -518,15 +520,22 @@ export async function getExchangeRequestForStaff(
 ): Promise<ManagerExchangeRequestView> {
   requireStaff(actor);
   const [row] = await ctx.db
-    .select({ request: exchangeRequests, username: clients.username })
+    .select({
+      request: exchangeRequests,
+      username: clients.username,
+      // Кто ведёт — именем: карточка чужой заявки говорит менеджеру,
+      // к кому идти, а «ведёт 5f3c…» не говорит ничего.
+      managerName: staff.displayName,
+    })
     .from(exchangeRequests)
     .innerJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
+    .leftJoin(staff, eq(staff.id, exchangeRequests.assignedManagerId))
     .where(eq(exchangeRequests.id, requestId))
     .limit(1);
   if (!row) {
     throw new NotFoundError('Заявка на обмен не найдена');
   }
-  return toManagerView(row.request, row.username);
+  return toManagerView(row.request, row.username, row.managerName);
 }
 
 export async function listExchangeRequestEvents(
@@ -565,7 +574,9 @@ export async function claimExchangeRequest(
     // отменённую и исполненную так сказать нельзя — их разбирает общая
     // таблица переходов, иначе отказ вводил бы в заблуждение.
     if (row.assignedManagerId !== null && row.status === 'in_progress') {
-      throw new ConflictError('Заявку на обмен уже взяли в работу');
+      throw new ConflictError(
+        'Заявку на обмен уже взяли в работу — обновите список, она ушла к коллеге',
+      );
     }
 
     return staffTransition(tx, row, {
@@ -623,7 +634,8 @@ function rateForConfirmation(
   if (row.requestRate === null) {
     if (named === undefined) {
       throw new InvalidInputError(
-        'У этой заявки нет курса подачи: назовите курс, по которому исполняете',
+        'У этой заявки нет курса подачи — наличная или подана при молчащем источнике. ' +
+          'Назовите курс, по которому исполняете',
       );
     }
     return named;

@@ -8,6 +8,7 @@ import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request
 import { formatAmount } from '@/lib/format';
 import { pillClass } from '@/lib/labels';
 import { Moment } from '@/app/ui/moment';
+import { HowToRunRequest } from '@/app/ui/how-to';
 import { DeskHead } from './desk-head';
 
 export const dynamic = 'force-dynamic';
@@ -112,6 +113,12 @@ export default async function DeskPage({
           total={queueTotal}
           empty="Новых заявок нет. Появится — встанет здесь; экран перечитывает очередь сам."
         />
+        {/*
+          Памятка стоит под очередью, а не поверх экрана: свободная
+          минута у менеджера ровно тогда, когда брать нечего, — и
+          читают её в эту минуту.
+        */}
+        <HowToRunRequest />
       </section>
 
       <section className="section">
@@ -123,7 +130,7 @@ export default async function DeskPage({
         <ExchangeRequestList
           requests={others}
           total={othersTotal}
-          empty="Коллеги ничего не ведут."
+          empty="Коллеги ничего не ведут — вся работа либо у вас, либо ещё в очереди."
           showManager
         />
       </section>

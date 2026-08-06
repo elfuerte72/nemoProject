@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { BroadcastView } from '@nemo/core';
+import { Moment } from '@/app/ui/moment';
 
 /**
  * Ручная рассылка.
@@ -69,7 +70,10 @@ export function BroadcastForm({ broadcasts }: { broadcasts: readonly BroadcastVi
       {error ? <p className="error">{error}</p> : undefined}
 
       {broadcasts.length === 0 ? (
-        <p className="empty">Рассылок ещё не было.</p>
+        <p className="empty">
+          Рассылок ещё не было. Отправленная встанет сюда — с числом получателей и тем,
+          скольким она дошла.
+        </p>
       ) : (
         <>
           <div className="section__head">
@@ -82,7 +86,7 @@ export function BroadcastForm({ broadcasts }: { broadcasts: readonly BroadcastVi
                 <div className="row__main">
                   <span className="row__meta">{broadcast.body}</span>
                   <span className="row__meta">
-                    {new Date(broadcast.createdAt).toLocaleString('ru-RU')} · получателей{' '}
+                    <Moment at={new Date(broadcast.createdAt).toISOString()} /> · получателей{' '}
                     {broadcast.recipients} · доставлено {broadcast.delivered} · не удалось{' '}
                     {broadcast.failed}
                   </span>

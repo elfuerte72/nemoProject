@@ -3,6 +3,7 @@ import { CoreError } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
+import { Moment } from '@/app/ui/moment';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,7 +109,10 @@ export default async function RequisiteAccessPage({
         </form>
 
         {entries.length === 0 ? (
-          <p className="empty">К чувствительным данным никто не обращался.</p>
+          <p className="empty">
+            Номеров карт и адресов кошельков клиентов ещё никто не открывал. Каждое такое
+            открытие встанет сюда — с именем сотрудника и временем.
+          </p>
         ) : (
           <ul className="rows">
             {entries.map((entry) => (
@@ -141,7 +145,7 @@ export default async function RequisiteAccessPage({
                   </span>
                 </div>
                 <span className="row__meta">
-                  {new Date(entry.accessedAt).toLocaleString('ru-RU')}
+                  <Moment at={new Date(entry.accessedAt).toISOString()} />
                 </span>
               </li>
             ))}
@@ -154,7 +158,10 @@ export default async function RequisiteAccessPage({
       return (
         <main className="page">
           <h1 className="page__title">Журнал доступа к реквизитам</h1>
-          <p className="empty">Журнал доступен только администратору.</p>
+          <p className="empty">
+            Журнал доступен только администратору: он ведётся за теми, кто открывает чужие
+            реквизиты, и читать его проверяемому незачем.
+          </p>
         </main>
       );
     }

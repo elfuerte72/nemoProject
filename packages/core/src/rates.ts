@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { currencyPairs } from '@nemo/db';
-import { Money, type Amount } from '@nemo/types';
+import { MAX_ROUNDING_BPS, Money, withoutDivisionTail, type Amount } from '@nemo/types';
 import type { CoreConfig, Executor } from './context.js';
 import { readServiceSettings } from './settings.js';
 
@@ -76,26 +76,6 @@ function applyMarkup(rate: Amount, markupBps: number): Amount {
 }
 
 /**
- * Насколько округление вправе сдвинуть курс. Двести базисных пунктов —
- * два процента: столько же, сколько нынешняя наценка сервиса.
- */
-const MAX_ROUNDING_BPS = 200;
-
-/**
- * Убрать у числа хвост, оставшийся от деления.
- *
- * Курс мельче единицы хранится как частное, и обратное деление
- * возвращает не 85, а 85,0000000000000012. Округление вверх принимает
- * этот хвост за настоящую дробь и перескакивает на 86 — курс теряет
- * лишний процент, которого никто не закладывал. Девяти знаков хватает:
- * настоящая дробная часть курса крупнее их на порядки, а шум деления
- * мельче.
- */
-function withoutDivisionTail(value: Amount): Amount {
-  return Money.toAmount(Money.format(value, 9));
-}
-
-/**
  * Курс до целого — и клиенту, и менеджеру.
  *
  * Число вида «81,487204 ₽ за 1 USDT» не читается и не проверяется в
@@ -141,6 +121,10 @@ function roundRate(rate: Amount): Amount {
    *
    * Порог совпадает с нынешней наценкой не случайно: округление,
    * превышающее её, увело бы сделку в минус.
+   *
+   * Он же ограничивает показ курса (`readRate` в `@nemo/types`), и
+   * потому живёт там: два предела, разошедшись, дали бы курс, который
+   * ядро оставило дробным, а экран показал целым.
    */
   const shift = Money.subtract(rate, rounded);
   return Money.compare(shift, Money.percentOf(rate, MAX_ROUNDING_BPS)) > 0 ? rate : rounded;

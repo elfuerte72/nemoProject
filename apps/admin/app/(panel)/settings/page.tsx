@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
+import { Moment } from '@/app/ui/moment';
 import { BroadcastForm } from './broadcast-form';
 import { SettingsForms } from './settings-forms';
 
@@ -60,7 +61,10 @@ export default async function SettingsPage() {
             <span className="section__rule" />
           </div>
           {log.length === 0 ? (
-            <p className="empty">Настройки ещё не меняли.</p>
+            <p className="empty">
+              Настройки ещё не меняли. Каждая правка ставок, наценки и счетов встанет сюда —
+              вопрос «почему за эту заявку начислили столько» должен иметь ответ.
+            </p>
           ) : (
             <ul className="rows">
               {log.map((entry) => (
@@ -72,7 +76,7 @@ export default async function SettingsPage() {
                     </span>
                   </div>
                   <span className="row__meta">
-                    {new Date(entry.createdAt).toLocaleString('ru-RU')}
+                    <Moment at={new Date(entry.createdAt).toISOString()} />
                   </span>
                 </li>
               ))}
@@ -88,7 +92,10 @@ export default async function SettingsPage() {
       return (
         <main className="page">
           <h1 className="page__title">Настройки</h1>
-          <p className="empty">Раздел доступен только администратору.</p>
+          <p className="empty">
+            Раздел доступен только администратору: здесь задаются ставки, наценка и доступ
+            сотрудников. Если он нужен вам по работе — попросите администратора.
+          </p>
         </main>
       );
     }

@@ -11,8 +11,10 @@ import type {
 } from '@nemo/core';
 import { canTransition, type ExchangeRequestStatus } from '@nemo/types';
 import { ClientCard, type ClientCardData } from '@/app/ui/client-card';
+import { HowToRunRequest } from '@/app/ui/how-to';
+import { Moment } from '@/app/ui/moment';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
-import { formatAmount, formatMoney } from '@/lib/format';
+import { formatAmount, formatMoney, formatRate } from '@/lib/format';
 import { suggestServiceIncome } from '@/lib/income';
 import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
 
@@ -191,7 +193,11 @@ export function ExchangeRequestCard({
           <p className="page__sub">
             {KIND_LABELS[request.kind]}
             {request.toAmount && request.requestRate
-              ? ` · клиент видел эту сумму при подаче, по курсу ${formatAmount(request.requestRate)}`
+              ? ` · клиент видел эту сумму при подаче, по курсу ${formatRate(
+                  request.requestRate,
+                  request.fromCode,
+                  request.toCode,
+                )}`
               : ''}
           </p>
         </div>
@@ -206,10 +212,14 @@ export function ExchangeRequestCard({
         </p>
       ) : undefined}
 
-      <div className="split">
+      <div className="split split--work">
         <div className="split__main">
       {!mine && request.assignedManagerId ? (
-        <p className="empty">Заявку ведёт другой менеджер — действия закрыты.</p>
+        <p className="empty">
+          Заявку ведёт {request.assignedManagerName ?? 'другой менеджер'} — действия по ней
+          закрыты. Читать её можно: если клиент написал вам, ответьте в переписке, а вести
+          сделку останется тому, кто её взял.
+        </p>
       ) : undefined}
 
       {/* Только то, что решено. Пустых строк «курс: —» на экране нет. */}
@@ -219,14 +229,14 @@ export function ExchangeRequestCard({
           <ul className="rows">
             {request.finalRate ? (
               <Fact label="Курс сделки">
-                {formatAmount(request.finalRate)}
+                {formatRate(request.finalRate, request.fromCode, request.toCode)}
                 {request.toAmount
                   ? ` · к выдаче ${formatMoney(request.toAmount, request.toCode)}`
                   : ''}
               </Fact>
             ) : undefined}
             {request.serviceIncome ? (
-              <Fact label="Доход по заявке">
+              <Fact label="Сколько заработал сервис">
                 {formatMoney(request.serviceIncome, request.serviceIncomeCode ?? '')}
               </Fact>
             ) : undefined}
@@ -337,7 +347,9 @@ export function ExchangeRequestCard({
             {request.requestRate ? (
               <div className="field">
                 <span className="label">Курс заявки</span>
-                <span className="row__title mono">{formatAmount(request.requestRate)}</span>
+                <span className="row__title mono">
+                  {formatRate(request.requestRate, request.fromCode, request.toCode)}
+                </span>
               </div>
             ) : (
               <label className="field">
@@ -394,6 +406,7 @@ export function ExchangeRequestCard({
                 {accounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {describeServiceAccount(account)}
+                    {account.note ? ` · ${account.note}` : ''}
                   </option>
                 ))}
               </select>
@@ -476,7 +489,7 @@ export function ExchangeRequestCard({
           <h2 className="card__title">Исполнение заявки</h2>
           <p className="card__note">
             Сколько сервис заработал на этой заявке. От этого числа начисляются баллы
-            пригласившему клиента, и поправить его потом нельзя — заявку закрывают
+            рефереру клиента, и поправить его потом нельзя — заявку закрывают
             один раз.
           </p>
           <div className="form-row">
@@ -570,6 +583,21 @@ export function ExchangeRequestCard({
         </section>
       ) : undefined}
 
+        </div>
+
+        <ClientCard
+          clientId={request.clientId}
+          client={client}
+          conversationHref={`/conversations/${request.clientId}?request=${request.id}`}
+        />
+      </div>
+
+      {/*
+        Памятка — в конце работы, а не в начале: сверху то, что делают
+        сейчас, а справка нужна тому, кто на шаге запнулся.
+      */}
+      <HowToRunRequest />
+
       <section className="section">
         <div className="section__head">
           <h2 className="section__title">История</h2>
@@ -585,19 +613,20 @@ export function ExchangeRequestCard({
                 </span>
                 {event.comment ? <span className="row__meta">{event.comment}</span> : undefined}
               </div>
-              <span className="row__meta">{new Date(event.createdAt).toLocaleString('ru-RU')}</span>
+              {/*
+                Время печатает браузер, а не сервер: панель рисуется на
+                сервере, а он живёт в UTC. Тот же компонент, что и в
+                очереди, — два формата одного и того же в одной панели
+                читаются как две разные величины.
+              */}
+              <span className="row__meta">
+                <Moment at={new Date(event.createdAt).toISOString()} />
+              </span>
             </li>
           ))}
         </ul>
       </section>
-        </div>
 
-        <ClientCard
-          clientId={request.clientId}
-          client={client}
-          conversationHref={`/conversations/${request.clientId}?request=${request.id}`}
-        />
-      </div>
     </main>
   );
 }

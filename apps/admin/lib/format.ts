@@ -1,3 +1,5 @@
+import { Money, sayRate } from '@nemo/types';
+
 /**
  * Суммы для человека.
  *
@@ -30,6 +32,23 @@ export function formatAmount(value: string): string {
 /** Сумма с кодом валюты — так, как она читается вслух. */
 export function formatMoney(value: string, code: string): string {
   return `${formatAmount(value)} ${code}`;
+}
+
+/**
+ * Курс — той же формулировкой, что видит клиент: «81 RUB за 1 USDT».
+ *
+ * Голым числом он не читается: «Курс сделки: 81» заставляет менеджера
+ * догадываться, что означает восемьдесят один, а перевёрнутый курс
+ * валют выдачи — доллара, евро — не опознаётся вовсе. Менеджер сверяет
+ * своё число с тем, которое видел клиент, и называть его надо так же.
+ *
+ * Какая сторона называется, каким числом и какими словами, решает
+ * `sayRate` из `@nemo/types` — одно правило на панель, приложение и
+ * бота. Здесь остаётся только вид числа: панель показывает все значащие
+ * знаки, клиент обрезает хвост на восьмом.
+ */
+export function formatRate(rate: string, fromCode: string, toCode: string): string {
+  return sayRate(Money.toAmount(rate), fromCode, toCode, formatAmount);
 }
 
 /**
