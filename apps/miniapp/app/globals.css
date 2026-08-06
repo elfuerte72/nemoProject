@@ -1656,6 +1656,19 @@ button.tile:hover {
   color: var(--text-muted);
 }
 
+/*
+ * Ставка линии — под числом приглашённых, медью. Она и есть ответ на
+ * единственный вопрос к реферальной программе: сколько за это платят.
+ */
+.split__rate {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--gold-light);
+  text-wrap: pretty;
+}
+
 /* ── Карта ───────────────────────────────────────────────────────── */
 
 .plastic {

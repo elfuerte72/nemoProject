@@ -5,7 +5,13 @@ import type { BonusAccountView, ClientView, RequisitesView, WithdrawalRequestVie
 import { requisiteKinds } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { referralLink } from '@/lib/referral';
-import { describeRequisites, formatAmount, formatMonth, parseAmount } from '@/lib/format';
+import {
+  describeRequisites,
+  formatAmount,
+  formatBps,
+  formatMonth,
+  parseAmount,
+} from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { getTelegramUser, openTelegram, supportLink } from '@/lib/telegram/webapp';
 import { CardIcon, ChevronRight, InviteIcon, SupportIcon, WithdrawIcon } from './ui/icons';
@@ -190,15 +196,23 @@ export function ProfileSection({
         </button>
       </div>
 
+      {/*
+        Сколько привёл и по какой ставке. Ставка стоит рядом с числом
+        приглашённых, а не в тексте где-то ниже: без неё в этой плашке
+        два числа, которые ни о чём не говорят, — а вопрос к
+        реферальной программе один, «сколько мне за это платят».
+      */}
       <div className="split">
         <div className="split__cell">
           <div className="split__value">{account.line1Count}</div>
           <div className="split__label">первая линия</div>
+          <div className="split__rate">{formatBps(account.line1Bps)} с их обменов</div>
         </div>
         <div className="split__rule" />
         <div className="split__cell">
           <div className="split__value">{account.line2Count}</div>
           <div className="split__label">вторая линия</div>
+          <div className="split__rate">{formatBps(account.line2Bps)} с их обменов</div>
         </div>
       </div>
 
@@ -274,10 +288,21 @@ export function ProfileSection({
 
       {sheet?.kind === 'invite' ? (
         <Sheet title="Пригласить" onClose={() => setSheet(undefined)}>
+          {/*
+            Условия названы числами, а не «процентом» вообще: программа,
+            в которой не видно ставки, не работает — звать знакомых, не
+            зная, сколько за это платят, никто не станет.
+
+            База начисления названа тоже. Процент считается от дохода
+            сервиса по заявке, а не от её суммы (docs/adr/0003), и клиент,
+            прочитавший «5% с обмена», ждал бы пять процентов от
+            обменянного миллиона.
+          */}
           <p className="sheet__body">
-            Отправьте свою ссылку в любой чат. Как только приглашённый сделает первый обмен, вам
-            начислятся баллы — и половина этого же процента пойдёт с обменов тех, кого приведёт
-            он.
+            Отправьте свою ссылку в любой чат. Когда приглашённый обменяет — вам начислится{' '}
+            {formatBps(account.line1Bps)} того, что сервис заработал на его заявке. С обменов
+            тех, кого приведёт он, начисляется {formatBps(account.line2Bps)}. Баллы выводятся
+            деньгами на любой из ваших реквизитов.
           </p>
           {link ? (
             <>

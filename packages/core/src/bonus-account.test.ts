@@ -146,6 +146,23 @@ describe('размер сети', () => {
   });
 });
 
+describe('ставки линий', () => {
+  it('отдаются клиенту: программа без названной ставки не работает', async () => {
+    await givenClient(1n);
+
+    const account = await core.getBonusAccount(asClient(1n));
+
+    // Те самые, по которым начисляет ядро, — из настроек сервиса, а не
+    // числом в приложении: разойдясь, они пообещали бы клиенту не то,
+    // что он получит.
+    const settings = await core.getServiceSettings(await givenStaff({ role: 'admin' }));
+    expect({ line1: account.line1Bps, line2: account.line2Bps }).toEqual({
+      line1: settings.referralLine1Bps,
+      line2: settings.referralLine2Bps,
+    });
+  });
+});
+
 describe('реферальная ссылка', () => {
   it('отдаётся клиенту его собственная', async () => {
     const code = await givenClient(1n);

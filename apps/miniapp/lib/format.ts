@@ -165,6 +165,18 @@ export function formatMonth(value: Date | string): string {
   return `${MONTHS_OF[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+/**
+ * Ставка в процентах: сервис хранит её целыми базисными пунктами.
+ *
+ * Своя, а не общая с панелью администратора: там это значение для поля
+ * ввода — «2.5», — а здесь строка в предложении, где дробная часть
+ * отделяется запятой и за числом стоит знак процента.
+ */
+export function formatBps(bps: number): string {
+  const percent = Math.round(bps) / 100;
+  return `${String(percent).replace('.', ',')}%`;
+}
+
 /** Короткий номер заявки: полный идентификатор клиенту не нужен. */
 export function shortId(id: string): string {
   return `№ ${id.slice(0, 6)}`;
