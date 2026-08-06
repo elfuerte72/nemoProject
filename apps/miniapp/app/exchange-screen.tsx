@@ -668,7 +668,14 @@ export function ExchangeScreen({
     // Отменить можно, только пока заявку не взяли: дальше в работе
     // участвует менеджер, и бросить её на полпути клиент уже не может.
     if (active.status === 'new') {
-      actions.push({ label: 'Отменить', run: () => setSheet({ kind: 'cancel' }) });
+      actions.push({
+        label: 'Отменить',
+        run: () => {
+          // Как и у подачи: отказ прошлой попытки к новой не относится.
+          setError(undefined);
+          setSheet({ kind: 'cancel' });
+        },
+      });
     }
   }
 

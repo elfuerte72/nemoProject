@@ -69,6 +69,20 @@ export function Sheet({
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const grip = useRef<HTMLDivElement>(null);
+  /*
+   * Закрытие — за ссылкой, а не в зависимостях.
+   *
+   * Обработчик приходит новой функцией при каждом рендере того, кто лист
+   * открыл, а рендерится он сам по себе: экран обмена перечитывает
+   * заявку каждые двадцать секунд и курс каждые тридцать. Опиши мы
+   * зависимость честно — оба эффекта снимались бы и вставали заново по
+   * этому таймеру, а вместе с ними возвращался бы фокус «тому, кто
+   * открыл»: набирающий реквизиты терял бы поле посреди слова.
+   */
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  });
 
   useEffect(() => {
     const node = panel.current;
@@ -87,7 +101,7 @@ export function Sheet({
       if (depth !== openSheets) return;
 
       if (event.key === 'Escape') {
-        onClose();
+        close.current();
         return;
       }
       /*
@@ -132,7 +146,7 @@ export function Sheet({
      */
     const back = getWebApp()?.BackButton;
     const goBack = () => {
-      if (depth === openSheets) onClose();
+      if (depth === openSheets) close.current();
     };
     try {
       back?.onClick(goBack);
@@ -160,7 +174,7 @@ export function Sheet({
       if (openSheets === 0) document.body.classList.remove('sheet-open');
       if (opener instanceof HTMLElement) opener.focus();
     };
-  }, [onClose]);
+  }, []);
 
   /*
    * Потяг вниз за полоску.
@@ -225,7 +239,7 @@ export function Sheet({
         // Лист уходит за нижний край и только потом снимается: исчезнуть
         // на полпути — значит мигнуть там, где ждут движения.
         node.style.transform = `translate3d(0, ${node.offsetHeight}px, 0)`;
-        settling = setTimeout(onClose, DRAG_SETTLE_MS);
+        settling = setTimeout(() => close.current(), DRAG_SETTLE_MS);
         return;
       }
       // Не дотянули — лист возвращается на место сам.
@@ -265,7 +279,7 @@ export function Sheet({
       handle.removeEventListener('pointerup', up);
       handle.removeEventListener('pointercancel', cancel);
     };
-  }, [onClose]);
+  }, []);
 
   const markup = (
     <div
@@ -353,7 +367,13 @@ export function ConfirmSheet({
   readonly onClose: () => void;
 }) {
   return (
-    <Sheet title={title} onClose={onClose}>
+    /*
+      Пока операция идёт, лист не закрывается ничем — ни крестиком, ни
+      промахом, ни потягом, ни клавишей. Закрытый на полпути, он оставил
+      бы клиента без ответа о том, что случилось с необратимым действием,
+      которое он только что подтвердил.
+    */
+    <Sheet title={title} onClose={busy ? () => {} : onClose}>
       <p className="sheet__body">{body}</p>
       {error ? <p className="error">{error}</p> : undefined}
       <div className="sheet__actions">
