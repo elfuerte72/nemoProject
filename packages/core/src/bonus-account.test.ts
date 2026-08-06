@@ -96,7 +96,7 @@ describe('заработанное за всё время', () => {
     const card = await core.saveRequisites(asClient(1n), {
       kind: 'card',
       bankName: 'Сбербанк',
-      cardNumber: '40817810099910004312',
+      cardNumber: '4081781009991000',
     });
     const { request } = await core.submitWithdrawalRequest(asClient(1n), {
       amount: '1000',

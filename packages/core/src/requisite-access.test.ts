@@ -174,7 +174,7 @@ describe('чтение реквизитов вывода', () => {
     const card = await core.saveRequisites(asClient(200n), {
       kind: 'card',
       bankName: 'Сбербанк',
-      cardNumber: '40817810099910004312',
+      cardNumber: '4081781009991000',
     });
     const { request: withdrawal } = await core.submitWithdrawalRequest(asClient(200n), {
       amount: '5000',

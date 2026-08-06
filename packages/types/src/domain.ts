@@ -147,6 +147,78 @@ export function requisiteKindSuits(kind: RequisiteKind, currency: CurrencyKind):
 }
 
 /**
+ * Проверки реквизита на правдоподобие.
+ *
+ * Не на подлинность: существует ли карта и чей это кошелёк, знает только
+ * банк и сеть. Ловится другое — опечатка: переставленные цифры,
+ * недобитый до конца адрес, номер телефона вместо номера карты. Этого
+ * достаточно, потому что цена ошибки здесь — перевод, который не
+ * возвращается.
+ *
+ * Правила живут в доменных типах, а не в форме: форма не единственный
+ * способ создать запись, и отказывает всё равно операция. Экран
+ * повторяет их, чтобы сказать об ошибке до сохранения, а не после.
+ */
+
+/**
+ * Номер карты — по контрольной сумме Луна.
+ *
+ * Ею проверяются все платёжные карты, и одна переставленная пара цифр
+ * её не проходит. Длина от тринадцати до девятнадцати — весь диапазон
+ * стандарта, от старых Visa до Maestro.
+ */
+export function looksLikeCardNumber(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 13 || digits.length > 19) return false;
+
+  let sum = 0;
+  let double = false;
+  for (let at = digits.length - 1; at >= 0; at -= 1) {
+    let digit = digits.charCodeAt(at) - 48;
+    if (double) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    double = !double;
+  }
+  return sum % 10 === 0;
+}
+
+/**
+ * Телефон — по числу цифр.
+ *
+ * Формат не проверяется: у сервиса клиенты в разных странах, и
+ * российская маска отвергла бы тайский номер. Десять цифр — короткий
+ * национальный номер, пятнадцать — потолок международного стандарта.
+ */
+export function looksLikePhone(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15;
+}
+
+/**
+ * Форма адреса в известных сетях.
+ *
+ * Сеть, которой здесь нет, проверку проходит: справочник ведёт
+ * администратор, и запрет на всё незнакомое означал бы, что заведённая
+ * им сеть не работает, пока её не впишут в код.
+ *
+ * TRC20 — тридцать четыре знака base58 от буквы «T». TON — сорок восемь
+ * знаков base64url в дружественном виде или «рабочая цепочка: шестьдесят
+ * четыре шестнадцатеричных» в сыром.
+ */
+const WALLET_ADDRESS_FORMS: Readonly<Record<string, RegExp>> = {
+  TRC20: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
+  TON: /^(?:[A-Za-z0-9_-]{48}|-?\d+:[0-9a-fA-F]{64})$/,
+};
+
+export function looksLikeWalletAddress(network: string, address: string): boolean {
+  const form = WALLET_ADDRESS_FORMS[network.toUpperCase()];
+  return form ? form.test(address.trim()) : address.trim().length > 0;
+}
+
+/**
  * Состояния заявки на карту. Сервис карту не выпускает — статусы
  * отражают то, что сообщил внешний провайдер (см. docs/adr/0004).
  */
