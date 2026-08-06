@@ -128,6 +128,25 @@ export function HotelIcon({ size = 20 }: IconProps) {
   );
 }
 
+/**
+ * Круг из двух стрелок — подписка: то, что списывается снова каждый
+ * месяц. Не карта и не корзина: платит здесь не сервис и не клиент
+ * разово, а подписка продлевается сама.
+ */
+export function SubscriptionIcon({ size = 20 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20 12a8 8 0 0 1-13.7 5.6M4 12a8 8 0 0 1 13.7-5.6M17.5 3.2v3.4h-3.4M6.5 20.8v-3.4h3.4"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Корзина: покупка в чужом магазине узнаётся по ней везде. */
 export function CartIcon({ size = 20 }: IconProps) {
   return (
