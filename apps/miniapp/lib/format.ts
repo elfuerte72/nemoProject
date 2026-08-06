@@ -21,7 +21,7 @@ const GROUP_SEPARATOR = '\u202F';
  * никто: хранение допускает восемнадцать, но такой хвост — свойство
  * арифметики, а не сумма, которую человек различает.
  */
-const MAX_FRACTION_DIGITS = 8;
+export const MAX_FRACTION_DIGITS = 8;
 
 /** Сумма для показа: `1234.5000` → `1 234,5`, `100.000000` → `100`. */
 export function formatAmount(value: string): string {

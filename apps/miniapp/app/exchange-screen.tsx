@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ClientCardApplicationView,
   ExchangeRequestView,
@@ -31,6 +31,7 @@ import {
   formatAmount,
   formatMoney,
   formatRate,
+  MAX_FRACTION_DIGITS,
   normalizeTyped,
   parseAmount,
   shortId,
@@ -113,7 +114,17 @@ export function ExchangeScreen({
   const [fromCode, setFromCode] = useState('');
   const [toCode, setToCode] = useState('');
   const [kind, setKind] = useState<ExchangeKind>('electronic');
-  const [amount, setAmount] = useState('');
+  /**
+   * В какое поле клиент вводит. Второе считается по курсу.
+   *
+   * Сторона нужна, потому что вопросов у клиента два и они не сводятся
+   * друг к другу: «сколько дадут за мои сто USDT» и «сколько USDT нужно,
+   * чтобы вышло ровно пятьдесят тысяч». Второй у обменника звучит не
+   * реже первого — им приходят за суммой брони, счёта или билета.
+   */
+  const [side, setSide] = useState<'give' | 'get'>('give');
+  /** Набранное клиентом — в том поле, которое он выбрал. */
+  const [typed, setTyped] = useState('');
   /**
    * Ответ о курсе вместе с направлением, на которое его спрашивали.
    *
@@ -358,22 +369,96 @@ export function ExchangeScreen({
   }, [kind, fromCode, toCode, pairKey]);
 
   /**
-   * Сколько клиент получит. Считается здесь же, без обращения к
-   * серверу: курс уже известен, а `Money` общая с ядром — значит и
-   * округление, и точность те же самые.
+   * Обе стороны сделки числами. Считается та, в которую не вводят.
+   *
+   * Без обращения к серверу: курс уже известен, а `Money` общая с
+   * ядром — значит и округление, и точность те же самые.
    */
-  const toAmount = useMemo(() => {
-    if (!rate) return null;
-    const parsed = Money.amountSchema.safeParse(parseAmount(amount));
-    if (!parsed.success || Money.isNegative(parsed.data)) return null;
+  const sides = useMemo<{
+    readonly give: Amount | null;
+    readonly get: Amount | null;
+  }>(() => {
+    const parsed = Money.amountSchema.safeParse(parseAmount(typed));
+    // Пока в поле не число — сторон нет ни одной: ни считать по нему,
+    // ни подавать заявку нельзя.
+    if (!parsed.success || Money.isNegative(parsed.data)) return { give: null, get: null };
+    const value = parsed.data;
+
+    if (side === 'give') {
+      /*
+       * Вниз до целого — тем же правилом, что и `roundPayout` в ядре.
+       * Своей копией, а не импортом: за `@nemo/core` в браузер приехал
+       * бы драйвер базы. Разойтись они не должны, и проверяет это не
+       * типаж, а то, что обе стороны считают одной и той же `Money`.
+       */
+      return { give: value, get: rate ? Money.floor(Money.multiply(value, rate.rate)) : null };
+    }
+
     /*
-     * Вниз до целого — тем же правилом, что и `roundPayout` в ядре.
-     * Своей копией, а не импортом: за `@nemo/core` в браузер приехал бы
-     * драйвер базы. Разойтись они не должны, и проверяет это не типаж, а
-     * то, что обе стороны считают одной и той же `Money`.
+     * Обратный счёт округляется вверх, и притом до того же знака, до
+     * какого сумма показывается. Отброшенный вниз хвост возвращается
+     * умножением на курс как недостача: клиент просил пятьдесят тысяч,
+     * а ядро, считая выдачу вниз до целого, записало бы 49 999.
      */
-    return Money.floor(Money.multiply(parsed.data, rate.rate));
-  }, [rate, amount]);
+    if (!rate || Money.isZero(rate.rate)) return { give: null, get: value };
+    return {
+      give: Money.divideCeil(value, rate.rate, MAX_FRACTION_DIGITS),
+      get: value,
+    };
+  }, [typed, side, rate]);
+
+  /**
+   * Последняя посчитанная отдаваемая сумма.
+   *
+   * Нужна на случай, когда курс уходит из-под уже набранного «получаю»:
+   * клиент переключился на наличные или замолчал источник котировок.
+   * Считать обратно тогда нечем, и поле должно сохранить смысл, а не
+   * цифру — иначе «получаю 50 000 рублей» превратится в «отдаю 50 000
+   * USDT».
+   */
+  const lastGive = useRef('');
+  useEffect(() => {
+    if (sides.give) lastGive.current = formatAmount(sides.give);
+  }, [sides.give]);
+
+  useEffect(() => {
+    // Только на явном отсутствии курса: `undefined` значит «ответ ещё
+    // не пришёл», и сбрасывать по нему сторону — значит отбирать поле у
+    // клиента на каждой смене валюты.
+    if (side === 'get' && rate === null) {
+      setSide('give');
+      setTyped(lastGive.current);
+    }
+  }, [side, rate]);
+
+  /** Что показать в поле: набранное — как набрано, посчитанное — с разрядами. */
+  function shown(which: 'give' | 'get'): string {
+    if (side === which) return typed;
+    const value = sides[which];
+    return value ? formatAmount(value) : '';
+  }
+
+  /**
+   * Набор строки суммы. Обратный счёт даёт восемь знаков после запятой,
+   * и в тот же кегль, что «100», такое число не помещается — обрезанное
+   * же оно говорит клиенту неправду о том, сколько отдавать.
+   */
+  function amountClass(value: string): string {
+    if (value.length > 13) return 'calc__amount calc__amount--tiny';
+    if (value.length > 9) return 'calc__amount calc__amount--small';
+    return 'calc__amount';
+  }
+
+  /** Набор в поле делает его тем, по которому считают встречное. */
+  function type(which: 'give' | 'get', value: string) {
+    setSide(which);
+    setTyped(value);
+  }
+
+  /** Разряды по окончании набора — только там, где набирали. */
+  function settleTyped(which: 'give' | 'get') {
+    if (side === which) setTyped(normalizeTyped(typed));
+  }
 
   /** Развернуть направление можно, только если обратное вообще меняют. */
   const canSwap = pairs.some((pair) => pair.fromCode === toCode && pair.toCode === fromCode);
@@ -386,6 +471,12 @@ export function ExchangeScreen({
   }
 
   async function submit() {
+    // Отданная сторона и есть заявка: при вводе с обратной стороны она
+    // посчитана делением вверх — по ней ядро вернёт ровно ту сумму
+    // получения, которую клиент назвал.
+    const fromAmount = sides.give;
+    if (!fromAmount) return;
+
     setError(undefined);
     setBusy(true);
     try {
@@ -393,7 +484,7 @@ export function ExchangeScreen({
         kind,
         fromCode,
         toCode,
-        fromAmount: parseAmount(amount),
+        fromAmount,
         // Отметка курса, который клиент сейчас видит на экране: по нему
         // заявка и уйдёт. Без неё ядро спросило бы курс заново, и между
         // взглядом и нажатием он успел бы обновиться. Отметка чужого
@@ -404,7 +495,8 @@ export function ExchangeScreen({
         ...(kind === 'electronic' && selected ? { requisitesId: selected } : {}),
       });
       setRequests((current) => [created.request, ...current]);
-      setAmount('');
+      setSide('give');
+      setTyped('');
       setSheet({ kind: 'notice', ...SUBMITTED });
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на обмен');
@@ -489,7 +581,7 @@ export function ExchangeScreen({
       (fromCode === terms.minAmountCode || (toCode === terms.minAmountCode && rate)),
   );
   const measured = terms
-    ? thresholdSide(terms.minAmountCode, { fromCode, toCode }, amount, toAmount)
+    ? thresholdSide(terms.minAmountCode, { fromCode, toCode }, sides)
     : null;
   const belowMinimum = Boolean(
     terms && measured && Money.compare(measured, terms.minAmount) < 0,
@@ -499,7 +591,11 @@ export function ExchangeScreen({
     !busy &&
     Boolean(fromCode) &&
     Boolean(toCode) &&
-    Boolean(amount.trim()) &&
+    // Отданная сторона посчитана — значит в поле число, а не набранный
+    // по дороге мусор: заявка, которую сервер отвергнет разбором, не
+    // должна доходить до отправки.
+    sides.give !== null &&
+    !Money.isZero(sides.give) &&
     !belowMinimum &&
     // Пока ответ о курсе не пришёл, подавать нечего: на экране в этот
     // момент нет ни курса, ни суммы получения, а заявка ушла бы без
@@ -536,16 +632,17 @@ export function ExchangeScreen({
               <div className="eyebrow">Отдаю</div>
               <div key={`give-${swaps}`} className={swaps ? 'calc__line calc__line--give' : 'calc__line'}>
                 <input
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
+                  value={shown('give')}
+                  onChange={(event) => type('give', event.target.value)}
                   // Разряды расставляются, когда человек закончил
                   // набирать: делать это на каждый символ значит гонять
-                  // курсор по строке под пальцем.
-                  onBlur={() => setAmount(normalizeTyped(amount))}
+                  // курсор по строке под пальцем. И только в том поле,
+                  // где набирают: второе уже показано посчитанным.
+                  onBlur={() => settleTyped('give')}
                   inputMode="decimal"
                   placeholder="0"
                   aria-label="Сумма к обмену"
-                  className="calc__amount"
+                  className={amountClass(shown('give'))}
                 />
                 <CurrencyPicker
                   label="Что отдаёте"
@@ -596,11 +693,23 @@ export function ExchangeScreen({
             <div className="calc__get">
               <div className="eyebrow">Получаю</div>
               <div key={`get-${swaps}`} className={swaps ? 'calc__line calc__line--get' : 'calc__line'}>
-                <div
-                  className={toAmount ? 'calc__amount' : 'calc__amount calc__amount--empty'}
-                >
-                  {toAmount ? formatAmount(toAmount) : '0'}
-                </div>
+                {/*
+                  Тоже поле ввода, а не подпись: сумму получения называют
+                  так же часто, как отданную, — по счёту за отель, по
+                  цене билета, по броне. Пока курса нет, считать обратно
+                  нечем, и поле только показывает: набирать в нём
+                  означало бы обещать пересчёт, которого не будет.
+                */}
+                <input
+                  value={shown('get')}
+                  onChange={(event) => type('get', event.target.value)}
+                  onBlur={() => settleTyped('get')}
+                  readOnly={!rate}
+                  inputMode="decimal"
+                  placeholder="0"
+                  aria-label="Сумма к получению"
+                  className={amountClass(shown('get'))}
+                />
                 <CurrencyPicker
                   label="Что хотите получить"
                   codes={toCodes}
@@ -857,16 +966,10 @@ export function ExchangeScreen({
 function thresholdSide(
   thresholdCode: string,
   direction: { fromCode: string; toCode: string },
-  amount: string,
-  toAmount: Amount | null,
+  sides: { readonly give: Amount | null; readonly get: Amount | null },
 ): Amount | null {
-  if (direction.fromCode === thresholdCode) {
-    // Введённое человеком проверяется той же схемой, что и на сервере:
-    // до первой цифры и на полпути к ней в поле лежит не число.
-    const typed = Money.amountSchema.safeParse(parseAmount(amount));
-    return typed.success ? typed.data : null;
-  }
-  if (direction.toCode === thresholdCode) return toAmount;
+  if (direction.fromCode === thresholdCode) return sides.give;
+  if (direction.toCode === thresholdCode) return sides.get;
   return null;
 }
 
