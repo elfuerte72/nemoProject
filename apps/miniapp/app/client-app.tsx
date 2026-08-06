@@ -119,6 +119,47 @@ const IDLE_FALLBACK_MS = 1500;
 const SPLASH_HOLD_MS = 2500;
 
 /**
+ * Сколько заставка держится, когда приветствие уже было сегодня.
+ *
+ * Приветствие — про знакомство: клиент должен узнать талисмана и понять,
+ * куда попал. Узнавать его заново на каждом открытии не нужно, а
+ * открывают Mini App по многу раз в день — и часто затем, чтобы взглянуть
+ * на статус заявки. Две с половиной секунды на такой заход — налог,
+ * который платят все и ни за что.
+ *
+ * Совсем убрать её нельзя: под ней собирается первый экран, и без
+ * заставки вход начинался бы с «загружаем направления обмена». Полсекунды
+ * — столько, чтобы переход не мигнул, и не столько, чтобы его заметили.
+ */
+const SPLASH_BRIEF_MS = 600;
+
+/** Как часто клиента приветствуют полностью. */
+const GREETING_EVERY_MS = 24 * 60 * 60 * 1000;
+
+/** Где записано, когда здоровались в прошлый раз. */
+const GREETED_AT_KEY = 'tobee:greeted-at';
+
+/**
+ * Здоровались ли с клиентом за последние сутки — и отметка о том, что
+ * здороваемся сейчас.
+ *
+ * Память браузера, а не облако Telegram: отметка ничего не стоит и
+ * ничего не значит за пределами этого устройства. Недоступная память —
+ * рабочий случай (приватный режим, запрет хранилища), и тогда клиент
+ * просто получает полное приветствие каждый раз: это его прежнее
+ * поведение, а не поломка.
+ */
+function greetedRecently(): boolean {
+  try {
+    const seen = Number(window.localStorage.getItem(GREETED_AT_KEY));
+    window.localStorage.setItem(GREETED_AT_KEY, String(Date.now()));
+    return Number.isFinite(seen) && seen > 0 && Date.now() - seen < GREETING_EVERY_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Сколько заставка ждёт первый экран, прежде чем уйти без него.
  *
  * У запросов нет срока, и зависший ответ держал бы приветствие до
@@ -182,6 +223,8 @@ export function ClientApp() {
   const [error, setError] = useState<string>();
   /** Отстояла ли заставка свой срок. */
   const [greeted, setGreeted] = useState(false);
+  /** Здоровались сегодня — приветствие короткое и без очереди появления. */
+  const [brief, setBrief] = useState(false);
   /** Вышло ли время, которое заставка ждёт первый экран. */
   const [waited, setWaited] = useState(false);
   /**
@@ -249,7 +292,13 @@ export function ClientApp() {
     greeted && (screenReady || Boolean(error) || stalled || (Boolean(client) && waited));
 
   useEffect(() => {
-    const hold = setTimeout(() => setGreeted(true), SPLASH_HOLD_MS);
+    // Отметка ставится здесь же, в браузере: спрошенная при сборке
+    // разметки, она разошлась бы с серверной и уронила гидрацию. По той
+    // же причине заставка первым кадром всегда полная — короткой она
+    // становится сразу за ним, до того как что-либо успеет появиться.
+    const recently = greetedRecently();
+    setBrief(recently);
+    const hold = setTimeout(() => setGreeted(true), recently ? SPLASH_BRIEF_MS : SPLASH_HOLD_MS);
     const limit = setTimeout(() => setWaited(true), SPLASH_LIMIT_MS);
     return () => {
       clearTimeout(hold);
@@ -645,7 +694,7 @@ export function ClientApp() {
         оканчивалось бы строкой «загружаем», то есть ровно тем, от чего
         оно и прикрывает.
       */}
-      {greetingOver ? undefined : <Splash />}
+      {greetingOver ? undefined : <Splash brief={brief} />}
 
       {/*
         Под открытой клавиатурой панель садится ей на крышку и закрывает
