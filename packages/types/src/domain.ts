@@ -167,7 +167,16 @@ export function requisiteKindSuits(kind: RequisiteKind, currency: CurrencyKind):
  * её не проходит. Длина от тринадцати до девятнадцати — весь диапазон
  * стандарта, от старых Visa до Maestro.
  */
+/**
+ * Чем человек разделяет цифры, набирая номер: пробел, дефис, скобки,
+ * плюс кода страны. Всё остальное в номере — не разделитель, а чужой
+ * знак: «карта 4111…» и «+7 900…», вписанные в поле карты, проходили
+ * проверку, потому что буквы просто отбрасывались вместе с пробелами.
+ */
+const NUMBER_NOISE = /^[\d\s()+.-]+$/;
+
 export function looksLikeCardNumber(value: string): boolean {
+  if (!NUMBER_NOISE.test(value)) return false;
   const digits = value.replace(/\D/g, '');
   if (digits.length < 13 || digits.length > 19) return false;
 
@@ -193,6 +202,7 @@ export function looksLikeCardNumber(value: string): boolean {
  * национальный номер, пятнадцать — потолок международного стандарта.
  */
 export function looksLikePhone(value: string): boolean {
+  if (!NUMBER_NOISE.test(value)) return false;
   const digits = value.replace(/\D/g, '');
   return digits.length >= 10 && digits.length <= 15;
 }

@@ -30,6 +30,13 @@ describe('looksLikeCardNumber', () => {
   it('отвергает номер телефона на месте карты', () => {
     expect(looksLikeCardNumber('+7 900 123-45-67')).toBe(false);
   });
+
+  it('отвергает номер, окружённый чужими знаками', () => {
+    // Отбрасывать всё нецифровое мало: так проходит и «моя карта
+    // 4111111111111111», и адрес кошелька, в котором нашлись цифры.
+    expect(looksLikeCardNumber('карта 4111111111111111')).toBe(false);
+    expect(looksLikeCardNumber('4111111111111111 (основная)')).toBe(false);
+  });
 });
 
 describe('looksLikePhone', () => {
@@ -44,6 +51,10 @@ describe('looksLikePhone', () => {
     expect(looksLikePhone('123456789')).toBe(false);
     expect(looksLikePhone('1234567890123456')).toBe(false);
     expect(looksLikePhone('')).toBe(false);
+  });
+
+  it('отвергает номер с чужими знаками вокруг', () => {
+    expect(looksLikePhone('телефон +79001234567')).toBe(false);
   });
 });
 

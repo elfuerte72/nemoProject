@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 /**
  * Раздел, которому нечего показать: запрос не дошёл.
  *
@@ -20,11 +22,29 @@ export function Failure({
   readonly message: string;
   readonly onRetry: () => void;
 }) {
+  /**
+   * Повторяем один раз за нажатие.
+   *
+   * Раздел показывает этот вид, пока ему нечего показать, — то есть и во
+   * время самой повторной попытки. Без отметки клиент, не увидевший
+   * мгновенной перемены, нажимал бы снова и снова, и каждое нажатие
+   * заводило бы ещё один запрос.
+   */
+  const [retrying, setRetrying] = useState(false);
+
   return (
     <div className="failure">
       <p className="error">{message}</p>
-      <button type="button" onClick={onRetry} className="btn btn--soft failure__retry">
-        Попробовать снова
+      <button
+        type="button"
+        onClick={() => {
+          setRetrying(true);
+          onRetry();
+        }}
+        disabled={retrying}
+        className="btn btn--soft failure__retry"
+      >
+        {retrying ? 'Пробуем…' : 'Попробовать снова'}
       </button>
     </div>
   );
