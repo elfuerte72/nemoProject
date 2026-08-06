@@ -1147,6 +1147,13 @@ button.rates__head:hover {
   transition: transform 0.42s var(--ease);
 }
 
+/*
+ * Пилюля валюты в строке калькулятора: флаг, код и знак раскрытия.
+ *
+ * Набрана крупно и в полный цвет: это не подпись к сумме, а орган
+ * управления направлением сделки — тот же по весу, что и само число
+ * рядом.
+ */
 .chip {
   flex-shrink: 0;
   display: flex;
@@ -1168,11 +1175,16 @@ button.rates__head:hover {
     transform 0.15s ease;
 }
 
-.chip:hover:not(:disabled) {
+/*
+ * Отзывается только та пилюля, которую можно нажать. Неподвижная
+ * отличается классом, а не тегом: правило, писанное на `button`,
+ * пришлось бы держать в уме при каждой смене разметки.
+ */
+.chip:not(.chip--static):hover:not(:disabled) {
   background: rgba(214, 205, 255, 0.16);
 }
 
-.chip:active:not(:disabled) {
+.chip:not(.chip--static):active:not(:disabled) {
   transform: scale(0.96);
 }
 
@@ -1180,18 +1192,14 @@ button.rates__head:hover {
   cursor: default;
 }
 
-/* Та же пилюля, но без обещания, что на неё нажимают. */
+/*
+ * Та же пилюля, но без обещания, что на неё нажимают: ставится рядом с
+ * `.chip`, а не вместо него, и потому описывает одни отличия. Своей
+ * копией всех свойств она была, пока курсор над ней оставался пальцем —
+ * то самое обещание он и держал.
+ */
 .chip--static {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 15px;
-  border-radius: 999px;
-  background: var(--surface-soft-strong);
-  box-shadow: var(--lift-strong);
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--text);
+  cursor: default;
 }
 
 /* ── Переключатель способа ───────────────────────────────────────── */
@@ -1424,24 +1432,31 @@ button.rates__head:hover {
 /* ── История ─────────────────────────────────────────────────────── */
 
 /*
- * Чипы отбора. Лежат в строку с прокруткой, а не переносятся: перенос
+ * Отбор ленты. Лежит в строку с прокруткой, а не переносится: перенос
  * на узком экране двигал бы ленту вниз при каждом появлении четвёртого
  * чипа, а их число со временем меняется.
+ *
+ * Имя своё, а не общее с пилюлей валюты и с выбором сети: три разные
+ * вещи под одним классом уже разъезжались — последнее правило в файле
+ * молча перекрашивало пилюлю на экране обмена в этот самый отбор.
+ *
+ * Ряд выходит за поля раздела и возвращает их себе отступом: чип у края
+ * должен доезжать до края экрана, иначе прокрутка выглядит обрезанной.
  */
-.chips {
+.filters {
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  margin: 2px -20px 4px;
-  padding: 2px 20px 6px;
+  margin: 2px calc(-1 * var(--gutter)) 4px;
+  padding: 2px var(--gutter) 6px;
   scrollbar-width: none;
 }
 
-.chips::-webkit-scrollbar {
+.filters::-webkit-scrollbar {
   display: none;
 }
 
-.chip {
+.filter {
   flex-shrink: 0;
   padding: 8px 14px;
   border: 1px solid var(--hairline);
@@ -1453,7 +1468,7 @@ button.rates__head:hover {
   cursor: pointer;
 }
 
-.chip[aria-pressed='true'] {
+.filter[aria-pressed='true'] {
   border-color: transparent;
   background: var(--gold-face-soft);
   color: var(--gold-ink);
@@ -1920,6 +1935,11 @@ button.rates__head:hover {
 
 /* ── Выбор одного из многих ──────────────────────────────────────── */
 
+/*
+ * Ряд равнозначных вариантов внутри формы — сети перевода. В отличие от
+ * отбора ленты, переносится: список короткий, лежит в листе, и прокрутка
+ * вбок там читалась бы как продолжение самой формы.
+ */
 .chips {
   display: flex;
   flex-wrap: wrap;

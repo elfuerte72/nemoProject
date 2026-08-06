@@ -136,14 +136,14 @@ export function HistorySection({
 
   return (
     <>
-      <div className="chips" role="group" aria-label="Что показывать">
+      <div className="filters" role="group" aria-label="Что показывать">
         {FILTERS.map(({ id, label }) => (
           <button
             key={id}
             type="button"
             onClick={() => setFilter(id)}
             aria-pressed={filter === id}
-            className="chip"
+            className="filter"
           >
             {label}
           </button>
