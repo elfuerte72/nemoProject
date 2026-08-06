@@ -1930,6 +1930,53 @@ button.tile:hover {
   margin-top: 0;
 }
 
+/* ── Сводка перед подачей ────────────────────────────────────────── */
+
+/*
+ * Что клиент подтверждает: стороны сделки, курс, способ и куда придут
+ * деньги. Подпись слева приглушена, значение справа в полный цвет —
+ * сверяют значения, а подписи только называют, что именно сверяют.
+ *
+ * Суммы набраны крупнее прочего: ошибиться можно в любой строке, но
+ * дорого — только в них.
+ */
+.summary {
+  margin-top: 18px;
+}
+
+.summary__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.summary__row:first-child {
+  border-top: none;
+}
+
+.summary__label {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.summary__value {
+  font-size: 14.5px;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.summary__value--strong {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Выбор одного из многих ──────────────────────────────────────── */
 
 /*

@@ -82,6 +82,7 @@ const SUBMITTED = {
 type SheetState =
   | { readonly kind: 'requisites' }
   | { readonly kind: 'card' }
+  | { readonly kind: 'confirm' }
   | {
       readonly kind: 'notice';
       readonly title: string;
@@ -406,6 +407,20 @@ export function ExchangeScreen({
       get: value,
     };
   }, [typed, side, rate]);
+
+  /**
+   * Сколько клиент получит на самом деле.
+   *
+   * Считается от отданной стороны — той, которой подаётся заявка, — а не
+   * берётся из набранного. При обратном вводе они расходятся на хвост
+   * округления: клиент назвал 50 000, деление вверх дало сумму, по
+   * которой выйдет ровно столько же или на единицу больше. Показывать в
+   * подтверждении надо то, что запишет ядро.
+   */
+  const payout = useMemo(
+    () => (rate && sides.give ? Money.floor(Money.multiply(sides.give, rate.rate)) : null),
+    [rate, sides.give],
+  );
 
   /**
    * Последняя посчитанная отдаваемая сумма.
@@ -763,9 +778,22 @@ export function ExchangeScreen({
             </button>
           ) : undefined}
 
+          {/*
+            Кнопка ведёт к подтверждению, а не подаёт заявку сразу.
+            Реквизит для перевода подставляется сам — из прошлой заявки в
+            ту же валюту, — и клиент, вернувшийся через месяц с новой
+            картой, отправлял бы деньги на старую, не увидев её ни разу.
+            Сверить условия сделки до подачи стоит одного нажатия;
+            перевод не туда не возвращается.
+          */}
           <button
             type="button"
-            onClick={() => void submit()}
+            onClick={() => {
+              // Отказ прошлой попытки к новой не относится: лист
+              // открылся бы с чужим сообщением под кнопкой подачи.
+              setError(undefined);
+              setSheet({ kind: 'confirm' });
+            }}
             disabled={!ready}
             className="btn btn--gold exchange__submit"
           >
@@ -907,6 +935,81 @@ export function ExchangeScreen({
         </span>
         <ChevronRight />
       </button>
+
+      {/*
+        Подтверждение перед подачей. Показывает то, что запишет ядро, а
+        не то, что набрано: при обратном вводе сумма получения считается
+        от отданной стороны и может разойтись с названной на хвост
+        округления.
+      */}
+      {sheet?.kind === 'confirm' && sides.give ? (
+        <Sheet title="Проверьте заявку" onClose={() => setSheet(undefined)}>
+          <p className="sheet__body">
+            {electronic
+              ? 'Менеджер возьмёт заявку и выдаст реквизиты для оплаты. Курс уже зафиксирован.'
+              : 'Курс и сумму по наличным менеджер назовёт, когда возьмёт заявку.'}
+          </p>
+
+          <div className="summary">
+            <div className="summary__row">
+              <span className="summary__label">Отдаю</span>
+              <span className="summary__value summary__value--strong">
+                {formatMoney(sides.give, fromCode)}
+              </span>
+            </div>
+            <div className="summary__row">
+              <span className="summary__label">Получаю</span>
+              <span className="summary__value summary__value--strong">
+                {payout ? formatMoney(payout, toCode) : `${toCode} — назовёт менеджер`}
+              </span>
+            </div>
+            {rate ? (
+              <div className="summary__row">
+                <span className="summary__label">Курс</span>
+                <span className="summary__value">
+                  {formatRate(rate.rate, fromCode, toCode)}
+                </span>
+              </div>
+            ) : undefined}
+            <div className="summary__row">
+              <span className="summary__label">Способ</span>
+              <span className="summary__value">{KIND_LABELS[kind]}</span>
+            </div>
+            {electronic && chosen ? (
+              <div className="summary__row">
+                <span className="summary__label">Деньги придут на</span>
+                <span className="summary__value">{describeRequisites(chosen)}</span>
+              </div>
+            ) : undefined}
+          </div>
+
+          {/*
+            Отказ показывается здесь же: лист закрывает собой экран, и
+            сообщение под ним клиент увидел бы только закрыв лист — то
+            есть решив, что заявка подана.
+          */}
+          {error ? <p className="error">{error}</p> : undefined}
+
+          <div className="sheet__actions">
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={busy}
+              className="btn btn--gold"
+            >
+              {busy ? 'Подаём…' : 'Подтвердить'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSheet(undefined)}
+              disabled={busy}
+              className="btn btn--soft"
+            >
+              Изменить
+            </button>
+          </div>
+        </Sheet>
+      ) : undefined}
 
       {sheet?.kind === 'requisites' ? (
         <Sheet title="Куда отправить деньги" onClose={() => setSheet(undefined)}>
