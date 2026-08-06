@@ -130,6 +130,12 @@ export function SupportIcon({ size = 20 }: IconProps) {
   );
 }
 
+/**
+ * Знаки раскрытия и перехода. Цвет у них общий и приглушённый, но задан
+ * он классом, а не вписан в фигуру: вписанный, он не отзывался ни на
+ * наведение, ни на выключенное состояние того, внутри чего стоит, — и
+ * противоречил правилу, объявленному в шапке этого файла.
+ */
 export function ChevronDown({ size = 10 }: IconProps) {
   return (
     <svg
@@ -138,10 +144,11 @@ export function ChevronDown({ size = 10 }: IconProps) {
       viewBox="0 0 10 6"
       fill="none"
       aria-hidden="true"
+      className="chevron"
     >
       <path
         d="M1 1l4 4 4-4"
-        stroke="#928BAB"
+        stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -175,10 +182,11 @@ export function ChevronRight({ size = 8 }: IconProps) {
       viewBox="0 0 8 13"
       fill="none"
       aria-hidden="true"
+      className="chevron"
     >
       <path
         d="M1.5 1.5 6.5 6.5l-5 5"
-        stroke="#6F688A"
+        stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
