@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { CurrencyFlag, currencyName, currencyPlace } from './flags';
+import { currencyName, currencyPlace } from '@/lib/currencies';
+import { CurrencyFlag } from './flags';
 import { ChevronDown } from './icons';
 import { Sheet } from './sheet';
 

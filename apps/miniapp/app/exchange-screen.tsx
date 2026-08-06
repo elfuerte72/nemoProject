@@ -25,6 +25,7 @@ import {
   STEP_NOTES,
   stepOf,
 } from '@/lib/exchange-request-labels';
+import { sortCurrencies } from '@/lib/currencies';
 import { CARD_STATUS_LABELS } from '@/lib/labels';
 import {
   describeRequisites,
@@ -40,7 +41,6 @@ import { CardSection } from './card-section';
 import { InquirySheet, type InquiryTopic } from './inquiry-sheet';
 import { RequisitesSheet } from './requisites-section';
 import { CurrencyPicker } from './ui/currency-picker';
-import { sortCurrencies } from './ui/flags';
 import { CardIcon, CartIcon, ChevronRight, HotelIcon, SwapIcon } from './ui/icons';
 import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';

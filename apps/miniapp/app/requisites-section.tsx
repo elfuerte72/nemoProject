@@ -11,8 +11,10 @@ import {
 import { ApiError, del, post } from '@/lib/client-api';
 import { describeRequisites } from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
+import { TrashIcon } from './ui/icons';
 import { addressLabel, NetworkPicker } from './ui/network-picker';
 import { ConfirmSheet } from './ui/sheet';
+import { SwipeRow } from './ui/swipe-row';
 
 /**
  * Куда клиенту отправить деньги.
@@ -59,9 +61,10 @@ export function RequisitesSheet({
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   /**
-   * Запись, о которой спрашивают перед удалением. Кнопка «Удалить»
-   * стоит в строке рядом с самим выбором, и палец на телефоне попадает
-   * в неё вместо записи.
+   * Запись, о которой спрашивают перед удалением. Спрашивают и с кнопки
+   * в строке, и с плашки, выехавшей на свайп: удаление необратимо, а
+   * знак удаления стоит рядом с самим выбором — палец на телефоне
+   * попадает в него вместо записи.
    */
   const [removing, setRemoving] = useState<RequisitesView>();
 
@@ -117,7 +120,12 @@ export function RequisitesSheet({
           );
 
           return (
-            <li key={one.id} className="row">
+            <SwipeRow
+              key={one.id}
+              action="Удалить"
+              onAction={() => setRemoving(one)}
+              disabled={busy}
+            >
               {onPick ? (
                 <button
                   type="button"
@@ -138,11 +146,12 @@ export function RequisitesSheet({
                 type="button"
                 onClick={() => setRemoving(one)}
                 disabled={busy}
-                className="link link--muted"
+                aria-label={`Удалить: ${describeRequisites(one)}`}
+                className="row__remove"
               >
-                Удалить
+                <TrashIcon />
               </button>
-            </li>
+            </SwipeRow>
           );
         })}
       </ul>
