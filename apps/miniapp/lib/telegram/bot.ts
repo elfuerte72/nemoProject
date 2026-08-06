@@ -2,15 +2,21 @@ import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { Money } from '@nemo/types';
 import { renderNotification } from '@nemo/core';
 import { getCore } from '@/lib/core';
-import { formatRateValue } from '@/lib/format';
 import { referralLink } from '@/lib/referral';
+import {
+  RATES_UNAVAILABLE,
+  renderRatesMessage,
+  type QuotedPair,
+} from './rates-message';
 
 /**
  * Бот — точка входа, главное меню и канал уведомлений.
  *
  * Продуктовые экраны живут в Mini App (docs/adr/0001), и данные бот
  * показывает ровно в одном месте — курсом по кнопке. Граница сдвинута
- * сознательно: ради одной цифры приложение никто открывать не станет.
+ * сознательно: ради того, чтобы посмотреть курс, приложение никто
+ * открывать не станет. Само сообщение с курсом собирает
+ * `rates-message.ts` — здесь только сбор данных для него.
  *
  * Главное меню — кнопки в самом сообщении, а не постоянная клавиатура
  * под полем ввода. Причина не в оформлении: кнопке постоянной
@@ -240,45 +246,40 @@ async function receive(
 }
 
 /**
- * Молчание источника котировок — не поломка: заявку подать можно, и курс
- * по ней назовёт менеджер. Сказать об этом честно дешевле, чем показать
- * пустое место.
- */
-const RATES_UNAVAILABLE =
-  'Курс сейчас недоступен: его назовёт менеджер после подачи заявки. ' +
-  'Обменник работает как обычно.';
-
-/**
  * Курс в чате — единственное место, где бот показывает данные.
  *
- * Две котировки, а не одна с обратным знаком: наценка накладывается на
- * каждое направление отдельно, и покупка с продажей не зеркальны.
+ * Собирает направления с котировками и отдаёт их вёрстке
+ * (`rates-message.ts`): чем сервис торгует, знает справочник, а по какому
+ * курсу — ядро. Здесь только сведение одного с другим.
  */
 async function showRates(ctx: Context): Promise<void> {
   const core = getCore();
-  const [sell, buy] = await Promise.all([
-    core.getQuote({ fromCode: 'USDT', toCode: 'RUB' }),
-    core.getQuote({ fromCode: 'RUB', toCode: 'USDT' }),
-  ]);
+  const { pairs } = await core.getExchangeTerms();
 
-  if (!sell && !buy) {
-    await ctx.reply(RATES_UNAVAILABLE, WITHOUT_OLD_KEYBOARD);
-    return;
-  }
+  // Наличные через котировки не проходят вовсе: курс по ним называет
+  // менеджер, и биржевого у них нет.
+  const electronic = pairs.filter((pair) => pair.kind === 'electronic');
 
-  const lines = [
-    sell ? `Продаёте USDT — ${formatRateValue(sell.rate)} ₽ за 1 USDT` : undefined,
-    // Котировка «рубли → USDT» приходит в USDT за рубль. Переворачивать
-    // её здесь не нужно: `formatRateValue` сам показывает крупную
-    // сторону пары — числом вроде 0,0098 человек не пользуется.
-    buy && !Money.isZero(buy.rate)
-      ? `Покупаете USDT — ${formatRateValue(buy.rate)} ₽ за 1 USDT`
-      : undefined,
-  ].filter((line) => line !== undefined);
+  /*
+   * Все направления разом, а не по одному на нажатие: котировки лежат
+   * снимками в кэше и наружу за ними никто не идёт, а клиент в этот
+   * момент ждёт ответа в чате.
+   */
+  const quoted = (
+    await Promise.all(
+      electronic.map(async ({ fromCode, toCode }) => {
+        const quote = await core.getQuote({ fromCode, toCode });
+        // Нулевой курс — не курс: по нему нечего считать, и в столбце он
+        // читался бы как «не дадут ничего».
+        return quote && !Money.isZero(quote.rate)
+          ? ({ fromCode, toCode, rate: quote.rate } satisfies QuotedPair)
+          : undefined;
+      }),
+    )
+  ).filter((one): one is QuotedPair => one !== undefined);
 
-  if (lines.length === 0) {
-    // Обе котировки пришли, но считать по ним нечего. Для клиента это то
-    // же самое, что молчание источника, и сказать надо то же самое.
+  if (quoted.length === 0) {
+    // Ни одной котировки: для клиента это то же, что молчание источника.
     await ctx.reply(RATES_UNAVAILABLE, WITHOUT_OLD_KEYBOARD);
     return;
   }
@@ -286,9 +287,8 @@ async function showRates(ctx: Context): Promise<void> {
   // Кнопки под ответом не дублируются: клиент пришёл сюда из меню, оно
   // осталось на экране выше, и его кнопка обменника по-прежнему рабочая.
   await ctx.reply(
-    `${lines.join('\n')}\n\nКурс с наценкой сервиса: по нему и обменяем — ` +
-      'подать заявку можно в обменнике.',
-    WITHOUT_OLD_KEYBOARD,
+    renderRatesMessage({ quoted, hasCash: electronic.length < pairs.length }),
+    { parse_mode: 'HTML', ...WITHOUT_OLD_KEYBOARD },
   );
 }
 

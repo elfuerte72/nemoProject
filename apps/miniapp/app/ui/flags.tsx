@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 
 /**
- * Валюты в лицо: флаг, название и порядок.
+ * Валюты в лицо — флаги для экрана.
  *
- * Одно место на всё, что человек знает о валюте помимо её кода. Добавить
- * валюту в справочник — значит дописать сюда строку; забыть про это
- * можно безнаказанно, но тогда клиент увидит трёхбуквенный код и серый
- * кружок вместо флага.
+ * Названия, страны и порядок живут в `lib/currencies.ts`: их спрашивает и
+ * бот, у которого разметки нет вовсе. Добавить валюту — значит дописать
+ * строку и там, и здесь; забыть про это можно безнаказанно, но тогда
+ * клиент увидит серый кружок вместо флага.
  *
  * Флаги нарисованы, а не подключены картинками и не набраны эмодзи. Не
  * картинками — потому что в приложении их вообще нет, кроме талисмана. И
@@ -249,74 +249,24 @@ function UnknownCurrency(props: FlagProps) {
 }
 
 /**
- * Что сервис знает о валюте: как она называется, где ходит и чем
- * подписана.
- *
- * Название и место — не одно и то же, и нужны оба. В строке выбора
- * стоит место: рядом с флагом оно читается одним движением, а «ZAR ·
- * ЮАР» узнаётся быстрее, чем «ZAR · Южноафриканский рэнд». Название
- * уходит в подпись для экранного диктора, который флага не видит вовсе.
- *
- * Порядок строк здесь и есть порядок в списке выбора — рубль первым,
- * дальше по алфавиту кода.
+ * Чем валюта подписана в приложении. Названия, места и порядок живут не
+ * здесь, а в `lib/currencies.ts`: их знает и бот, а тянуть за ними
+ * разметку в вебхук незачем. Здесь только рисунок.
  */
-const CURRENCIES: Record<
-  string,
-  { name: string; place: string; flag: (props: FlagProps) => ReactNode }
-> = {
-  RUB: { name: 'Российский рубль', place: 'Россия', flag: RussianFlag },
-  CNY: { name: 'Китайский юань', place: 'Китай', flag: ChineseFlag },
-  EUR: { name: 'Евро', place: 'Еврозона', flag: EuropeanFlag },
-  INR: { name: 'Индийская рупия', place: 'Индия', flag: IndianFlag },
-  THB: { name: 'Тайский бат', place: 'Таиланд', flag: ThaiFlag },
-  TRY: { name: 'Турецкая лира', place: 'Турция', flag: TurkishFlag },
-  USD: { name: 'Доллар США', place: 'США', flag: AmericanFlag },
-  // У стейблкоина страны нет, и придумывать её нельзя: в столбце мест
-  // честнее сказать, что это криптовалюта.
-  USDT: { name: 'Tether', place: 'Криптовалюта', flag: TetherMark },
-  ZAR: { name: 'Южноафриканский рэнд', place: 'ЮАР', flag: SouthAfricanFlag },
+const FLAGS: Record<string, (props: FlagProps) => ReactNode> = {
+  RUB: RussianFlag,
+  CNY: ChineseFlag,
+  EUR: EuropeanFlag,
+  INR: IndianFlag,
+  THB: ThaiFlag,
+  TRY: TurkishFlag,
+  USD: AmericanFlag,
+  USDT: TetherMark,
+  ZAR: SouthAfricanFlag,
 };
-
-const ORDER = Object.keys(CURRENCIES);
 
 /** Флаг валюты — или молчаливый кружок, если валюта здесь не описана. */
 export function CurrencyFlag({ code, size }: { readonly code: string; readonly size?: number }) {
-  const known = CURRENCIES[code.toUpperCase()];
-  const Mark = known?.flag ?? UnknownCurrency;
+  const Mark = FLAGS[code.toUpperCase()] ?? UnknownCurrency;
   return <Mark {...(size === undefined ? {} : { size })} />;
-}
-
-/**
- * Название валюты словами. Незнакомая называется своим кодом: он всё
- * равно стоит рядом, и строка остаётся собранной.
- */
-export function currencyName(code: string): string {
-  return CURRENCIES[code.toUpperCase()]?.name ?? code;
-}
-
-/**
- * Где эта валюта ходит — страна или зона. У незнакомой пусто: строка
- * останется с одним кодом, и это честнее выдуманной страны.
- */
-export function currencyPlace(code: string): string {
-  return CURRENCIES[code.toUpperCase()]?.place ?? '';
-}
-
-/**
- * Порядок валют в списке выбора.
- *
- * Рубль первым — за ним приходит большинство; дальше по алфавиту кода,
- * потому что всякий другой порядок пришлось бы объяснять и пересматривать
- * при каждой новой валюте. Незнакомые уходят в конец: справочник впереди
- * этого файла, и молчаливый кружок не должен стоять первым.
- */
-export function sortCurrencies(codes: readonly string[]): string[] {
-  return [...codes].sort((left, right) => {
-    const leftIndex = ORDER.indexOf(left.toUpperCase());
-    const rightIndex = ORDER.indexOf(right.toUpperCase());
-    if (leftIndex === rightIndex) return left.localeCompare(right);
-    if (leftIndex === -1) return 1;
-    if (rightIndex === -1) return -1;
-    return leftIndex - rightIndex;
-  });
 }

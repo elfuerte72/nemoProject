@@ -982,20 +982,6 @@ button.tile:hover {
   color: #ffd694;
 }
 
-/*
- * Приглушённая ссылка — «Удалить» в строке реквизита. Поле вокруг
- * текста добавлено полем, а не размером: сама подпись должна остаться
- * мельче названия записи, рядом с которой стоит, а промахнуться по
- * тринадцати пикселям высоты проще, чем попасть.
- */
-.link--muted {
-  padding: 10px 4px;
-  margin: -10px -4px;
-  color: var(--text-muted);
-  text-decoration: underline;
-  font-weight: 500;
-}
-
 /* ── Быстрые действия ────────────────────────────────────────────── */
 
 .quick-row {
@@ -1540,6 +1526,119 @@ button.tile:hover {
   border-bottom: 1px solid var(--hairline-soft);
 }
 
+/*
+ * Ряд, из-под которого выезжает удаление.
+ *
+ * Поля переезжают внутрь съезжающего слоя: уходя, ряд должен уносить их
+ * с собой, а черта под ним остаётся на месте — иначе список во время
+ * жеста разъезжается. Лишнее прячется краем ряда: плашка стоит справа
+ * за его пределами и появляется ровно настолько, насколько ряд ушёл.
+ */
+.row--swipe {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+}
+
+.row__slide {
+  /* Позиционирован, чтобы лежать поверх плашки: непозиционированный
+     ряд браузер рисует под ней, и слой её не прикрывал. */
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 15px 0;
+  /* Своя подложка — цвета листа, в котором ряд лежит: без неё плашка
+     просвечивала бы сквозь ряд, стоящий на месте. */
+  background: var(--surface);
+  /* Возврат недотянутого ряда на место. Под пальцем доводки нет. */
+  transition: transform 0.22s var(--ease);
+}
+
+.row__slide[data-dragging] {
+  transition: none;
+}
+
+/*
+ * Пока плашка открыта, знака удаления в ряду нет: он уезжает вместе с
+ * рядом и встаёт вплотную к плашке — две кнопки одного действия рядом, из
+ * которых вторая ещё и мельче. Гаснет, а не снимается: снятый, он менял
+ * бы ширину ряда посреди движения.
+ */
+.row__slide[data-open] .row__remove {
+  opacity: 0;
+}
+
+/*
+ * Плашка удаления. Красная и приглушённая: приложение обходится
+ * полупрозрачными поверхностями, и сплошной красный был бы здесь
+ * единственным на все три экрана. Ведро со словом, а не одно ведро:
+ * плашку видят раз в жизни, и догадываться, что она делает, клиенту
+ * незачем.
+ */
+.row__plate {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius-inner);
+  background: rgba(242, 104, 95, 0.18);
+  color: var(--down);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.row__plate:active {
+  background: rgba(242, 104, 95, 0.28);
+}
+
+/*
+ * Удаление в самом ряду — знак, а не слово.
+ *
+ * Слово «Удалить» стояло рядом с названием записи и читалось раньше
+ * неё: подпись, набранная тем же, чем и всё остальное, спорит за
+ * внимание с тем, к чему приписана. Знак узнаётся, не читаясь, и
+ * красным сказано ровно то, что нужно сказать о нём заранее.
+ *
+ * Кружок меньше цели нажатия — тем же приёмом, что у крестика листа:
+ * фон отрезан по внутреннему полю, а сорок пикселей остаются полем под
+ * палец.
+ */
+.row__remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-right: -3px;
+  padding: 4px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(242, 104, 95, 0.12);
+  background-clip: content-box;
+  color: var(--down);
+  cursor: pointer;
+  transition: opacity 0.16s var(--ease);
+}
+
+.row__remove:active:not(:disabled) {
+  background-color: rgba(242, 104, 95, 0.24);
+}
+
+.row__remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .row__body {
   min-width: 0;
 }
@@ -1837,10 +1936,20 @@ button.tile:hover {
 
 /* ── Карта ───────────────────────────────────────────────────────── */
 
+/*
+ * Плашка карты — меньше поля листа, но той же пропорции, что банковский
+ * пластик (85,6 × 54 мм). Уменьшена шириной, а не высотой: показывать на
+ * ней нечего — ни номера, ни имени держателя, — и во всю ширину она
+ * занимала треть экрана пустым полем, вытесняя вниз состояние заявки, за
+ * которым лист и открывают. Сжатая же по одной высоте, она перестала бы
+ * читаться картой.
+ */
 .plastic {
   border-radius: 20px;
-  padding: 24px;
-  height: 216px;
+  padding: 20px;
+  width: 88%;
+  margin: 0 auto;
+  aspect-ratio: 85.6 / 54;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1895,9 +2004,9 @@ button.tile:hover {
 }
 
 .plastic__number {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 500;
-  letter-spacing: 4px;
+  letter-spacing: 3.5px;
   color: rgba(214, 205, 255, 0.92);
 }
 
@@ -1906,7 +2015,7 @@ button.tile:hover {
   justify-content: space-between;
   align-items: flex-end;
   gap: 12px;
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .plastic__holder {
@@ -1925,15 +2034,15 @@ button.tile:hover {
 }
 
 .plastic__mark {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 999px;
   background: rgba(249, 160, 60, 0.85);
 }
 
 .plastic__mark + .plastic__mark {
   background: rgba(214, 205, 255, 0.55);
-  margin-left: -10px;
+  margin-left: -9px;
 }
 
 .steps {
@@ -2072,6 +2181,12 @@ button.tile:hover {
  * которой сведены и остальные цели приложения: пилюля валюты, кнопка
  * разворота, ряд списка. Крестик внутри мельче самой кнопки, и поле
  * вокруг него работает так же, как он сам.
+ *
+ * Видимый кружок при этом меньше цели: круг во все сорок четыре
+ * пикселя весит рядом с заголовком больше, чем выход из листа того
+ * стоит, — а поле нажатия от этого не убывает. Фон отрезан по
+ * внутреннему полю, а не задан размером: размер здесь — это цель под
+ * палец, и уменьшать её нельзя.
  */
 .sheet__close {
   flex-shrink: 0;
@@ -2082,16 +2197,19 @@ button.tile:hover {
   height: 44px;
   /* Вправо до края поля листа: справа от неё пустого места быть не должно. */
   margin-right: -6px;
-  padding: 0;
+  padding: 5px;
   border: none;
   border-radius: 50%;
   background: rgba(214, 205, 255, 0.08);
+  background-clip: content-box;
   color: var(--text-muted);
   cursor: pointer;
 }
 
+/* Цветом, а не сокращением: сокращение вернуло бы фону границу кнопки,
+   и кружок под пальцем раздувался бы до всей цели нажатия. */
 .sheet__close:active {
-  background: rgba(214, 205, 255, 0.16);
+  background-color: rgba(214, 205, 255, 0.16);
   color: var(--text);
 }
 
