@@ -7,7 +7,7 @@ import { ApiError, post } from '@/lib/client-api';
 import { formatDate } from '@/lib/format';
 import { CARD_STATUS_LABELS } from '@/lib/labels';
 import { TobeeMark } from './ui/icons';
-import { NoticeSheet } from './ui/sheet';
+import { ConfirmSheet, NoticeSheet } from './ui/sheet';
 
 /**
  * Заявка на виртуальную карту.
@@ -40,6 +40,8 @@ export function CardSection({
   readonly onChanged: (applications: readonly ClientCardApplicationView[]) => void;
 }) {
   const [about, setAbout] = useState(false);
+  /** Спрашивается перед отзывом: заявку не вернуть, её подают заново. */
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
@@ -50,6 +52,7 @@ export function CardSection({
       const cancelled = await post<{ application: ClientCardApplicationView }>(
         `/api/card-applications/${applicationId}/cancel`,
       );
+      setCancelling(false);
       onChanged(
         applications.map((one) => (one.id === applicationId ? cancelled.application : one)),
       );
@@ -170,7 +173,7 @@ export function CardSection({
               {canCancel && current ? (
                 <button
                   type="button"
-                  onClick={() => void cancel(current.id)}
+                  onClick={() => setCancelling(true)}
                   disabled={busy}
                   className="btn btn--soft"
                 >
@@ -200,6 +203,17 @@ export function CardSection({
 
       {about ? (
         <NoticeSheet title={ABOUT.title} body={ABOUT.body} onClose={() => setAbout(false)} />
+      ) : undefined}
+
+      {cancelling && current ? (
+        <ConfirmSheet
+          title="Отозвать заявку?"
+          body="Отозванную не вернуть — придётся подать новую и ждать провайдера с начала. Если просто хотите узнать, что происходит, спросите менеджера: заявка при этом останется в работе."
+          confirm={busy ? 'Отзываем…' : 'Отозвать заявку'}
+          busy={busy}
+          onConfirm={() => void cancel(current.id)}
+          onClose={() => setCancelling(false)}
+        />
       ) : undefined}
     </>
   );

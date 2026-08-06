@@ -42,7 +42,7 @@ import { CurrencyPicker } from './ui/currency-picker';
 import { sortCurrencies } from './ui/flags';
 import { CardIcon, ChevronRight, SwapIcon } from './ui/icons';
 import { Loading } from './ui/loading';
-import { NoticeSheet, Sheet } from './ui/sheet';
+import { ConfirmSheet, NoticeSheet, Sheet } from './ui/sheet';
 
 /**
  * Экран обмена: что отдаю, что получаю, сколько.
@@ -93,6 +93,7 @@ type SheetState =
   | { readonly kind: 'requisites' }
   | { readonly kind: 'card' }
   | { readonly kind: 'confirm' }
+  | { readonly kind: 'cancel' }
   | {
       readonly kind: 'notice';
       readonly title: string;
@@ -540,6 +541,7 @@ export function ExchangeScreen({
       setRequests((current) =>
         current.map((request) => (request.id === requestId ? cancelled.request : request)),
       );
+      setSheet(undefined);
     } catch (failure) {
       setError(
         failure instanceof ApiError ? failure.message : 'Не удалось отменить заявку на обмен',
@@ -631,8 +633,7 @@ export function ExchangeScreen({
     // Отменить можно, только пока заявку не взяли: дальше в работе
     // участвует менеджер, и бросить её на полпути клиент уже не может.
     if (active.status === 'new') {
-      const id = active.id;
-      actions.push({ label: 'Отменить', run: () => void cancel(id) });
+      actions.push({ label: 'Отменить', run: () => setSheet({ kind: 'cancel' }) });
     }
   }
 
@@ -1083,6 +1084,17 @@ export function ExchangeScreen({
             </button>
           </div>
         </Sheet>
+      ) : undefined}
+
+      {sheet?.kind === 'cancel' && active ? (
+        <ConfirmSheet
+          title="Отменить заявку?"
+          body="Отменённую не вернуть — придётся подать новую, а курс к тому времени будет другим. Если передумали менять прямо сейчас, заявку можно просто оставить: она ждёт менеджера."
+          confirm={busy ? 'Отменяем…' : 'Отменить заявку'}
+          busy={busy}
+          onConfirm={() => void cancel(active.id)}
+          onClose={() => setSheet(undefined)}
+        />
       ) : undefined}
 
       {sheet?.kind === 'requisites' ? (

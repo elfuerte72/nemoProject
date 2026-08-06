@@ -42,6 +42,20 @@ const DRAG_SETTLE_MS = 180;
 const FOCUSABLE =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
+/**
+ * Сколько листов открыто сейчас.
+ *
+ * Листы вкладываются друг в друга: подтверждение удаления встаёт поверх
+ * списка реквизитов, отзыв заявки — поверх карты. Считать их приходится
+ * по двум причинам, и обе видны только на вложенных.
+ *
+ * Первая — прокрутка фона: её запрещает класс на теле страницы, и
+ * закрывшийся верхний лист снимал бы его из-под ещё открытого нижнего.
+ * Вторая — клавиша выхода: слушают её оба листа, и одно нажатие
+ * закрывало бы сразу оба, хотя клиент отвечал только на верхний вопрос.
+ */
+let openSheets = 0;
+
 export function Sheet({
   title,
   onClose,
@@ -63,7 +77,14 @@ export function Sheet({
     const opener = document.activeElement;
     node?.focus();
 
+    openSheets += 1;
+    /** Какой это лист по счёту: верхний отвечает на клавиши за всех. */
+    const depth = openSheets;
+
     function onKeyDown(event: KeyboardEvent) {
+      // Нижние листы молчат: вопрос задаёт верхний, ему и отвечают.
+      if (depth !== openSheets) return;
+
       if (event.key === 'Escape') {
         onClose();
         return;
@@ -102,7 +123,10 @@ export function Sheet({
 
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      document.body.classList.remove('sheet-open');
+      openSheets -= 1;
+      // Класс снимает последний уходящий: снятый верхним, он вернул бы
+      // прокрутку фону под ещё открытым нижним листом.
+      if (openSheets === 0) document.body.classList.remove('sheet-open');
       if (opener instanceof HTMLElement) opener.focus();
     };
   }, [onClose]);
@@ -260,6 +284,49 @@ export function Sheet({
   // Лист открывается только по действию клиента, то есть уже в
   // браузере: разметки для страницы, отданной сервером, у него нет.
   return typeof document === 'undefined' ? null : createPortal(markup, document.body);
+}
+
+/**
+ * Лист-вопрос перед необратимым: отменить заявку, удалить запись.
+ *
+ * Спрашивается то, чего не отыграть назад. Отменённую заявку не вернуть —
+ * подают новую, а курс к тому времени другой; удалённая запись уходит из
+ * списка. Нажатие на такое приходится и случайно: кнопки стоят в ряд с
+ * обычными, и палец на телефоне промахивается.
+ *
+ * Согласие набрано обычной кнопкой, а не красной: клиент пришёл сюда
+ * сам и знает, чего хочет, — пугать его в ответ на собственное намерение
+ * незачем. Опасность объясняет текст, а не цвет.
+ */
+export function ConfirmSheet({
+  title,
+  body,
+  confirm,
+  busy,
+  onConfirm,
+  onClose,
+}: {
+  readonly title: string;
+  readonly body: string;
+  /** Что написано на кнопке согласия: «Отменить заявку», «Удалить». */
+  readonly confirm: string;
+  readonly busy?: boolean | undefined;
+  readonly onConfirm: () => void;
+  readonly onClose: () => void;
+}) {
+  return (
+    <Sheet title={title} onClose={onClose}>
+      <p className="sheet__body">{body}</p>
+      <div className="sheet__actions">
+        <button type="button" onClick={onConfirm} disabled={busy} className="btn btn--gold">
+          {confirm}
+        </button>
+        <button type="button" onClick={onClose} disabled={busy} className="btn btn--soft">
+          Не надо
+        </button>
+      </div>
+    </Sheet>
+  );
 }
 
 /**

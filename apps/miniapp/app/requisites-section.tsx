@@ -12,6 +12,7 @@ import { ApiError, del, post } from '@/lib/client-api';
 import { describeRequisites } from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { addressLabel, NetworkPicker } from './ui/network-picker';
+import { ConfirmSheet } from './ui/sheet';
 
 /**
  * Куда клиенту отправить деньги.
@@ -57,12 +58,19 @@ export function RequisitesSheet({
   const [adding, setAdding] = useState(requisites.length === 0);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /**
+   * Запись, о которой спрашивают перед удалением. Кнопка «Удалить»
+   * стоит в строке рядом с самим выбором, и палец на телефоне попадает
+   * в неё вместо записи.
+   */
+  const [removing, setRemoving] = useState<RequisitesView>();
 
   async function remove(requisitesId: string) {
     setError(undefined);
     setBusy(true);
     try {
       await del(`/api/requisites/${requisitesId}`);
+      setRemoving(undefined);
       onRemoved(requisitesId);
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : 'Не удалось удалить реквизиты');
@@ -128,7 +136,7 @@ export function RequisitesSheet({
               )}
               <button
                 type="button"
-                onClick={() => void remove(one.id)}
+                onClick={() => setRemoving(one)}
                 disabled={busy}
                 className="link link--muted"
               >
@@ -146,6 +154,17 @@ export function RequisitesSheet({
           Добавить реквизиты
         </button>
       </div>
+
+      {removing ? (
+        <ConfirmSheet
+          title="Удалить реквизиты?"
+          body={`${describeRequisites(removing)} — запись уйдёт из списка, и подать на неё новую заявку будет нельзя. Уже поданные останутся как есть: деньги по ним придут туда же.`}
+          confirm={busy ? 'Удаляем…' : 'Удалить'}
+          busy={busy}
+          onConfirm={() => void remove(removing.id)}
+          onClose={() => setRemoving(undefined)}
+        />
+      ) : undefined}
     </>
   );
 }
