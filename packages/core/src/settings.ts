@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { serviceSettings } from '@nemo/db';
 import { Money, type Amount } from '@nemo/types';
+import { requireStaff, type Actor } from './actor.js';
 import type { Executor } from './context.js';
 
 /**
@@ -46,6 +47,25 @@ export interface ServiceSettingsView {
  * сервис начнёт принимать не только USDT.
  */
 export const MIN_EXCHANGE_CODE = 'USDT';
+
+/**
+ * Наценка — сотруднику.
+ *
+ * Остальная экономика остаётся администратору, а это число нужно
+ * менеджеру: по нему панель подсказывает доход по заявке, который он
+ * иначе считает в уме. Секрета в нём нет — клиент видит ту же величину
+ * в котировке (`QuoteView.markupBps`), — а отдавать ради одного числа
+ * весь раздел настроек значило бы открыть менеджеру ставки линий и
+ * минимумы, которых он не назначает.
+ */
+export async function getServiceMarkupBps(
+  ctx: { readonly db: Executor },
+  actor: Actor,
+): Promise<number> {
+  requireStaff(actor);
+  const { markupBps } = await readServiceSettings(ctx.db);
+  return markupBps;
+}
 
 export async function readServiceSettings(
   executor: Executor,

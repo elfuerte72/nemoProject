@@ -22,6 +22,7 @@ import {
 import { toExchangeRequestView, type ExchangeRequestView } from './exchange-requests.js';
 import type { Notification } from './notifications.js';
 import { accrueReferralBonuses } from './referral-accruals.js';
+import { describeServiceAccount, issueServiceAccount } from './service-accounts.js';
 import { readServiceSettings } from './settings.js';
 
 /**
@@ -45,6 +46,12 @@ export interface ManagerExchangeRequestView extends ExchangeRequestView {
   readonly assignedManagerId: string | null;
   readonly serviceIncome: Amount | null;
   readonly serviceIncomeCode: string | null;
+  /**
+   * Какой счёт сервиса выдали клиенту (docs/adr/0008). Ссылка, а не
+   * копия: погашение счёта прошлых заявок не касается, а сам выданный
+   * текст лежит рядом, в `paymentInstructions`.
+   */
+  readonly serviceAccountId: string | null;
   /**
    * Ник клиента. Не поле заявки, а подпись к ней: в очереди из десятка
    * строк «клиент 379336096» не отличается от соседнего номера, а
@@ -101,6 +108,7 @@ export function toManagerView(
     assignedManagerId: row.assignedManagerId,
     serviceIncome: row.serviceIncome === null ? null : Money.toAmount(row.serviceIncome),
     serviceIncomeCode: row.serviceIncomeCode,
+    serviceAccountId: row.serviceAccountId,
     clientUsername,
   };
 }
@@ -184,6 +192,7 @@ type ExchangeRequestPatch = Partial<
     | 'finalRate'
     | 'toAmount'
     | 'paymentInstructions'
+    | 'serviceAccountId'
     | 'requisitesIssuedAt'
     | 'serviceIncome'
     | 'serviceIncomeCode'
@@ -361,8 +370,17 @@ export interface ConfirmExchangeRateInput {
   readonly finalRate?: string | undefined;
   /** Сколько клиент получит по названному курсу. */
   readonly toAmount?: string | undefined;
-  /** Куда клиенту платить. */
-  readonly paymentInstructions: string;
+  /**
+   * Счёт сервиса, который выдают клиенту (docs/adr/0008). Реквизиты по
+   * нему собирает ядро: менеджер выбирает счёт, а не набирает номер.
+   */
+  readonly serviceAccountId?: string | undefined;
+  /**
+   * Что менеджер дописывает к выданному: срок, условие, сумма. У
+   * наличной заявки счёта нет вовсе, и это единственное, что уходит
+   * клиенту, — там менеджер называет место и время.
+   */
+  readonly paymentInstructions?: string | undefined;
 }
 
 /**
@@ -413,14 +431,34 @@ export async function confirmExchangeRate(
     input.toAmount === undefined
       ? undefined
       : requirePositiveAmount(input.toAmount, 'Сумма к выдаче');
-  const paymentInstructions = input.paymentInstructions.trim();
-  if (!paymentInstructions) {
-    throw new InvalidInputError('Укажите реквизиты для оплаты');
+  const note = input.paymentInstructions?.trim() ?? '';
+  if (!note && input.serviceAccountId === undefined) {
+    throw new InvalidInputError('Укажите, куда клиенту платить: выберите счёт сервиса');
   }
 
   return ctx.db.transaction(async (tx) => {
     const row = await lockRequest(tx, requestId);
     const staffId = requireOwnership(row, actor);
+    /*
+     * Реквизиты собирает ядро, а не менеджер: набранный руками номер —
+     * это перевод, который не возвращается (docs/adr/0008). Валюта
+     * сверяется с той, которой платит клиент, — то есть с отдаваемой
+     * стороной заявки.
+     */
+    if (input.serviceAccountId !== undefined && row.kind === 'cash') {
+      // Наличная сделка идёт из рук в руки: счёта у неё нет по
+      // устройству, и предложенный означал бы перепутанную заявку.
+      throw new InvalidInputError(
+        'У наличной заявки счёта нет: назовите место и время словами',
+      );
+    }
+    const issued =
+      input.serviceAccountId === undefined
+        ? undefined
+        : await issueServiceAccount(ctx, tx, input.serviceAccountId, row.fromCode);
+    const paymentInstructions = [issued?.instructions, note]
+      .filter((part): part is string => Boolean(part))
+      .join('\n\n');
     const finalRate = rateForConfirmation(row, input);
     // У заявки с курсом подачи сумма к выдаче посчитана при подаче —
     // клиент видел её в калькуляторе. Присланная поверх отвергается по
@@ -439,9 +477,16 @@ export async function confirmExchangeRate(
       payWithinMinutes: unpaidExchangeRequestTtlMinutes,
       actorType: 'manager',
       actorStaffId: staffId,
+      // Какой счёт выдан — в историю заявки, а не только колонкой:
+      // колонку читает выборка, а историю читает человек, который
+      // разбирает спорный обмен через месяц.
+      ...(issued === undefined
+        ? {}
+        : { comment: `Выдан счёт: ${describeServiceAccount(issued.account)}` }),
       patch: {
         finalRate,
         paymentInstructions,
+        ...(issued === undefined ? {} : { serviceAccountId: issued.account.id }),
         // Момент, с которого клиент впервые мог заплатить: от него и
         // считается срок жизни неоплаченной заявки.
         requisitesIssuedAt: new Date(),

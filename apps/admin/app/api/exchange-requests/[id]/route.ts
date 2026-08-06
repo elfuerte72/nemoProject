@@ -26,7 +26,11 @@ const actionSchema = z.discriminatedUnion('action', [
     // принадлежит операции, а не разбору запроса.
     finalRate: z.string().optional(),
     toAmount: z.string().optional(),
-    paymentInstructions: z.string(),
+    // Счёт сервиса, который выдают клиенту: реквизиты по нему собирает
+    // ядро (docs/adr/0008). Свободный текст остаётся припиской — и
+    // единственным содержимым у наличной заявки, где счёта нет вовсе.
+    serviceAccountId: z.string().uuid().optional(),
+    paymentInstructions: z.string().optional(),
   }),
   z.object({ action: z.literal('payment-received') }),
   z.object({
@@ -60,6 +64,7 @@ export async function POST(
           return core.confirmExchangeRate(actor, id, {
             finalRate: input.finalRate,
             toAmount: input.toAmount,
+            serviceAccountId: input.serviceAccountId,
             paymentInstructions: input.paymentInstructions,
           });
         case 'payment-received':

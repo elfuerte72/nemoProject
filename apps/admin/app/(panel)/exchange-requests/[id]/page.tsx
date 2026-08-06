@@ -52,10 +52,34 @@ export default async function RequestPage({
     throw error;
   });
 
+  /*
+   * Счета сервиса — только в той валюте, которой платит клиент, и
+   * только действующие: остальные менеджеру выбирать нельзя, а
+   * показанные и отвергнутые операцией — это ошибка, до которой дали
+   * дотянуться (docs/adr/0008). У наличной заявки счёта нет по
+   * устройству сделки — деньги приносят на руках, — и список её
+   * карточке не запрашивается вовсе.
+   *
+   * Наценка — чтобы панель подсказала доход по заявке. Считает его
+   * панель, а не операция: число уходит в реферальные начисления, и
+   * подтверждать его должен человек.
+   */
+  const [accounts, markupBps] = await Promise.all([
+    request.kind === 'electronic'
+      ? core.listServiceAccounts(actor, {
+          currencyCode: request.fromCode,
+          activeOnly: true,
+        })
+      : [],
+    core.getServiceMarkupBps(actor),
+  ]);
+
   return (
     <ExchangeRequestCard
       request={{ ...request, clientId: request.clientId.toString() }}
       events={events}
+      accounts={accounts}
+      markupBps={markupBps}
       client={
         card
           ? {

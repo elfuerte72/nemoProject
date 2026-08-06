@@ -99,6 +99,13 @@
       "when": 1785943613106,
       "tag": "0013_premium_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786039810522,
+      "tag": "0014_hot_moon_knight",
+      "breakpoints": true
     }
   ]
 }
