@@ -57,6 +57,7 @@ import {
   setNetworkActive,
 } from './networks.js';
 import { getQuote, type QuoteInput } from './rates.js';
+import { submitInquiry, type SubmitInquiryInput } from './inquiries.js';
 import {
   countUnansweredConversations,
   listConversation,
@@ -225,6 +226,9 @@ export function createCore(ctx: CoreConfig) {
     // Приём сообщения — без актора: клиента подтверждает подпись
     // вебхука Telegram, и он же им и является.
     receiveClientMessage: (input: ReceiveMessageInput) => receiveClientMessage(ctx, input),
+    // Просьба оплатить за границей — тоже обращение, но собранное
+    // приложением: клиент выбирает тему и описывает, что оплатить.
+    submitInquiry: (input: SubmitInquiryInput) => submitInquiry(ctx, input),
     replyToClient: (actor: Actor, input: ReplyInput) => replyToClient(ctx, actor, input),
     listConversation: (actor: Actor, clientId: bigint) =>
       listConversation(ctx, actor, clientId),
