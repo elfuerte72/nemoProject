@@ -13,7 +13,7 @@ import {
   parseAmount,
 } from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
-import { getTelegramUser, openTelegram, supportLink } from '@/lib/telegram/webapp';
+import { getTelegramUser, haptic, openTelegram, supportLink } from '@/lib/telegram/webapp';
 import { CardIcon, ChevronRight, InviteIcon, SupportIcon, WithdrawIcon } from './ui/icons';
 import { Loading } from './ui/loading';
 import { useCopied } from './ui/use-copied';
@@ -393,8 +393,10 @@ function WithdrawSheet({
         amount: parseAmount(amount),
         requisitesId: picked,
       });
+      haptic('success');
       onSubmitted();
     } catch (failure) {
+      haptic('error');
       setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на вывод');
     } finally {
       setBusy(false);

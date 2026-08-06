@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { getWebApp } from '@/lib/telegram/webapp';
 import { CloseIcon } from './icons';
 import { useCopied } from './use-copied';
 
@@ -117,6 +118,30 @@ export function Sheet({
     }
     document.addEventListener('keydown', onKeyDown);
 
+    /*
+     * Кнопка возврата Telegram закрывает лист, а не приложение.
+     *
+     * На Android к ней приводит системный жест «назад» — тот самый,
+     * которым выходят из любого экрана. Без объявленной кнопки он
+     * закрывал весь Mini App: клиент, отвечавший на вопрос в листе,
+     * терял вместо ответа всё приложение вместе с набранным.
+     *
+     * Обработчик у каждого листа свой и снимается вместе с ним, а
+     * прячется кнопка последним уходящим: под вложенным листом остаётся
+     * открытым нижний, и возврат из него нужен так же.
+     */
+    const back = getWebApp()?.BackButton;
+    const goBack = () => {
+      if (depth === openSheets) onClose();
+    };
+    try {
+      back?.onClick(goBack);
+      back?.show();
+    } catch {
+      // Клиент постарше кнопки не знает — лист закрывают крестиком,
+      // промахом и потягом, и все три на месте.
+    }
+
     // Фон под листом не прокручивается: иначе палец, промахнувшийся
     // мимо панели, уводит экран под ней.
     document.body.classList.add('sheet-open');
@@ -124,6 +149,12 @@ export function Sheet({
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       openSheets -= 1;
+      try {
+        back?.offClick(goBack);
+        if (openSheets === 0) back?.hide();
+      } catch {
+        // Кнопки нет — снимать нечего.
+      }
       // Класс снимает последний уходящий: снятый верхним, он вернул бы
       // прокрутку фону под ещё открытым нижним листом.
       if (openSheets === 0) document.body.classList.remove('sheet-open');

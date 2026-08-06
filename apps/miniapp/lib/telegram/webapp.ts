@@ -52,6 +52,26 @@ interface TelegramWebApp {
    * приходит в `--tg-content-safe-area-inset-top`.
    */
   requestFullscreen?(): void;
+  /**
+   * Кнопка возврата в шапке Telegram — и системный жест «назад» на
+   * Android, который к ней и приводит.
+   *
+   * Без неё этот жест закрывает всё приложение целиком: клиент,
+   * привыкший так выходить из любого экрана, терял вместо открытого
+   * листа весь Mini App вместе с набранным.
+   */
+  BackButton?: {
+    show(): void;
+    hide(): void;
+    onClick(handler: () => void): void;
+    offClick(handler: () => void): void;
+  };
+  /** Тактильный отклик. Появился в Bot API 6.1. */
+  HapticFeedback?: {
+    impactOccurred?(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'): void;
+    notificationOccurred?(type: 'error' | 'success' | 'warning'): void;
+    selectionChanged?(): void;
+  };
 }
 
 declare global {
@@ -71,6 +91,29 @@ export function getWebApp(): TelegramWebApp | undefined {
  */
 export function getTelegramUser(): TelegramUser | undefined {
   return getWebApp()?.initDataUnsafe?.user;
+}
+
+/**
+ * Тактильный отклик на то, что произошло.
+ *
+ * Скупо и по делу: отклик на каждое касание перестаёт что-либо значить
+ * уже через минуту работы. Отвечаем только на исход операции — заявка
+ * подана, отказ пришёл — и на два жеста, у которых нет другого
+ * подтверждения: разворот направления и копирование.
+ *
+ * Отсутствие — рабочий случай: на десктопе телефона нет, в клиенте
+ * постарше нет метода. Приложение от этого не меняется ничем.
+ */
+export function haptic(kind: 'success' | 'error' | 'warning' | 'light'): void {
+  const api = getWebApp()?.HapticFeedback;
+  if (!api) return;
+  try {
+    if (kind === 'light') api.impactOccurred?.('light');
+    else api.notificationOccurred?.(kind);
+  } catch {
+    // Этот клиент так не умеет — молча, как и остальные необязательные
+    // возможности Telegram.
+  }
 }
 
 /**

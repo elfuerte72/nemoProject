@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { haptic } from '@/lib/telegram/webapp';
 
 /**
  * Копирование с отметкой «Скопировано».
@@ -48,6 +49,10 @@ export function useCopied(): {
       ?.writeText(text)
       .then(() => {
         if (!alive.current) return;
+        // Копирование ничем себя не выдаёт: экран не меняется, звука
+        // нет. Толчок — единственное, что отличает состоявшееся от
+        // промаха мимо кнопки.
+        haptic('light');
         setCopied(true);
         clearTimeout(timer.current);
         timer.current = setTimeout(() => setCopied(false), COPIED_MS);

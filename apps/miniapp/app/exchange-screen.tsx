@@ -16,7 +16,7 @@ import {
   type ExchangeKind,
 } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
-import { openTelegram, supportLink } from '@/lib/telegram/webapp';
+import { haptic, openTelegram, supportLink } from '@/lib/telegram/webapp';
 import {
   isOpen,
   KIND_LABELS,
@@ -491,6 +491,10 @@ export function ExchangeScreen({
 
   function swap() {
     if (!canSwap) return;
+    // Разворот меняет смысл обеих строк разом, и ничего, кроме самих
+    // чисел, об этом не сообщает: толчок отмечает, что нажатие
+    // сработало, раньше, чем глаз дочитает новые суммы.
+    haptic('light');
     setFromCode(toCode);
     setToCode(fromCode);
     setSwaps(swaps + 1);
@@ -523,8 +527,13 @@ export function ExchangeScreen({
       setRequests((current) => [created.request, ...current]);
       setSide('give');
       setTyped('');
+      // Заявка ушла — единственный момент во всей сделке, когда сервис
+      // берёт на себя обязательство. Отклик здесь не украшение: он
+      // говорит то же, что и лист поверх экрана, но раньше него.
+      haptic('success');
       setSheet({ kind: 'notice', ...SUBMITTED });
     } catch (failure) {
+      haptic('error');
       setError(failure instanceof ApiError ? failure.message : 'Не удалось подать заявку на обмен');
     } finally {
       setBusy(false);
