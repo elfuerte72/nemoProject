@@ -16,6 +16,7 @@ import {
   type ExchangeKind,
 } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
+import { openTelegram, supportLink } from '@/lib/telegram/webapp';
 import {
   isOpen,
   KIND_LABELS,
@@ -515,6 +516,7 @@ export function ExchangeScreen({
 
   const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
+  const support = supportLink();
 
   if (loading) {
     return <Loading />;
@@ -756,6 +758,24 @@ export function ExchangeScreen({
                 </button>
               ))}
             </div>
+          ) : undefined}
+
+          {/*
+            Дорога к менеджеру от заявки, а не только из профиля: вопрос
+            о ней возникает здесь — где заявка стоит третий час и
+            непонятно, ждать ли дальше. Строкой, а не кнопкой в ряду:
+            кнопок там уже две, и третья с длинной подписью ломала бы
+            их в столбик — а по весу это и не действие над заявкой, а
+            выход из приложения в чат.
+          */}
+          {support ? (
+            <button
+              type="button"
+              onClick={() => openTelegram(support)}
+              className="link active__support"
+            >
+              Написать менеджеру
+            </button>
           ) : undefined}
         </div>
       ) : undefined}

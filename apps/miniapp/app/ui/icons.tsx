@@ -113,6 +113,23 @@ export function CardIcon({ size = 20 }: IconProps) {
   );
 }
 
+/**
+ * Реплика — тем же носиком, что у знака сервиса: разговор с менеджером
+ * идёт в том же чате, которым сервис и представлен.
+ */
+export function SupportIcon({ size = 20 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20 12.3c0 3.8-3.6 6.8-8 6.8-.8 0-1.6-.1-2.4-.3l-4.6 1.7 1.3-3.4A6.6 6.6 0 0 1 4 12.3c0-3.8 3.6-6.8 8-6.8s8 3 8 6.8Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function ChevronDown({ size = 10 }: IconProps) {
   return (
     <svg

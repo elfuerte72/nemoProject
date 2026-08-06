@@ -7,8 +7,8 @@ import { ApiError, get, post } from '@/lib/client-api';
 import { referralLink } from '@/lib/referral';
 import { describeRequisites, formatAmount, formatMonth, parseAmount } from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
-import { getTelegramUser, getWebApp } from '@/lib/telegram/webapp';
-import { CardIcon, ChevronRight, InviteIcon, WithdrawIcon } from './ui/icons';
+import { getTelegramUser, openTelegram, supportLink } from '@/lib/telegram/webapp';
+import { CardIcon, ChevronRight, InviteIcon, SupportIcon, WithdrawIcon } from './ui/icons';
 import { Loading } from './ui/loading';
 import { useCopied } from './ui/use-copied';
 import { MarketingConsentToggle } from './marketing-consent';
@@ -104,6 +104,7 @@ export function ProfileSection({
 
   const telegram = getTelegramUser();
   const name = [telegram?.first_name, telegram?.last_name].filter(Boolean).join(' ');
+  const support = supportLink();
 
   const link = account ? referralLink(account.referralCode) : undefined;
 
@@ -113,13 +114,7 @@ export function ProfileSection({
 
   function share() {
     if (!link) return;
-    const url = `https://t.me/share/url?url=${encodeURIComponent(link)}`;
-    const webApp = getWebApp();
-    if (webApp?.openTelegramLink) {
-      webApp.openTelegramLink(url);
-    } else {
-      window.open(url, '_blank');
-    }
+    openTelegram(`https://t.me/share/url?url=${encodeURIComponent(link)}`);
   }
 
   if (loading) {
@@ -172,6 +167,14 @@ export function ProfileSection({
         </button>
       </div>
 
+      {/*
+        Отказ стоит под тем, что не удалось прочитать, а не в середине
+        списка плиток: разделив их собой, он рвал бы зазор между ними —
+        а стоя рядом с балансом, он говорит ровно о том, чего в нём не
+        хватает.
+      */}
+      {error ? <p className="error">{error}</p> : undefined}
+
       <div className="quick-row">
         <button type="button" onClick={() => setSheet({ kind: 'withdraw' })} className="quick">
           <span className="quick__circle">
@@ -211,8 +214,6 @@ export function ProfileSection({
         <p className="empty">Реферальная ссылка появится, когда бот будет настроен.</p>
       )}
 
-      {error ? <p className="error">{error}</p> : undefined}
-
       {/*
         Реквизиты — про самого клиента, а не про его баллы: по ним
         приходит и обмен, и выплата. Список один на оба дела, и живёт он
@@ -237,6 +238,27 @@ export function ProfileSection({
         </span>
         <ChevronRight />
       </button>
+
+      {/*
+        Разговор с менеджером — здесь же, рядом с прочим о самом клиенте.
+        Приложение пять раз отсылает к менеджеру словами: за курсом по
+        наличным, за старыми записями истории, за переводом в погашенной
+        сети, — и ни одна из этих строк не была кнопкой. Ведёт она в тот
+        самый чат, где клиента и читают: своего адреса поддержки у
+        сервиса нет, обращение живёт в переписке.
+      */}
+      {support ? (
+        <button type="button" onClick={() => openTelegram(support)} className="tile">
+          <span className="tile__icon">
+            <SupportIcon />
+          </span>
+          <span className="tile__body">
+            <span className="tile__label">Поддержка</span>
+            <span className="tile__value">Написать менеджеру</span>
+          </span>
+          <ChevronRight />
+        </button>
+      ) : undefined}
 
       <MarketingConsentToggle consent={consent} onAnswered={onConsentChanged} />
 
