@@ -119,6 +119,33 @@ because you think the automated test has you covered», потому что бы
 <https://simonwillison.net/2025/Dec/18/code-proven-to-work/>
 <https://simonwillison.net/guides/agentic-engineering-patterns/anti-patterns/>
 
+## Есть ли готовый скилл приёмки
+
+Проверено 7 августа 2026 — **нет**, ни в одном известном наборе.
+
+- **mattpocock-skills** (включён в проекте): `tdd`, `code-review`,
+  `diagnosing-bugs`, `implement`, `triage`. Приёмки как отдельного шага
+  нет.
+- **addy-agent-skills** (Эдди Османи, 22 скилла; маркетплейс скачан, в
+  проекте не включён): `test-driven-development`,
+  `code-review-and-quality`, `browser-testing-with-devtools`,
+  `debugging-and-error-recovery`, `ci-cd-and-automation`,
+  `shipping-and-launch`. Ближе всего `doubt-driven-development` —
+  состязательный пересмотр решения свежим контекстом по ходу работы:
+  «A confident answer is not a correct one… This is not `/review`.
+  `/review` is a verdict on a finished artifact. This is an in-flight
+  posture». То есть до результата, а не после.
+- **Открытые коллекции** (поиск по `SKILL.md` на GitHub, крупнейшие
+  наборы — ComposioHQ, alirezarezvani, Jeffallan): единственное
+  найденное с именем про QA — `senior-qa` у
+  <https://github.com/alirezarezvani/claude-skills>: генератор тестов
+  для React и Next.js (Jest, Playwright, MSW, разбор покрытия). Пишет
+  тесты, а не принимает работу.
+
+Вывод: ниша «доказать готовность перед сдачей» свободна, и скилл её не
+дублирует. Общее у него с `doubt-driven-development` — требование
+свежего контекста у проверяющего; расходятся они моментом применения.
+
 ## Чего в источниках нет
 
 - Сравнительных измерений, что ловит больше ошибок агента — типы,
