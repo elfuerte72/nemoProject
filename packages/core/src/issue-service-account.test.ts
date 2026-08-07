@@ -329,4 +329,22 @@ describe('выдача без счёта', () => {
       core.confirmExchangeRate(manager, id, { finalRate: '95' }),
     ).rejects.toThrow(InvalidInputError);
   });
+
+  /*
+   * Главное правило справочника, и держать его должно ядро, а не форма.
+   * Панель ведёт менеджера к выбору счёта, но операцию зовут не только
+   * из неё, а набранный руками номер — это перевод, который не
+   * возвращается. Правило, живущее в разметке, обходится любым другим
+   * путём к операции.
+   */
+  it('по безналичной заявке не принимает набранные руками реквизиты', async () => {
+    const id = await givenClaimedRequest();
+
+    await expect(
+      core.confirmExchangeRate(manager, id, {
+        finalRate: '95',
+        paymentInstructions: 'TRC20: TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
 });

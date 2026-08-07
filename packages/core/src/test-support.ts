@@ -1,5 +1,12 @@
 import { eq } from 'drizzle-orm';
-import { currencies, currencyPairs, serviceSettings, staff, transferNetworks } from '@nemo/db';
+import {
+  currencies,
+  currencyPairs,
+  serviceAccounts,
+  serviceSettings,
+  staff,
+  transferNetworks,
+} from '@nemo/db';
 import { testDatabase } from '@nemo/db/testing';
 import type { ExchangeKind, StaffRole } from '@nemo/types';
 import type { Actor } from './actor.js';
@@ -93,6 +100,37 @@ export async function givenServiceSettings(options: {
   unpaidExchangeRequestTtlMinutes?: number;
 }): Promise<void> {
   await db.update(serviceSettings).set(options).where(eq(serviceSettings.id, 1));
+}
+
+/**
+ * Счёт сервиса, на который клиент платит по заявке.
+ *
+ * Пишется напрямую, как и остальные справочники: заводит счета
+ * администратор из панели, и ждать его в тесте перехода значило бы
+ * проверять не переход. Способ — перевод по телефону: его поля не
+ * шифруются, и фикстура обходится без ключей, которых у половины тестов
+ * нет.
+ *
+ * Валюта — та, которой платит клиент, то есть отдаваемая сторона
+ * заявки: счёт не в той валюте операция выдачи отвергает.
+ */
+export async function givenServiceAccount(options: {
+  currencyCode: string;
+  isActive?: boolean;
+}): Promise<string> {
+  await givenCurrency(options.currencyCode);
+  const [row] = await db
+    .insert(serviceAccounts)
+    .values({
+      kind: 'phone',
+      currencyCode: options.currencyCode,
+      bankName: 'Сбербанк',
+      holderName: 'Сервис',
+      phone: '+79990000000',
+      isActive: options.isActive ?? true,
+    })
+    .returning({ id: serviceAccounts.id });
+  return row!.id;
 }
 
 let staffCounter = 0n;

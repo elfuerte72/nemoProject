@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'react';
  * видел только заводивший его администратор. Отдаёт ключ ядро и только
  * до первого сошедшегося кода (`packages/core/src/staff.ts`).
  */
-export function LoginForm() {
+export function LoginForm({ devLogin = false }: { devLogin?: boolean }) {
   const widgetRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<'telegram' | 'code'>('telegram');
   const [enrollment, setEnrollment] = useState<{ secret: string; qr: string }>();
@@ -103,6 +103,7 @@ export function LoginForm() {
               Вход по Telegram. Доступ получают только заведённые сотрудники.
             </p>
             <div ref={widgetRef} className="login__widget" />
+            {devLogin ? <DevLogin onError={setError} /> : undefined}
           </>
         ) : (
           <form onSubmit={submitCode} className="login__form">
@@ -182,4 +183,68 @@ declare global {
   interface Window {
     onTelegramAuth?: (payload: Record<string, string | number>) => void;
   }
+}
+
+/**
+ * Вход на своей машине: Telegram ID заведённого сотрудника.
+ *
+ * Ни подписи, ни кода — но и ни одного нового права: сотрудника ищет та
+ * же операция, что и настоящий вход, и незаведённому отказывает так же.
+ * Сказано об этом прямо на экране, чтобы блок не спутали с рабочим
+ * входом.
+ */
+function DevLogin({ onError }: { onError: (message: string | undefined) => void }) {
+  const [telegramUserId, setTelegramUserId] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function enter(event: React.FormEvent) {
+    event.preventDefault();
+    onError(undefined);
+    setBusy(true);
+    try {
+      const response = await fetch('/api/auth/dev', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ telegramUserId: telegramUserId.trim() }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: string };
+        onError(body.error ?? 'Вход не выполнен');
+        return;
+      }
+      // Адресом, а не router: после установки куки нужен свежий запрос,
+      // иначе разделы приедут из кэша страницы входа.
+      window.location.href = '/';
+    } catch {
+      onError('Вход не выполнен');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={enter} className="login__dev">
+      <span className="label">Вход для разработки</span>
+      <p className="muted">
+        Виджет Telegram на своей машине не работает — ему нужен настоящий домен. Здесь
+        пропускаются оба фактора, но не проверка сотрудника: войти можно только тем, кто
+        заведён и кому выдан ключ. На сервере этот вход выключен.
+      </p>
+      <input
+        className="input"
+        value={telegramUserId}
+        onChange={(event) => setTelegramUserId(event.target.value)}
+        inputMode="numeric"
+        placeholder="Telegram ID сотрудника"
+        aria-label="Telegram ID сотрудника"
+      />
+      <button
+        type="submit"
+        disabled={busy || !telegramUserId.trim()}
+        className="btn btn--soft btn--wide"
+      >
+        Войти без второго фактора
+      </button>
+    </form>
+  );
 }

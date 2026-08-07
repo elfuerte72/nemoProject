@@ -6,7 +6,7 @@ import {
   TransitionNotAllowedError,
   type Actor,
 } from './index.js';
-import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff } from './test-support.js';
 
 /**
  * Исполнение заявки на обмен.
@@ -38,7 +38,7 @@ async function givenRequestAwaitingPayment(): Promise<string> {
   await core.claimExchangeRequest(manager, id);
   await core.confirmExchangeRate(manager, id, {
     finalRate: '95.5',
-    paymentInstructions: 'TRC20: TXYZ',
+    serviceAccountId: await givenServiceAccount({ currencyCode: 'USDT' }),
   });
   return id;
 }
@@ -172,7 +172,7 @@ describe('полный путь заявки', () => {
     await core.claimExchangeRequest(manager, id);
     await core.confirmExchangeRate(manager, id, {
       finalRate: '95.5',
-      paymentInstructions: 'TRC20: TXYZ',
+      serviceAccountId: await givenServiceAccount({ currencyCode: 'USDT' }),
     });
     await core.markPaymentReceived(manager, id);
     await core.completeExchangeRequest(manager, id, {

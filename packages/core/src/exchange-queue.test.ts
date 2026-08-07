@@ -3,7 +3,7 @@ import { inArray } from 'drizzle-orm';
 import { exchangeRequests } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type Actor } from './index.js';
-import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff } from './test-support.js';
 
 /**
  * Очередь заявок под рост: кто ведёт, что моё, поиск, фильтры и предел.
@@ -104,7 +104,7 @@ describe('фильтры', () => {
     await core.claimExchangeRequest(petr, confirmed);
     await core.confirmExchangeRate(petr, confirmed, {
       finalRate: '95',
-      paymentInstructions: 'куда платить',
+      serviceAccountId: await givenServiceAccount({ currencyCode: 'USDT' }),
     });
 
     const found = await core.listExchangeRequestsInProgress(petr, { status: 'in_progress' });

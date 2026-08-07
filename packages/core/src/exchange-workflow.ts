@@ -661,26 +661,39 @@ export async function confirmExchangeRate(
       ? undefined
       : requirePositiveAmount(input.toAmount, 'Сумма к выдаче');
   const note = input.paymentInstructions?.trim() ?? '';
-  if (!note && input.serviceAccountId === undefined) {
-    throw new InvalidInputError('Укажите, куда клиенту платить: выберите счёт сервиса');
-  }
 
   return ctx.db.transaction(async (tx) => {
     const row = await lockRequest(tx, requestId);
     const staffId = requireOwnership(row, actor);
+
     /*
-     * Реквизиты собирает ядро, а не менеджер: набранный руками номер —
-     * это перевод, который не возвращается (docs/adr/0008). Валюта
-     * сверяется с той, которой платит клиент, — то есть с отдаваемой
-     * стороной заявки.
+     * Куда платить, зависит от вида сделки, и правило это держит ядро, а
+     * не форма: операцию зовут не только с экрана выдачи, а набранный
+     * руками номер — это перевод, который не возвращается
+     * (docs/adr/0008). Правило, живущее в разметке, обходится любым
+     * другим путём к операции.
      */
-    if (input.serviceAccountId !== undefined && row.kind === 'cash') {
+    if (row.kind === 'cash') {
       // Наличная сделка идёт из рук в руки: счёта у неё нет по
       // устройству, и предложенный означал бы перепутанную заявку.
+      if (input.serviceAccountId !== undefined) {
+        throw new InvalidInputError(
+          'У наличной заявки счёта нет: назовите место и время словами',
+        );
+      }
+      if (!note) {
+        throw new InvalidInputError('Назовите, где и когда клиент получит наличные');
+      }
+    } else if (input.serviceAccountId === undefined) {
       throw new InvalidInputError(
-        'У наличной заявки счёта нет: назовите место и время словами',
+        'Выберите счёт сервиса: реквизиты для оплаты не набираются руками',
       );
     }
+
+    /*
+     * Реквизиты собирает ядро, а не менеджер. Валюта сверяется с той,
+     * которой платит клиент, — то есть с отдаваемой стороной заявки.
+     */
     const issued =
       input.serviceAccountId === undefined
         ? undefined

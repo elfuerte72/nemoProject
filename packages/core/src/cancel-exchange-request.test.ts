@@ -8,7 +8,7 @@ import {
   TransitionNotAllowedError,
   type Actor,
 } from './index.js';
-import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff } from './test-support.js';
 
 /**
  * Отмена заявки.
@@ -115,7 +115,7 @@ describe('отмена менеджером', () => {
     await core.claimExchangeRequest(manager, id);
     await core.confirmExchangeRate(manager, id, {
       finalRate: '95',
-      paymentInstructions: 'TRC20: TXYZ',
+      serviceAccountId: await givenServiceAccount({ currencyCode: 'USDT' }),
     });
     await core.markPaymentReceived(manager, id);
 
