@@ -65,11 +65,14 @@ describe('отбор разговоров по теме', () => {
   }
 
   it('разговор помечен темой последней просьбы', async () => {
+    // Две просьбы подряд: клиент передумал и попросил про другое.
+    // Разговор про то, о чём он попросил последним.
     await givenInquiry(200n, 'hotel');
+    await givenInquiry(200n, 'purchase');
 
     const [conversation] = await core.listConversations(manager);
 
-    expect(conversation?.topic).toBe('hotel');
+    expect(conversation?.topic).toBe('purchase');
   });
 
   /*
