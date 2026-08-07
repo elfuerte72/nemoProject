@@ -24,6 +24,10 @@
  */
 
 import { BOT_COMMANDS } from '../apps/miniapp/lib/telegram/commands.js';
+// Прямо из файла с текстами, а не через `@nemo/core`: скрипт запускается
+// вне сборки, и точка входа ядра притащила бы за собой всю работу с
+// базой ради двух строк.
+import { BOT_DESCRIPTION, BOT_SHORT_DESCRIPTION } from '../packages/core/src/bot-texts.js';
 
 const API = 'https://api.telegram.org';
 
@@ -124,7 +128,8 @@ async function main(): Promise<void> {
 }
 
 /**
- * Меню клиентского бота: список команд и кнопка рядом с полем ввода.
+ * Меню клиентского бота: список команд, кнопка рядом с полем ввода и то,
+ * что написано в чате до нажатия «Начать».
  *
  * Настраивается при развёртывании, а не в коде бота: и то и другое —
  * свойство самого бота в Telegram, а не ответа на конкретное сообщение,
@@ -144,7 +149,16 @@ async function main(): Promise<void> {
 async function setUpClientMenu(token: string): Promise<void> {
   await call(token, 'setMyCommands', { commands: BOT_COMMANDS });
   await call(token, 'setChatMenuButton', { menu_button: { type: 'commands' } });
-  console.log('Список команд и кнопка меню чата обновлены.');
+
+  // Описание видит тот, кто ещё не нажимал «Начать», короткое — тот, кто
+  // смотрит профиль бота. Без языка: тексты сервиса русские, и Telegram
+  // сам отдаст их всем, для кого перевода не заведено.
+  await call(token, 'setMyDescription', { description: BOT_DESCRIPTION });
+  await call(token, 'setMyShortDescription', {
+    short_description: BOT_SHORT_DESCRIPTION,
+  });
+
+  console.log('Список команд, кнопка меню чата и описание бота обновлены.');
 }
 
 // Отказ Telegram — не авария скрипта: чаще всего это неверный токен или

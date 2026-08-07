@@ -314,7 +314,7 @@ async function sendReferralLink(ctx: Context): Promise<void> {
   const link = referralLink(client.referralCode);
   if (!link) {
     await ctx.reply(
-      'Реферальная ссылка сейчас недоступна. Напишите менеджеру — он её пришлёт.',
+      'Реферальная ссылка сейчас недоступна. Напишите менеджеру, он её пришлёт.',
       WITHOUT_OLD_KEYBOARD,
     );
     return;
