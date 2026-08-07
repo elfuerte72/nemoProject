@@ -481,3 +481,15 @@ The five canonical triage roles, unchanged: `needs-triage`, `needs-info`, `ready
 ### Domain docs
 
 Single-context: `CONTEXT.md` at the root, ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+
+### Parallel sessions
+
+Several agents at once: one worktree per session, one branch that touches
+the schema at a time, merges bottom-up. See `docs/agents/parallel-sessions.md`.
+
+### QA
+
+Приёмка работы перед тем, как отдать её человеку: чем доказывается
+готовность, в каком порядке идут проверки и чем агент чаще всего
+обманывает себя. Скилл `qa` — `.claude/skills/qa/SKILL.md`, основания с
+источниками рядом в `research.md`.
