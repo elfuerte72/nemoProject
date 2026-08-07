@@ -102,6 +102,30 @@ export const messageDirectionEnum = pgEnum('message_direction', ['incoming', 'ou
 export const inquiryTopicEnum = pgEnum('inquiry_topic', ['hotel', 'purchase']);
 
 /**
+ * Чем кончилась череда обращений для консьержа.
+ *
+ * Ставится на входящем сообщении, которым череда началась, и отвечает
+ * на один вопрос: уходит ли этот повод сотрудникам.
+ *
+ * Пусто — консьержа в этом деплое нет вовсе, и повод уходит сразу, как
+ * было до него. `pending` — ждёт, никто не взялся. `answering` — взялся
+ * и думает. `answered` — разобрано первой линией. `escalated` — нужен
+ * человек, и уходит повод вместе с причиной.
+ *
+ * `answering` отделён от `answered` не для красоты. Между «взялся» и
+ * «ответил» лежит поход к чужому провайдеру, и процесс это не всегда
+ * переживает — выкатка, падение обработчика. Ставя сразу `answered`,
+ * упавший на полпути оставлял бы клиента без ответа навсегда: страховка
+ * ищет незакрытые, а такое сообщение выглядело бы закрытым.
+ */
+export const conciergeOutcomeEnum = pgEnum('concierge_outcome', [
+  'pending',
+  'answering',
+  'answered',
+  'escalated',
+]);
+
+/**
  * Настройки сервиса: единственная строка, `id` всегда 1.
  *
  * Синглтон, а не набор пар «ключ-значение», потому что каждая настройка
@@ -160,6 +184,25 @@ export const serviceSettings = pgTable(
      * в его пользу.
      */
     unpaidExchangeRequestTtlMinutes: integer('unpaid_exchange_request_ttl_minutes').default(120).notNull(),
+    /**
+     * Сколько ответов консьерж даёт одному клиенту за сутки.
+     *
+     * Предел на человека, а не на разговор: развлечение ботом — это один
+     * клиент и сотня сообщений, и упереться он должен сам, не задев
+     * остальных. Исчерпан — отвечает человек, как до консьержа.
+     */
+    conciergeRepliesPerClientDaily: integer('concierge_replies_per_client_daily')
+      .default(30)
+      .notNull(),
+    /**
+     * Сколько ответов консьерж даёт за сутки всему сервису.
+     *
+     * Второй предел нужен от того, от чего не защищает первый: рассылка
+     * с сотни аккаунтов упирается в личный предел каждого и не упирается
+     * ни во что общее. Это счёт у провайдера, а константы, определяющие
+     * деньги, в коде не остаются.
+     */
+    conciergeRepliesDaily: integer('concierge_replies_daily').default(2000).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -181,6 +224,57 @@ export const serviceSettings = pgTable(
     // Нулевой срок отменял бы заявку в тот же миг, когда менеджер выдал
     // реквизиты, — то есть закрывал бы сервис.
     check('service_settings_ttl_positive', sql`${table.unpaidExchangeRequestTtlMinutes} > 0`),
+    // Ноль — законное значение: им консьерж выключается, не трогая
+    // выкатку. Отрицательный предел не означает ничего.
+    check(
+      'service_settings_concierge_per_client_non_negative',
+      sql`${table.conciergeRepliesPerClientDaily} >= 0`,
+    ),
+    check(
+      'service_settings_concierge_daily_non_negative',
+      sql`${table.conciergeRepliesDaily} >= 0`,
+    ),
+  ],
+);
+
+/**
+ * База знаний консьержа: что он знает о сервисе.
+ *
+ * В базе, а не в коде, и это осознанное отступление от правила, по
+ * которому тексты бота живут в коде. Разница в том, что здесь лежит:
+ * не формулировки, которыми сервис говорит, а факты, о которых он
+ * говорит, — график, банки, сроки, чего сервис не делает. Факты
+ * меняются в тот день, когда меняются, и ждать выкатки не могут.
+ *
+ * Голос при этом остаётся в коде: характер, тон и запреты («не называть
+ * чисел от себя», «не обещать сроков») администратору не отданы. Иначе
+ * одно неверное слово в поле меняло бы поведение у всех клиентов сразу
+ * и без отката.
+ *
+ * Строки не удаляются, а гасятся: статья, из-за которой консьерж что-то
+ * сказал, должна остаться читаемой после того, как её убрали.
+ */
+export const conciergeKnowledge = pgTable(
+  'concierge_knowledge',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    /** О чём статья. Идёт в запрос заголовком: без него текст сливается. */
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    /**
+     * Порядок в справке. Модель читает её сверху вниз, и начало запроса
+     * весит больше конца: администратор ставит наверх то, что
+     * спрашивают чаще.
+     */
+    position: integer('position').default(0).notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('concierge_knowledge_order_idx').on(table.isActive, table.position),
+    // Пустая статья не факт, а строка, занимающая место в запросе.
+    check('concierge_knowledge_not_empty', sql`length(btrim(${table.body})) > 0`),
+    check('concierge_knowledge_title_not_empty', sql`length(btrim(${table.title})) > 0`),
   ],
 );
 
@@ -206,6 +300,17 @@ export const clients = pgTable(
     }),
     referrerId: bigint('referrer_id', { mode: 'bigint' }),
     referralCode: text('referral_code').notNull().unique(),
+    /**
+     * Когда разговор перешёл к человеку. Пока отметка стоит, консьерж
+     * молчит: два голоса в одном чате — худшее из возможного, и клиент,
+     * которому менеджер назвал цену, не должен получить следом бота с
+     * пересказом справки.
+     *
+     * Снимает её менеджер кнопкой в панели. Сама она не снимается: срок
+     * тишины пришлось бы угадывать, а разговор, доведённый человеком до
+     * конца, и не должен возвращаться к первой линии.
+     */
+    handedToHumanAt: timestamp('handed_to_human_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -842,8 +947,26 @@ export const clientMessages = pgTable(
      * подтягивает изображение по требованию.
      */
     attachmentFileId: text('attachment_file_id'),
-    /** Кто из сотрудников ответил. Только у исходящих. */
+    /** Кто из сотрудников ответил. Только у исходящих и не у всех. */
     authorStaffId: uuid('author_staff_id').references(() => staff.id),
+    /**
+     * Ответил консьерж, а не человек. Признаком, а не ссылкой: сотрудник
+     * у него отсутствует, и `author_staff_id` тут не пустует по недосмотру.
+     *
+     * Менеджер видит это в ленте и читает разговор подряд: вступая
+     * вслепую, он пересказал бы клиенту другую цену.
+     */
+    authoredByConcierge: boolean('authored_by_concierge').default(false).notNull(),
+    /**
+     * Чем кончилась череда для консьержа. Только у входящего сообщения,
+     * которым череда началась.
+     */
+    conciergeOutcome: conciergeOutcomeEnum('concierge_outcome'),
+    /**
+     * Почему позвали человека. Уходит сотруднику сводкой: «что
+     * случилось» должно быть видно до того, как он откроет переписку.
+     */
+    escalationReason: text('escalation_reason'),
     exchangeRequestId: uuid('exchange_request_id').references(() => exchangeRequests.id),
     /**
      * Когда клиенту ушло подтверждение приёма. Ставится условно и
@@ -862,11 +985,35 @@ export const clientMessages = pgTable(
      * деньги», и выборка идёт по теме внутри ленты клиента.
      */
     index('client_messages_topic_idx').on(table.topic, table.clientId),
-    // Автор есть ровно у исходящего: у входящего им был бы клиент, а он
-    // и так записан ссылкой.
+    /*
+     * Автор есть ровно у исходящего, и он ровно один: сотрудник или
+     * консьерж. У входящего им был бы клиент, а он и так записан
+     * ссылкой.
+     *
+     * «Ровно один» держит база, а не операция: строка, где ответ
+     * приписан и человеку, и машине, читается менеджером как чужой
+     * ответ от его имени.
+     */
     check(
       'client_messages_author_for_outgoing',
-      sql`(${table.direction} = 'outgoing') = (${table.authorStaffId} is not null)`,
+      sql`case ${table.direction}
+        when 'outgoing' then (${table.authorStaffId} is not null) <> ${table.authoredByConcierge}
+        else ${table.authorStaffId} is null and not ${table.authoredByConcierge}
+      end`,
+    ),
+    // Исход консьержа — свойство череды, а её начинает входящее
+    // сообщение. У исходящего он означал бы, что бот отвечал боту.
+    check(
+      'client_messages_concierge_outcome_for_incoming',
+      sql`${table.conciergeOutcome} is null or ${table.direction} = 'incoming'`,
+    ),
+    // Причина есть ровно там, где звали человека. Причина без эскалации
+    // — это сводка, которая никуда не уходит; эскалация без причины —
+    // сводка, которая не отвечает, что случилось.
+    check(
+      'client_messages_escalation_reason',
+      sql`coalesce(${table.conciergeOutcome} = 'escalated', false)
+        = (${table.escalationReason} is not null)`,
     ),
     // Сообщение без содержимого не сообщение: в ленте оно выглядит
     // потерянной строкой, и разбираться в ней будет менеджер. Пустую

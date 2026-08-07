@@ -95,6 +95,31 @@ export type Notification =
     }
   | {
       /**
+       * Ответ консьержа. Доставляет его тот же бот, которого клиент
+       * запускал, — как и ответ менеджера.
+       */
+      readonly kind: 'concierge-message';
+      readonly to: bigint;
+      readonly body: string;
+    }
+  | {
+      /**
+       * Консьерж позвал человека — сотруднику, с причиной.
+       *
+       * Отдельно от обычного обращения: разница в том, что менеджер
+       * читает первым. «Клиент говорит, что деньги не дошли» отвечает на
+       * вопрос «что случилось» до того, как он откроет переписку, а
+       * очередь у него общая.
+       */
+      readonly kind: 'staff-escalation';
+      readonly to: bigint;
+      readonly clientId: bigint;
+      readonly clientUsername: string | null;
+      readonly reason: string;
+      readonly preview: string;
+    }
+  | {
+      /**
        * Новая заявка — сотруднику. Тем же путём, что и обращение: бот
        * входа, отметка в строке, планировщик.
        *
@@ -145,7 +170,9 @@ export const notificationKinds = [
   'card-application-status',
   'client-message-received',
   'manager-message',
+  'concierge-message',
   'staff-client-message',
+  'staff-escalation',
   'staff-new-request',
 ] as const satisfies readonly Notification['kind'][];
 
@@ -203,10 +230,21 @@ export function renderNotification(notification: Notification): string {
         `Новое обращение от клиента ${notification.clientUsername ?? notification.clientId}:\n` +
         notification.preview
       );
+    case 'concierge-message':
+      // Как и текст менеджера, уходит как есть: обрамление вроде
+      // «помощник пишет» превратило бы разговор в автоответчик. Кто
+      // отвечает, консьерж говорит сам — один раз, в начале разговора.
+      return notification.body;
     case 'staff-new-request':
       return (
         `Новая ${renderNewRequestSubject(notification.request)}\n` +
         `Клиент: ${notification.clientUsername ?? notification.clientId}`
+      );
+    case 'staff-escalation':
+      return (
+        `Помощник передал разговор: ${notification.reason}.\n` +
+        `Клиент ${notification.clientUsername ?? notification.clientId} пишет:\n` +
+        notification.preview
       );
   }
 }

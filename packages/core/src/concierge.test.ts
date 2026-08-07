@@ -1,0 +1,394 @@
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { clientMessages } from '@nemo/db';
+import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
+import { CONCIERGE_HANDOVER, createCore, type Actor } from './index.js';
+import type { ConciergeAnswer, ConciergeSource } from './concierge-source.js';
+import { givenStaff } from './test-support.js';
+
+/**
+ * Консьерж как первая линия.
+ *
+ * Проверяется то, ради чего он и заводится, и то, чем он опасен. Ради:
+ * клиент получает ответ сразу, а не подтверждение приёма. Опасен:
+ * дешёвая модель говорит про деньги — поэтому число, которого сервис не
+ * называл, до клиента не доходит, а разговор, перешедший к человеку,
+ * обратно к боту не возвращается.
+ *
+ * Модель подменена: в тест её не позовёшь, а проверяются здесь правила
+ * ядра, а не её сообразительность. Ответы настоящего провайдера лежат
+ * фикстурами в `@nemo/concierge`.
+ */
+
+const db = testDatabase();
+
+/** Модель, отвечающая заданным текстом. Считает, сколько раз её звали. */
+function givenModel(...answers: (ConciergeAnswer | null)[]): ConciergeSource & {
+  readonly calls: { request: unknown }[];
+} {
+  const calls: { request: unknown }[] = [];
+  let next = 0;
+  return {
+    calls,
+    answer: async (request) => {
+      calls.push({ request });
+      const answer = answers[Math.min(next, answers.length - 1)];
+      next += 1;
+      return answer ?? null;
+    },
+  };
+}
+
+function coreWith(concierge: ConciergeSource | undefined) {
+  return createCore({ db, ...(concierge ? { concierge } : {}) });
+}
+
+const SIMPLE: ConciergeAnswer = {
+  reply: 'Курс виден на главном экране обменника, там же подаётся заявка.',
+  needsHuman: false,
+};
+
+let manager: Actor & { type: 'staff' };
+
+beforeEach(async () => {
+  await resetDatabase();
+  manager = await givenStaff({ displayName: 'Пётр', telegramUserId: 901n });
+});
+
+afterAll(() => closeTestDatabase());
+
+describe('приём сообщения при живом консьерже', () => {
+  it('не отвечает подтверждением приёма: его заменяет живой ответ', async () => {
+    const core = coreWith(givenModel(SIMPLE));
+    await core.registerClient({ telegramUserId: 100n });
+
+    const { notifications } = await core.receiveClientMessage({
+      telegramUserId: 100n,
+      body: 'Какой курс?',
+    });
+
+    expect(notifications).toEqual([]);
+  });
+
+  it('отвечает подтверждением, когда консьержа в деплое нет', async () => {
+    const core = coreWith(undefined);
+    await core.registerClient({ telegramUserId: 100n });
+
+    const { notifications } = await core.receiveClientMessage({
+      telegramUserId: 100n,
+      body: 'Какой курс?',
+    });
+
+    expect(notifications).toEqual([
+      expect.objectContaining({ kind: 'client-message-received' }),
+    ]);
+  });
+});
+
+describe('ответ', () => {
+  it('уходит клиенту и ложится в ленту с пометкой автора', async () => {
+    const core = coreWith(givenModel(SIMPLE));
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+
+    const { notifications } = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(notifications).toEqual([
+      expect.objectContaining({ kind: 'concierge-message', to: 100n }),
+    ]);
+    const feed = await core.listConversation(manager, 100n);
+    expect(feed.at(-1)).toMatchObject({
+      direction: 'outgoing',
+      authorStaffId: null,
+      byConcierge: true,
+    });
+  });
+
+  it('в первом ответе представляется, а во втором — нет', async () => {
+    const core = coreWith(givenModel(SIMPLE));
+    await core.registerClient({ telegramUserId: 100n });
+
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+    const first = await core.answerAsConcierge({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'А бата?' });
+    const second = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(bodyOf(first)).toContain('помощник');
+    expect(bodyOf(second)).not.toContain('помощник');
+  });
+
+  it('не отвечает дважды на одно сообщение', async () => {
+    const core = coreWith(givenModel(SIMPLE));
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+
+    await core.answerAsConcierge({ telegramUserId: 100n });
+    const again = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(again.notifications).toEqual([]);
+  });
+});
+
+describe('застава', () => {
+  it('переспрашивает модель, назвавшую число из воздуха', async () => {
+    const model = givenModel(
+      { reply: 'Курс сейчас 95 рублей за USDT.', needsHuman: false },
+      SIMPLE,
+    );
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toHaveLength(2);
+    expect(bodyOf(result)).not.toContain('95');
+  });
+
+  it('зовёт человека, если и повтор не годится', async () => {
+    const core = coreWith(
+      givenModel({ reply: 'Курс сейчас 95 рублей.', needsHuman: false }),
+    );
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(bodyOf(result)).toBe(CONCIERGE_HANDOVER);
+    expect(await isHandedToHuman(core, 100n)).toBe(true);
+  });
+});
+
+describe('эскалация', () => {
+  it('срабатывает на слове и не зовёт модель вовсе', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      body: 'Отправил деньги, ничего не пришло',
+    });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toEqual([]);
+    expect(bodyOf(result)).toBe(CONCIERGE_HANDOVER);
+  });
+
+  it('срабатывает на изображении: скриншот перевода — всегда про деньги', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachmentFileId: 'AgACAgIAAxkBAAI',
+    });
+
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toEqual([]);
+    expect(await isHandedToHuman(core, 100n)).toBe(true);
+  });
+
+  it('срабатывает по просьбе самой модели', async () => {
+    const core = coreWith(
+      givenModel({ reply: 'Тут нужен менеджер.', needsHuman: true }),
+    );
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Странный вопрос' });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(bodyOf(result)).toBe(CONCIERGE_HANDOVER);
+  });
+
+  it('доносит до сотрудников причину, а не только факт', async () => {
+    const core = coreWith(givenModel(SIMPLE));
+    await core.registerClient({ telegramUserId: 100n, username: 'ivan' });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'вы меня обманули' });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    const alerts = await core.takeStaffAlerts(new Date());
+
+    expect(alerts).toEqual([
+      expect.objectContaining({ kind: 'staff-escalation', to: 901n, clientId: 100n }),
+    ]);
+  });
+});
+
+describe('разговор, который ведёт человек', () => {
+  it('консьержа не зовёт вовсе', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'позовите менеджера' });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    const { notifications } = await core.receiveClientMessage({
+      telegramUserId: 100n,
+      body: 'Ещё вопрос',
+    });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toEqual([]);
+    // Подтверждение приёма вернулось: первой линии больше нет, и молчать
+    // в ответ на вопрос нельзя.
+    expect(notifications).toEqual([
+      expect.objectContaining({ kind: 'client-message-received' }),
+    ]);
+  });
+
+  it('возвращается к консьержу кнопкой менеджера, а не сам', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'позовите менеджера' });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    await core.returnToConcierge(manager, 100n);
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toHaveLength(1);
+  });
+
+  it('передаётся человеку и по кнопке менеджера, без просьбы клиента', async () => {
+    // Менеджер видит разговор, который бот ведёт не туда, и забирает
+    // его раньше, чем клиент об этом попросит.
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    await core.handOverToHuman(manager, 100n);
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Ещё вопрос' });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(await isHandedToHuman(core, 100n)).toBe(true);
+    expect(model.calls).toHaveLength(1);
+  });
+});
+
+describe('пределы', () => {
+  it('исчерпанный предел клиента возвращает разговор человеку', async () => {
+    const core = coreWith(givenModel(SIMPLE));
+    await core.updateServiceSettings(
+      await givenStaff({ role: 'admin', telegramUserId: 902n }),
+      { conciergeRepliesPerClientDaily: 1 },
+    );
+    await core.registerClient({ telegramUserId: 100n });
+
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Первый' });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Второй' });
+    const second = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(bodyOf(second)).toBe(CONCIERGE_HANDOVER);
+  });
+});
+
+describe('молчащий провайдер', () => {
+  it('оставляет клиента с человеком, а не без ответа', async () => {
+    const core = coreWith(givenModel(null));
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(bodyOf(result)).toBe(CONCIERGE_HANDOVER);
+    expect(await isHandedToHuman(core, 100n)).toBe(true);
+  });
+});
+
+describe('страховка', () => {
+  /**
+   * Упавший на полпути процесс: сообщение занято, ответа нет.
+   *
+   * Провайдер бросает исключение так, что операция не доходит до записи
+   * исхода, — ровно то, что делает перезапуск деплоя посреди ответа.
+   */
+  async function givenAbandonedMessage() {
+    const core = coreWith({
+      answer: async () => {
+        throw new Error('процесс упал');
+      },
+    });
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+    await expect(core.answerAsConcierge({ telegramUserId: 100n })).rejects.toThrow();
+    return core;
+  }
+
+  /** Состарить ленту клиента: столько прошло с тех пор, как он написал. */
+  async function aged(minutes: number) {
+    await db
+      .update(clientMessages)
+      .set({ createdAt: new Date(Date.now() - minutes * 60 * 1000) });
+  }
+
+  it('не трогает только что занятое: фон может ещё работать', async () => {
+    // Перехватив его сразу, опрос ответил бы клиенту вторым таким же
+    // сообщением — а первый ответ в это время уже в пути.
+    const core = await givenAbandonedMessage();
+
+    expect(await core.listConversationsAwaitingConcierge()).toEqual([]);
+  });
+
+  it('подбирает брошенное, когда ждать фон больше нечего', async () => {
+    const core = await givenAbandonedMessage();
+    await aged(10);
+
+    expect(await core.listConversationsAwaitingConcierge()).toEqual([100n]);
+  });
+
+  it('отвечает подобранному, а не оставляет его в списке навсегда', async () => {
+    await givenAbandonedMessage();
+    await aged(10);
+    // Провайдер ожил: тот же клиент, живая модель.
+    const core = coreWith(givenModel(SIMPLE));
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(bodyOf(result)).toContain(SIMPLE.reply);
+    expect(await core.listConversationsAwaitingConcierge()).toEqual([]);
+  });
+
+  it('не находит того, кому уже ответили', async () => {
+    const core = coreWith(givenModel(SIMPLE));
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(await core.listConversationsAwaitingConcierge()).toEqual([]);
+  });
+});
+
+describe('память', () => {
+  it('включает в разговор ответы менеджера: их клиенту тоже говорили', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Первый вопрос' });
+    await core.replyToClient(manager, { clientId: 100n, body: 'Ответ менеджера' });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Второй вопрос' });
+
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    const request = model.calls[0]?.request as { conversation: { text: string }[] };
+    expect(request.conversation.map((one) => one.text)).toContain('Ответ менеджера');
+  });
+});
+
+/** Текст, ушедший клиенту. */
+function bodyOf(result: { notifications: readonly { kind: string }[] }): string {
+  const message = result.notifications.find((one) => one.kind === 'concierge-message');
+  return (message as { body?: string } | undefined)?.body ?? '';
+}
+
+async function isHandedToHuman(
+  core: ReturnType<typeof coreWith>,
+  clientId: bigint,
+): Promise<boolean> {
+  const conversations = await core.listConversations(manager);
+  return conversations.find((one) => one.clientId === clientId)?.handedToHuman ?? false;
+}

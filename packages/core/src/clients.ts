@@ -204,6 +204,14 @@ export interface ClientCardView {
   readonly referrerUsername: string | null;
   /** Согласие на рассылку: молчащему писать о курсах нельзя. */
   readonly marketingConsent: boolean;
+  /**
+   * Разговор ведёт человек: помощник в нём молчит.
+   *
+   * Здесь, а не отдельной операцией: строка клиента для карточки уже
+   * прочитана, а второй запрос ради одного признака платится на каждом
+   * открытии разговора.
+   */
+  readonly handedToHuman: boolean;
 }
 
 export async function getClientCard(
@@ -232,5 +240,6 @@ export async function getClientCard(
     referrerId: row.referrerId,
     referrerUsername: referrer?.username ?? null,
     marketingConsent: row.marketingConsent,
+    handedToHuman: row.handedToHumanAt !== null,
   };
 }

@@ -1,4 +1,5 @@
 import type { Database } from '@nemo/db';
+import type { ConciergeSource } from './concierge-source.js';
 import type { RateSource } from './rates.js';
 
 /**
@@ -26,6 +27,13 @@ export interface CoreConfig {
    * менеджер.
    */
   readonly rateSource?: RateSource | undefined;
+  /**
+   * Кто отвечает клиенту первым. Не задан — первой линии нет, и
+   * сообщение клиента идёт сотрудникам, как было до консьержа. Это
+   * рабочее состояние, а не поломка: у админки его нет вовсе, а в
+   * клиентском деплое он выключается снятием ключа провайдера.
+   */
+  readonly concierge?: ConciergeSource | undefined;
 }
 
 /**

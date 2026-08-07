@@ -11,7 +11,7 @@ import type {
 import type { StaffRole } from '@nemo/types';
 import { KIND_LABELS } from '@/lib/exchange-request-labels';
 import { pillClass, ROLE_LABELS } from '@/lib/labels';
-import { bpsToPercent, percentToBps } from '@/lib/percent';
+import { bpsToPercent, isWholeNumber, percentToBps } from '@/lib/percent';
 
 /**
  * Раздел администратора: экономика сервиса и сотрудники.
@@ -54,6 +54,10 @@ export function SettingsForms({
   const [markup, setMarkup] = useState(bpsToPercent(settings.markupBps));
   const [minExchange, setMinExchange] = useState<string>(settings.minExchangeAmount);
   const [ttlMinutes, setTtlMinutes] = useState(String(settings.unpaidExchangeRequestTtlMinutes));
+  const [perClientDaily, setPerClientDaily] = useState(
+    String(settings.conciergeRepliesPerClientDaily),
+  );
+  const [totalDaily, setTotalDaily] = useState(String(settings.conciergeRepliesDaily));
 
   const [newTelegram, setNewTelegram] = useState('');
   const [newName, setNewName] = useState('');
@@ -237,6 +241,49 @@ export function SettingsForms({
                 markupBps: percentToBps(markup),
                 minExchangeAmount: minExchange.replace(',', '.').trim(),
                 unpaidExchangeRequestTtlMinutes: Number(ttlMinutes),
+              })
+            }
+          >
+            Сохранить
+          </button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2 className="card__title">Помощник</h2>
+        <p className="card__note">
+          Сколько ответов помощник даёт за сутки. Предел исчерпан — на вопросы
+          отвечает менеджер, как было до помощника. Ноль выключает его совсем.
+        </p>
+        <div className="form-row">
+          <label className="field">
+            <span className="label">Одному клиенту</span>
+            <input
+              className="input"
+              value={perClientDaily}
+              onChange={(event) => setPerClientDaily(event.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+          <label className="field">
+            <span className="label">Всему сервису</span>
+            <input
+              className="input"
+              value={totalDaily}
+              onChange={(event) => setTotalDaily(event.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+        </div>
+        <div className="row__actions">
+          <button
+            type="button"
+            disabled={busy || !isWholeNumber(perClientDaily) || !isWholeNumber(totalDaily)}
+            className="btn btn--gold"
+            onClick={() =>
+              send('/api/settings', {
+                conciergeRepliesPerClientDaily: Number(perClientDaily),
+                conciergeRepliesDaily: Number(totalDaily),
               })
             }
           >

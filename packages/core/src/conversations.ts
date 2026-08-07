@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzl
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { clientMessages, clients, staff } from '@nemo/db';
 import { requireStaff, type Actor } from './actor.js';
+import { conciergeTakesOver } from './concierge.js';
 import type { CoreConfig } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import { generateReferralCode } from './referral-code.js';
@@ -39,9 +40,14 @@ export interface MessageView {
   readonly body: string | null;
   /** Есть ли вложение. Само изображение панель подтягивает отдельно. */
   readonly hasAttachment: boolean;
-  /** Кто из сотрудников ответил. Пусто у входящих. */
+  /** Кто из сотрудников ответил. Пусто у входящих и у ответов консьержа. */
   readonly authorStaffId: string | null;
   readonly authorName: string | null;
+  /**
+   * Ответил консьерж. Менеджер видит это в ленте: вступая в разговор
+   * вслепую, он пересказал бы клиенту другую цену.
+   */
+  readonly byConcierge: boolean;
   readonly exchangeRequestId: string | null;
   readonly createdAt: Date;
 }
@@ -68,6 +74,12 @@ export interface ConversationView {
    * спрашивать про оплату. Тема — свойство просьбы, а не ленты.
    */
   readonly topic: InquiryTopic | null;
+  /**
+   * Разговор ведёт человек: консьерж в нём молчит. Метка стоит в
+   * списке, потому что по ней менеджер видит, чем занята первая линия,
+   * не открывая переписку.
+   */
+  readonly handedToHuman: boolean;
 }
 
 export interface ReceiveMessageInput {
@@ -103,6 +115,7 @@ function toView(row: MessageRow, authorName: string | null = null): MessageView 
     hasAttachment: row.attachmentFileId !== null,
     authorStaffId: row.authorStaffId,
     authorName,
+    byConcierge: row.authoredByConcierge,
     exchangeRequestId: row.exchangeRequestId,
     createdAt: row.createdAt,
   };
@@ -169,12 +182,25 @@ export async function receiveClientMessage(
      * сотрудники два уведомления об одном обращении. Проверка «не
      * подтверждали ли уже» без неё не защищает ни от чего.
      */
-    await tx
-      .select({ id: clients.telegramUserId })
+    const [locked] = await tx
+      .select({ handedToHumanAt: clients.handedToHumanAt })
       .from(clients)
       .where(eq(clients.telegramUserId, input.telegramUserId))
       .limit(1)
       .for('update');
+
+    /*
+     * Возьмётся ли за это сообщение консьерж. От ответа зависит и то,
+     * что получит клиент, и то, узнают ли о сообщении сотрудники.
+     *
+     * Возьмётся — подтверждение приёма не отправляется: его заменяет
+     * живой ответ, и два сообщения подряд превратили бы разговор в
+     * переписку с автоответчиком. Сотрудников при этом тоже не зовут:
+     * их позовёт эскалация, если она случится.
+     */
+    const takenByConcierge = conciergeTakesOver(ctx, {
+      handedToHumanAt: locked?.handedToHumanAt ?? null,
+    });
 
     const [row] = await tx
       .insert(clientMessages)
@@ -184,8 +210,13 @@ export async function receiveClientMessage(
         topic: input.topic ?? null,
         body: body ?? null,
         attachmentFileId: input.attachmentFileId ?? null,
+        conciergeOutcome: takenByConcierge ? 'pending' : null,
       })
       .returning();
+
+    if (takenByConcierge) {
+      return { message: toView(row!), notifications: [] };
+    }
 
     // Право на подтверждение занимается условно: если в текущей череде
     // подтверждение уже уходило, обновление не найдёт строки, и второго
@@ -354,6 +385,7 @@ export async function listConversations(
       // «отвечено» без имени не говорит, надо ли перечитывать.
       lastAuthorName: staff.displayName,
       topic: topics.topic,
+      handedToHumanAt: clients.handedToHumanAt,
     })
     .from(last)
     .innerJoin(clients, eq(clients.telegramUserId, last.clientId))
@@ -365,9 +397,10 @@ export async function listConversations(
     // сообщение: время двух записей в одну миллисекунду не разводит.
     .orderBy(sql`${last.direction} = 'incoming' desc`, desc(last.seq));
 
-  return rows.map(({ direction, ...row }) => ({
+  return rows.map(({ direction, handedToHumanAt, ...row }) => ({
     ...row,
     isUnanswered: direction === 'incoming',
+    handedToHuman: handedToHumanAt !== null,
   }));
 }
 
@@ -434,11 +467,24 @@ export async function takeStaffNotifications(
       .where(
         and(
           eq(clientMessages.direction, 'incoming'),
-          // Подтверждение клиенту и уведомление сотрудникам — про одно
-          // и то же: начало череды. Повторные сообщения до ответа его
-          // не занимают и сотрудников не беспокоят.
-          isNotNull(clientMessages.acknowledgedAt),
           isNull(clientMessages.staffNotifiedAt),
+          /*
+           * Поводов позвать человека два, и они исключают друг друга.
+           *
+           * Консьержа нет — повод тот же, что и был: начало череды, то
+           * есть подтверждённое приёмом сообщение. Повторные до ответа
+           * его не занимают и сотрудников не беспокоят.
+           *
+           * Консьерж есть — повод только один: он позвал человека сам.
+           * Разобранное им сотрудникам не уходит, а `pending` ждёт: он
+           * ещё думает, и звать менеджера к вопросу, на который вот-вот
+           * ответят, значит звать его зря.
+           */
+          sql`case
+            when ${clientMessages.conciergeOutcome} is null
+              then ${clientMessages.acknowledgedAt} is not null
+            else ${clientMessages.conciergeOutcome} = 'escalated'
+          end`,
         ),
       )
       .returning();
@@ -459,14 +505,26 @@ export async function takeStaffNotifications(
     const usernames = new Map(senders.map((one) => [one.telegramUserId, one.username]));
 
     return fresh.flatMap((message) =>
-      recipients.map(
-        (recipient): Notification => ({
-          kind: 'staff-client-message',
-          to: recipient.telegramUserId,
-          clientId: message.clientId,
-          clientUsername: usernames.get(message.clientId) ?? null,
-          preview: message.body ?? 'Изображение',
-        }),
+      recipients.map((recipient): Notification =>
+        // Позвал консьерж — сотрудник должен прочитать причину раньше
+        // самого вопроса: «что случилось» отвечается до того, как он
+        // откроет переписку.
+        message.escalationReason === null
+          ? {
+              kind: 'staff-client-message',
+              to: recipient.telegramUserId,
+              clientId: message.clientId,
+              clientUsername: usernames.get(message.clientId) ?? null,
+              preview: message.body ?? 'Изображение',
+            }
+          : {
+              kind: 'staff-escalation',
+              to: recipient.telegramUserId,
+              clientId: message.clientId,
+              clientUsername: usernames.get(message.clientId) ?? null,
+              reason: message.escalationReason,
+              preview: message.body ?? 'Изображение',
+            },
       ),
     );
   });

@@ -71,6 +71,13 @@ import {
 } from './conversations.js';
 import { takeStaffAlerts } from './staff-alerts.js';
 import {
+  answerAsConcierge,
+  handOverToHuman,
+  listConversationsAwaitingConcierge,
+  returnToConcierge,
+  type AnswerAsConciergeInput,
+} from './concierge.js';
+import {
   listRequisiteAccessLog,
   revealMessageAttachment,
   revealRequisites,
@@ -274,6 +281,13 @@ export function createCore(ctx: CoreConfig) {
       listConversations(ctx, actor, filter),
     countUnansweredConversations: (actor: Actor) => countUnansweredConversations(ctx, actor),
     takeStaffAlerts: (at: Date) => takeStaffAlerts(ctx, at),
+
+    answerAsConcierge: (input: AnswerAsConciergeInput) => answerAsConcierge(ctx, input),
+    listConversationsAwaitingConcierge: () => listConversationsAwaitingConcierge(ctx),
+    handOverToHuman: (actor: Actor, clientId: bigint) =>
+      handOverToHuman(ctx, actor, clientId),
+    returnToConcierge: (actor: Actor, clientId: bigint) =>
+      returnToConcierge(ctx, actor, clientId),
     listRequisiteAccessLog: (actor: Actor, filter?: RequisiteAccessFilter) =>
       listRequisiteAccessLog(ctx, actor, filter),
 
@@ -441,3 +455,15 @@ export {
   type NewRequestSubject,
   type Notification,
 } from './notifications.js';
+export type {
+  ConciergeAnswer,
+  ConciergeRequest,
+  ConciergeSource,
+  ConciergeTurn,
+} from './concierge-source.js';
+export {
+  CONCIERGE_GREETING,
+  CONCIERGE_HANDOVER,
+  CONCIERGE_INSTRUCTIONS,
+} from './concierge-voice.js';
+export { MAX_REPLY_LENGTH } from './concierge-guard.js';

@@ -127,6 +127,20 @@
       "when": 1786100615169,
       "tag": "0017_flawless_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786101940324,
+      "tag": "0018_even_nova",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786103422193,
+      "tag": "0019_mean_tomorrow_man",
+      "breakpoints": true
     }
   ]
 }
