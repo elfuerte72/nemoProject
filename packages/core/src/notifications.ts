@@ -113,8 +113,8 @@ export function renderNotification(notification: Notification): string {
     case 'exchange-request-expiring':
       return (
         `Заявка на обмен ждёт оплаты ещё ${notification.minutesLeft} мин. ` +
-        'Курс держится до конца этого срока; неоплаченную заявку сервис отменит, ' +
-        'и подать её можно будет заново — уже по новому курсу.'
+        'Курс держится до конца этого срока. Неоплаченную заявку сервис отменит, ' +
+        'и подать её можно будет заново, уже по новому курсу.'
       );
     case 'bonus-accrued':
       return (
@@ -127,7 +127,7 @@ export function renderNotification(notification: Notification): string {
       return renderCardApplicationStatus(notification.status);
     case 'client-message-received':
       return (
-        'Вопрос принят — менеджер ответит здесь же. ' +
+        'Вопрос принят, менеджер ответит здесь же. ' +
         'Можно закрыть приложение: ответ придёт в этот чат.'
       );
     case 'manager-message':
@@ -147,7 +147,7 @@ function renderExchangeRequestStatus(
 ): string {
   switch (notification.status) {
     case 'new':
-      return 'Заявка на обмен принята. Её возьмёт менеджер — вы получите сообщение.';
+      return 'Заявка на обмен принята. Её возьмёт менеджер, и вы получите сообщение.';
     case 'in_progress':
       return 'Менеджер взял вашу заявку на обмен в работу и скоро пришлёт реквизиты для оплаты.';
     case 'rate_confirmed':
@@ -169,7 +169,7 @@ function renderExchangeRequestStatus(
     case 'payment_received':
       return 'Ваша оплата получена. Готовим отправку средств.';
     case 'completed':
-      return 'Обмен исполнен, средства отправлены. Спасибо, что выбрали нас.';
+      return 'Обмен исполнен, средства отправлены. Проверьте поступление и напишите сюда, если что-то не сошлось.';
     case 'cancelled':
       return notification.cancelReason
         ? `Заявка на обмен отменена. Причина: ${notification.cancelReason}`

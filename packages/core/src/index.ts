@@ -371,8 +371,14 @@ export type {
 } from './service-accounts.js';
 export type { NetworkView } from './networks.js';
 export type { DirectionView } from './directions.js';
-export { botTextKeys, BOT_TEXTS } from './bot-texts.js';
+export {
+  botTextKeys,
+  BOT_TEXTS,
+  BOT_DESCRIPTION,
+  BOT_SHORT_DESCRIPTION,
+} from './bot-texts.js';
 export type { BotTextKey } from './bot-texts.js';
+export { slopComplaints } from './bot-slop.js';
 export type { BonusAccountView, BonusTransactionView } from './bonus-account.js';
 export type { ClientHistoryEntry, ClientHistoryView } from './history-feed.js';
 export type { ServiceSettingsView } from './settings.js';

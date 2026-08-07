@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Money } from '@nemo/types';
-import { renderRatesMessage, type QuotedPair } from './rates-message';
+import { slopComplaints } from '@nemo/core';
+import { RATES_UNAVAILABLE, renderRatesMessage, type QuotedPair } from './rates-message';
 
 /** Направление с курсом — так, как их отдаёт ядро. */
 function pair(fromCode: string, toCode: string, rate: string): QuotedPair {
@@ -23,33 +24,33 @@ const DIRECTORY: readonly QuotedPair[] = [
 describe('renderRatesMessage', () => {
   it('называет обе стороны рублёвого обмена', () => {
     const message = renderRatesMessage({ quoted: DIRECTORY, hasCash: true });
-    expect(message).toContain('Продаёте USDT — 81 ₽ за 1 USDT');
+    expect(message).toContain('Продаёте USDT по 81 ₽');
     // Курс «рубли → USDT» приходит мелкой стороной, а читается крупной.
-    expect(message).toContain('Покупаете USDT — 83 ₽ за 1 USDT');
+    expect(message).toContain('Покупаете USDT по 83 ₽');
   });
 
   it('ведёт столбец валют выдачи одной стороной — за монету', () => {
     const message = renderRatesMessage({ quoted: DIRECTORY, hasCash: true });
     // У валюты, которой за монету дают меньше одной, строка не
     // переворачивается: столбец читается сверху вниз.
-    expect(message).toContain('🇪🇺 EUR · Еврозона — 0,84');
-    expect(message).toContain('🇺🇸 USD · США — 0,98');
-    expect(message).toContain('🇹🇭 THB · Таиланд — 32,44');
-    expect(message).toContain('🇿🇦 ZAR · ЮАР — 18,34');
+    expect(message).toContain('🇪🇺 0,84 EUR · Еврозона');
+    expect(message).toContain('🇺🇸 0,98 USD · США');
+    expect(message).toContain('🇹🇭 32,44 THB · Таиланд');
+    expect(message).toContain('🇿🇦 18,34 ZAR · ЮАР');
   });
 
   it('ставит валюты в том же порядке, что список выбора на экране', () => {
     const message = renderRatesMessage({ quoted: DIRECTORY, hasCash: false });
-    const shown = [...message.matchAll(/^\S+ ([A-Z]{3}) · /gmu)].map((match) => match[1]);
+    const shown = [...message.matchAll(/^\S+ [\d,]+ ([A-Z]{3}) · /gmu)].map((match) => match[1]);
     expect(shown).toEqual(['CNY', 'EUR', 'INR', 'THB', 'TRY', 'USD', 'ZAR']);
   });
 
   it('о наличных говорит только там, где они есть', () => {
     expect(renderRatesMessage({ quoted: DIRECTORY, hasCash: true })).toContain(
-      'Наличные считает менеджер',
+      'их считает менеджер',
     );
     expect(renderRatesMessage({ quoted: DIRECTORY, hasCash: false })).not.toContain(
-      'Наличные',
+      'наличных',
     );
   });
 
@@ -67,7 +68,7 @@ describe('renderRatesMessage', () => {
       hasCash: false,
     });
     expect(message).toContain('Другие направления');
-    expect(message).toContain('🇷🇺 RUB → 🇹🇭 THB —');
+    expect(message).toContain('🇷🇺 RUB → 🇹🇭 THB:');
   });
 
   it('не показывает валюту нулём, когда за монету дают доли единицы', () => {
@@ -75,7 +76,7 @@ describe('renderRatesMessage', () => {
       quoted: [pair('USDT', 'KWD', '0.003')],
       hasCash: false,
     });
-    expect(message).toContain('KWD — 0,003');
+    expect(message).toContain('0,003 KWD');
   });
 
   it('не оставляет в разметке знаков, которые Telegram примет за тег', () => {
@@ -84,6 +85,30 @@ describe('renderRatesMessage', () => {
       hasCash: false,
     });
     expect(message).toContain('&lt;b');
-    expect(message).not.toContain('<b —');
+    expect(message).not.toContain('<b>&lt;b');
+  });
+
+  /*
+   * Столбец курса — самое длинное, что бот присылает, и раньше каждая
+   * его строка была связкой через длинное тире. Девять одинаковых
+   * связок подряд читаются набранными машиной, а не человеком: правило
+   * и жалобы к нему живут в `@nemo/core`.
+   */
+  it('не собирается в столбец одинаковых связок', () => {
+    expect(slopComplaints(renderRatesMessage({ quoted: DIRECTORY, hasCash: true }))).toEqual(
+      [],
+    );
+  });
+
+  it('не собирается в столбец и вместе с блоком других направлений', () => {
+    const message = renderRatesMessage({
+      quoted: [...DIRECTORY, pair('RUB', 'THB', '0.39')],
+      hasCash: true,
+    });
+    expect(slopComplaints(message)).toEqual([]);
+  });
+
+  it('говорит человеком и там, где курса нет вовсе', () => {
+    expect(slopComplaints(RATES_UNAVAILABLE)).toEqual([]);
   });
 });

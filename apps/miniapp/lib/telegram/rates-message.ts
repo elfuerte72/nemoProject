@@ -82,12 +82,20 @@ function payoutValue(rate: Amount): string {
   return shown === '0' ? formatAmount(Money.format(rate, MAX_FRACTION_DIGITS)) : shown;
 }
 
-/** Строка столбца: флаг, код, где эта валюта ходит, и число. */
+/**
+ * Строка столбца: флаг, число, код и где эта валюта ходит.
+ *
+ * Число стоит перед кодом, а не за связкой в конце строки: сторона у
+ * столбца одна и названа заголовком, так что связка ничего не добавляет,
+ * зато семь одинаковых связок подряд превращают столбец в лесенку из
+ * тире — по ней сообщение и читается набранным машиной. Заодно числа
+ * встают почти друг под друга, а сравнивают в этом столбце именно их.
+ */
 function payoutLine({ toCode, rate }: QuotedPair): string {
   const place = currencyPlace(toCode);
   return (
-    `${currencyFlag(toCode)} ${escapeHtml(toCode)}${place ? ` · ${place}` : ''} — ` +
-    payoutValue(rate)
+    `${currencyFlag(toCode)} ${payoutValue(rate)} ${escapeHtml(toCode)}` +
+    (place ? ` · ${place}` : '')
   );
 }
 
@@ -95,7 +103,7 @@ function payoutLine({ toCode, rate }: QuotedPair): string {
 function otherLine({ fromCode, toCode, rate }: QuotedPair): string {
   return (
     `${currencyFlag(fromCode)} ${escapeHtml(fromCode)} → ` +
-    `${currencyFlag(toCode)} ${escapeHtml(toCode)} — ` +
+    `${currencyFlag(toCode)} ${escapeHtml(toCode)}: ` +
     formatRate(rate, fromCode, toCode)
   );
 }
@@ -135,12 +143,12 @@ export function renderRatesMessage({
     blocks.push(
       [
         `<b>${currencyFlag(RUBLE_CODE)} USDT и рубль</b>`,
-        sell ? `Продаёте USDT — ${formatRateValue(sell.rate)} ₽ за 1 USDT` : undefined,
+        sell ? `Продаёте USDT по ${formatRateValue(sell.rate)} ₽` : undefined,
         // Котировка «рубли → USDT» приходит в USDT за рубль.
         // Переворачивать её здесь не нужно: `formatRateValue` сам
         // показывает крупную сторону пары — числом вроде 0,0098 человек
         // не пользуется.
-        buy ? `Покупаете USDT — ${formatRateValue(buy.rate)} ₽ за 1 USDT` : undefined,
+        buy ? `Покупаете USDT по ${formatRateValue(buy.rate)} ₽` : undefined,
       ]
         .filter((line) => line !== undefined)
         .join('\n'),
@@ -156,10 +164,10 @@ export function renderRatesMessage({
   }
 
   const footer = [
-    'Курс с наценкой сервиса: по нему и обменяем — подать заявку можно в обменнике.',
+    'Наценка сервиса в курсе уже учтена, по нему и обменяем. Заявку подают в обменнике.',
     // Про наличные — только там, где они есть: направление гасят из
     // панели, и обещать разговор, которого не будет, нельзя.
-    hasCash ? 'Наличные считает менеджер — биржевого курса у них нет.' : undefined,
+    hasCash ? 'У наличных биржевого курса нет, их считает менеджер.' : undefined,
   ].filter((line) => line !== undefined);
 
   return [`📈 <b>Курс обмена</b>`, ...blocks, footer.join('\n')].join('\n\n');
