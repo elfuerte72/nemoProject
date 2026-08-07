@@ -4,6 +4,7 @@ import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { Moment } from '@/app/ui/moment';
 import { BroadcastForm } from './broadcast-form';
+import { KnowledgeForm } from './knowledge-form';
 import { SettingsForms } from './settings-forms';
 
 export const dynamic = 'force-dynamic';
@@ -23,14 +24,16 @@ export default async function SettingsPage() {
 
   const core = getCore();
   try {
-    const [settings, staff, log, broadcasts, networks, directions] = await Promise.all([
-      core.getServiceSettings(actor),
-      core.listStaff(actor),
-      core.listSettingsAuditLog(actor),
-      core.listBroadcasts(actor),
-      core.listNetworks(actor),
-      core.listDirections(actor),
-    ]);
+    const [settings, staff, log, broadcasts, networks, directions, knowledge] =
+      await Promise.all([
+        core.getServiceSettings(actor),
+        core.listStaff(actor),
+        core.listSettingsAuditLog(actor),
+        core.listBroadcasts(actor),
+        core.listNetworks(actor),
+        core.listDirections(actor),
+        core.listKnowledgeArticles(actor),
+      ]);
 
     return (
       <main className="page">
@@ -52,6 +55,8 @@ export default async function SettingsPage() {
             telegramUserId: one.telegramUserId.toString(),
           }))}
         />
+
+        <KnowledgeForm articles={knowledge} />
 
         <BroadcastForm broadcasts={broadcasts} />
 

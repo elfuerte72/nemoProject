@@ -601,6 +601,15 @@ export const exchangeRequests = pgTable(
      * сколько сама заявка.
      */
     staffNotifiedAt: timestamp('staff_notified_at', { withTimezone: true }),
+    /**
+     * Когда сотрудникам напомнили, что заявку так и не взяли.
+     *
+     * Отдельно от `staff_notified_at`: то — «сообщили о новой», это —
+     * «напомнили о забытой». Одна отметка на оба повода означала бы, что
+     * напоминание никогда не уйдёт: сообщение о новой заняло бы её
+     * первым.
+     */
+    staleAlertedAt: timestamp('stale_alerted_at', { withTimezone: true }),
     cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -976,6 +985,12 @@ export const clientMessages = pgTable(
     acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
     /** Когда об обращении сообщили сотрудникам. */
     staffNotifiedAt: timestamp('staff_notified_at', { withTimezone: true }),
+    /**
+     * Когда напомнили, что клиент всё ещё ждёт. Отдельно от отметки о
+     * сообщении по той же причине, что и у заявки: одна на оба повода
+     * означала бы, что напоминание не уйдёт никогда.
+     */
+    staffRemindedAt: timestamp('staff_reminded_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

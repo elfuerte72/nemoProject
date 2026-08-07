@@ -78,6 +78,12 @@ import {
   type AnswerAsConciergeInput,
 } from './concierge.js';
 import {
+  listKnowledgeArticles,
+  saveKnowledgeArticle,
+  setKnowledgeArticleActive,
+  type SaveKnowledgeArticleInput,
+} from './concierge-knowledge.js';
+import {
   listRequisiteAccessLog,
   revealMessageAttachment,
   revealRequisites,
@@ -288,6 +294,11 @@ export function createCore(ctx: CoreConfig) {
       handOverToHuman(ctx, actor, clientId),
     returnToConcierge: (actor: Actor, clientId: bigint) =>
       returnToConcierge(ctx, actor, clientId),
+    listKnowledgeArticles: (actor: Actor) => listKnowledgeArticles(ctx, actor),
+    saveKnowledgeArticle: (actor: Actor, input: SaveKnowledgeArticleInput) =>
+      saveKnowledgeArticle(ctx, actor, input),
+    setKnowledgeArticleActive: (actor: Actor, id: string, isActive: boolean) =>
+      setKnowledgeArticleActive(ctx, actor, id, isActive),
     listRequisiteAccessLog: (actor: Actor, filter?: RequisiteAccessFilter) =>
       listRequisiteAccessLog(ctx, actor, filter),
 
@@ -467,3 +478,7 @@ export {
   CONCIERGE_INSTRUCTIONS,
 } from './concierge-voice.js';
 export { MAX_REPLY_LENGTH } from './concierge-guard.js';
+export type {
+  KnowledgeArticleView,
+  SaveKnowledgeArticleInput,
+} from './concierge-knowledge.js';

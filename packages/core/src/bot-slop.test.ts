@@ -154,18 +154,49 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
     clientUsername: 'ivan',
     request: { kind: 'card', id: 'c' },
   },
+  {
+    kind: 'staff-stale-request',
+    to: 1n,
+    clientId: 2n,
+    clientUsername: 'ivan',
+    request: {
+      kind: 'exchange',
+      id: 'r',
+      fromAmount: Money.toAmount('100'),
+      fromCode: 'USDT',
+      toCode: 'THB',
+      isCash: false,
+    },
+    waitingMinutes: 45,
+  },
+  {
+    // Больше двух часов: срок называется часами, и это другая строка.
+    kind: 'staff-stale-request',
+    to: 1n,
+    clientId: 2n,
+    clientUsername: null,
+    request: {
+      kind: 'exchange',
+      id: 'r',
+      fromAmount: Money.toAmount('100'),
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      isCash: true,
+    },
+    waitingMinutes: 214,
+  },
 ];
 
 /**
  * Виды, чей текст здесь не проверяется, и почему.
  *
- * Три из четырёх — про чужой набор: в обращении клиента и в сводке
- * эскалации сервису принадлежит рамка, а внутри стоит написанное самим
- * клиентом; ответ менеджера уходит дословно и целиком его. Падал бы
- * этот тест от чужого сообщения с тремя тире, а правит его не
- * разработчик.
+ * Четыре из пяти — про чужой набор: в обращении клиента, в сводке
+ * эскалации и в напоминании о ждущем сервису принадлежит рамка, а
+ * внутри стоит написанное самим клиентом; ответ менеджера уходит
+ * дословно и целиком его. Падал бы этот тест от чужого сообщения с
+ * тремя тире, а правит его не разработчик.
  *
- * Четвёртый — ответ консьержа. Он как раз наш, но пишется не здесь и не
+ * Пятый — ответ консьержа. Он как раз наш, но пишется не здесь и не
  * заранее: его набирает модель, и то же самое правило применяется к
  * нему заставой в момент ответа (`concierge-guard.ts`). Образец с
  * чистым текстом доказывал бы только то, что чистый текст чист.
@@ -173,6 +204,7 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
 const NOT_OURS: readonly Notification['kind'][] = [
   'staff-client-message',
   'staff-escalation',
+  'staff-waiting-client',
   'manager-message',
   'concierge-message',
 ];

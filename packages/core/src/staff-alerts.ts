@@ -10,14 +10,15 @@ import {
 import type { CoreConfig } from './context.js';
 import { takeStaffNotifications } from './conversations.js';
 import type { NewRequestSubject, Notification } from './notifications.js';
+import { takeQueueWatchAlerts } from './queue-watch.js';
 
 /**
  * О чём сотрудникам ещё не сообщали.
  *
- * Один вызов на всё: обращения клиентов и новые заявки — обмен, вывод,
- * карта. Планировщику незачем знать, сколько поводов позвать менеджера
- * существует в сервисе; появившийся пятый должен доехать до него без
- * правки расписания.
+ * Один вызов на всё: обращения клиентов, новые заявки — обмен, вывод,
+ * карта — и напоминания о том, что залежалось. Планировщику незачем
+ * знать, сколько поводов позвать менеджера существует в сервисе;
+ * появившийся шестой должен доехать до него без правки расписания.
  *
  * Отправляет уведомления бот входа в админку, и его токен лежит только
  * в деплое панели (docs/adr/0005) — поэтому операция их возвращает, а
@@ -33,7 +34,11 @@ export async function takeStaffAlerts(
 ): Promise<readonly Notification[]> {
   const messages = await takeStaffNotifications(ctx, at);
   const requests = await takeNewRequestNotifications(ctx, at);
-  return [...messages, ...requests];
+  // Напоминания последними: если в этом же прогоне появилась новая
+  // заявка, менеджер прочитает сперва о ней, а потом о забытой — в том
+  // порядке, в каком они случились.
+  const forgotten = await takeQueueWatchAlerts(ctx, at);
+  return [...messages, ...requests, ...forgotten];
 }
 
 /** Строка заявки, приведённая к тому, чем она называется сотруднику. */

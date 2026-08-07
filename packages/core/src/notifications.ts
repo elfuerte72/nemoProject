@@ -120,6 +120,32 @@ export type Notification =
     }
   | {
       /**
+       * Заявку так и не взяли — сотруднику, однажды.
+       *
+       * Отдельно от «новой»: у той повод — появление, а здесь — что о
+       * ней забыли. Смена сменилась, сообщение прокрутилось в чате,
+       * менеджер решил «возьму через минуту» — заметит это клиент, если
+       * не напомнить.
+       */
+      readonly kind: 'staff-stale-request';
+      readonly to: bigint;
+      readonly clientId: bigint;
+      readonly clientUsername: string | null;
+      readonly request: NewRequestSubject;
+      /** Сколько она уже ждёт. Без этого напоминание не отличить от нового. */
+      readonly waitingMinutes: number;
+    }
+  | {
+      /** Клиент ждёт ответа дольше положенного — сотруднику, однажды. */
+      readonly kind: 'staff-waiting-client';
+      readonly to: bigint;
+      readonly clientId: bigint;
+      readonly clientUsername: string | null;
+      readonly preview: string;
+      readonly waitingMinutes: number;
+    }
+  | {
+      /**
        * Новая заявка — сотруднику. Тем же путём, что и обращение: бот
        * входа, отметка в строке, планировщик.
        *
@@ -174,6 +200,8 @@ export const notificationKinds = [
   'staff-client-message',
   'staff-escalation',
   'staff-new-request',
+  'staff-stale-request',
+  'staff-waiting-client',
 ] as const satisfies readonly Notification['kind'][];
 
 /**
@@ -246,7 +274,35 @@ export function renderNotification(notification: Notification): string {
         `Клиент ${notification.clientUsername ?? notification.clientId} пишет:\n` +
         notification.preview
       );
+    case 'staff-stale-request':
+      return (
+        `Заявку никто не взял ${renderWaiting(notification.waitingMinutes)}.\n` +
+        `${capitalize(renderNewRequestSubject(notification.request))}\n` +
+        `Клиент: ${notification.clientUsername ?? notification.clientId}`
+      );
+    case 'staff-waiting-client':
+      return (
+        `Клиент ${notification.clientUsername ?? notification.clientId} ждёт ответа ` +
+        `${renderWaiting(notification.waitingMinutes)}:\n` +
+        notification.preview
+      );
   }
+}
+
+/**
+ * Сколько ждут, словами.
+ *
+ * В часах, когда их больше одного: «ждёт 214 минут» менеджер переводит в
+ * уме, а решение принимает по порядку величины.
+ */
+function renderWaiting(minutes: number): string {
+  if (minutes < 120) return `${minutes} мин`;
+  return `больше ${Math.floor(minutes / 60)} ч`;
+}
+
+/** Подпись заявки собрана для середины фразы, а здесь начинает строку. */
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /**

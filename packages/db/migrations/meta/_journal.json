@@ -141,6 +141,13 @@
       "when": 1786103422193,
       "tag": "0019_mean_tomorrow_man",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786103788910,
+      "tag": "0020_red_caretaker",
+      "breakpoints": true
     }
   ]
 }
