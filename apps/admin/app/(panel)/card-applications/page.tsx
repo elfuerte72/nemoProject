@@ -38,6 +38,7 @@ export default async function CardApplicationsPage() {
       </header>
 
       <CardList
+        fetchedAt={new Date().toISOString()}
         applications={applications.map((application) => ({
           ...application,
           clientId: application.clientId.toString(),

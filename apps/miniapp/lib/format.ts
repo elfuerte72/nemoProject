@@ -1,4 +1,4 @@
-import { Money, type RequisiteKind } from '@nemo/types';
+import { Money, readRate, sayRate, type RequisiteKind } from '@nemo/types';
 
 /**
  * Числа и даты в том виде, в каком их читает клиент.
@@ -64,37 +64,23 @@ export function formatMoney(value: string, code: string): string {
 /**
  * Курс — всегда крупной стороной вперёд: «81 RUB за 1 USDT».
  *
- * Направление обмена на чтение курса влиять не должно. «1 RUB ≈ 0,0122
- * USDT» формально то же самое, но числом в сотых долях никто не
- * пользуется и с курсом соседнего обменника его не сравнить, не
- * перевернув в уме. Поэтому мелкая сторона переворачивается, и курс
- * читается так же, как на любом табло.
+ * Какая сторона называется и каким числом, решает `readRate` из
+ * `@nemo/types`: это домен, и он один на клиента, панель и бота. Здесь
+ * остаётся только вид числа — разряды и запятая.
  */
 export function formatRate(rate: string, fromCode: string, toCode: string): string {
-  const value = Money.toAmount(rate);
-  const big = Money.compare(value, Money.toAmount('1')) >= 0;
-  return `${formatRateValue(rate)} ${big ? toCode : fromCode} за 1 ${big ? fromCode : toCode}`;
+  return sayRate(Money.toAmount(rate), fromCode, toCode, formatAmount);
 }
 
 /**
- * Курс числом, крупной стороной.
+ * Курс числом, крупной стороной, — без подписи пары.
  *
- * Целое здесь не округление для вида: курс округляется в ядре и целым
- * же считается, поэтому сумма к выдаче сходится с показанным курсом
- * устно. Дробный хвост может появиться только один — от переворота
- * мелкой стороны, — и он остаток ограниченной точности, а не цена.
- * Снимается он округлением к ближайшему: отброшенный вниз, он превратил
- * бы 82 в 81.
+ * Подпись добавляет тот, кто показывает: в сообщении бота сторона одна
+ * на весь столбец и написана в заголовке. Коды сюда поэтому и не
+ * передаются — от них зависит только подпись, а число одно и то же.
  */
 export function formatRateValue(value: string): string {
-  const amount = Money.toAmount(value);
-  const one = Money.toAmount('1');
-  // Переворачивать нечего и незачем: делить на ноль нельзя, а такой
-  // курс может прийти из старой заявки.
-  if (Money.isZero(amount) || Money.isNegative(amount)) return formatAmount(amount);
-  return formatAmount(
-    Money.round(Money.compare(amount, one) >= 0 ? amount : Money.divide(one, amount)),
-  );
+  return formatAmount(readRate(Money.toAmount(value), '', '').value);
 }
 
 const DATE_FORMAT = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });

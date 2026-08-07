@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { MessageView } from '@nemo/core';
+import { Moment } from '@/app/ui/moment';
 
 /**
  * Диалоговое окно переписки.
@@ -43,7 +44,7 @@ export function Dialog({
     <div className="dialog">
       <div className="dialog__feed">
         {messages.length === 0 ? (
-          <p className="empty">Переписки пока нет.</p>
+          <p className="empty">Переписки пока нет — напишите первым, если есть что уточнить.</p>
         ) : (
           messages.map((message) => (
             <div
@@ -60,7 +61,7 @@ export function Dialog({
                 {message.direction === 'outgoing' && message.authorName
                   ? `${message.authorName} · `
                   : ''}
-                {new Date(message.createdAt).toLocaleString('ru-RU')}
+                <Moment at={new Date(message.createdAt).toISOString()} />
               </span>
             </div>
           ))

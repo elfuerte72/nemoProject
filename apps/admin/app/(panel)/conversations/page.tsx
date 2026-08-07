@@ -49,7 +49,7 @@ export default async function ConversationsPage() {
           </div>
           <ConversationTable
             conversations={waiting}
-            empty="Никто не ждёт ответа."
+            empty="Никто не ждёт ответа. Клиент напишет боту — разговор встанет сюда, и в Telegram придёт уведомление."
           />
         </section>
 
@@ -60,7 +60,7 @@ export default async function ConversationsPage() {
               <span className="section__count">{settled.length}</span>
               <span className="section__rule" />
             </div>
-            <ConversationTable conversations={settled} empty="Разобранных разговоров нет." />
+            <ConversationTable conversations={settled} empty="Разобранных разговоров нет: сюда уходят те, на которые уже ответили." />
           </section>
         ) : undefined}
       </main>
@@ -70,7 +70,10 @@ export default async function ConversationsPage() {
       return (
         <main className="page">
           <h1 className="page__title">Обращения</h1>
-          <p className="empty">Раздел доступен сотрудникам.</p>
+          <p className="empty">
+            Раздел доступен сотрудникам: сюда приходят сообщения клиентов, и отвечает на них
+            тот, кто вошёл в панель.
+          </p>
         </main>
       );
     }

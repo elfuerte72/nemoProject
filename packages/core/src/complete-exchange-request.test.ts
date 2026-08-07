@@ -6,7 +6,7 @@ import {
   TransitionNotAllowedError,
   type Actor,
 } from './index.js';
-import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff, testRequisiteKeys } from './test-support.js';
 
 /**
  * Исполнение заявки на обмен.
@@ -17,7 +17,15 @@ import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
  * значило бы пересчитывать уже выплаченное.
  */
 
-const core = createCore({ db: testDatabase() });
+const core = createCore({
+  db: testDatabase(),
+  // Счёт сервиса шифруется фикстурой, а расшифровывает его операция
+  // выдачи: ключ у них общий.
+  requisites: {
+    publicKey: testRequisiteKeys.publicKey,
+    privateKey: testRequisiteKeys.privateKey,
+  },
+});
 
 let manager: Actor & { type: 'staff' };
 let requisitesId: string;
@@ -38,7 +46,7 @@ async function givenRequestAwaitingPayment(): Promise<string> {
   await core.claimExchangeRequest(manager, id);
   await core.confirmExchangeRate(manager, id, {
     finalRate: '95.5',
-    paymentInstructions: 'TRC20: TXYZ',
+    serviceAccountId: await givenServiceAccount({ currencyCode: 'USDT' }),
   });
   return id;
 }
@@ -172,7 +180,7 @@ describe('полный путь заявки', () => {
     await core.claimExchangeRequest(manager, id);
     await core.confirmExchangeRate(manager, id, {
       finalRate: '95.5',
-      paymentInstructions: 'TRC20: TXYZ',
+      serviceAccountId: await givenServiceAccount({ currencyCode: 'USDT' }),
     });
     await core.markPaymentReceived(manager, id);
     await core.completeExchangeRequest(manager, id, {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount, formatDay, formatMoment, formatMoney } from './format.js';
+import { formatAmount, formatDay, formatMoment, formatMoney, formatRate } from './format.js';
 import { bpsToPercent, percentToBps } from './percent.js';
 
 describe('сумма для человека', () => {
@@ -75,5 +75,30 @@ describe('ставка в процентах', () => {
     expect(percentToBps('2,5,5')).toBeNull();
     expect(percentToBps('')).toBeNull();
     expect(percentToBps('−1')).toBeNull();
+  });
+});
+
+/**
+ * Курс менеджер сверяет с тем, что видел клиент, и называться он должен
+ * так же. Само правило — какая сторона и каким числом — живёт в
+ * `@nemo/types` и покрыто там; здесь проверяется, что панель берёт его
+ * оттуда, а не набирает строку заново своими словами.
+ */
+describe('курс в панели', () => {
+  it('называет сторону пары, а не голое число', () => {
+    expect(formatRate('81', 'USDT', 'RUB')).toBe('81 RUB за 1 USDT');
+  });
+
+  it('переворачивает мелкую сторону вместе с подписью', () => {
+    expect(formatRate('0.012345679012345679', 'RUB', 'USDT')).toBe('81 RUB за 1 USDT');
+  });
+
+  it('ставит разряды своей рукой: курс бывает и в миллионах', () => {
+    // Тот же узкий неразрывный пробел, что и в остальных суммах панели.
+    expect(formatRate('5224938', 'BTC', 'RUB')).toBe('5\u202f224\u202f938 RUB за 1 BTC');
+  });
+
+  it('курс около единицы оставляет дробным', () => {
+    expect(formatRate('0.847', 'USDT', 'EUR')).toBe('1,19 USDT за 1 EUR');
   });
 });

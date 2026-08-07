@@ -175,6 +175,19 @@ describe('раздел настроек', () => {
 
     await expect(core.getServiceSettings(asClient(100n))).rejects.toThrow(ForbiddenError);
   });
+
+  /*
+   * Наценка — исключение: по ней панель подсказывает менеджеру доход по
+   * заявке, который он иначе считает в уме. Клиент видит ту же величину
+   * в котировке, так что секретом она не была никогда.
+   */
+  it('наценку отдаёт менеджеру, а клиенту — нет', async () => {
+    await core.updateServiceSettings(admin, { markupBps: 350 });
+    await core.registerClient({ telegramUserId: 100n });
+
+    await expect(core.getServiceMarkupBps(manager)).resolves.toBe(350);
+    await expect(core.getServiceMarkupBps(asClient(100n))).rejects.toThrow(ForbiddenError);
+  });
 });
 
 describe('ставки линий и минимальная сумма вывода', () => {

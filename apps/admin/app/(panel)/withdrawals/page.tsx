@@ -39,6 +39,7 @@ export default async function WithdrawalsPage() {
         заплатили, не бывает.
       */}
       <WithdrawalList
+        fetchedAt={new Date().toISOString()}
         requests={requests.map(({ paidAt: _paidAt, ...request }) => ({
           ...request,
           clientId: request.clientId.toString(),

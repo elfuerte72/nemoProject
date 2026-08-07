@@ -10,7 +10,7 @@ import {
   type RateQuote,
   type RateSource,
 } from './index.js';
-import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff, testRequisiteKeys } from './test-support.js';
 
 /**
  * Путь заявки от очереди до подтверждённого курса.
@@ -21,10 +21,23 @@ import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
  * и не хватает — он не понимает, что происходит с его переводом.
  */
 
-const core = createCore({ db: testDatabase() });
+const core = createCore({
+  db: testDatabase(),
+  // Счёт сервиса шифруется фикстурой, а расшифровывает его операция
+  // выдачи: ключ у них общий.
+  requisites: {
+    publicKey: testRequisiteKeys.publicKey,
+    privateKey: testRequisiteKeys.privateKey,
+  },
+});
 
 let manager: Actor & { type: 'staff' };
 let requisitesId: string;
+
+/** Счёт сервиса в USDT: им и платит клиент по заявкам ниже. */
+async function usdtAccount(): Promise<string> {
+  return givenServiceAccount({ currencyCode: 'USDT' });
+}
 
 async function givenNewRequest(): Promise<string> {
   const { request } = await core.submitExchangeRequest(asClient(100n), {
@@ -109,7 +122,7 @@ describe('финальный курс', () => {
     const { request } = await core.confirmExchangeRate(manager, id, {
       finalRate: '95.5',
       toAmount: '95500',
-      paymentInstructions: 'TRC20: TXYZ...',
+      serviceAccountId: await usdtAccount(),
     });
 
     expect(request.status).toBe('rate_confirmed');
@@ -122,14 +135,16 @@ describe('финальный курс', () => {
     await core.claimExchangeRequest(manager, id);
     await core.confirmExchangeRate(manager, id, {
       finalRate: '95.5',
-      paymentInstructions: 'TRC20: TXYZ...',
+      serviceAccountId: await usdtAccount(),
     });
 
     // Клиент возвращается к заявке через день: искать реквизиты в
     // переписке с ботом он не должен.
     const seen = await core.getExchangeRequest(asClient(100n), id);
 
-    expect(seen.paymentInstructions).toBe('TRC20: TXYZ...');
+    // Собранное ядром по счёту, а не набранное менеджером: номер он не
+    // набирает вовсе (docs/adr/0008).
+    expect(seen.paymentInstructions).toContain('TRC20');
     expect(seen.finalRate).toBe('95.5');
   });
 
@@ -139,14 +154,14 @@ describe('финальный курс', () => {
 
     const { notifications } = await core.confirmExchangeRate(manager, id, {
       finalRate: '95.5',
-      paymentInstructions: 'TRC20: TXYZ...',
+      serviceAccountId: await usdtAccount(),
     });
 
     expect(notifications).toEqual([
       expect.objectContaining({
         status: 'rate_confirmed',
         finalRate: '95.5',
-        paymentInstructions: 'TRC20: TXYZ...',
+        paymentInstructions: expect.stringContaining('TRC20') as unknown as string,
       }),
     ]);
   });
@@ -157,7 +172,7 @@ describe('финальный курс', () => {
     await core.claimExchangeRequest(manager, id);
 
     await expect(
-      core.confirmExchangeRate(other, id, { finalRate: '95.5', paymentInstructions: 'x' }),
+      core.confirmExchangeRate(other, id, { finalRate: '95.5', serviceAccountId: await usdtAccount() }),
     ).rejects.toThrow(ForbiddenError);
   });
 
@@ -167,7 +182,7 @@ describe('финальный курс', () => {
     await core.claimExchangeRequest(manager, id);
 
     await expect(
-      core.confirmExchangeRate(admin, id, { finalRate: '95.5', paymentInstructions: 'x' }),
+      core.confirmExchangeRate(admin, id, { finalRate: '95.5', serviceAccountId: await usdtAccount() }),
     ).rejects.toThrow(ForbiddenError);
   });
 
@@ -175,7 +190,7 @@ describe('финальный курс', () => {
     const id = await givenNewRequest();
 
     await expect(
-      core.confirmExchangeRate(manager, id, { finalRate: '95.5', paymentInstructions: 'x' }),
+      core.confirmExchangeRate(manager, id, { finalRate: '95.5', serviceAccountId: await usdtAccount() }),
     ).rejects.toThrow(TransitionNotAllowedError);
   });
 
@@ -184,7 +199,7 @@ describe('финальный курс', () => {
     await core.claimExchangeRequest(manager, id);
 
     await expect(
-      core.confirmExchangeRate(manager, id, { finalRate: '0', paymentInstructions: 'x' }),
+      core.confirmExchangeRate(manager, id, { finalRate: '0', serviceAccountId: await usdtAccount() }),
     ).rejects.toThrow(/курс/i);
   });
 });
@@ -195,7 +210,7 @@ describe('история переходов', () => {
     await core.claimExchangeRequest(manager, id);
     await core.confirmExchangeRate(manager, id, {
       finalRate: '95.5',
-      paymentInstructions: 'x',
+      serviceAccountId: await usdtAccount(),
     });
 
     const events = await core.listExchangeRequestEvents(manager, id);
@@ -246,7 +261,7 @@ describe('состояние заявки в руках клиента', () => {
     // отметил бы оплату, которой не было.
     await expect(core.claimExchangeRequest(client, id)).rejects.toThrow(ForbiddenError);
     await expect(
-      core.confirmExchangeRate(client, id, { finalRate: '95', paymentInstructions: 'x' }),
+      core.confirmExchangeRate(client, id, { finalRate: '95', serviceAccountId: await usdtAccount() }),
     ).rejects.toThrow(ForbiddenError);
     await expect(core.markPaymentReceived(client, id)).rejects.toThrow(ForbiddenError);
     await expect(
@@ -280,7 +295,14 @@ describe('курс заявки', () => {
       return { rate: '100' as RateQuote['rate'], asOf: new Date('2026-01-01T00:00:00Z') };
     },
   };
-  const withRate = createCore({ db: testDatabase(), rateSource });
+  const withRate = createCore({
+    db: testDatabase(),
+    rateSource,
+    requisites: {
+      publicKey: testRequisiteKeys.publicKey,
+      privateKey: testRequisiteKeys.privateKey,
+    },
+  });
 
   /** Безналичная заявка, поданная при живом источнике котировок. */
   async function givenRequestWithRate(): Promise<string> {
@@ -308,7 +330,7 @@ describe('курс заявки', () => {
     const id = await givenRequestWithRate();
 
     const { request } = await withRate.confirmExchangeRate(manager, id, {
-      paymentInstructions: 'TRC20: TXYZ...',
+      serviceAccountId: await usdtAccount(),
     });
 
     expect(request.finalRate).toBe('98');
@@ -320,7 +342,7 @@ describe('курс заявки', () => {
     await expect(
       withRate.confirmExchangeRate(manager, id, {
         finalRate: '90',
-        paymentInstructions: 'TRC20: TXYZ...',
+        serviceAccountId: await usdtAccount(),
       }),
     ).rejects.toThrow(InvalidInputError);
   });
@@ -358,7 +380,7 @@ describe('курс заявки', () => {
     const id = await givenRequestWithRate();
 
     const { request } = await withRate.confirmExchangeRate(manager, id, {
-      paymentInstructions: 'TRC20: TXYZ...',
+      serviceAccountId: await usdtAccount(),
     });
 
     expect(request.requisitesIssuedAt).toBeInstanceOf(Date);

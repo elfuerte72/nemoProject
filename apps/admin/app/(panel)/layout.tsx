@@ -33,7 +33,10 @@ export default async function PanelLayout({ children }: { children: ReactNode })
    * отдельный запрос за одним числом стоил бы столько же.
    */
   const [exchange, withdrawals, cards, conversations] = await Promise.all([
-    core.listExchangeRequestQueue(actor),
+    // Счётом, а не длиной выборки: у очереди есть предел страницы, и
+    // счётчик по ней застыл бы на нём ровно тогда, когда очередь
+    // выросла и число стало нужно.
+    core.countExchangeRequestQueue(actor),
     core.listWithdrawalQueue(actor),
     core.listCardApplicationQueue(actor),
     // Обращения считаются запросом за числом, а не выборкой ленты: у
@@ -48,7 +51,7 @@ export default async function PanelLayout({ children }: { children: ReactNode })
         displayName={displayName}
         role={actor.role}
         counts={{
-          exchange: exchange.length,
+          exchange,
           withdrawals: withdrawals.length,
           cards: cards.length,
           conversations,

@@ -7,12 +7,16 @@ import type {
   ExchangeRequestEventView,
   ManagerExchangeRequestView,
   RevealedRequisites,
+  ServiceAccountView,
 } from '@nemo/core';
 import { canTransition, type ExchangeRequestStatus } from '@nemo/types';
 import { ClientCard, type ClientCardData } from '@/app/ui/client-card';
+import { HowToRunRequest } from '@/app/ui/how-to';
+import { Moment } from '@/app/ui/moment';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
-import { formatAmount, formatMoney } from '@/lib/format';
-import { pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
+import { formatAmount, formatMoney, formatRate } from '@/lib/format';
+import { suggestServiceIncome } from '@/lib/income';
+import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
 
 /**
  * Действия менеджера над заявкой.
@@ -33,12 +37,18 @@ export function ExchangeRequestCard({
   request,
   events,
   client,
+  accounts,
+  markupBps,
   viewerStaffId,
 }: {
   request: ExchangeRequestForDisplay;
   events: readonly ExchangeRequestEventView[];
   /** С кем сделка. Пусто, если клиента ещё не завели. */
   client: ClientCardData | null;
+  /** Счета сервиса в валюте, которой платит клиент, — из чего выбирать. */
+  accounts: readonly ServiceAccountView[];
+  /** Наценка сервиса: по ней считается подсказка дохода. */
+  markupBps: number;
   viewerStaffId: string;
 }) {
   const router = useRouter();
@@ -52,11 +62,37 @@ export function ExchangeRequestCard({
    * спрашивают.
    */
   const [toAmount, setToAmount] = useState('');
+  /*
+   * Счёт сервиса, который уйдёт клиенту. Номер по нему собирает ядро —
+   * менеджер его не набирает (docs/adr/0008). Первый в списке выбран
+   * заранее: обычно он там и единственный.
+   */
+  const [serviceAccountId, setServiceAccountId] = useState(accounts[0]?.id ?? '');
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [serviceIncome, setServiceIncome] = useState('');
   const [serviceIncomeCode, setServiceIncomeCode] = useState(request.toCode);
   const [reason, setReason] = useState('');
   const [requisites, setRequisites] = useState<RevealedRequisites>();
+
+  /*
+   * Подсказка дохода — из того, что уже на экране: сумма сделки в
+   * выбранной валюте и наценка сервиса. Считается для той стороны, в
+   * которой доход называют: доход в рублях — от рублёвой стороны, в
+   * монетах — от монетной.
+   *
+   * Только там, где курс пришёл из котировки: наценка сидит в нём, и
+   * оттуда её и вынимают. У наличной заявки и у той, что подана при
+   * молчащем источнике, курс назвал менеджер — наценки в нём нет, и
+   * посчитанное по ней число было бы выдумкой, поданной как расчёт.
+   */
+  const givenSide = serviceIncomeCode === request.fromCode;
+  const incomeHint = request.requestRate
+    ? suggestServiceIncome({
+        amount: givenSide ? request.fromAmount : request.toAmount,
+        markupBps,
+        side: givenSide ? 'given' : 'received',
+      })
+    : null;
 
   /**
    * Что можно сделать с заявкой на обмен прямо сейчас.
@@ -157,7 +193,11 @@ export function ExchangeRequestCard({
           <p className="page__sub">
             {KIND_LABELS[request.kind]}
             {request.toAmount && request.requestRate
-              ? ` · клиент видел эту сумму при подаче, по курсу ${formatAmount(request.requestRate)}`
+              ? ` · клиент видел эту сумму при подаче, по курсу ${formatRate(
+                  request.requestRate,
+                  request.fromCode,
+                  request.toCode,
+                )}`
               : ''}
           </p>
         </div>
@@ -172,10 +212,14 @@ export function ExchangeRequestCard({
         </p>
       ) : undefined}
 
-      <div className="split">
+      <div className="split split--work">
         <div className="split__main">
       {!mine && request.assignedManagerId ? (
-        <p className="empty">Заявку ведёт другой менеджер — действия закрыты.</p>
+        <p className="empty">
+          Заявку ведёт {request.assignedManagerName ?? 'другой менеджер'} — действия по ней
+          закрыты. Читать её можно: если клиент написал вам, ответьте в переписке, а вести
+          сделку останется тому, кто её взял.
+        </p>
       ) : undefined}
 
       {/* Только то, что решено. Пустых строк «курс: —» на экране нет. */}
@@ -185,19 +229,19 @@ export function ExchangeRequestCard({
           <ul className="rows">
             {request.finalRate ? (
               <Fact label="Курс сделки">
-                {formatAmount(request.finalRate)}
+                {formatRate(request.finalRate, request.fromCode, request.toCode)}
                 {request.toAmount
                   ? ` · к выдаче ${formatMoney(request.toAmount, request.toCode)}`
                   : ''}
               </Fact>
             ) : undefined}
             {request.serviceIncome ? (
-              <Fact label="Доход по заявке">
+              <Fact label="Сколько заработал сервис">
                 {formatMoney(request.serviceIncome, request.serviceIncomeCode ?? '')}
               </Fact>
             ) : undefined}
             {request.paymentInstructions ? (
-              <Fact label="Клиенту выданы реквизиты" quiet>
+              <Fact label="Клиенту выданы реквизиты" quiet lines>
                 {request.paymentInstructions}
               </Fact>
             ) : undefined}
@@ -303,7 +347,9 @@ export function ExchangeRequestCard({
             {request.requestRate ? (
               <div className="field">
                 <span className="label">Курс заявки</span>
-                <span className="row__title mono">{formatAmount(request.requestRate)}</span>
+                <span className="row__title mono">
+                  {formatRate(request.requestRate, request.fromCode, request.toCode)}
+                </span>
               </div>
             ) : (
               <label className="field">
@@ -343,13 +389,52 @@ export function ExchangeRequestCard({
               </label>
             )}
           </div>
+          {/*
+            Счёт выбирается, а не набирается: опечатка в одной цифре —
+            это перевод, который не возвращается (docs/adr/0008). В
+            списке только счета в валюте, которой платит клиент, и
+            только действующие.
+          */}
+          {accounts.length > 0 ? (
+            <label className="field">
+              <span className="label">Счёт сервиса — на него клиент отправит {request.fromCode}</span>
+              <select
+                className="input"
+                value={serviceAccountId}
+                onChange={(event) => setServiceAccountId(event.target.value)}
+              >
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {describeServiceAccount(account)}
+                    {account.note ? ` · ${account.note}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : request.kind === 'electronic' ? (
+            <p className="card__note">
+              Счетов сервиса в {request.fromCode} нет — выдавать нечего, и операция
+              откажет: реквизиты руками не набираются, опечатка в одной цифре означает
+              перевод, который не возвращается. Заведите счёт в разделе «Счета сервиса».
+            </p>
+          ) : undefined}
+
           <label className="field">
-            <span className="label">Реквизиты для оплаты</span>
+            <span className="label">
+              {request.kind === 'electronic'
+                ? 'Приписка к сообщению — срок, сумма, условие'
+                : 'Где и когда встречаетесь'}
+            </span>
             <textarea
               className="input"
               value={paymentInstructions}
               onChange={(event) => setPaymentInstructions(event.target.value)}
               rows={3}
+              placeholder={
+                request.kind === 'electronic'
+                  ? 'Например: оплатите одной суммой'
+                  : 'Например: офис на Тверской, до 19:00'
+              }
             />
           </label>
           <div className="row__actions">
@@ -363,7 +448,14 @@ export function ExchangeRequestCard({
               type="button"
               disabled={
                 busy ||
-                !paymentInstructions.trim() ||
+                /*
+                 * То же правило, по которому отказывает операция:
+                 * безналичной нужен счёт, наличной — слова. Погашенная
+                 * кнопка говорит об этом до нажатия.
+                 */
+                (request.kind === 'electronic'
+                  ? !serviceAccountId
+                  : !paymentInstructions.trim()) ||
                 // Курс обязателен только там, где его называет менеджер.
                 (!request.requestRate && !finalRate.trim())
               }
@@ -375,7 +467,8 @@ export function ExchangeRequestCard({
                   // подачи: и то и другое там обязательство сервиса, и
                   // присланное поверх операция отвергает.
                   ...(request.requestRate ? {} : { finalRate, ...(toAmount ? { toAmount } : {}) }),
-                  paymentInstructions,
+                  ...(serviceAccountId ? { serviceAccountId } : {}),
+                  ...(paymentInstructions.trim() ? { paymentInstructions } : {}),
                 })
               }
             >
@@ -400,12 +493,13 @@ export function ExchangeRequestCard({
         <section className="card">
           <h2 className="card__title">Исполнение заявки</h2>
           <p className="card__note">
-            Доход по заявке — база реферальных начислений. Без него заявку закрыть
-            нельзя, а поправить его потом означало бы пересчитывать уже начисленное.
+            Сколько сервис заработал на этой заявке. От этого числа начисляются баллы
+            рефереру клиента, и поправить его потом нельзя — заявку закрывают
+            один раз.
           </p>
           <div className="form-row">
             <label className="field">
-              <span className="label">Доход по заявке</span>
+              <span className="label">Сколько заработал сервис</span>
               <input
                 className="input"
                 value={serviceIncome}
@@ -413,15 +507,50 @@ export function ExchangeRequestCard({
                 inputMode="decimal"
               />
             </label>
+            {/*
+              Валюта выбирается из двух сторон сделки, а не набирается:
+              «руб» вместо «RUB» получало бы отказ операции на последнем
+              шаге, а «USD» вместо «USDT» — тихо уходило бы в отчётность
+              второй валютой, ни с чем не сходящейся.
+            */}
             <label className="field field--narrow">
               <span className="label">Валюта дохода</span>
-              <input
+              <select
                 className="input"
                 value={serviceIncomeCode}
                 onChange={(event) => setServiceIncomeCode(event.target.value)}
-              />
+              >
+                {[request.toCode, request.fromCode]
+                  .filter((code, at, all) => all.indexOf(code) === at)
+                  .map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+              </select>
             </label>
           </div>
+          {/*
+            Подсказка, а не подстановка: наличные и ручной курс расчёт
+            не покрывает — там сервис покупает не по котировке, — и
+            последнее слово остаётся за менеджером.
+          */}
+          {incomeHint ? (
+            <div className="row__actions">
+              <span className="row__meta">
+                По наценке {(markupBps / 100).toString().replace('.', ',')}% выходит{' '}
+                {formatMoney(incomeHint, serviceIncomeCode)}
+              </span>
+              <button
+                type="button"
+                className="btn btn--soft"
+                disabled={busy}
+                onClick={() => setServiceIncome(incomeHint)}
+              >
+                Подставить
+              </button>
+            </div>
+          ) : undefined}
           <div className="row__actions">
             <button
               type="button"
@@ -459,6 +588,21 @@ export function ExchangeRequestCard({
         </section>
       ) : undefined}
 
+        </div>
+
+        <ClientCard
+          clientId={request.clientId}
+          client={client}
+          conversationHref={`/conversations/${request.clientId}?request=${request.id}`}
+        />
+      </div>
+
+      {/*
+        Памятка — в конце работы, а не в начале: сверху то, что делают
+        сейчас, а справка нужна тому, кто на шаге запнулся.
+      */}
+      <HowToRunRequest />
+
       <section className="section">
         <div className="section__head">
           <h2 className="section__title">История</h2>
@@ -474,19 +618,20 @@ export function ExchangeRequestCard({
                 </span>
                 {event.comment ? <span className="row__meta">{event.comment}</span> : undefined}
               </div>
-              <span className="row__meta">{new Date(event.createdAt).toLocaleString('ru-RU')}</span>
+              {/*
+                Время печатает браузер, а не сервер: панель рисуется на
+                сервере, а он живёт в UTC. Тот же компонент, что и в
+                очереди, — два формата одного и того же в одной панели
+                читаются как две разные величины.
+              */}
+              <span className="row__meta">
+                <Moment at={new Date(event.createdAt).toISOString()} />
+              </span>
             </li>
           ))}
         </ul>
       </section>
-        </div>
 
-        <ClientCard
-          clientId={request.clientId}
-          client={client}
-          conversationHref={`/conversations/${request.clientId}?request=${request.id}`}
-        />
-      </div>
     </main>
   );
 }
@@ -501,19 +646,21 @@ function Fact({
   children,
   mono,
   quiet,
+  lines,
 }: {
   label: string;
   children: ReactNode;
   mono?: boolean;
   quiet?: boolean;
+  /** Переносы внутри значения оставить: так набраны выданные реквизиты. */
+  lines?: boolean;
 }) {
+  const value = quiet ? 'row__meta' : mono ? 'row__title mono' : 'row__title';
   return (
     <li className="row">
       <div className="row__main">
         <span className="row__meta">{label}</span>
-        <span className={quiet ? 'row__meta' : mono ? 'row__title mono' : 'row__title'}>
-          {children}
-        </span>
+        <span className={lines ? `${value} row__meta--lines` : value}>{children}</span>
       </div>
     </li>
   );

@@ -1,3 +1,4 @@
+import type { ServiceAccountView } from '@nemo/core';
 import type {
   CardApplicationStatus,
   RequisiteKind,
@@ -63,6 +64,37 @@ export const CARD_STATUS_TONES: Record<CardApplicationStatus, PillTone> = {
   rejected: 'off',
   cancelled: 'off',
 };
+
+/**
+ * Чем счёт сервиса узнаётся — одной строкой и в одном месте.
+ *
+ * Своя копия подписи из ядра, как и у реквизитов клиента в Mini App:
+ * ядро тянет за собой драйвер базы, и импорт функции оттуда увёз бы его
+ * в браузер. Копия при этом одна на всю панель — счёт выбирают на двух
+ * экранах, и разойдись они, один и тот же счёт назывался бы в списке и
+ * в заявке по-разному.
+ *
+ * Заметки здесь нет: в списке счетов она стоит своей строкой, а в
+ * выборе — приклеивается к подписи, потому что строка там одна.
+ */
+export function describeServiceAccount(account: ServiceAccountView): string {
+  switch (account.kind) {
+    case 'phone':
+      return [account.bankName, account.phone, account.holderName]
+        .filter(Boolean)
+        .join(' · ');
+    case 'card':
+      return [
+        account.bankName,
+        `карта •••• ${account.cardLast4 ?? ''}`.trim(),
+        account.holderName,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    case 'wallet':
+      return [account.network, account.addressHint].filter(Boolean).join(' · ');
+  }
+}
 
 /** Класс пилюли по её цвету: разметка не решает, каким он бывает. */
 export function pillClass(tone: PillTone): string {

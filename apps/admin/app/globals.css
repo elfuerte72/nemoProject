@@ -435,6 +435,29 @@ a.row:hover {
   text-wrap: pretty;
 }
 
+/*
+ * Текст, у которого переносы значат: выданные клиенту реквизиты идут
+ * строками — сеть, адрес, получатель, — и склеенные в абзац они
+ * читаются как одна длинная строка, в которой адрес не найти.
+ *
+ * Перенос разрешён где угодно: адрес кошелька — сорок знаков без
+ * пробела, и на телефоне он утащил бы за край весь экран.
+ */
+.row__meta--lines {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * То же и у значения в ячейке: ник, адрес и номер заявки пробелов не
+ * содержат, а горизонтальная прокрутка на телефоне — это потерянная
+ * половина строки, о которой человек не догадывается.
+ */
+.cell__value,
+.cell__note {
+  overflow-wrap: anywhere;
+}
+
 .row__side {
   display: flex;
   align-items: center;
@@ -463,6 +486,137 @@ a.row:hover {
  * колонки разъезжается со своим столбцом при первой же правке.
  */
 
+/*
+ * Памятка «как вести заявку».
+ *
+ * Свёрнута и не требует закрытия: тур, встающий поперёк работы,
+ * закрывают не читая. Развёрнутая — набрана мелко: это справка, а не
+ * содержимое экрана.
+ */
+.howto {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+
+.howto__head {
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  list-style: none;
+}
+
+.howto__head::-webkit-details-marker {
+  display: none;
+}
+
+.howto__head::before {
+  content: '▸ ';
+  color: var(--text-faint);
+}
+
+.howto[open] .howto__head::before {
+  content: '▾ ';
+}
+
+.howto__steps {
+  margin: 0;
+  padding: 0 14px 14px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.howto__step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.howto__title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.howto__detail {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/*
+ * Отметка «данные на» и ручное обновление.
+ *
+ * Стоит в шапке раздела, а не над списком: отвечает она за весь экран
+ * сразу — очередь, свои заявки и счётчики в меню обновляются одним
+ * запросом.
+ */
+.stamp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.stamp__text {
+  white-space: nowrap;
+}
+
+/*
+ * Ряд фильтров. Поиск растягивается, выборы держат свою ширину: список
+ * состояний длиннее любого ника, и растянутый он забирал бы место у
+ * поля, в которое печатают.
+ *
+ * Ширина выборов задаётся здесь же, а не наследуется от `.input`: та
+ * растягивает поле на всю строку — верно для формы в столбец и неверно
+ * для ряда, где рядом стоят ещё двое.
+ */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.filters__field {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.filters .filters__pick {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 170px;
+}
+
+/*
+ * На телефоне поиск занимает строку целиком, а два выбора делят
+ * следующую пополам: прижатые к левому краю, они оставляют справа
+ * пустоту, которую глаз читает как незаполненное поле.
+ */
+@media (max-width: 760px) {
+  .filters__field {
+    flex: 1 1 100%;
+  }
+
+  .filters .filters__pick {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+.btn--tiny {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .table {
   list-style: none;
   margin: 0;
@@ -476,12 +630,22 @@ a.row:hover {
   display: grid;
   grid-template-columns: var(--cols);
   gap: 16px;
-  padding: 0 18px 2px;
+  padding: 6px 18px 4px;
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--text-faint);
+  /*
+   * Шапка остаётся на месте при прокрутке: очередь в сотню строк
+   * читается сверху вниз, и подпись столбца, уехавшая за верхний край,
+   * заставляет вспоминать, что означает третье число в строке.
+   * Непрозрачный фон обязателен — сквозь неё едут строки.
+   */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
 }
 
 /*
@@ -625,6 +789,11 @@ a.table__row:hover,
  */
 .table--exchange {
   --cols: minmax(0, 1fr) 170px minmax(0, 1fr) 140px 120px;
+}
+
+/* То же, но с колонкой «ведёт»: она есть только у списка в работе. */
+.table--exchange-taken {
+  --cols: minmax(0, 1fr) 170px minmax(0, 1fr) 140px 110px 120px;
 }
 
 /* Колонка действий шире самого длинного набора кнопок: перенос кнопки
@@ -885,6 +1054,11 @@ select.input {
   flex: 0 0 170px;
 }
 
+/* Поле под длинную подпись выбора: способ приёма называется словами. */
+.form-row > .field--wide {
+  flex: 0 0 260px;
+}
+
 /* ── Пустое и служебное ──────────────────────────────────────────── */
 
 .empty {
@@ -1000,6 +1174,18 @@ select.input {
   display: flex;
   justify-content: center;
   min-height: 48px;
+}
+
+/*
+ * Вход для разработки. Отделён чертой и набран скромно: он тут гость, а
+ * не рабочий путь, и спутать его с настоящим входом нельзя.
+ */
+.login__dev {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--hairline);
 }
 
 /*
@@ -1191,6 +1377,16 @@ select.input {
     position: static;
     order: -1;
   }
+
+  /*
+   * Но не в карточке заявки. Там открывают ради следующего шага, а не
+   * ради профиля: поднятая наверх карточка клиента отодвигает кнопку
+   * на две прокрутки вниз — и это на телефоне, где заявку и ведут на
+   * ходу. Здесь порядок обратный: работа, потом «с кем имею дело».
+   */
+  .split--work .who {
+    order: 0;
+  }
 }
 
 /* ── Диалоговое окно переписки ───────────────────────────────────── */
@@ -1257,4 +1453,29 @@ select.input {
   flex-direction: column;
   gap: 10px;
   align-items: flex-start;
+}
+
+/*
+ * На телефоне поле ответа прилипает к низу экрана.
+ *
+ * Лента разговора длинная, и без этого, чтобы ответить, её надо
+ * пролистать до конца — а прочитав сообщение в середине, пролистать
+ * снова. Фон непрозрачный: сквозь поле едут пузыри.
+ *
+ * Отступ снизу считается с учётом безопасной зоны: на телефонах с
+ * жестовой полосой поле иначе оказывается под ней.
+ */
+@media (max-width: 760px) {
+  .dialog__reply {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+    background: var(--bg);
+    align-items: stretch;
+  }
+
+  .dialog__reply .btn {
+    align-self: flex-end;
+  }
 }

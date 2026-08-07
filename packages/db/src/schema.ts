@@ -303,6 +303,79 @@ export const clientRequisites = pgTable(
   ],
 );
 
+/**
+ * Счета сервиса: куда клиент отправляет оплату (docs/adr/0008).
+ *
+ * Устроены как реквизиты клиента и по той же причине: запись описывает
+ * один способ приёма целиком, а набор полей внутри способа держит
+ * ограничение, а не форма. Отличий от клиентской записи два — валюта,
+ * в которой на этот счёт принимают, и получатель: переводя по номеру
+ * телефона, клиент сверяет имя, которое показал ему банк.
+ *
+ * Номер карты и адрес кошелька шифруются тем же ключом, что и
+ * клиентские. Не потому, что клиентский деплой не должен их прочитать —
+ * эти реквизиты сервис сам рассылает клиентам, — а потому, что два
+ * разных правила хранения для соседних строк однажды разойдутся.
+ *
+ * Строки не удаляются: на них ссылаются заявки, которым этот счёт
+ * выдали. Гашение — признак `is_active`, и на выданное оно не влияет.
+ */
+export const serviceAccounts = pgTable(
+  'service_accounts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    kind: requisiteKindEnum('kind').notNull(),
+    /** Валюта, которой на этот счёт платят: счёт не в той до менеджера не доходит. */
+    currencyCode: text('currency_code')
+      .notNull()
+      .references(() => currencies.code),
+    bankName: text('bank_name'),
+    /** Кому уходит перевод. Клиент сверяет имя с тем, что показал банк. */
+    holderName: text('holder_name'),
+    phone: text('phone'),
+    cardLast4: text('card_last4'),
+    cardSealed: bytea('card_sealed'),
+    network: text('network').references(() => transferNetworks.code),
+    addressSealed: bytea('address_sealed'),
+    addressHint: text('address_hint'),
+    /** Заметка менеджеру: чем этот счёт отличается от соседнего. */
+    note: text('note'),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('service_accounts_currency_idx').on(table.currencyCode, table.isActive),
+    /*
+     * Правило то же, что у реквизитов клиента: чужое поле внутри
+     * способа означает перевод не туда. Погашенные из проверки не
+     * исключаются — в отличие от архивных клиентских записей: счёт
+     * гасят и включают обратно, и неполный он к тому времени останется
+     * неполным.
+     */
+    check(
+      'service_accounts_fields_by_kind',
+      sql`case ${table.kind}
+        when 'phone' then ${table.bankName} is not null and ${table.holderName} is not null
+          and ${table.phone} is not null
+          and ${table.cardLast4} is null and ${table.cardSealed} is null
+          and ${table.network} is null and ${table.addressSealed} is null
+          and ${table.addressHint} is null
+        when 'card' then ${table.bankName} is not null and ${table.holderName} is not null
+          and ${table.cardLast4} is not null and ${table.cardSealed} is not null
+          and ${table.phone} is null
+          and ${table.network} is null and ${table.addressSealed} is null
+          and ${table.addressHint} is null
+        when 'wallet' then ${table.network} is not null and ${table.addressSealed} is not null
+          and ${table.addressHint} is not null and ${table.bankName} is null
+          and ${table.holderName} is null
+          and ${table.phone} is null and ${table.cardLast4} is null
+          and ${table.cardSealed} is null
+      end`,
+    ),
+  ],
+);
+
 /** Справочник валют. Наполняется после ответа на блокер C1. */
 export const currencies = pgTable('currencies', {
   code: text('code').primaryKey(),
@@ -375,6 +448,15 @@ export const exchangeRequests = pgTable(
      */
     paymentInstructions: text('payment_instructions'),
     /**
+     * Какой счёт сервиса выдали по этой заявке (docs/adr/0008).
+     *
+     * Ссылкой, а не копией: погашение счёта прошлых заявок не касается,
+     * а вопрос «куда клиенту сказали платить» должен иметь ответ, не
+     * зависящий от того, что со счётом стало потом. Само выданное
+     * остаётся текстом рядом: клиент читает то, что ему отправили.
+     */
+    serviceAccountId: uuid('service_account_id').references(() => serviceAccounts.id),
+    /**
      * Когда менеджер выдал реквизиты — то есть когда клиент впервые мог
      * заплатить. От этого момента считается срок жизни неоплаченной
      * заявки.
@@ -397,7 +479,28 @@ export const exchangeRequests = pgTable(
   },
   (table) => [
     index('exchange_requests_client_idx').on(table.clientId),
-    index('exchange_requests_status_idx').on(table.status),
+    /*
+     * Очередь читается состоянием и упорядочена по времени подачи, и
+     * страницу отдаёт курсор по паре «время, идентификатор» — то есть
+     * по этому индексу целиком. Одного состояния мало: на нём выборка
+     * сортировала бы всё найденное заново при каждой подгрузке.
+     */
+    index('exchange_requests_status_created_idx').on(
+      table.status,
+      table.createdAt,
+      table.id,
+    ),
+    /**
+     * «Что моё» — первый вопрос смены, и спрашивается он не реже
+     * очереди. Идентификатор в хвосте по той же причине, что и выше:
+     * порядок выборки — пара «время, идентификатор», и без него
+     * сортировка считается заново.
+     */
+    index('exchange_requests_manager_idx').on(
+      table.assignedManagerId,
+      table.createdAt,
+      table.id,
+    ),
     check(
       'exchange_requests_income_on_completion',
       sql`${table.status} <> 'completed' or ${table.serviceIncome} is not null`,

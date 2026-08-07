@@ -1,5 +1,13 @@
 import { eq } from 'drizzle-orm';
-import { currencies, currencyPairs, serviceSettings, staff, transferNetworks } from '@nemo/db';
+import { addressEdges, generateRequisiteKeyPair, seal } from '@nemo/crypto';
+import {
+  currencies,
+  currencyPairs,
+  serviceAccounts,
+  serviceSettings,
+  staff,
+  transferNetworks,
+} from '@nemo/db';
 import { testDatabase } from '@nemo/db/testing';
 import type { ExchangeKind, StaffRole } from '@nemo/types';
 import type { Actor } from './actor.js';
@@ -93,6 +101,70 @@ export async function givenServiceSettings(options: {
   unpaidExchangeRequestTtlMinutes?: number;
 }): Promise<void> {
   await db.update(serviceSettings).set(options).where(eq(serviceSettings.id, 1));
+}
+
+/**
+ * Ключи шифрования реквизитов для тестов — одна пара на прогон.
+ *
+ * Генерируются здесь, а не в каждом тесте: фикстура счёта сервиса
+ * шифрует ими адрес кошелька, а расшифровывает его операция выдачи, и
+ * ключ у них должен быть один. Тест, которому счёт нужен, передаёт эту
+ * пару в `createCore`.
+ */
+export const testRequisiteKeys = generateRequisiteKeyPair();
+
+/**
+ * Счёт сервиса, на который клиент платит по заявке.
+ *
+ * Пишется напрямую, как и остальные справочники: заводит счета
+ * администратор из панели, и ждать его в тесте перехода значило бы
+ * проверять не переход.
+ *
+ * Способ выбирается по роду валюты — тем же правилом, по которому
+ * отказывает операция заведения: криптовалюта приходит на кошелёк,
+ * фиат по телефону. Фикстура, пишущая телефонный счёт в USDT, ставила
+ * бы сцену из данных, которых не бывает, — и тест шёл бы по ней.
+ *
+ * Валюта — та, которой платит клиент, то есть отдаваемая сторона
+ * заявки: счёт не в той валюте операция выдачи отвергает.
+ */
+export async function givenServiceAccount(options: {
+  currencyCode: string;
+  isActive?: boolean;
+}): Promise<string> {
+  await givenCurrency(options.currencyCode);
+  const [currency] = await db
+    .select({ kind: currencies.kind })
+    .from(currencies)
+    .where(eq(currencies.code, options.currencyCode))
+    .limit(1);
+
+  const address = 'TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e';
+  const fields =
+    currency?.kind === 'crypto'
+      ? {
+          kind: 'wallet' as const,
+          network: 'TRC20',
+          addressSealed: seal(testRequisiteKeys.publicKey, address),
+          addressHint: addressEdges(address),
+        }
+      : {
+          kind: 'phone' as const,
+          bankName: 'Сбербанк',
+          holderName: 'Сервис',
+          phone: '+79990000000',
+        };
+
+  // Сеть — из справочника: у кошелька она внешним ключом.
+  if ('network' in fields) {
+    await givenNetwork(fields.network);
+  }
+
+  const [row] = await db
+    .insert(serviceAccounts)
+    .values({ ...fields, currencyCode: options.currencyCode, isActive: options.isActive ?? true })
+    .returning({ id: serviceAccounts.id });
+  return row!.id;
 }
 
 let staffCounter = 0n;

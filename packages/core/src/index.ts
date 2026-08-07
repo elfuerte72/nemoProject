@@ -57,6 +57,7 @@ import {
   setNetworkActive,
 } from './networks.js';
 import { getQuote, type QuoteInput } from './rates.js';
+import { getServiceMarkupBps } from './settings.js';
 import { submitInquiry, type SubmitInquiryInput } from './inquiries.js';
 import {
   countUnansweredConversations,
@@ -80,6 +81,14 @@ import {
   saveRequisites,
   type SaveRequisitesInput,
 } from './requisites.js';
+import {
+  addServiceAccount,
+  listServiceAccounts,
+  setServiceAccountActive,
+  updateServiceAccount,
+  type SaveServiceAccountInput,
+  type ServiceAccountFilter,
+} from './service-accounts.js';
 import { botText, type BotTextKey } from './bot-texts.js';
 import {
   beginStaffLogin,
@@ -102,6 +111,8 @@ import {
   cancelOwnExchangeRequest,
   claimExchangeRequest,
   completeExchangeRequest,
+  countExchangeRequestQueue,
+  countExchangeRequestsInProgress,
   confirmExchangeRate,
   getExchangeRequestForStaff,
   listExchangeRequestEvents,
@@ -110,6 +121,7 @@ import {
   markPaymentReceived,
   type CompleteExchangeRequestInput,
   type ConfirmExchangeRateInput,
+  type ExchangeQueueFilter,
 } from './exchange-workflow.js';
 
 /**
@@ -199,9 +211,19 @@ export function createCore(ctx: CoreConfig) {
       warnAboutExpiringExchangeRequests(ctx, at),
     expireUnpaidExchangeRequests: (at: Date) => expireUnpaidExchangeRequests(ctx, at),
 
-    listExchangeRequestQueue: (actor: Actor) => listExchangeRequestQueue(ctx, actor),
-    listExchangeRequestsInProgress: (actor: Actor) =>
-      listExchangeRequestsInProgress(ctx, actor),
+    listExchangeRequestQueue: (actor: Actor, filter?: ExchangeQueueFilter) =>
+      listExchangeRequestQueue(ctx, actor, filter),
+    /*
+     * Счётчики — отдельным запросом, а не длиной выборки: у выборки
+     * есть предел, и счётчик по ней врал бы ровно тогда, когда его
+     * читают чаще всего.
+     */
+    countExchangeRequestQueue: (actor: Actor, filter?: ExchangeQueueFilter) =>
+      countExchangeRequestQueue(ctx, actor, filter),
+    countExchangeRequestsInProgress: (actor: Actor, filter?: ExchangeQueueFilter) =>
+      countExchangeRequestsInProgress(ctx, actor, filter),
+    listExchangeRequestsInProgress: (actor: Actor, filter?: ExchangeQueueFilter) =>
+      listExchangeRequestsInProgress(ctx, actor, filter),
     getExchangeRequestForStaff: (actor: Actor, requestId: string) =>
       getExchangeRequestForStaff(ctx, actor, requestId),
     listExchangeRequestEvents: (actor: Actor, requestId: string) =>
@@ -217,6 +239,21 @@ export function createCore(ctx: CoreConfig) {
       requestId: string,
       input: CompleteExchangeRequestInput,
     ) => completeExchangeRequest(ctx, actor, requestId, input),
+
+    /*
+     * Счета сервиса (docs/adr/0008). Список нужен и менеджеру — из
+     * него он выбирает, что выдать клиенту, — а ведёт его
+     * администратор: счёт это решение о том, куда сервис принимает
+     * деньги.
+     */
+    listServiceAccounts: (actor: Actor, filter?: ServiceAccountFilter) =>
+      listServiceAccounts(ctx, actor, filter),
+    addServiceAccount: (actor: Actor, input: SaveServiceAccountInput) =>
+      addServiceAccount(ctx, actor, input),
+    updateServiceAccount: (actor: Actor, accountId: string, input: SaveServiceAccountInput) =>
+      updateServiceAccount(ctx, actor, accountId, input),
+    setServiceAccountActive: (actor: Actor, accountId: string, isActive: boolean) =>
+      setServiceAccountActive(ctx, actor, accountId, isActive),
 
     revealRequisites: (actor: Actor, exchangeRequestId: string) =>
       revealRequisites(ctx, actor, exchangeRequestId),
@@ -260,6 +297,8 @@ export function createCore(ctx: CoreConfig) {
       resetStaffSecondFactor(ctx, actor, staffId),
 
     getServiceSettings: (actor: Actor) => getServiceSettings(ctx, actor),
+    /** Наценка — сотруднику: по ней панель подсказывает доход по заявке. */
+    getServiceMarkupBps: (actor: Actor) => getServiceMarkupBps(ctx, actor),
     updateServiceSettings: (actor: Actor, input: UpdateServiceSettingsInput) =>
       updateServiceSettings(ctx, actor, input),
     listSettingsAuditLog: (actor: Actor, limit?: number) =>
@@ -320,6 +359,12 @@ export type {
   SubmitExchangeRequestResult,
 } from './exchange-requests.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
+export type {
+  SaveServiceAccountInput,
+  ServiceAccountFields,
+  ServiceAccountFilter,
+  ServiceAccountView,
+} from './service-accounts.js';
 export type { NetworkView } from './networks.js';
 export type { DirectionView } from './directions.js';
 export { botTextKeys, BOT_TEXTS } from './bot-texts.js';
@@ -365,6 +410,7 @@ export type {
   ClientTransitionResult,
   CompleteExchangeRequestInput,
   ConfirmExchangeRateInput,
+  ExchangeQueueFilter,
   ExchangeRequestEventView,
   ManagerExchangeRequestView,
   TransitionResult,

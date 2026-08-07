@@ -28,7 +28,14 @@ export interface SidebarCounts {
 interface Item {
   readonly href: string;
   readonly label: string;
-  readonly icon: 'exchange' | 'withdrawal' | 'card' | 'chat' | 'settings' | 'log';
+  readonly icon:
+    | 'exchange'
+    | 'withdrawal'
+    | 'card'
+    | 'chat'
+    | 'settings'
+    | 'log'
+    | 'account';
   readonly count?: number | undefined;
 }
 
@@ -55,6 +62,7 @@ export function Sidebar({
     },
   ];
   const admin: readonly Item[] = [
+    { href: '/service-accounts', label: 'Счета сервиса', icon: 'account' },
     { href: '/settings', label: 'Настройки', icon: 'settings' },
     { href: '/requisite-access', label: 'Журнал доступа', icon: 'log' },
   ];
@@ -177,6 +185,14 @@ function Icon({ name }: { name: Item['icon'] }) {
         <svg {...common}>
           <circle cx="12" cy="12" r="3" />
           <path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4m0-12.8-1.4 1.4m-10 10-1.4 1.4" />
+        </svg>
+      );
+    case 'account':
+      return (
+        <svg {...common}>
+          <path d="M4 10 12 4l8 6" />
+          <path d="M6 10v8m4-8v8m4-8v8m4-8v8" />
+          <path d="M4 20h16" />
         </svg>
       );
     case 'log':
