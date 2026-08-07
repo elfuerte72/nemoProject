@@ -3,6 +3,7 @@ import { Money } from '@nemo/types';
 import { renderNotification } from '@nemo/core';
 import { getCore } from '@/lib/core';
 import { referralLink } from '@/lib/referral';
+import { nudgeStaffAlerts } from '@/lib/staff-alert';
 import {
   RATES_UNAVAILABLE,
   renderRatesMessage,
@@ -242,6 +243,11 @@ async function receive(
   );
   if (acknowledgement) {
     await ctx.reply(renderNotification(acknowledgement), WITHOUT_OLD_KEYBOARD);
+    // Толчок ровно там же, где подтверждение: право на него занимает то
+    // же условное изменение, которым обращение становится видимым
+    // сотрудникам. Второе сообщение той же череды нового повода не
+    // создаёт — и звать за ним панель незачем.
+    nudgeStaffAlerts();
   }
 }
 

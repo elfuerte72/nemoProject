@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { InvalidInputError } from '@nemo/core';
 import { botToken, deliverNotifications } from '@nemo/telegram';
+import { nudgeStaffAlerts } from '@/lib/staff-alert';
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
 
@@ -49,6 +50,9 @@ export async function POST(request: Request): Promise<Response> {
       { type: 'client', telegramUserId: initData.telegramUserId },
       parsed.data,
     );
+    // Раньше доставки клиенту: её отказ не должен уносить с собой
+    // уведомление менеджеру. Заявка к этому моменту уже записана.
+    nudgeStaffAlerts();
     await deliverNotifications(notifications, { botToken: botToken() });
 
     return json({ request: created }, { status: 201 });

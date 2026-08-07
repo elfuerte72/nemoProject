@@ -65,11 +65,11 @@ import {
   listConversations,
   receiveClientMessage,
   replyToClient,
-  takeStaffNotifications,
   type ConversationFilter,
   type ReceiveMessageInput,
   type ReplyInput,
 } from './conversations.js';
+import { takeStaffAlerts } from './staff-alerts.js';
 import {
   listRequisiteAccessLog,
   revealMessageAttachment,
@@ -273,7 +273,7 @@ export function createCore(ctx: CoreConfig) {
     listConversations: (actor: Actor, filter?: ConversationFilter) =>
       listConversations(ctx, actor, filter),
     countUnansweredConversations: (actor: Actor) => countUnansweredConversations(ctx, actor),
-    takeStaffNotifications: (at: Date) => takeStaffNotifications(ctx, at),
+    takeStaffAlerts: (at: Date) => takeStaffAlerts(ctx, at),
     listRequisiteAccessLog: (actor: Actor, filter?: RequisiteAccessFilter) =>
       listRequisiteAccessLog(ctx, actor, filter),
 
@@ -436,4 +436,8 @@ export {
   TransitionNotAllowedError,
   type CoreErrorCode,
 } from './errors.js';
-export { renderNotification, type Notification } from './notifications.js';
+export {
+  renderNotification,
+  type NewRequestSubject,
+  type Notification,
+} from './notifications.js';

@@ -213,49 +213,9 @@ describe('список обращений', () => {
   });
 });
 
-describe('уведомление сотрудникам', () => {
-  it('уходит каждому активному сотруднику', async () => {
-    const second = await givenStaff({ displayName: 'Анна', telegramUserId: 500n });
-    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Вопрос' });
-
-    const notifications = await core.takeStaffNotifications(new Date());
-
-    expect(notifications).toHaveLength(2);
-    expect(notifications.every((one) => one.kind === 'staff-client-message')).toBe(true);
-    expect(second.staffId).toBeDefined();
-  });
-
-  it('не повторяется вторым вызовом', async () => {
-    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Вопрос' });
-
-    const first = await core.takeStaffNotifications(new Date());
-    const second = await core.takeStaffNotifications(new Date());
-
-    expect(first).toHaveLength(1);
-    expect(second).toEqual([]);
-  });
-
-  it('не возникает на повторные сообщения того же клиента до ответа', async () => {
-    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Первый' });
-    await core.takeStaffNotifications(new Date());
-    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Второй' });
-
-    expect(await core.takeStaffNotifications(new Date())).toEqual([]);
-  });
-
-  it('не уходит уволенному сотруднику', async () => {
-    await core.setStaffActive(
-      await givenStaff({ role: 'admin' }),
-      manager.staffId,
-      false,
-    );
-    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Вопрос' });
-
-    const notifications = await core.takeStaffNotifications(new Date());
-
-    expect(notifications.map((one) => one.to)).not.toContain(manager.staffId);
-  });
-});
+// Рассылка обращений сотрудникам проверяется в `staff-alerts.test.ts`:
+// поводов позвать менеджера несколько, забирает их одна операция, и
+// правила у неё общие для обращения и для заявки.
 
 describe('вложение', () => {
   it('открывается менеджеру и оставляет след в журнале', async () => {

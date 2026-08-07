@@ -485,6 +485,17 @@ export const exchangeRequests = pgTable(
      * заново.
      */
     expiryWarnedAt: timestamp('expiry_warned_at', { withTimezone: true }),
+    /**
+     * Когда о заявке сообщили сотрудникам. Отметка, а не признак: она
+     * отвечает на вопрос «о чём ещё не говорили», и ставится условным
+     * изменением — два наложившихся вызова планировщика иначе разошлют
+     * одну заявку дважды.
+     *
+     * Хранится в самой заявке, а не в отдельной таблице рассылок:
+     * рассылается заявка однажды, и строка о ней жила бы ровно столько,
+     * сколько сама заявка.
+     */
+    staffNotifiedAt: timestamp('staff_notified_at', { withTimezone: true }),
     cancelReason: text('cancel_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -638,6 +649,8 @@ export const withdrawalRequests = pgTable(
     destinationHint: text('destination_hint'),
     status: withdrawalRequestStatusEnum('status').default('new').notNull(),
     managerId: uuid('manager_id').references((): AnyPgColumn => staff.id),
+    /** Когда о заявке сообщили сотрудникам. Как у заявки на обмен. */
+    staffNotifiedAt: timestamp('staff_notified_at', { withTimezone: true }),
     rejectReason: text('reject_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     paidAt: timestamp('paid_at', { withTimezone: true }),
@@ -686,6 +699,8 @@ export const cardApplications = pgTable(
       .references(() => clients.telegramUserId),
     status: cardApplicationStatusEnum('status').default('submitted').notNull(),
     providerReference: text('provider_reference'),
+    /** Когда о заявке сообщили сотрудникам. Как у заявки на обмен. */
+    staffNotifiedAt: timestamp('staff_notified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

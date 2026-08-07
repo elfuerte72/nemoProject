@@ -1,5 +1,6 @@
 import { botToken, deliverNotifications } from '@nemo/telegram';
 import { errorResponse, json, requireInitData } from '@/lib/api';
+import { nudgeStaffAlerts } from '@/lib/staff-alert';
 import { getCore } from '@/lib/core';
 
 export const runtime = 'nodejs';
@@ -41,6 +42,7 @@ export async function POST(request: Request): Promise<Response> {
      * переписке, и отправил бы её второй раз. Менеджер увидит её и без
      * уведомления — она в той же ленте, что и остальные обращения.
      */
+    nudgeStaffAlerts();
     try {
       await deliverNotifications(notifications, { botToken: botToken() });
     } catch (failure) {
