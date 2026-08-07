@@ -66,6 +66,7 @@ import {
   receiveClientMessage,
   replyToClient,
   takeStaffNotifications,
+  type ConversationFilter,
   type ReceiveMessageInput,
   type ReplyInput,
 } from './conversations.js';
@@ -269,7 +270,8 @@ export function createCore(ctx: CoreConfig) {
     replyToClient: (actor: Actor, input: ReplyInput) => replyToClient(ctx, actor, input),
     listConversation: (actor: Actor, clientId: bigint) =>
       listConversation(ctx, actor, clientId),
-    listConversations: (actor: Actor) => listConversations(ctx, actor),
+    listConversations: (actor: Actor, filter?: ConversationFilter) =>
+      listConversations(ctx, actor, filter),
     countUnansweredConversations: (actor: Actor) => countUnansweredConversations(ctx, actor),
     takeStaffNotifications: (at: Date) => takeStaffNotifications(ctx, at),
     listRequisiteAccessLog: (actor: Actor, filter?: RequisiteAccessFilter) =>
@@ -358,6 +360,8 @@ export type {
   SubmitExchangeRequestInput,
   SubmitExchangeRequestResult,
 } from './exchange-requests.js';
+export { inquiryTopics, isInquiryTopic } from './inquiries.js';
+export type { InquiryTopic, SubmitInquiryInput } from './inquiries.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
 export type {
   SaveServiceAccountInput,
@@ -392,6 +396,8 @@ export type {
   RevealedRequisites,
 } from './requisite-access.js';
 export type {
+  ConversationFilter,
+  ConversationTopicFilter,
   ConversationView,
   MessageView,
   ReceiveMessageInput,

@@ -89,6 +89,19 @@ export const actorTypeEnum = pgEnum('actor_type', ['system', 'client', 'manager'
 export const messageDirectionEnum = pgEnum('message_direction', ['incoming', 'outgoing']);
 
 /**
+ * О чём просьба, пришедшая из раздела «За границей».
+ *
+ * Перечислением, а не свободным текстом: тем ровно столько, сколько
+ * пунктов в разделе, и новая заводится вместе с пунктом — то есть
+ * миграцией, а не строкой, набранной в запросе.
+ *
+ * Подписки сюда не попадают: их ведёт партнёр, и обращения у нас они не
+ * создают. Заявка на карту — тоже: у неё свои состояния, и поддержка
+ * ей не нужна.
+ */
+export const inquiryTopicEnum = pgEnum('inquiry_topic', ['hotel', 'purchase']);
+
+/**
  * Настройки сервиса: единственная строка, `id` всегда 1.
  *
  * Синглтон, а не набор пар «ключ-значение», потому что каждая настройка
@@ -797,6 +810,16 @@ export const clientMessages = pgTable(
       .notNull()
       .references(() => clients.telegramUserId, { onDelete: 'cascade' }),
     direction: messageDirectionEnum('direction').notNull(),
+    /**
+     * О чём просьба, если это просьба. Пусто у обычного вопроса: тему
+     * называет тот, кто пришёл из раздела «За границей», а спросивший
+     * курс ничего не выбирал.
+     *
+     * Отдельной колонкой, а не префиксом текста: по префиксу тему
+     * пришлось бы разбирать, а это правда, живущая в форматировании, и
+     * рассыпается она от первой правки формулировки.
+     */
+    topic: inquiryTopicEnum('topic'),
     body: text('body'),
     /**
      * Вложение — идентификатор файла у Telegram, а не сам файл. На
@@ -819,6 +842,11 @@ export const clientMessages = pgTable(
   },
   (table) => [
     index('client_messages_client_idx').on(table.clientId, table.seq),
+    /*
+     * Под отбор разговоров по теме: менеджер спрашивает «где просьбы про
+     * деньги», и выборка идёт по теме внутри ленты клиента.
+     */
+    index('client_messages_topic_idx').on(table.topic, table.clientId),
     // Автор есть ровно у исходящего: у входящего им был бы клиент, а он
     // и так записан ссылкой.
     check(

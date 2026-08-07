@@ -1,9 +1,11 @@
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import type { PgColumn } from 'drizzle-orm/pg-core';
 import { clientMessages, clients, staff } from '@nemo/db';
 import { requireStaff, type Actor } from './actor.js';
 import type { CoreConfig } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import { generateReferralCode } from './referral-code.js';
+import type { InquiryTopic } from './inquiries.js';
 import type { Notification } from './notifications.js';
 
 /**
@@ -29,6 +31,11 @@ import type { Notification } from './notifications.js';
 export interface MessageView {
   readonly id: string;
   readonly direction: 'incoming' | 'outgoing';
+  /**
+   * О чём просьба, если это просьба. Пусто у обычного вопроса: тему
+   * называет тот, кто пришёл из раздела «За границей».
+   */
+  readonly topic: InquiryTopic | null;
   readonly body: string | null;
   /** Есть ли вложение. Само изображение панель подтягивает отдельно. */
   readonly hasAttachment: boolean;
@@ -52,6 +59,15 @@ export interface ConversationView {
    * входящего сообщения автора из сотрудников нет.
    */
   readonly lastAuthorName: string | null;
+  /**
+   * О чём последняя просьба в этой ленте. Пусто, если просьб не было, —
+   * такой разговор про поддержку.
+   *
+   * Берётся у последней просьбы, а не у последнего сообщения: клиент,
+   * попросивший оплатить отель и дописавший «и ещё вопрос», не перестал
+   * спрашивать про оплату. Тема — свойство просьбы, а не ленты.
+   */
+  readonly topic: InquiryTopic | null;
 }
 
 export interface ReceiveMessageInput {
@@ -60,6 +76,8 @@ export interface ReceiveMessageInput {
   /** Идентификатор файла у Telegram. Сам файл сервис не скачивает. */
   readonly attachmentFileId?: string | undefined;
   readonly username?: string | undefined;
+  /** О чём просьба. Ставит её `submitInquiry`; обычное сообщение темы не имеет. */
+  readonly topic?: InquiryTopic | undefined;
 }
 
 export interface ReceiveMessageResult {
@@ -80,6 +98,7 @@ function toView(row: MessageRow, authorName: string | null = null): MessageView 
   return {
     id: row.id,
     direction: row.direction,
+    topic: row.topic,
     body: row.body,
     hasAttachment: row.attachmentFileId !== null,
     authorStaffId: row.authorStaffId,
@@ -162,6 +181,7 @@ export async function receiveClientMessage(
       .values({
         clientId: input.telegramUserId,
         direction: 'incoming',
+        topic: input.topic ?? null,
         body: body ?? null,
         attachmentFileId: input.attachmentFileId ?? null,
       })
@@ -267,11 +287,45 @@ export async function listConversation(
  * «Последнее сообщение» берётся по сквозному номеру: время создания не
  * разводит две записи, вставленные в одну миллисекунду.
  */
+/**
+ * Чем менеджер сужает список обращений.
+ *
+ * Тем в отборе две, а в данных больше: отель и покупка — обе про оплату
+ * продукта, и вопрос у менеджера к ним один — «где просьбы про деньги».
+ * Какая именно просьба, видно в самой строке; дробить отбор по
+ * пунктам раздела значило бы спрашивать у него то, чего он не
+ * спрашивает.
+ *
+ * «Поддержка» — это отсутствие темы: обычный вопрос её не называет.
+ */
+export type ConversationTopicFilter = 'support' | 'payment';
+
+export interface ConversationFilter {
+  readonly topic?: ConversationTopicFilter | undefined;
+}
+
 export async function listConversations(
   ctx: CoreConfig,
   actor: Actor,
+  filter: ConversationFilter = {},
 ): Promise<readonly ConversationView[]> {
   requireStaff(actor);
+
+  /*
+   * Тема последней просьбы в ленте — отдельной выборкой, а не из
+   * последнего сообщения: клиент, попросивший оплатить отель и
+   * дописавший «и ещё вопрос», спрашивает всё о том же.
+   */
+  const topics = ctx.db.$with('topics').as(
+    ctx.db
+      .selectDistinctOn([clientMessages.clientId], {
+        clientId: clientMessages.clientId,
+        topic: clientMessages.topic,
+      })
+      .from(clientMessages)
+      .where(isNotNull(clientMessages.topic))
+      .orderBy(clientMessages.clientId, desc(clientMessages.seq)),
+  );
 
   const last = ctx.db.$with('last').as(
     ctx.db
@@ -288,7 +342,7 @@ export async function listConversations(
   );
 
   const rows = await ctx.db
-    .with(last)
+    .with(last, topics)
     .select({
       clientId: last.clientId,
       username: clients.username,
@@ -299,10 +353,13 @@ export async function listConversations(
       // разговор от того, до которого никто не дошёл: очередь общая, и
       // «отвечено» без имени не говорит, надо ли перечитывать.
       lastAuthorName: staff.displayName,
+      topic: topics.topic,
     })
     .from(last)
     .innerJoin(clients, eq(clients.telegramUserId, last.clientId))
     .leftJoin(staff, eq(staff.id, last.authorStaffId))
+    .leftJoin(topics, eq(topics.clientId, last.clientId))
+    .where(topicCondition(filter.topic, topics.topic))
     // Ждущие ответа сверху: это работа, а не история. Внутри — по
     // сквозному номеру, тому же, которым определяется последнее
     // сообщение: время двух записей в одну миллисекунду не разводит.
@@ -312,6 +369,19 @@ export async function listConversations(
     ...row,
     isUnanswered: direction === 'incoming',
   }));
+}
+
+/**
+ * Условие отбора по теме. «Поддержка» — отсутствие темы, «оплата» — её
+ * наличие: тем про оплату сегодня две, и обе они про одно.
+ */
+function topicCondition(
+  filter: ConversationTopicFilter | undefined,
+  column: PgColumn,
+): SQL | undefined {
+  if (filter === 'support') return isNull(column);
+  if (filter === 'payment') return isNotNull(column);
+  return undefined;
 }
 
 /**

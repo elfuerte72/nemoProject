@@ -1,4 +1,4 @@
-import type { ServiceAccountView } from '@nemo/core';
+import type { InquiryTopic, ServiceAccountView } from '@nemo/core';
 import type {
   CardApplicationStatus,
   RequisiteKind,
@@ -95,6 +95,16 @@ export function describeServiceAccount(account: ServiceAccountView): string {
       return [account.network, account.addressHint].filter(Boolean).join(' · ');
   }
 }
+
+/**
+ * О чём просьба клиента. Пилюлей в списке обращений: просьба про деньги
+ * должна отличаться от «а какой курс» до того, как менеджер прочитал
+ * строку.
+ */
+export const INQUIRY_TOPIC_LABELS: Record<InquiryTopic, string> = {
+  hotel: 'Отель',
+  purchase: 'Покупка',
+};
 
 /** Класс пилюли по её цвету: разметка не решает, каким он бывает. */
 export function pillClass(tone: PillTone): string {
