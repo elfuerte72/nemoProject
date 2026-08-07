@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@nemo/concierge':
+        specifier: workspace:*
+        version: link:packages/concierge
       '@nemo/core':
         specifier: workspace:*
         version: link:packages/core

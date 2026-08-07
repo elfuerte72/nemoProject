@@ -122,7 +122,7 @@ function renderSystem(request: ConciergeRequest): string {
   return [
     request.instructions,
     '',
-    `Если ответить не можешь — ответь одной строкой: ${HANDOVER_MARK}`,
+    `Если нужно позвать менеджера или ответить не можешь — ответь одной строкой: ${HANDOVER_MARK}`,
     '',
     '# Справка. Числа в ответе бывают только отсюда.',
     request.facts,

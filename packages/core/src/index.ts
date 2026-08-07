@@ -477,7 +477,7 @@ export {
   CONCIERGE_HANDOVER,
   CONCIERGE_INSTRUCTIONS,
 } from './concierge-voice.js';
-export { MAX_REPLY_LENGTH } from './concierge-guard.js';
+export { MAX_REPLY_LENGTH, TIME_UNIT, replyComplaints } from './concierge-guard.js';
 export type {
   KnowledgeArticleView,
   SaveKnowledgeArticleInput,

@@ -141,7 +141,13 @@ export async function answerAsConcierge(
 interface Pending {
   readonly clientId: bigint;
   readonly messageId: string;
-  readonly body: string | null;
+  /**
+   * Тексты всей закрываемой череды, от старшего к младшему. Триггеры
+   * слушают её целиком: жалоба приходит и предпоследним сообщением, а
+   * закрытая молча она не дошла бы до человека.
+   */
+  readonly bodies: readonly string[];
+  /** Вложение в любом сообщении череды: скриншот и подпись к нему клиент шлёт врозь. */
   readonly hasAttachment: boolean;
   /** Первый ответ в разговоре: только в нём консьерж представляется. */
   readonly isFirstAnswer: boolean;
@@ -165,21 +171,27 @@ type Outcome = { readonly reply: string } | { readonly escalateBecause: string }
 async function claimPending(ctx: CoreConfig, clientId: bigint): Promise<Pending | null> {
   return ctx.db.transaction(async (tx) => {
     /*
-     * Отвечаем на последнее из ждущих: клиент, написавший три сообщения
-     * подряд, задал один вопрос, а не три, и три ответа на него — это
-     * разговор с автоответчиком.
+     * Берётся вся ждущая череда, а отвечается её последнее: клиент,
+     * написавший три сообщения подряд, задал один вопрос, а не три, и
+     * три ответа на него — это разговор с автоответчиком. Но триггеры и
+     * вложения потом проверяются по каждому сообщению череды: жалоба,
+     * пришедшая предпоследним, иначе закрывалась бы молча.
      *
      * Выбирается отдельно, а не подзапросом внутри изменения: условие
      * «что вправе взять» одно на выбор и на занятие, и подзапрос
      * повторял бы его вторым текстом.
      */
-    const [target] = await tx
-      .select({ id: clientMessages.id })
+    const batch = await tx
+      .select({
+        id: clientMessages.id,
+        body: clientMessages.body,
+        attachmentFileId: clientMessages.attachmentFileId,
+      })
       .from(clientMessages)
       .where(and(eq(clientMessages.clientId, clientId), claimable(new Date())))
-      .orderBy(desc(clientMessages.seq))
-      .limit(1);
+      .orderBy(desc(clientMessages.seq));
 
+    const target = batch[0];
     if (!target) return null;
 
     // Занятие условным изменением: два наложившихся вызова иначе
@@ -234,8 +246,11 @@ async function claimPending(ctx: CoreConfig, clientId: bigint): Promise<Pending 
     return {
       clientId,
       messageId: claimed.id,
-      body: claimed.body,
-      hasAttachment: claimed.attachmentFileId !== null,
+      bodies: batch
+        .map((one) => one.body)
+        .filter((one): one is string => one !== null)
+        .reverse(),
+      hasAttachment: batch.some((one) => one.attachmentFileId !== null),
       isFirstAnswer: greeted === undefined,
       conversation: feed
         .reverse()
@@ -270,9 +285,13 @@ async function decide(
     return { escalateBecause: 'клиент прислал изображение' };
   }
 
-  const triggered = pending.body === null ? null : escalationTrigger(pending.body);
-  if (triggered !== null) {
-    return { escalateBecause: triggered };
+  // По каждому сообщению череды, от старшего: причина для менеджера —
+  // то, с чего началось, а не то, чем клиент догнал свою же жалобу.
+  for (const body of pending.bodies) {
+    const triggered = escalationTrigger(body);
+    if (triggered !== null) {
+      return { escalateBecause: triggered };
+    }
   }
 
   const withinLimits = await withinDailyLimits(ctx, pending.clientId);

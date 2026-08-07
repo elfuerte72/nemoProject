@@ -189,6 +189,47 @@ describe('эскалация', () => {
     expect(await isHandedToHuman(core, 100n)).toBe(true);
   });
 
+  it('слышит триггер в любом сообщении череды, а не только в последнем', async () => {
+    /*
+     * Клиент пишет жалобу и следом «ау?». Пока фон не дошёл — выкатка,
+     * упавший обработчик, — оба лежат неразобранными, и отвечается
+     * последнее. Жалоба при этом не должна закрыться молча: триггер
+     * слушает всю череду, а не только её хвост.
+     */
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      body: 'Отправил деньги, ничего не пришло',
+    });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Ау, вы тут?' });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toEqual([]);
+    expect(bodyOf(result)).toBe(CONCIERGE_HANDOVER);
+  });
+
+  it('видит изображение в любом сообщении череды', async () => {
+    // Скриншот перевода и подпись к нему отдельным сообщением: отвечать
+    // на подпись, не видя картинки, — отвечать на «вот, оплатил», не
+    // зная суммы.
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachmentFileId: 'AgACAgIAAxkBAAI',
+    });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'вот, оплатил' });
+
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toEqual([]);
+    expect(await isHandedToHuman(core, 100n)).toBe(true);
+  });
+
   it('срабатывает по просьбе самой модели', async () => {
     const core = coreWith(
       givenModel({ reply: 'Тут нужен менеджер.', needsHuman: true }),
