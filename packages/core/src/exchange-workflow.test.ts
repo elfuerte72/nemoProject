@@ -10,7 +10,7 @@ import {
   type RateQuote,
   type RateSource,
 } from './index.js';
-import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff, testRequisiteKeys } from './test-support.js';
 
 /**
  * Путь заявки от очереди до подтверждённого курса.
@@ -21,7 +21,15 @@ import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff } from './
  * и не хватает — он не понимает, что происходит с его переводом.
  */
 
-const core = createCore({ db: testDatabase() });
+const core = createCore({
+  db: testDatabase(),
+  // Счёт сервиса шифруется фикстурой, а расшифровывает его операция
+  // выдачи: ключ у них общий.
+  requisites: {
+    publicKey: testRequisiteKeys.publicKey,
+    privateKey: testRequisiteKeys.privateKey,
+  },
+});
 
 let manager: Actor & { type: 'staff' };
 let requisitesId: string;
@@ -136,7 +144,7 @@ describe('финальный курс', () => {
 
     // Собранное ядром по счёту, а не набранное менеджером: номер он не
     // набирает вовсе (docs/adr/0008).
-    expect(seen.paymentInstructions).toContain('+79990000000');
+    expect(seen.paymentInstructions).toContain('TRC20');
     expect(seen.finalRate).toBe('95.5');
   });
 
@@ -153,7 +161,7 @@ describe('финальный курс', () => {
       expect.objectContaining({
         status: 'rate_confirmed',
         finalRate: '95.5',
-        paymentInstructions: expect.stringContaining('+79990000000') as unknown as string,
+        paymentInstructions: expect.stringContaining('TRC20') as unknown as string,
       }),
     ]);
   });
@@ -287,7 +295,14 @@ describe('курс заявки', () => {
       return { rate: '100' as RateQuote['rate'], asOf: new Date('2026-01-01T00:00:00Z') };
     },
   };
-  const withRate = createCore({ db: testDatabase(), rateSource });
+  const withRate = createCore({
+    db: testDatabase(),
+    rateSource,
+    requisites: {
+      publicKey: testRequisiteKeys.publicKey,
+      privateKey: testRequisiteKeys.privateKey,
+    },
+  });
 
   /** Безналичная заявка, поданная при живом источнике котировок. */
   async function givenRequestWithRate(): Promise<string> {

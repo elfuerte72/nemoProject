@@ -6,7 +6,7 @@ import {
   TransitionNotAllowedError,
   type Actor,
 } from './index.js';
-import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff, testRequisiteKeys } from './test-support.js';
 
 /**
  * Исполнение заявки на обмен.
@@ -17,7 +17,15 @@ import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff } from './
  * значило бы пересчитывать уже выплаченное.
  */
 
-const core = createCore({ db: testDatabase() });
+const core = createCore({
+  db: testDatabase(),
+  // Счёт сервиса шифруется фикстурой, а расшифровывает его операция
+  // выдачи: ключ у них общий.
+  requisites: {
+    publicKey: testRequisiteKeys.publicKey,
+    privateKey: testRequisiteKeys.privateKey,
+  },
+});
 
 let manager: Actor & { type: 'staff' };
 let requisitesId: string;

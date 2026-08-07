@@ -3,7 +3,7 @@ import { inArray } from 'drizzle-orm';
 import { exchangeRequests } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type Actor } from './index.js';
-import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff, testRequisiteKeys } from './test-support.js';
 
 /**
  * Очередь заявок под рост: кто ведёт, что моё, поиск, фильтры и предел.
@@ -14,7 +14,15 @@ import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff } from './
  * один экран.
  */
 
-const core = createCore({ db: testDatabase() });
+const core = createCore({
+  db: testDatabase(),
+  // Счёт сервиса шифруется фикстурой, а расшифровывает его операция
+  // выдачи: ключ у них общий.
+  requisites: {
+    publicKey: testRequisiteKeys.publicKey,
+    privateKey: testRequisiteKeys.privateKey,
+  },
+});
 
 let petr: Actor & { type: 'staff' };
 let anna: Actor & { type: 'staff' };
