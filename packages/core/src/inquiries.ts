@@ -71,6 +71,11 @@ export async function submitInquiry(
 
   return receiveClientMessage(ctx, {
     telegramUserId: input.telegramUserId,
+    // Тема идёт и полем, и в тексте. Полем — чтобы по ней отбирать:
+    // разбор префикса рассыпался бы от первой правки формулировки.
+    // Текстом — потому что этот текст читает менеджер в ленте, и без
+    // подписи первая строка не отвечает, о чём речь.
+    topic: input.topic,
     body: `${SUBJECTS[input.topic]}. ${details}`,
     ...(input.username ? { username: input.username } : {}),
   });

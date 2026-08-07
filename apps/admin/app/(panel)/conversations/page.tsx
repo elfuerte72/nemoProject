@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { CoreError, type ConversationView } from '@nemo/core';
+import { CoreError, type ConversationTopicFilter, type ConversationView } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
+import { INQUIRY_TOPIC_LABELS, pillClass } from '@/lib/labels';
 import { Moment } from '@/app/ui/moment';
+import { TopicFilter } from './topic-filter';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,14 +21,28 @@ export const dynamic = 'force-dynamic';
  * читал ли менеджер разговор, — она знает, ответил ли кто-то. Отметка
  * о прочтении, которую никто не ставит, врала бы о состоянии работы.
  */
-export default async function ConversationsPage() {
+export default async function ConversationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const actor = await requireStaffActorOrNull();
   if (!actor) {
     redirect('/login');
   }
 
+  const params = await searchParams;
+  const asked = (Array.isArray(params.topic) ? params.topic[0] : params.topic) ?? '';
+  // Незнакомая тема отбрасывается молча: параметр приходит из адресной
+  // строки, и отказом на опечатку в ней менеджеру отвечать незачем.
+  const topic: ConversationTopicFilter | undefined =
+    asked === 'support' || asked === 'payment' ? asked : undefined;
+
   try {
-    const conversations = await getCore().listConversations(actor);
+    const conversations = await getCore().listConversations(
+      actor,
+      topic ? { topic } : {},
+    );
     const waiting = conversations.filter((one) => one.isUnanswered);
     const settled = conversations.filter((one) => !one.isUnanswered);
 
@@ -39,7 +55,21 @@ export default async function ConversationsPage() {
               Клиент пишет боту, ответ уходит туда же — тем ботом, которого он запускал.
             </p>
           </div>
+          <TopicFilter topic={topic ?? ''} />
         </header>
+
+        {/*
+          Подписки спрашивают здесь же, а ведёт их партнёр — и менеджеру
+          на этот вопрос отвечать нечем, кроме адреса. Подсказка стоит
+          рядом с работой, а не в вики: вики расходится с интерфейсом
+          через месяц.
+        */}
+        <p className="card__note">
+          Спросили про подписку — это «Оплатишка», отдельный сервис того же владельца:
+          ведите клиента в её бот <code className="mono">@oplatishkaa_bot</code>. Про
+          иностранную карту тоже отвечать не нужно: у неё своя заявка, и она видна в
+          разделе «Карты».
+        </p>
 
         <section className="section">
           <div className="section__head">
@@ -127,8 +157,15 @@ function ConversationTable({
                 </span>
                 <span className="cell__note">{one.clientId.toString()}</span>
               </span>
+              {/*
+                Тема — впереди текста: просьба про деньги отличается от
+                «а какой курс» до того, как менеджер прочитал строку.
+              */}
               <span className="cell">
                 <span className="cell__label">Последнее сообщение</span>
+                {one.topic ? (
+                  <span className={pillClass('wait')}>{INQUIRY_TOPIC_LABELS[one.topic]}</span>
+                ) : undefined}
                 <span className="cell__note">{one.lastMessageBody ?? 'Изображение'}</span>
               </span>
               <span className="cell">
