@@ -21,6 +21,12 @@ import {
 export interface DeliveryOptions {
   readonly botToken: string;
   /**
+   * Корень клиентского приложения: с него отдаются картинки-подсказки
+   * консьержа. Не задан — подсказка уходит одним текстом; подпись
+   * написана так, что работает и без снимка.
+   */
+  readonly miniappUrl?: string | undefined;
+  /**
    * Корень панели. Задан — под уведомлением сотруднику появляется
    * кнопка перехода: разбирать обращение он всё равно идёт туда, и
    * заставлять его искать вкладку значило бы терять минуты на каждом
@@ -51,8 +57,12 @@ export async function deliverNotifications(
  */
 async function send(notification: Notification, options: DeliveryOptions): Promise<void> {
   try {
+    const photo = hintPhotoUrl(notification, options.miniappUrl);
+    const method = photo ? 'sendPhoto' : 'sendMessage';
+    const text = renderNotification(notification);
+
     const response = await fetch(
-      `https://api.telegram.org/bot${options.botToken}/sendMessage`,
+      `https://api.telegram.org/bot${options.botToken}/${method}`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -60,7 +70,7 @@ async function send(notification: Notification, options: DeliveryOptions): Promi
           // Строкой, а не числом: `telegram_user_id` — bigint, и на
           // приведении к `number` он однажды потеряет точность.
           chat_id: notification.to.toString(),
-          text: renderNotification(notification),
+          ...(photo ? { photo, caption: text } : { text }),
           ...panelButton(notification, options.panelUrl),
         }),
       },
@@ -71,6 +81,16 @@ async function send(notification: Notification, options: DeliveryOptions): Promi
   } catch (error) {
     console.error('Не удалось отправить уведомление', notification.kind, error);
   }
+}
+
+/** Полный адрес картинки-подсказки; `null` — обычное текстовое уведомление. */
+function hintPhotoUrl(
+  notification: Notification,
+  miniappUrl: string | undefined,
+): string | null {
+  if (notification.kind !== 'concierge-message' || !notification.photoPath) return null;
+  const base = (miniappUrl ?? '').replace(/\/+$/, '');
+  return base === '' ? null : `${base}${notification.photoPath}`;
 }
 
 /**

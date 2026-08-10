@@ -468,6 +468,7 @@ export {
 } from './notifications.js';
 export type {
   ConciergeAnswer,
+  ConciergeHintKey,
   ConciergeRequest,
   ConciergeSource,
   ConciergeTurn,
@@ -476,6 +477,7 @@ export {
   CONCIERGE_GREETING,
   CONCIERGE_HANDOVER,
   CONCIERGE_HELLO,
+  CONCIERGE_HINTS,
   CONCIERGE_INSTRUCTIONS,
   CONCIERGE_OFFTOPIC,
   isGreetingOnly,

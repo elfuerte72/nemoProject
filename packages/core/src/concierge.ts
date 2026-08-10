@@ -16,12 +16,18 @@ import { requireStaff, type Actor } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { conciergeFacts } from './concierge-facts.js';
 import { replyComplaints } from './concierge-guard.js';
-import type { ConciergeAnswer, ConciergeSource, ConciergeTurn } from './concierge-source.js';
+import type {
+  ConciergeAnswer,
+  ConciergeHintKey,
+  ConciergeSource,
+  ConciergeTurn,
+} from './concierge-source.js';
 import { escalationTrigger } from './concierge-triggers.js';
 import {
   CONCIERGE_GREETING,
   CONCIERGE_HANDOVER,
   CONCIERGE_HELLO,
+  CONCIERGE_HINTS,
   CONCIERGE_INSTRUCTIONS,
   CONCIERGE_OFFTOPIC,
   isGreetingOnly,
@@ -193,7 +199,7 @@ interface Pending {
  * представиться дважды.
  */
 type Outcome =
-  | { readonly reply: string; readonly ready?: boolean }
+  | { readonly reply: string; readonly ready?: boolean; readonly hint?: ConciergeHintKey }
   | { readonly escalateBecause: string };
 
 /**
@@ -384,6 +390,11 @@ async function decide(
     if (answer.needsHuman) {
       return { escalateBecause: 'помощник не смог ответить сам' };
     }
+    // Подсказка «где нажать»: тему назвала модель, а пару картинка +
+    // подпись выбирает код — модель к картинкам не прикасается.
+    if (answer.hint) {
+      return { reply: CONCIERGE_HINTS[answer.hint].caption, ready: true, hint: answer.hint };
+    }
     // Болтовня: классифицировала модель, а отвечает готовый текст из
     // кода — формулировка отказа не отдана на сочинение.
     if (answer.offTopic) {
@@ -456,8 +467,18 @@ async function settle(
     });
   });
 
+  const photoPath =
+    'reply' in outcome && outcome.hint ? CONCIERGE_HINTS[outcome.hint].photoPath : undefined;
+
   return {
-    notifications: [{ kind: 'concierge-message', to: pending.clientId, body }],
+    notifications: [
+      {
+        kind: 'concierge-message',
+        to: pending.clientId,
+        body,
+        ...(photoPath ? { photoPath } : {}),
+      },
+    ],
     handedToHuman: 'escalateBecause' in outcome,
   };
 }

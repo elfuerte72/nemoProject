@@ -101,6 +101,13 @@ export type Notification =
       readonly kind: 'concierge-message';
       readonly to: bigint;
       readonly body: string;
+      /**
+       * Картинка-подсказка «где нажать»: путь в `public/` клиентского
+       * приложения. Полный адрес собирает доставка — ядро не знает, на
+       * каком домене живёт приложение. Не дошла картинка — уходит один
+       * текст: подпись написана так, что работает и без снимка.
+       */
+      readonly photoPath?: string;
     }
   | {
       /**

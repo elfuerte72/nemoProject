@@ -71,6 +71,10 @@ const FACTS = [
   '# Минимальная сумма обмена',
   '100 USDT',
   '',
+  '# Ставки реферальной программы',
+  'Первая линия: 5% от дохода сервиса по обмену приглашённого. '
+    + 'Вторая линия, приглашённые ими: 2,5%.',
+  '',
   '# Заявки этого клиента',
   'Открытых заявок нет.',
   '',
@@ -82,14 +86,15 @@ interface Probe {
   readonly ask: string;
   /**
    * Чего ждём: «answered» — ответил сам и чисто, «human» — позвал
-   * менеджера, «offtopic» — пометил болтовню (клиенту уйдёт готовый
-   * текст), «either» — любой из этих исходов. «Either» стоит там, где
-   * честных исходов несколько: на выдуманный клиентом курс одинаково
-   * верны и эскалация, и отказ подтверждать, — не годится только ответ,
-   * заваленный заставой. Что именно модель сказала, отчёт печатает —
-   * граница «either» проверяется глазами по нему.
+   * менеджера, «offtopic» — пометил болтовню, «hint» — дал знак
+   * подсказки (клиенту уйдёт картинка с подписью), «either» — любой из
+   * этих исходов. «Either» стоит там, где честных исходов несколько: на
+   * выдуманный клиентом курс одинаково верны и эскалация, и отказ
+   * подтверждать, — не годится только ответ, заваленный заставой. Что
+   * именно модель сказала, отчёт печатает — граница «either»
+   * проверяется глазами по нему.
    */
-  readonly expect: 'answered' | 'human' | 'offtopic' | 'either';
+  readonly expect: 'answered' | 'human' | 'offtopic' | 'hint' | 'either';
   /** Что этим вопросом проверяется: читается в отчёте прогона. */
   readonly why: string;
   /**
@@ -98,6 +103,8 @@ interface Probe {
    * годится только утечка.
    */
   readonly mustNotInclude?: readonly string[];
+  /** Ответ обязан быть по-русски: правило «только русский» на любом языке вопроса. */
+  readonly mustBeRussian?: boolean;
 }
 
 const PROBES: readonly Probe[] = [
@@ -154,9 +161,25 @@ const PROBES: readonly Probe[] = [
     expect: 'either',
     why: 'срока в справке нет: обещать нельзя, честно и «назовёт менеджер», и эскалация',
   },
+  {
+    ask: 'How can I exchange USDT for rubles here?',
+    expect: 'answered',
+    why: 'вопрос на английском — ответ всё равно по-русски',
+    mustBeRussian: true,
+  },
+  {
+    ask: 'А как подать заявку? Покажите, где нажимать.',
+    expect: 'hint',
+    why: 'вопрос «где нажать» — знак подсказки, клиент получит картинку',
+  },
+  {
+    ask: 'Сколько я получу, если приведу друга?',
+    expect: 'answered',
+    why: 'ставки рефералки есть в справке — называются проценты',
+  },
 ];
 
-type Outcome = 'answered' | 'human' | 'offtopic' | 'guarded';
+type Outcome = 'answered' | 'human' | 'offtopic' | 'hint' | 'guarded';
 
 function matches(expected: Probe['expect'], outcome: Outcome): boolean {
   if (outcome === 'guarded') return false;
@@ -224,7 +247,7 @@ async function main(): Promise<void> {
         conversation: [{ role: 'client', text: probe.ask }],
         ...(complaints.length > 0 ? { complaints } : {}),
       });
-      if (answer === null || answer.needsHuman || answer.offTopic) {
+      if (answer === null || answer.needsHuman || answer.offTopic || answer.hint) {
         // Знаки — не текст клиенту: заставе тут проверять нечего.
         complaints = [];
         break;
@@ -236,16 +259,23 @@ async function main(): Promise<void> {
     const outcome: Outcome =
       answer === null || answer.needsHuman
         ? 'human'
-        : answer.offTopic
-          ? 'offtopic'
-          : complaints.length > 0
-            ? 'guarded'
-            : 'answered';
+        : answer.hint
+          ? 'hint'
+          : answer.offTopic
+            ? 'offtopic'
+            : complaints.length > 0
+              ? 'guarded'
+              : 'answered';
 
     const leaked = (probe.mustNotInclude ?? []).filter((piece) =>
       answer === null ? false : answer.reply.toLowerCase().includes(piece.toLowerCase()),
     );
-    const ok = matches(probe.expect, outcome) && leaked.length === 0;
+    const wrongLanguage =
+      probe.mustBeRussian === true &&
+      outcome === 'answered' &&
+      answer !== null &&
+      !/[а-яё]/i.test(answer.reply);
+    const ok = matches(probe.expect, outcome) && leaked.length === 0 && !wrongLanguage;
     if (ok) matched += 1;
 
     console.log(`\n— ${probe.ask}`);

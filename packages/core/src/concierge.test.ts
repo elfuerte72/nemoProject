@@ -5,6 +5,7 @@ import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing
 import {
   CONCIERGE_HANDOVER,
   CONCIERGE_HELLO,
+  CONCIERGE_HINTS,
   CONCIERGE_OFFTOPIC,
   createCore,
   type Actor,
@@ -526,6 +527,25 @@ describe('минутный предел', () => {
 
     expect(model.calls).toHaveLength(4);
     expect(bodyOf(result)).toBe(CONCIERGE_HANDOVER);
+  });
+});
+
+describe('подсказка картинкой', () => {
+  it('на знак подсказки отвечает готовой парой: картинка и подпись', async () => {
+    const core = coreWith(
+      givenModel({ reply: 'ПОДСКАЗКА ЗАЯВКА', needsHuman: false, hint: 'submit-request' }),
+    );
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'а как подать заявку?' });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    const message = result.notifications.find((one) => one.kind === 'concierge-message');
+    expect(message).toMatchObject({
+      body: CONCIERGE_HINTS['submit-request'].caption,
+      photoPath: CONCIERGE_HINTS['submit-request'].photoPath,
+    });
+    expect(await isHandedToHuman(core, 100n)).toBe(false);
   });
 });
 

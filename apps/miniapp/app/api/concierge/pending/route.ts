@@ -45,7 +45,10 @@ export async function POST(request: Request): Promise<Response> {
 
       answered += 1;
       if (result.handedToHuman) escalated += 1;
-      await deliverNotifications(result.notifications, { botToken: botToken() });
+      await deliverNotifications(result.notifications, {
+        botToken: botToken(),
+        miniappUrl: process.env.MINIAPP_URL,
+      });
     }
 
     // Панель будим только если кого-то передали человеку: обычный ответ

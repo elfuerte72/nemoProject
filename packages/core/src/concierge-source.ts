@@ -41,6 +41,14 @@ export interface ConciergeRequest {
   readonly complaints?: readonly string[] | undefined;
 }
 
+/**
+ * Темы подсказок «где нажать». Клиент спрашивает, как что-то сделать в
+ * приложении, — и вместо пересказа словами получает картинку с
+ * отмеченным местом. Тем ровно три — по числу готовых картинок: тема без
+ * картинки была бы обещанием подсказки, которой нет.
+ */
+export type ConciergeHintKey = 'open-exchanger' | 'submit-request' | 'add-requisite';
+
 export interface ConciergeAnswer {
   readonly reply: string;
   /**
@@ -54,6 +62,11 @@ export interface ConciergeAnswer {
    * формулировка отказа не отдаётся на сочинение дешёвой модели.
    */
   readonly offTopic?: boolean;
+  /**
+   * Клиент спрашивает, где что найти. Модель называет тему, а картинку
+   * и подпись выбирает ядро: к картинкам модель не прикасается.
+   */
+  readonly hint?: ConciergeHintKey;
 }
 
 export interface ConciergeSource {

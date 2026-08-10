@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_REPLY_LENGTH, replyComplaints } from './concierge-guard.js';
+import {
+  CONCIERGE_GREETING,
+  CONCIERGE_HANDOVER,
+  CONCIERGE_HELLO,
+  CONCIERGE_HINTS,
+  CONCIERGE_OFFTOPIC,
+} from './concierge-voice.js';
 
 /**
  * Застава перед ответом консьержа.
@@ -177,6 +184,15 @@ describe('служебное', () => {
       }),
     ).not.toEqual([]);
   });
+
+  it('ловит знак подсказки, уехавший в текст', () => {
+    expect(
+      replyComplaints({
+        reply: 'Сейчас покажу.\n\nПОДСКАЗКА ЗАЯВКА',
+        sources: [FACTS],
+      }),
+    ).not.toEqual([]);
+  });
 });
 
 /**
@@ -269,6 +285,26 @@ describe('сроки', () => {
         sources: [FACTS],
       }),
     ).toEqual([]);
+  });
+});
+
+/**
+ * Готовые тексты голоса держат собственную заставу: они уходят клиенту
+ * тем же каналом, что и ответы модели, и правило на них одно.
+ */
+const READY_TEXTS: ReadonlyArray<readonly [string, string]> = [
+  ['представление', CONCIERGE_GREETING],
+  ['передача', CONCIERGE_HANDOVER],
+  ['приветствие', CONCIERGE_HELLO],
+  ['болтовня', CONCIERGE_OFFTOPIC],
+  ...Object.entries(CONCIERGE_HINTS).map(
+    ([key, hint]) => [`подсказка ${key}`, hint.caption] as const,
+  ),
+];
+
+describe('готовые тексты голоса', () => {
+  it.each(READY_TEXTS)('%s проходит заставу', (_name, text) => {
+    expect(replyComplaints({ reply: text, sources: [text] })).toEqual([]);
   });
 });
 

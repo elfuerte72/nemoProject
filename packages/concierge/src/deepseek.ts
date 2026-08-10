@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type {
   ConciergeAnswer,
+  ConciergeHintKey,
   ConciergeRequest,
   ConciergeSource,
   ConciergeTurn,
@@ -47,6 +48,19 @@ const HANDOVER_MARK = 'МЕНЕДЖЕР';
  * ядро подставляет готовым текстом — сочинять её модели не дают.
  */
 const OFFTOPIC_MARK = 'ОФФТОП';
+
+/**
+ * Чем модель просит подсказку картинкой: «ПОДСКАЗКА <тема>» одной
+ * строкой. Тема из короткого словаря; незнакомая строка вырезается и
+ * подсказки не даёт — выдуманную тему нечем иллюстрировать.
+ */
+const HINT_PREFIX = 'ПОДСКАЗКА';
+
+const HINT_MARKS: Readonly<Record<string, ConciergeHintKey>> = {
+  'ОБМЕННИК': 'open-exchanger',
+  'ЗАЯВКА': 'submit-request',
+  'РЕКВИЗИТ': 'add-requisite',
+};
 
 export interface DeepSeekOptions {
   readonly apiKey: string;
@@ -133,6 +147,10 @@ function renderSystem(request: ConciergeRequest): string {
     '',
     `Если нужно позвать менеджера или ответить не можешь — ответь одной строкой: ${HANDOVER_MARK}`,
     `Если сообщение не про обмен и не про сервис — ответь одной строкой: ${OFFTOPIC_MARK}`,
+    'Если клиент спрашивает, где что найти или как сделать что-то в приложении — '
+      + `ответь одной строкой: ${HINT_PREFIX} ОБМЕННИК (как открыть обменник), `
+      + `${HINT_PREFIX} ЗАЯВКА (как подать заявку) или ${HINT_PREFIX} РЕКВИЗИТ `
+      + '(как добавить запись для получения денег). Клиент получит картинку с отмеченным местом.',
     '',
     '# Справка. Числа в ответе бывают только отсюда.',
     request.facts,
@@ -195,11 +213,33 @@ function readAnswer(message: Anthropic.Message): ConciergeAnswer {
    * обычная фраза, и на ней разговор уходил бы человеку всякий раз,
    * когда консьерж честно называет, кто ответит дальше.
    */
-  const lines = reply.split('\n').map((line) => line.trim().toUpperCase());
-  const needsHuman = lines.includes(HANDOVER_MARK);
-  const offTopic = lines.includes(OFFTOPIC_MARK);
+  const upper = reply.split('\n').map((line) => line.trim().toUpperCase());
+  const needsHuman = upper.includes(HANDOVER_MARK);
+  const offTopic = upper.includes(OFFTOPIC_MARK);
 
-  return { reply, needsHuman, offTopic };
+  /*
+   * Строки-знаки подсказок вырезаются из текста: в отличие от прочих
+   * знаков, при подсказке текст ядру не нужен вовсе, но чистить его надо
+   * и на случай, когда модель дописала знак к обычному ответу, — клиенту
+   * служебная строка не значит ничего.
+   */
+  let hint: ConciergeHintKey | undefined;
+  const kept: string[] = [];
+  for (const line of reply.split('\n')) {
+    const trimmed = line.trim().toUpperCase();
+    if (trimmed.startsWith(HINT_PREFIX)) {
+      hint = HINT_MARKS[trimmed.slice(HINT_PREFIX.length).trim()] ?? hint;
+      continue;
+    }
+    kept.push(line);
+  }
+
+  return {
+    reply: kept.join('\n').trim(),
+    needsHuman,
+    offTopic,
+    ...(hint ? { hint } : {}),
+  };
 }
 
 /**

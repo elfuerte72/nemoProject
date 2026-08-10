@@ -86,6 +86,33 @@ describe('ответ модели', () => {
     expect(await conciergeWith(fetch).answer(REQUEST)).toMatchObject({ offTopic: true });
   });
 
+  it('читает знак подсказки и вырезает его из текста', async () => {
+    const { fetch } = givenModel('ПОДСКАЗКА ЗАЯВКА');
+
+    expect(await conciergeWith(fetch).answer(REQUEST)).toMatchObject({
+      hint: 'submit-request',
+      reply: '',
+    });
+  });
+
+  it.each([
+    ['ПОДСКАЗКА ОБМЕННИК', 'open-exchanger'],
+    ['ПОДСКАЗКА РЕКВИЗИТ', 'add-requisite'],
+  ])('знает подсказку «%s»', async (mark, hint) => {
+    const { fetch } = givenModel(mark);
+
+    expect(await conciergeWith(fetch).answer(REQUEST)).toMatchObject({ hint });
+  });
+
+  it('незнакомую подсказку вырезает и не выдумывает', async () => {
+    const { fetch } = givenModel('ПОДСКАЗКА КОСМОС\nКурс виден в обменнике.');
+
+    const answer = await conciergeWith(fetch).answer(REQUEST);
+
+    expect(answer).toMatchObject({ reply: 'Курс виден в обменнике.' });
+    expect(answer?.hint).toBeUndefined();
+  });
+
   it('просит человека сигнальной строкой', async () => {
     // Структурного вывода у совместимого эндпоинта нет, и просьба
     // приходит первой строкой ответа.
