@@ -5,6 +5,7 @@ import { bonusBalance } from './bonus-account.js';
 import type { CoreConfig } from './context.js';
 import { getExchangeTerms } from './exchange-requests.js';
 import { getQuote } from './rates.js';
+import { readServiceSettings } from './settings.js';
 
 /**
  * Справка: всё, что консьерж знает, когда отвечает этому клиенту.
@@ -39,11 +40,12 @@ const STATUS_WORDS: Readonly<Record<string, string>> = {
 };
 
 export async function conciergeFacts(ctx: CoreConfig, clientId: bigint): Promise<string> {
-  const [knowledge, requests, balance, terms] = await Promise.all([
+  const [knowledge, requests, balance, terms, settings] = await Promise.all([
     readKnowledge(ctx),
     readOpenRequests(ctx, clientId),
     bonusBalance(ctx.db, clientId),
     getExchangeTerms(ctx),
+    readServiceSettings(ctx.db),
   ]);
 
   const rates = await readRates(ctx, terms.pairs);
@@ -59,6 +61,17 @@ export async function conciergeFacts(ctx: CoreConfig, clientId: bigint): Promise
     knowledge,
     `# Минимальная сумма обмена\n${terms.minAmount} ${terms.minAmountCode}`,
     '',
+    /*
+     * Ставки публичны — решение владельца: рефералка работает на
+     * прозрачности. Живой строкой из настроек, а не статьёй базы знаний:
+     * администратор поменял ставку — бот называет новую тем же днём.
+     * Доля считается от дохода сервиса по заявке, не от суммы обмена, —
+     * назвать её иначе значило бы пообещать чужие деньги.
+     */
+    '# Ставки реферальной программы',
+    `Первая линия: ${percent(settings.referralLine1Bps)} от дохода сервиса по обмену приглашённого. `
+      + `Вторая линия, приглашённые ими: ${percent(settings.referralLine2Bps)}.`,
+    '',
     '# Курсы сейчас',
     rates.length > 0
       ? rates.join('\n')
@@ -71,6 +84,11 @@ export async function conciergeFacts(ctx: CoreConfig, clientId: bigint): Promise
   ]
     .filter((block) => block !== '')
     .join('\n');
+}
+
+/** Базисные пункты процентом: 500 → «5%», 250 → «2,5%». */
+function percent(bps: number): string {
+  return `${(bps / 100).toString().replace('.', ',')}%`;
 }
 
 /**

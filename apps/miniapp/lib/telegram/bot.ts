@@ -295,14 +295,12 @@ async function answerAsConcierge(ctx: Context, clientId: bigint): Promise<void> 
   });
 
   for (const notification of notifications) {
-    await ctx
-      .reply(renderNotification(notification), WITHOUT_OLD_KEYBOARD)
-      .catch((error: unknown) => {
-        // Ответ записан в ленту, и менеджер его видит. Отказ доставки —
-        // повод для журнала, а не для повтора: повтор прислал бы клиенту
-        // второй такой же ответ.
-        console.error('Ответ помощника не доставлен:', error);
-      });
+    await deliverConciergeReply(ctx, notification).catch((error: unknown) => {
+      // Ответ записан в ленту, и менеджер его видит. Отказ доставки —
+      // повод для журнала, а не для повтора: повтор прислал бы клиенту
+      // второй такой же ответ.
+      console.error('Ответ помощника не доставлен:', error);
+    });
   }
 
   // Панель будим только на эскалации: обычный ответ повода для
@@ -311,6 +309,35 @@ async function answerAsConcierge(ctx: Context, clientId: bigint): Promise<void> 
   if (handedToHuman) {
     nudgeStaffAlerts();
   }
+}
+
+/**
+ * Ответ консьержа: текст или картинка-подсказка с подписью.
+ *
+ * Картинка отдаётся доменом самого приложения — путь приходит в
+ * уведомлении, адрес собирается здесь. Не собрался адрес или Telegram
+ * не забрал картинку — уходит один текст: подпись написана так, что
+ * работает и без снимка, а клиент без ответа не остаётся.
+ */
+async function deliverConciergeReply(
+  ctx: Context,
+  notification: Parameters<typeof renderNotification>[0],
+): Promise<void> {
+  const text = renderNotification(notification);
+
+  if (notification.kind === 'concierge-message' && notification.photoPath) {
+    const base = (process.env.MINIAPP_URL ?? '').replace(/\/+$/, '');
+    if (base !== '') {
+      try {
+        await ctx.replyWithPhoto(`${base}${notification.photoPath}`, { caption: text });
+        return;
+      } catch (error) {
+        console.error('Картинка-подсказка не ушла, отправляю текстом:', error);
+      }
+    }
+  }
+
+  await ctx.reply(text, WITHOUT_OLD_KEYBOARD);
 }
 
 /**
