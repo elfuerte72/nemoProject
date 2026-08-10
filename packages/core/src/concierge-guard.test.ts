@@ -168,6 +168,15 @@ describe('служебное', () => {
       replyComplaints({ reply: 'Заявка ждёт оплаты.\n\nМЕНЕДЖЕР', sources: [FACTS] }),
     ).not.toEqual([]);
   });
+
+  it('ловит знак болтовни, уехавший в текст', () => {
+    expect(
+      replyComplaints({
+        reply: 'Про фильмы здесь не подскажу.\n\nОФФТОП',
+        sources: [FACTS],
+      }),
+    ).not.toEqual([]);
+  });
 });
 
 /**

@@ -65,7 +65,25 @@ describe('ответ модели', () => {
 
     const answer = await conciergeWith(fetch).answer(REQUEST);
 
-    expect(answer).toEqual({ reply: 'Сейчас курс 81,25 за USDT.', needsHuman: false });
+    expect(answer).toEqual({
+      reply: 'Сейчас курс 81,25 за USDT.',
+      needsHuman: false,
+      offTopic: false,
+    });
+  });
+
+  it('помечает болтовню сигнальной строкой', async () => {
+    const { fetch } = givenModel('ОФФТОП');
+
+    expect(await conciergeWith(fetch).answer(REQUEST)).toMatchObject({ offTopic: true });
+  });
+
+  it('ловит знак болтовни и хвостом ответа', async () => {
+    // Как и с просьбой о человеке: ставить знак одиночной строкой велено,
+    // но дешёвая модель ставит где придётся.
+    const { fetch } = givenModel('Про фильмы здесь не подскажу.\nОФФТОП');
+
+    expect(await conciergeWith(fetch).answer(REQUEST)).toMatchObject({ offTopic: true });
   });
 
   it('просит человека сигнальной строкой', async () => {

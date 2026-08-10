@@ -1,7 +1,14 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { clientMessages } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
-import { CONCIERGE_HANDOVER, createCore, type Actor } from './index.js';
+import {
+  CONCIERGE_HANDOVER,
+  CONCIERGE_HELLO,
+  CONCIERGE_OFFTOPIC,
+  createCore,
+  type Actor,
+} from './index.js';
 import type { ConciergeAnswer, ConciergeSource } from './concierge-source.js';
 import { givenStaff } from './test-support.js';
 
@@ -38,8 +45,23 @@ function givenModel(...answers: (ConciergeAnswer | null)[]): ConciergeSource & {
   };
 }
 
+/**
+ * Ядро с нулевой паузой накопления: тесты пишут и тут же спрашивают, а
+ * ждать тишину — забота отдельных тестов паузы, где она включена явно.
+ */
 function coreWith(concierge: ConciergeSource | undefined) {
-  return createCore({ db, ...(concierge ? { concierge } : {}) });
+  return createCore({ db, conciergeQuietMs: 0, ...(concierge ? { concierge } : {}) });
+}
+
+/** Состарить всю ленту на столько-то секунд: столько прошло с написания. */
+async function agedSeconds(seconds: number) {
+  const rows = await db.select({ id: clientMessages.id, at: clientMessages.createdAt }).from(clientMessages);
+  for (const row of rows) {
+    await db
+      .update(clientMessages)
+      .set({ createdAt: new Date(row.at.getTime() - seconds * 1000) })
+      .where(eq(clientMessages.id, row.id));
+  }
 }
 
 const SIMPLE: ConciergeAnswer = {
@@ -401,6 +423,161 @@ describe('страховка', () => {
     await core.answerAsConcierge({ telegramUserId: 100n });
 
     expect(await core.listConversationsAwaitingConcierge()).toEqual([]);
+  });
+});
+
+describe('пауза накопления', () => {
+  /** Ядро с настоящей паузой: клиент должен помолчать пять секунд. */
+  function quietCore(model: ConciergeSource) {
+    return createCore({ db, concierge: model, conciergeQuietMs: 5000 });
+  }
+
+  it('не берёт череду, пока клиент не помолчал', async () => {
+    const model = givenModel(SIMPLE);
+    const core = quietCore(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toEqual([]);
+    expect(result.notifications).toEqual([]);
+  });
+
+  it('после тишины отвечает одним заходом на всю пачку', async () => {
+    const model = givenModel(SIMPLE);
+    const core = quietCore(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Хочу поменять USDT' });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'мне нужна карта' });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'вы тут?' });
+    await agedSeconds(6);
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toHaveLength(1);
+    expect(result.notifications).toHaveLength(1);
+  });
+
+  it('страховка не видит клиента до тишины и видит после', async () => {
+    const core = quietCore(givenModel(SIMPLE));
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Какой курс?' });
+
+    expect(await core.listConversationsAwaitingConcierge()).toEqual([]);
+
+    await agedSeconds(6);
+
+    expect(await core.listConversationsAwaitingConcierge()).toEqual([100n]);
+  });
+});
+
+describe('минутный предел', () => {
+  async function givenFourRecentReplies(core: ReturnType<typeof coreWith>) {
+    for (let i = 0; i < 4; i += 1) {
+      await core.receiveClientMessage({ telegramUserId: 100n, body: 'Ещё вопрос про обмен' });
+      await core.answerAsConcierge({ telegramUserId: 100n });
+    }
+  }
+
+  it('пятый ответ за минуту откладывается, а не уходит', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await givenFourRecentReplies(core);
+
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'И ещё вопрос' });
+    const fifth = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toHaveLength(4);
+    expect(fifth.notifications).toEqual([]);
+    // Сообщение не потеряно: оно ждёт своего окна, и страховка его видит.
+    expect(await core.listConversationsAwaitingConcierge()).toEqual([100n]);
+  });
+
+  it('отвечает отложенному, когда окно прошло', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await givenFourRecentReplies(core);
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'И ещё вопрос' });
+    await core.answerAsConcierge({ telegramUserId: 100n });
+    await agedSeconds(61);
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toHaveLength(5);
+    expect(result.notifications).toHaveLength(1);
+  });
+
+  it('жалобу уводит человеку и при выбранном пределе', async () => {
+    // Эскалация токенов не тратит, и ждать окна ей нельзя: разговор про
+    // непришедшие деньги не откладывают.
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await givenFourRecentReplies(core);
+
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      body: 'Отправил деньги, ничего не пришло',
+    });
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toHaveLength(4);
+    expect(bodyOf(result)).toBe(CONCIERGE_HANDOVER);
+  });
+});
+
+describe('болтовня', () => {
+  it('на знак болтовни отвечает готовым текстом, а не сочиняет', async () => {
+    const core = coreWith(
+      givenModel({ reply: 'ОФФТОП', needsHuman: false, offTopic: true }),
+    );
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'посоветуй фильм' });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(bodyOf(result)).toBe(CONCIERGE_OFFTOPIC);
+    expect(await isHandedToHuman(core, 100n)).toBe(false);
+  });
+});
+
+describe('приветствие', () => {
+  it('на чистое «Привет!» отвечает готовым текстом без модели', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Привет!' });
+
+    const result = await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toEqual([]);
+    expect(bodyOf(result)).toBe(CONCIERGE_HELLO);
+  });
+
+  it('приветствие с вопросом уходит модели целиком', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Привет, какой курс?' });
+
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toHaveLength(1);
+  });
+
+  it('приветствие, догнанное вопросом, уходит модели', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Привет' });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'какой курс?' });
+
+    await core.answerAsConcierge({ telegramUserId: 100n });
+
+    expect(model.calls).toHaveLength(1);
   });
 });
 

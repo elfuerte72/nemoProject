@@ -1,6 +1,6 @@
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { Money } from '@nemo/types';
-import { renderNotification } from '@nemo/core';
+import { CONCIERGE_QUIET_MS, renderNotification } from '@nemo/core';
 import { getCore } from '@/lib/core';
 import { referralLink } from '@/lib/referral';
 import { nudgeStaffAlerts } from '@/lib/staff-alert';
@@ -277,6 +277,15 @@ async function receive(
  * `/api/concierge/pending`.
  */
 async function answerAsConcierge(ctx: Context, clientId: bigint): Promise<void> {
+  /*
+   * Пауза накопления: человек пишет мысль несколькими сообщениями, и
+   * операция не возьмёт череду раньше тишины — вызов до неё работал бы
+   * вхолостую. Ждём паузу с небольшим запасом; вызов, назначенный
+   * последним сообщением череды, придёт уже после тишины и ответит на
+   * всё разом.
+   */
+  await new Promise((resolve) => setTimeout(resolve, CONCIERGE_QUIET_MS + 500));
+
   // Часы набираются один раз: Telegram гасит их через пять секунд сам, а
   // держать их обновлением значит ждать ответа ради этого обновления.
   await ctx.replyWithChatAction('typing').catch(() => undefined);

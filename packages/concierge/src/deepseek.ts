@@ -39,6 +39,15 @@ import type {
  */
 const HANDOVER_MARK = 'МЕНЕДЖЕР';
 
+/**
+ * Чем модель помечает болтовню — сообщение не про сервис.
+ *
+ * Тот же приём, что и с просьбой о человеке: одиночное слово строкой
+ * дешёвая модель повторяет надёжно, а формулировку ответа на болтовню
+ * ядро подставляет готовым текстом — сочинять её модели не дают.
+ */
+const OFFTOPIC_MARK = 'ОФФТОП';
+
 export interface DeepSeekOptions {
   readonly apiKey: string;
   readonly baseUrl: string;
@@ -123,6 +132,7 @@ function renderSystem(request: ConciergeRequest): string {
     request.instructions,
     '',
     `Если нужно позвать менеджера или ответить не можешь — ответь одной строкой: ${HANDOVER_MARK}`,
+    `Если сообщение не про обмен и не про сервис — ответь одной строкой: ${OFFTOPIC_MARK}`,
     '',
     '# Справка. Числа в ответе бывают только отсюда.',
     request.facts,
@@ -185,11 +195,11 @@ function readAnswer(message: Anthropic.Message): ConciergeAnswer {
    * обычная фраза, и на ней разговор уходил бы человеку всякий раз,
    * когда консьерж честно называет, кто ответит дальше.
    */
-  const needsHuman = reply
-    .split('\n')
-    .some((line) => line.trim().toUpperCase() === HANDOVER_MARK);
+  const lines = reply.split('\n').map((line) => line.trim().toUpperCase());
+  const needsHuman = lines.includes(HANDOVER_MARK);
+  const offTopic = lines.includes(OFFTOPIC_MARK);
 
-  return { reply, needsHuman };
+  return { reply, needsHuman, offTopic };
 }
 
 /**

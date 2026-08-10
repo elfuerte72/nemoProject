@@ -48,14 +48,21 @@ export async function conciergeFacts(ctx: CoreConfig, clientId: bigint): Promise
 
   const rates = await readRates(ctx, terms.pairs);
 
+  /*
+   * Стабильное — вперёд, волатильное — в хвост. Провайдер кэширует
+   * префикс запроса, совпавший с прошлым с нулевого токена, и кэш-хит
+   * дешевле обычного входа на порядки. База знаний и минималка меняются
+   * раз в неделю, курсы — каждые полминуты: курс, стоящий в середине,
+   * рвал бы префикс на каждом запросе.
+   */
   return [
     knowledge,
+    `# Минимальная сумма обмена\n${terms.minAmount} ${terms.minAmountCode}`,
+    '',
     '# Курсы сейчас',
     rates.length > 0
       ? rates.join('\n')
       : 'Котировок сейчас нет. Курс назовёт менеджер при подаче заявки.',
-    '',
-    `# Минимальная сумма обмена\n${terms.minAmount} ${terms.minAmountCode}`,
     '',
     '# Заявки этого клиента',
     requests.length > 0 ? requests.join('\n') : 'Открытых заявок нет.',

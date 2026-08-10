@@ -475,8 +475,12 @@ export type {
 export {
   CONCIERGE_GREETING,
   CONCIERGE_HANDOVER,
+  CONCIERGE_HELLO,
   CONCIERGE_INSTRUCTIONS,
+  CONCIERGE_OFFTOPIC,
+  isGreetingOnly,
 } from './concierge-voice.js';
+export { CONCIERGE_QUIET_MS } from './concierge.js';
 export { MAX_REPLY_LENGTH, TIME_UNIT, replyComplaints } from './concierge-guard.js';
 export type {
   KnowledgeArticleView,

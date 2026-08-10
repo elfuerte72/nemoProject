@@ -13,7 +13,7 @@ import {
 } from 'drizzle-orm';
 import { clientMessages, clients } from '@nemo/db';
 import { requireStaff, type Actor } from './actor.js';
-import type { CoreConfig } from './context.js';
+import type { CoreConfig, Executor } from './context.js';
 import { conciergeFacts } from './concierge-facts.js';
 import { replyComplaints } from './concierge-guard.js';
 import type { ConciergeAnswer, ConciergeSource, ConciergeTurn } from './concierge-source.js';
@@ -21,7 +21,10 @@ import { escalationTrigger } from './concierge-triggers.js';
 import {
   CONCIERGE_GREETING,
   CONCIERGE_HANDOVER,
+  CONCIERGE_HELLO,
   CONCIERGE_INSTRUCTIONS,
+  CONCIERGE_OFFTOPIC,
+  isGreetingOnly,
 } from './concierge-voice.js';
 import { NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
@@ -77,6 +80,34 @@ const TURNS_IN_REQUEST = 20;
  * клиент получал бы два ответа на один вопрос.
  */
 const STALE_CLAIM_MS = 5 * 60 * 1000;
+
+/**
+ * Пауза накопления: сколько тишины консьерж ждёт, прежде чем взять
+ * череду. Человек пишет мысль несколькими сообщениями — «Привет»,
+ * «мне нужна карта», «вы тут?» — и ответ на каждое стоит захода к
+ * провайдеру, читаясь при этом разговором с автоответчиком. Побочно
+ * пауза глушит грубый флуд: пока сообщения сыплются чаще, чем раз в
+ * эту паузу, тишина не наступает и модель не зовётся вовсе.
+ *
+ * Экспортируется для адаптера: фон, вызывающий операцию, должен ждать
+ * не меньше — иначе его вызовы приходят до тишины и работают вхолостую.
+ */
+export const CONCIERGE_QUIET_MS = 6 * 1000;
+
+/**
+ * Сколько ответов клиенту помещается в минуту.
+ *
+ * Предохранитель от спама, который пауза не ловит, — сообщений раз в
+ * десять секунд. Сверх предела череда не эскалируется (вручить спамеру
+ * живого менеджера — приз за флуд), а откладывается: сообщения лежат
+ * ждущими, и следующее окно отвечает на всё одним разом.
+ *
+ * Константа, а не настройка: минутный предел защищает механику
+ * разговора, а деньги провайдера режут суточные пределы — те в
+ * настройках. Пересматривается вместе с ними по счёту за первую
+ * неделю (тикет 05).
+ */
+const REPLIES_PER_CLIENT_PER_MINUTE = 4;
 
 /**
  * Что консьерж вправе взять: никем не занятое либо брошенное.
@@ -154,8 +185,16 @@ interface Pending {
   readonly conversation: readonly ConciergeTurn[];
 }
 
-/** Чем кончилось: текст клиенту либо причина позвать человека. */
-type Outcome = { readonly reply: string } | { readonly escalateBecause: string };
+/**
+ * Чем кончилось: текст клиенту либо причина позвать человека.
+ *
+ * `ready` — текст готовый, из кода: он сам представляет помощника, и
+ * клеить поверх него представление первого ответа значило бы
+ * представиться дважды.
+ */
+type Outcome =
+  | { readonly reply: string; readonly ready?: boolean }
+  | { readonly escalateBecause: string };
 
 /**
  * Занять сообщение, на которое надо ответить.
@@ -169,6 +208,8 @@ type Outcome = { readonly reply: string } | { readonly escalateBecause: string }
  * незакрытые, а это выглядело бы закрытым.
  */
 async function claimPending(ctx: CoreConfig, clientId: bigint): Promise<Pending | null> {
+  const quietMs = ctx.conciergeQuietMs ?? CONCIERGE_QUIET_MS;
+
   return ctx.db.transaction(async (tx) => {
     /*
      * Берётся вся ждущая череда, а отвечается её последнее: клиент,
@@ -185,6 +226,7 @@ async function claimPending(ctx: CoreConfig, clientId: bigint): Promise<Pending 
       .select({
         id: clientMessages.id,
         body: clientMessages.body,
+        createdAt: clientMessages.createdAt,
         attachmentFileId: clientMessages.attachmentFileId,
       })
       .from(clientMessages)
@@ -193,6 +235,22 @@ async function claimPending(ctx: CoreConfig, clientId: bigint): Promise<Pending 
 
     const target = batch[0];
     if (!target) return null;
+
+    // Пауза накопления: клиент ещё пишет, и взятая сейчас череда
+    // получила бы ответ на половину мысли. Ждём тишины; вызов,
+    // назначенный последним сообщением, придёт после неё.
+    if (target.createdAt.getTime() > Date.now() - quietMs) return null;
+
+    /*
+     * Минутный предел решается до занятия: занятую череду пришлось бы
+     * возвращать. Эскалации предел не касается — вложение и триггерное
+     * слово уводят к человеку без похода к провайдеру, а разговор про
+     * непришедшие деньги не откладывают.
+     */
+    const escalates =
+      batch.some((one) => one.attachmentFileId !== null) ||
+      batch.some((one) => one.body !== null && escalationTrigger(one.body) !== null);
+    if (!escalates && !(await withinMinuteLimit(tx, clientId))) return null;
 
     // Занятие условным изменением: два наложившихся вызова иначе
     // ответили бы клиенту дважды. Второй не найдёт строки.
@@ -294,6 +352,12 @@ async function decide(
     }
   }
 
+  // Голое приветствие — и вся череда из одних приветствий: провайдер не
+  // нужен, готовый текст отвечает и представляет помощника сам.
+  if (pending.bodies.length > 0 && pending.bodies.every(isGreetingOnly)) {
+    return { reply: CONCIERGE_HELLO, ready: true };
+  }
+
   const withinLimits = await withinDailyLimits(ctx, pending.clientId);
   if (!withinLimits) {
     return { escalateBecause: 'исчерпан суточный предел ответов помощника' };
@@ -320,6 +384,11 @@ async function decide(
     if (answer.needsHuman) {
       return { escalateBecause: 'помощник не смог ответить сам' };
     }
+    // Болтовня: классифицировала модель, а отвечает готовый текст из
+    // кода — формулировка отказа не отдана на сочинение.
+    if (answer.offTopic) {
+      return { reply: CONCIERGE_OFFTOPIC, ready: true };
+    }
 
     complaints = replyComplaints({ reply: answer.reply, sources });
     if (complaints.length === 0) {
@@ -344,9 +413,11 @@ async function settle(
 ): Promise<AnswerAsConciergeResult> {
   const body =
     'reply' in outcome
-      ? pending.isFirstAnswer
-        ? `${CONCIERGE_GREETING}\n\n${outcome.reply}`
-        : outcome.reply
+      ? outcome.ready
+        ? outcome.reply
+        : pending.isFirstAnswer
+          ? `${CONCIERGE_GREETING}\n\n${outcome.reply}`
+          : outcome.reply
       : CONCIERGE_HANDOVER;
 
   await ctx.db.transaction(async (tx) => {
@@ -389,6 +460,28 @@ async function settle(
     notifications: [{ kind: 'concierge-message', to: pending.clientId, body }],
     handedToHuman: 'escalateBecause' in outcome,
   };
+}
+
+/**
+ * Уложился ли консьерж в минутный предел ответов этому клиенту.
+ *
+ * Считается по ленте тем же способом, что и суточные пределы, и по той
+ * же причине: счётчик пришлось бы держать в согласии с лентой, а
+ * расходится такое согласие молча.
+ */
+async function withinMinuteLimit(db: Executor, clientId: bigint): Promise<boolean> {
+  const [recent] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(clientMessages)
+    .where(
+      and(
+        eq(clientMessages.clientId, clientId),
+        eq(clientMessages.authoredByConcierge, true),
+        gte(clientMessages.createdAt, new Date(Date.now() - 60 * 1000)),
+      ),
+    );
+
+  return (recent?.count ?? 0) < REPLIES_PER_CLIENT_PER_MINUTE;
 }
 
 /**
@@ -444,10 +537,21 @@ export async function listConversationsAwaitingConcierge(
 ): Promise<readonly bigint[]> {
   if (!hasConcierge(ctx)) return [];
 
+  const quietMs = ctx.conciergeQuietMs ?? CONCIERGE_QUIET_MS;
+
+  // Тишина проверяется и здесь: клиент, который ещё пишет, не ждёт
+  // консьержа — он ждёт, пока сам допишет. Отложенных минутным пределом
+  // выборка при этом показывает: их окно откроет следующий прогон.
+  //
+  // Порог уходит строкой ISO: у параметра внутри HAVING драйвер не знает
+  // типа колонки и дату как дату не связывает.
+  const quietBefore = new Date(Date.now() - quietMs).toISOString();
   const rows = await ctx.db
-    .selectDistinct({ clientId: clientMessages.clientId })
+    .select({ clientId: clientMessages.clientId })
     .from(clientMessages)
-    .where(claimable(new Date()));
+    .where(claimable(new Date()))
+    .groupBy(clientMessages.clientId)
+    .having(sql`max(${clientMessages.createdAt}) <= ${quietBefore}`);
 
   return rows.map((row) => row.clientId);
 }
