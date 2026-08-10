@@ -1,4 +1,8 @@
-import { renderNotification, type Notification } from '@nemo/core';
+import {
+  renderNotification,
+  type NewRequestSubject,
+  type Notification,
+} from '@nemo/core';
 
 /**
  * Доставка уведомлений, которые вернула операция.
@@ -17,11 +21,16 @@ import { renderNotification, type Notification } from '@nemo/core';
 export interface DeliveryOptions {
   readonly botToken: string;
   /**
-   * Адрес панели. Задан — под уведомлением сотруднику появляется кнопка
-   * перехода: разбирать обращение он всё равно идёт туда, и заставлять
-   * его искать вкладку значило бы терять минуты на каждом вопросе.
+   * Корень панели. Задан — под уведомлением сотруднику появляется
+   * кнопка перехода: разбирать обращение он всё равно идёт туда, и
+   * заставлять его искать вкладку значило бы терять минуты на каждом
+   * вопросе.
    *
-   * Знает его адаптер, а не ядро: адрес — свойство развёртывания.
+   * Именно корень, а не готовый адрес раздела: поводов позвать
+   * менеджера несколько, и ведут они в разные места — обращение в
+   * переписку, заявка на обмен в свою карточку. Куда именно, решает
+   * `panelButton` по виду уведомления; развёртывание знает только, где
+   * панель стоит.
    */
   readonly panelUrl?: string | undefined;
 }
@@ -65,18 +74,51 @@ async function send(notification: Notification, options: DeliveryOptions): Promi
 }
 
 /**
- * Кнопка под уведомлением — только у обращений и только сотруднику:
+ * Кнопка под уведомлением — только у того, что зовёт сотрудника:
  * клиенту в панель нельзя, а по остальным поводам идти туда незачем.
  */
 function panelButton(notification: Notification, panelUrl: string | undefined) {
-  if (notification.kind !== 'staff-client-message' || !panelUrl) return {};
+  if (!panelUrl) return {};
+  const path = panelPath(notification);
+  if (path === null) return {};
+
   return {
     reply_markup: {
       inline_keyboard: [
-        [{ text: 'Открыть в панели', url: `${panelUrl}/${notification.clientId}` }],
+        [{ text: 'Открыть в панели', url: `${panelUrl.replace(/\/+$/, '')}${path}` }],
       ],
     },
   };
+}
+
+/**
+ * Куда ведёт кнопка.
+ *
+ * Заявка на обмен — в свою карточку: у неё есть собственный экран, и
+ * менеджер идёт работать с ней, а не искать её в очереди. У вывода и
+ * карты карточки нет, экран у них списком — туда и ведём: адрес,
+ * притворяющийся карточкой, привёл бы в никуда.
+ */
+function panelPath(notification: Notification): string | null {
+  switch (notification.kind) {
+    case 'staff-client-message':
+      return `/conversations/${notification.clientId}`;
+    case 'staff-new-request':
+      return newRequestPath(notification.request);
+    default:
+      return null;
+  }
+}
+
+function newRequestPath(request: NewRequestSubject): string {
+  switch (request.kind) {
+    case 'exchange':
+      return `/exchange-requests/${request.id}`;
+    case 'withdrawal':
+      return '/withdrawals';
+    case 'card':
+      return '/card-applications';
+  }
 }
 
 /** Токен бота из окружения. Общий у обоих приложений — бот один. */

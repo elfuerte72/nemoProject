@@ -49,18 +49,21 @@ export function Dialog({
           messages.map((message) => (
             <div
               key={message.id}
-              className={
-                message.direction === 'incoming'
-                  ? 'bubble bubble--in'
-                  : 'bubble bubble--out'
-              }
+              className={[
+                'bubble',
+                message.direction === 'incoming' ? 'bubble--in' : 'bubble--out',
+                // Ответ помощника отличается от ответа человека: менеджер
+                // читает разговор подряд и должен видеть, что клиенту
+                // говорил не он.
+                message.byConcierge ? 'bubble--concierge' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
             >
               {message.body ? <span className="bubble__text">{message.body}</span> : undefined}
               {message.hasAttachment ? <Attachment messageId={message.id} /> : undefined}
               <span className="bubble__meta">
-                {message.direction === 'outgoing' && message.authorName
-                  ? `${message.authorName} · `
-                  : ''}
+                {message.direction === 'outgoing' ? authorOf(message) : ''}
                 <Moment at={new Date(message.createdAt).toISOString()} />
               </span>
             </div>
@@ -91,6 +94,19 @@ export function Dialog({
       ) : undefined}
     </div>
   );
+}
+
+/**
+ * Кто ответил, подписью к исходящему сообщению.
+ *
+ * У помощника имени нет и быть не должно: клиенту он представился
+ * помощником, и своё имя в панели разошлось бы с тем, что клиент читал.
+ * Пустая подпись у ответа менеджера тоже бывает — так выглядят
+ * сообщения, отправленные до того, как в панели появились имена.
+ */
+function authorOf(message: MessageView): string {
+  if (message.byConcierge) return 'Помощник · ';
+  return message.authorName ? `${message.authorName} · ` : '';
 }
 
 /**

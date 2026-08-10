@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@nemo/concierge": "workspace:*",
     "@nemo/core": "workspace:*",
     "@nemo/http": "workspace:*",
     "@nemo/rates": "workspace:*",

@@ -71,6 +71,9 @@ export default async function ConversationPage({
         <ConversationView
           clientId={clientId}
           messages={messages}
+          // Карточки может не быть у того, кто только что написал боту:
+          // помощник в таком разговоре ведёт первую линию, как и везде.
+          handedToHuman={card?.handedToHuman ?? false}
           {...(requestId ? { requestId } : {})}
         />
 

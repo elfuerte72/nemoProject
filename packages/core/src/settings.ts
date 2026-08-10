@@ -30,6 +30,10 @@ export interface ServiceSettingsView {
   readonly minExchangeAmount: Amount;
   /** Сколько заявка ждёт оплаты после выдачи реквизитов, в минутах. */
   readonly unpaidExchangeRequestTtlMinutes: number;
+  /** Сколько ответов консьерж даёт одному клиенту за сутки. Ноль — выключен. */
+  readonly conciergeRepliesPerClientDaily: number;
+  /** Сколько ответов консьерж даёт за сутки всему сервису. */
+  readonly conciergeRepliesDaily: number;
   readonly updatedAt: Date;
 }
 
@@ -87,6 +91,8 @@ export async function readServiceSettings(
     markupBps: row.markupBps,
     minExchangeAmount: Money.toAmount(row.minExchangeAmount),
     unpaidExchangeRequestTtlMinutes: row.unpaidExchangeRequestTtlMinutes,
+    conciergeRepliesPerClientDaily: row.conciergeRepliesPerClientDaily,
+    conciergeRepliesDaily: row.conciergeRepliesDaily,
     updatedAt: row.updatedAt,
   };
 }

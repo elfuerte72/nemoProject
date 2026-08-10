@@ -29,3 +29,13 @@ export function percentToBps(percent: string): number | null {
   // администратор решил бы, что ставка сохранилась.
   return Number.isInteger(bps) ? bps : Math.round(bps);
 }
+
+/**
+ * Целое неотрицательное в поле ввода — предел, счётчик, срок.
+ *
+ * Кнопка по нему гаснет до отправки: ядро отвергло бы «десять» и без
+ * этого, но администратор узнал бы об этом после нажатия, а не до.
+ */
+export function isWholeNumber(value: string): boolean {
+  return /^\d+$/.test(value.trim());
+}

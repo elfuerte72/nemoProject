@@ -4,6 +4,7 @@ import { InvalidInputError } from '@nemo/core';
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
 import { botToken, deliverNotifications } from '@nemo/telegram';
+import { nudgeStaffAlerts } from '@/lib/staff-alert';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,14 @@ export async function POST(request: Request): Promise<Response> {
       { type: 'client', telegramUserId: initData.telegramUserId },
       parsed.data,
     );
+    // Сотрудникам о заявке сообщает панель: клиентский деплой только
+    // говорит ей, что появился повод. Ответа не ждём — клиент ждёт
+    // своего.
+    //
+    // Раньше доставки клиенту, а не после: та ходит в Telegram, и её
+    // отказ не должен уносить с собой уведомление менеджеру. Заявка к
+    // этому моменту уже записана.
+    nudgeStaffAlerts();
     await deliverNotifications(notifications, { botToken: botToken() });
 
     return json({ request: created }, { status: 201 });

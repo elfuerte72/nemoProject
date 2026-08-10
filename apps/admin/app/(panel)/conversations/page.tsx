@@ -177,6 +177,14 @@ function ConversationTable({
                     {one.lastAuthorName ? `Ответил ${one.lastAuthorName}` : 'Отвечено'}
                   </span>
                 )}
+                {/*
+                  Кем занят разговор. Здесь, а не отдельной колонкой:
+                  вопрос «кто отвечает» — тот же, что и «отвечено ли», и
+                  разносить их значило бы спрашивать дважды об одном.
+                */}
+                <span className="cell__note">
+                  {one.handedToHuman ? 'Ведёт менеджер' : 'На помощнике'}
+                </span>
               </span>
               <span className="cell cell--num">
                 <span className="cell__label">Когда</span>

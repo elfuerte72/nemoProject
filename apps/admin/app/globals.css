@@ -1462,6 +1462,41 @@ select.input {
   border-bottom-right-radius: 4px;
 }
 
+/*
+ * Ответ помощника. Той же стороны, что и ответ менеджера, — клиент
+ * получил его от сервиса, и разносить их по краям значило бы врать про
+ * то, как выглядит разговор у клиента. Отличается заливкой и подписью:
+ * менеджер читает ленту подряд, и «кто это сказал» должно читаться
+ * раньше самого текста.
+ */
+.bubble--concierge {
+  background: var(--surface-raised, rgba(255, 255, 255, 0.06));
+  border: 1px dashed rgba(217, 190, 134, 0.32);
+}
+
+/*
+ * Кто ведёт разговор. Над лентой, а не под ней: решение «отвечаю сам или
+ * оставляю помощнику» принимается до чтения, а не после.
+ */
+.handover {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background: var(--surface, rgba(255, 255, 255, 0.03));
+}
+
+.handover__state {
+  margin: 0;
+  color: var(--text-muted, rgba(255, 255, 255, 0.64));
+  font-size: 13px;
+}
+
 .bubble__text {
   white-space: pre-wrap;
   word-break: break-word;

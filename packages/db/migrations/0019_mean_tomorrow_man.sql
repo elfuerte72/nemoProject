@@ -1,0 +1,1 @@
+ALTER TYPE "public"."concierge_outcome" ADD VALUE 'answering' BEFORE 'answered';

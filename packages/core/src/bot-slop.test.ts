@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { slopComplaints } from './bot-slop';
 import { BOT_DESCRIPTION, BOT_SHORT_DESCRIPTION, BOT_TEXTS } from './bot-texts';
-import { renderNotification, type Notification } from './notifications';
+import { notificationKinds, renderNotification, type Notification } from './notifications';
 import { Money } from '@nemo/types';
 
 describe('slopComplaints', () => {
@@ -48,7 +48,88 @@ describe('slopComplaints', () => {
   });
 });
 
-/** Уведомление каждого вида: клиент видит их все, и каждое — текст бота. */
+/**
+ * Обороты, по которым машинный набор узнают без счёта знаков.
+ *
+ * Примеры взяты из ленты dev-бота 7 августа 2026: так отвечала модель,
+ * пока её держали одними запретами в запросе.
+ */
+describe('заученные обороты', () => {
+  it('ловит приписку вежливости в конце', () => {
+    expect(
+      slopComplaints('Курс назовёт менеджер. Если у вас есть вопросы, обращайтесь.'),
+    ).toHaveLength(1);
+  });
+
+  it('ловит «рады помочь»', () => {
+    expect(slopComplaints('Рады помочь! Обращайтесь.')).not.toEqual([]);
+  });
+
+  /*
+   * Хвост без адресата: «пишите, помогу» стоит в конце любого ответа и
+   * ничего к нему не добавляет. Взят из живого прогона — правило про
+   * «если у вас есть вопросы» его не ловило, а читается он так же.
+   */
+  it('ловит хвост «пишите, помогу»', () => {
+    expect(
+      slopComplaints('Меняем USDT на рубли. Если нужно уточнить — пишите, помогу.'),
+    ).toHaveLength(1);
+  });
+
+  it('оставляет обещание позвать менеджера: оно называет, что будет дальше', () => {
+    expect(
+      slopComplaints('Если деньги уже ушли — напишите сюда, позову менеджера.'),
+    ).toEqual([]);
+  });
+
+  it('ловит затакт перед ответом', () => {
+    expect(slopComplaints('Отличный вопрос. Курс виден до подачи заявки.')).toHaveLength(1);
+  });
+
+  it('ловит «важно отметить»', () => {
+    expect(slopComplaints('Важно отметить, что курс держится час.')).toHaveLength(1);
+  });
+
+  it('ловит связку «не только X, но и Y»', () => {
+    expect(
+      slopComplaints('Мы меняем не только USDT, но и рубли.'),
+    ).toHaveLength(1);
+  });
+
+  it('ловит канцелярит', () => {
+    expect(slopComplaints('Обмен осуществляется в кратчайшие сроки.')).not.toEqual([]);
+  });
+
+  it('ловит «предоставляем услуги»', () => {
+    expect(
+      slopComplaints('Мы предоставляем услуги обмена по данным направлениям.'),
+    ).not.toEqual([]);
+  });
+
+  /*
+   * Живая речь этих правил не задевает: сервис говорит короткими
+   * фразами о деле, и запрет оборота не должен запрещать слово.
+   */
+  it('пропускает обычный ответ о деле', () => {
+    expect(
+      slopComplaints('Меняем рубли на баты. Курс виден до подачи заявки, там же и сумма.'),
+    ).toEqual([]);
+  });
+
+  it('пропускает слово «менеджер» рядом с вопросом клиента', () => {
+    expect(
+      slopComplaints('Про вашу заявку ответит менеджер, он видит её целиком.'),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * Уведомление каждого вида: их читают люди, и каждое — текст сервиса.
+ *
+ * Не только клиентские. Сотруднику текст пишет тот же сервис, и «новая
+ * заявка на обмен», набранная столбцом связок, читается машинной ровно
+ * так же — а правит её тот же человек и тем же заходом.
+ */
 const EVERY_NOTIFICATION: readonly Notification[] = [
   { kind: 'referral-joined', to: 1n, line: 1 },
   { kind: 'referral-joined', to: 1n, line: 2 },
@@ -106,6 +187,101 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
   { kind: 'card-application-status', to: 1n, status: 'active' },
   { kind: 'card-application-status', to: 1n, status: 'rejected' },
   { kind: 'client-message-received', to: 1n },
+  {
+    kind: 'staff-new-request',
+    to: 1n,
+    clientId: 2n,
+    clientUsername: 'ivan',
+    request: {
+      kind: 'exchange',
+      id: 'r',
+      fromAmount: Money.toAmount('100'),
+      fromCode: 'USDT',
+      toCode: 'THB',
+      isCash: false,
+    },
+  },
+  {
+    kind: 'staff-new-request',
+    to: 1n,
+    clientId: 2n,
+    clientUsername: null,
+    request: {
+      kind: 'exchange',
+      id: 'r',
+      fromAmount: Money.toAmount('100'),
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      isCash: true,
+    },
+  },
+  {
+    kind: 'staff-new-request',
+    to: 1n,
+    clientId: 2n,
+    clientUsername: 'ivan',
+    request: { kind: 'withdrawal', id: 'w', amount: Money.toAmount('500') },
+  },
+  {
+    kind: 'staff-new-request',
+    to: 1n,
+    clientId: 2n,
+    clientUsername: 'ivan',
+    request: { kind: 'card', id: 'c' },
+  },
+  {
+    kind: 'staff-stale-request',
+    to: 1n,
+    clientId: 2n,
+    clientUsername: 'ivan',
+    request: {
+      kind: 'exchange',
+      id: 'r',
+      fromAmount: Money.toAmount('100'),
+      fromCode: 'USDT',
+      toCode: 'THB',
+      isCash: false,
+    },
+    waitingMinutes: 45,
+  },
+  {
+    // Больше двух часов: срок называется часами, и это другая строка.
+    kind: 'staff-stale-request',
+    to: 1n,
+    clientId: 2n,
+    clientUsername: null,
+    request: {
+      kind: 'exchange',
+      id: 'r',
+      fromAmount: Money.toAmount('100'),
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      isCash: true,
+    },
+    waitingMinutes: 214,
+  },
+];
+
+/**
+ * Виды, чей текст здесь не проверяется, и почему.
+ *
+ * Четыре из пяти — про чужой набор: в обращении клиента, в сводке
+ * эскалации и в напоминании о ждущем сервису принадлежит рамка, а
+ * внутри стоит написанное самим клиентом; ответ менеджера уходит
+ * дословно и целиком его. Падал бы этот тест от чужого сообщения с
+ * тремя тире, а правит его не разработчик.
+ *
+ * Пятый — ответ консьержа. Он как раз наш, но пишется не здесь и не
+ * заранее: его набирает модель, и то же самое правило применяется к
+ * нему заставой в момент ответа (`concierge-guard.ts`). Образец с
+ * чистым текстом доказывал бы только то, что чистый текст чист.
+ */
+const NOT_OURS: readonly Notification['kind'][] = [
+  'staff-client-message',
+  'staff-escalation',
+  'staff-waiting-client',
+  'manager-message',
+  'concierge-message',
 ];
 
 describe('тексты бота', () => {
@@ -136,4 +312,19 @@ describe('тексты бота', () => {
       expect(slopComplaints(renderNotification(notification))).toEqual([]);
     },
   );
+
+  /*
+   * Список выше набран руками, и заведённый следом вид уведомления в
+   * него не попадает сам. Без этой проверки он прошёл бы мимо правила
+   * молча — а замечают такое не на ревью, а через полгода, читая
+   * сообщение, которое сервис уже отправил.
+   */
+  it('проверкой охвачен каждый вид уведомления', () => {
+    const covered = new Set(EVERY_NOTIFICATION.map((one) => one.kind));
+    const missed = notificationKinds.filter(
+      (kind) => !covered.has(kind) && !NOT_OURS.includes(kind),
+    );
+
+    expect(missed).toEqual([]);
+  });
 });

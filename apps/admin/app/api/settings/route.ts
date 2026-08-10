@@ -27,6 +27,8 @@ const settingsSchema = z.object({
   markupBps: z.number().optional(),
   minExchangeAmount: z.string().optional(),
   unpaidExchangeRequestTtlMinutes: z.number().optional(),
+  conciergeRepliesPerClientDaily: z.number().optional(),
+  conciergeRepliesDaily: z.number().optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {
@@ -44,6 +46,8 @@ export async function POST(request: Request): Promise<Response> {
       markupBps: parsed.data.markupBps,
       minExchangeAmount: parsed.data.minExchangeAmount,
       unpaidExchangeRequestTtlMinutes: parsed.data.unpaidExchangeRequestTtlMinutes,
+      conciergeRepliesPerClientDaily: parsed.data.conciergeRepliesPerClientDaily,
+      conciergeRepliesDaily: parsed.data.conciergeRepliesDaily,
     });
     return json({ settings });
   } catch (error) {

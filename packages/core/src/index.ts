@@ -65,11 +65,24 @@ import {
   listConversations,
   receiveClientMessage,
   replyToClient,
-  takeStaffNotifications,
   type ConversationFilter,
   type ReceiveMessageInput,
   type ReplyInput,
 } from './conversations.js';
+import { takeStaffAlerts } from './staff-alerts.js';
+import {
+  answerAsConcierge,
+  handOverToHuman,
+  listConversationsAwaitingConcierge,
+  returnToConcierge,
+  type AnswerAsConciergeInput,
+} from './concierge.js';
+import {
+  listKnowledgeArticles,
+  saveKnowledgeArticle,
+  setKnowledgeArticleActive,
+  type SaveKnowledgeArticleInput,
+} from './concierge-knowledge.js';
 import {
   listRequisiteAccessLog,
   revealMessageAttachment,
@@ -273,7 +286,19 @@ export function createCore(ctx: CoreConfig) {
     listConversations: (actor: Actor, filter?: ConversationFilter) =>
       listConversations(ctx, actor, filter),
     countUnansweredConversations: (actor: Actor) => countUnansweredConversations(ctx, actor),
-    takeStaffNotifications: (at: Date) => takeStaffNotifications(ctx, at),
+    takeStaffAlerts: (at: Date) => takeStaffAlerts(ctx, at),
+
+    answerAsConcierge: (input: AnswerAsConciergeInput) => answerAsConcierge(ctx, input),
+    listConversationsAwaitingConcierge: () => listConversationsAwaitingConcierge(ctx),
+    handOverToHuman: (actor: Actor, clientId: bigint) =>
+      handOverToHuman(ctx, actor, clientId),
+    returnToConcierge: (actor: Actor, clientId: bigint) =>
+      returnToConcierge(ctx, actor, clientId),
+    listKnowledgeArticles: (actor: Actor) => listKnowledgeArticles(ctx, actor),
+    saveKnowledgeArticle: (actor: Actor, input: SaveKnowledgeArticleInput) =>
+      saveKnowledgeArticle(ctx, actor, input),
+    setKnowledgeArticleActive: (actor: Actor, id: string, isActive: boolean) =>
+      setKnowledgeArticleActive(ctx, actor, id, isActive),
     listRequisiteAccessLog: (actor: Actor, filter?: RequisiteAccessFilter) =>
       listRequisiteAccessLog(ctx, actor, filter),
 
@@ -436,4 +461,28 @@ export {
   TransitionNotAllowedError,
   type CoreErrorCode,
 } from './errors.js';
-export { renderNotification, type Notification } from './notifications.js';
+export {
+  renderNotification,
+  type NewRequestSubject,
+  type Notification,
+} from './notifications.js';
+export type {
+  ConciergeAnswer,
+  ConciergeRequest,
+  ConciergeSource,
+  ConciergeTurn,
+} from './concierge-source.js';
+export {
+  CONCIERGE_GREETING,
+  CONCIERGE_HANDOVER,
+  CONCIERGE_HELLO,
+  CONCIERGE_INSTRUCTIONS,
+  CONCIERGE_OFFTOPIC,
+  isGreetingOnly,
+} from './concierge-voice.js';
+export { CONCIERGE_QUIET_MS } from './concierge.js';
+export { MAX_REPLY_LENGTH, TIME_UNIT, replyComplaints } from './concierge-guard.js';
+export type {
+  KnowledgeArticleView,
+  SaveKnowledgeArticleInput,
+} from './concierge-knowledge.js';

@@ -348,6 +348,8 @@ export interface UpdateServiceSettingsInput {
   readonly markupBps?: number | undefined;
   readonly minExchangeAmount?: string | undefined;
   readonly unpaidExchangeRequestTtlMinutes?: number | undefined;
+  readonly conciergeRepliesPerClientDaily?: number | undefined;
+  readonly conciergeRepliesDaily?: number | undefined;
 }
 
 /** Ставка выше 100% отдавала бы рефереру больше, чем сервис заработал. */
@@ -356,6 +358,18 @@ function requireBps(value: number, subject: string): number {
     throw new InvalidInputError(
       `${subject}: ожидаются целые базисные пункты от 0 до 10000 (10000 = 100%)`,
     );
+  }
+  return value;
+}
+
+/**
+ * Суточный предел ответов помощника. Ноль законен: им консьерж
+ * выключается, не трогая выкатку, — и это единственный способ выключить
+ * его быстрее, чем снять ключ провайдера и пересобрать деплой.
+ */
+function requireLimit(value: number, subject: string): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new InvalidInputError(`${subject}: ожидается целое неотрицательное число`);
   }
   return value;
 }
@@ -407,6 +421,18 @@ export async function updateServiceSettings(
       );
     }
     patch.unpaidExchangeRequestTtlMinutes = minutes;
+  }
+  if (input.conciergeRepliesPerClientDaily !== undefined) {
+    patch.conciergeRepliesPerClientDaily = requireLimit(
+      input.conciergeRepliesPerClientDaily,
+      'Предел ответов помощника одному клиенту',
+    );
+  }
+  if (input.conciergeRepliesDaily !== undefined) {
+    patch.conciergeRepliesDaily = requireLimit(
+      input.conciergeRepliesDaily,
+      'Предел ответов помощника за сутки',
+    );
   }
   if (Object.keys(patch).length === 0) {
     throw new InvalidInputError('Нечего менять');

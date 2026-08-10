@@ -92,7 +92,126 @@ export type Notification =
       readonly clientId: bigint;
       readonly clientUsername: string | null;
       readonly preview: string;
+    }
+  | {
+      /**
+       * Ответ консьержа. Доставляет его тот же бот, которого клиент
+       * запускал, — как и ответ менеджера.
+       */
+      readonly kind: 'concierge-message';
+      readonly to: bigint;
+      readonly body: string;
+    }
+  | {
+      /**
+       * Консьерж позвал человека — сотруднику, с причиной.
+       *
+       * Отдельно от обычного обращения: разница в том, что менеджер
+       * читает первым. «Клиент говорит, что деньги не дошли» отвечает на
+       * вопрос «что случилось» до того, как он откроет переписку, а
+       * очередь у него общая.
+       */
+      readonly kind: 'staff-escalation';
+      readonly to: bigint;
+      readonly clientId: bigint;
+      readonly clientUsername: string | null;
+      readonly reason: string;
+      readonly preview: string;
+    }
+  | {
+      /**
+       * Заявку так и не взяли — сотруднику, однажды.
+       *
+       * Отдельно от «новой»: у той повод — появление, а здесь — что о
+       * ней забыли. Смена сменилась, сообщение прокрутилось в чате,
+       * менеджер решил «возьму через минуту» — заметит это клиент, если
+       * не напомнить.
+       */
+      readonly kind: 'staff-stale-request';
+      readonly to: bigint;
+      readonly clientId: bigint;
+      readonly clientUsername: string | null;
+      readonly request: NewRequestSubject;
+      /** Сколько она уже ждёт. Без этого напоминание не отличить от нового. */
+      readonly waitingMinutes: number;
+    }
+  | {
+      /** Клиент ждёт ответа дольше положенного — сотруднику, однажды. */
+      readonly kind: 'staff-waiting-client';
+      readonly to: bigint;
+      readonly clientId: bigint;
+      readonly clientUsername: string | null;
+      readonly preview: string;
+      readonly waitingMinutes: number;
+    }
+  | {
+      /**
+       * Новая заявка — сотруднику. Тем же путём, что и обращение: бот
+       * входа, отметка в строке, планировщик.
+       *
+       * Заявка описана данными, а не готовой строкой: текст уведомления
+       * живёт в `renderNotification` рядом с остальными, иначе
+       * формулировка про заявку разошлась бы с формулировкой про
+       * обращение при первой же правке тона.
+       */
+      readonly kind: 'staff-new-request';
+      readonly to: bigint;
+      readonly clientId: bigint;
+      readonly clientUsername: string | null;
+      readonly request: NewRequestSubject;
     };
+
+/**
+ * О какой заявке речь. Три вида, и различаются они не только именем:
+ * у обмена называются суммы и стороны, у вывода — сумма баллов, у карты
+ * не называется ничего, потому что называть нечего.
+ */
+export type NewRequestSubject =
+  | {
+      readonly kind: 'exchange';
+      readonly id: string;
+      readonly fromAmount: Amount;
+      readonly fromCode: string;
+      readonly toCode: string;
+      /** Наличная заявка: у неё нет курса подачи, и это видно менеджеру сразу. */
+      readonly isCash: boolean;
+    }
+  | { readonly kind: 'withdrawal'; readonly id: string; readonly amount: Amount }
+  | { readonly kind: 'card'; readonly id: string };
+
+/**
+ * Все виды уведомлений списком.
+ *
+ * Нужен там, где виды перебирают, — прежде всего в проверке на машинный
+ * набор: она идёт по каждому, а перечислены они были руками, и заведённый
+ * следом вид проходил бы мимо правила молча. Теперь не пройдёт: список
+ * обязан сойтись с типом, и следит за этим строка под ним.
+ */
+export const notificationKinds = [
+  'referral-joined',
+  'exchange-request-status',
+  'exchange-request-expiring',
+  'bonus-accrued',
+  'withdrawal-request-status',
+  'card-application-status',
+  'client-message-received',
+  'manager-message',
+  'concierge-message',
+  'staff-client-message',
+  'staff-escalation',
+  'staff-new-request',
+  'staff-stale-request',
+  'staff-waiting-client',
+] as const satisfies readonly Notification['kind'][];
+
+/**
+ * Вид, заведённый в типе и забытый в списке. Пока такой есть, тип ниже
+ * не сходится и сборка не проходит: список, отставший от типа, — это
+ * ровно то молчание, ради которого он и заведён.
+ */
+type UnlistedKind = Exclude<Notification['kind'], (typeof notificationKinds)[number]>;
+type AssertNone<T extends never> = T;
+export type EveryKindListed = AssertNone<UnlistedKind>;
 
 /**
  * Текст сообщения для клиента.
@@ -139,6 +258,71 @@ export function renderNotification(notification: Notification): string {
         `Новое обращение от клиента ${notification.clientUsername ?? notification.clientId}:\n` +
         notification.preview
       );
+    case 'concierge-message':
+      // Как и текст менеджера, уходит как есть: обрамление вроде
+      // «помощник пишет» превратило бы разговор в автоответчик. Кто
+      // отвечает, консьерж говорит сам — один раз, в начале разговора.
+      return notification.body;
+    case 'staff-new-request':
+      return (
+        `Новая ${renderNewRequestSubject(notification.request)}\n` +
+        `Клиент: ${notification.clientUsername ?? notification.clientId}`
+      );
+    case 'staff-escalation':
+      return (
+        `Помощник передал разговор: ${notification.reason}.\n` +
+        `Клиент ${notification.clientUsername ?? notification.clientId} пишет:\n` +
+        notification.preview
+      );
+    case 'staff-stale-request':
+      return (
+        `Заявку никто не взял ${renderWaiting(notification.waitingMinutes)}.\n` +
+        `${capitalize(renderNewRequestSubject(notification.request))}\n` +
+        `Клиент: ${notification.clientUsername ?? notification.clientId}`
+      );
+    case 'staff-waiting-client':
+      return (
+        `Клиент ${notification.clientUsername ?? notification.clientId} ждёт ответа ` +
+        `${renderWaiting(notification.waitingMinutes)}:\n` +
+        notification.preview
+      );
+  }
+}
+
+/**
+ * Сколько ждут, словами.
+ *
+ * В часах, когда их больше одного: «ждёт 214 минут» менеджер переводит в
+ * уме, а решение принимает по порядку величины.
+ */
+function renderWaiting(minutes: number): string {
+  if (minutes < 120) return `${minutes} мин`;
+  return `больше ${Math.floor(minutes / 60)} ч`;
+}
+
+/** Подпись заявки собрана для середины фразы, а здесь начинает строку. */
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * Чем заявка названа сотруднику.
+ *
+ * Суммой и сторонами, а не идентификатором: менеджер решает по этой
+ * строке, бросать ли то, чем занят, и «заявка 8f3c…» на этот вопрос не
+ * отвечает.
+ */
+function renderNewRequestSubject(request: NewRequestSubject): string {
+  switch (request.kind) {
+    case 'exchange':
+      return (
+        `заявка на обмен: ${request.fromAmount} ${request.fromCode} → ${request.toCode}` +
+        (request.isCash ? ', наличными' : '')
+      );
+    case 'withdrawal':
+      return `заявка на вывод ${request.amount} баллов`;
+    case 'card':
+      return 'заявка на карту';
   }
 }
 

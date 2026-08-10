@@ -1,8 +1,9 @@
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { Money } from '@nemo/types';
-import { renderNotification } from '@nemo/core';
+import { CONCIERGE_QUIET_MS, renderNotification } from '@nemo/core';
 import { getCore } from '@/lib/core';
 import { referralLink } from '@/lib/referral';
+import { nudgeStaffAlerts } from '@/lib/staff-alert';
 import {
   RATES_UNAVAILABLE,
   renderRatesMessage,
@@ -227,21 +228,88 @@ async function receive(
   const telegramUserId = ctx.from?.id;
   if (telegramUserId === undefined) return;
 
+  const clientId = BigInt(telegramUserId);
   const { notifications } = await getCore().receiveClientMessage({
-    telegramUserId: BigInt(telegramUserId),
+    telegramUserId: clientId,
     ...content,
     ...(ctx.from?.username === undefined ? {} : { username: ctx.from.username }),
   });
 
   // Подтверждение отвечается прямо здесь, а не уходит доставкой: так оно
   // приходит тем же ответом на сообщение клиента. Пустой ответ операции
-  // означает, что подтверждение уже уходило: два одинаковых сообщения
-  // подряд превратили бы разговор в автоответчик.
+  // означает одно из двух: подтверждение уже уходило в этой череде, либо
+  // за сообщение взялся консьерж — и тогда клиент получит не
+  // подтверждение, а живой ответ.
   const acknowledgement = notifications.find(
     (one) => one.kind === 'client-message-received',
   );
   if (acknowledgement) {
     await ctx.reply(renderNotification(acknowledgement), WITHOUT_OLD_KEYBOARD);
+    // Толчок ровно там же, где подтверждение: право на него занимает то
+    // же условное изменение, которым обращение становится видимым
+    // сотрудникам. Второе сообщение той же череды нового повода не
+    // создаёт — и звать за ним панель незачем.
+    nudgeStaffAlerts();
+    return;
+  }
+
+  /*
+   * Ответ консьержа не дожидается: обработчик возвращается сейчас, а
+   * провайдер думает секунды. Дождавшись его здесь, мы дождались бы и
+   * повторного обновления от Telegram — то есть второго такого же
+   * ответа клиенту.
+   */
+  void answerAsConcierge(ctx, clientId).catch((error: unknown) => {
+    // Сообщение клиента записано, и отметка «консьерж взялся» на нём
+    // осталась: опрос подберёт его и ответит следом.
+    console.error('Помощник не довёл ответ до конца:', error);
+  });
+}
+
+/**
+ * Ответ консьержа. Зовётся в фоне — см. место вызова.
+ *
+ * Пока идёт ожидание, клиент видит «печатает…»: молчащий чат неотличим
+ * от сломанного бота, а разница в несколько секунд заметна.
+ *
+ * Не дошедшее подберёт опрос: у сообщения, за которое консьерж взялся и
+ * не ответил, остаётся отметка, и по ней его находит
+ * `/api/concierge/pending`.
+ */
+async function answerAsConcierge(ctx: Context, clientId: bigint): Promise<void> {
+  /*
+   * Пауза накопления: человек пишет мысль несколькими сообщениями, и
+   * операция не возьмёт череду раньше тишины — вызов до неё работал бы
+   * вхолостую. Ждём паузу с небольшим запасом; вызов, назначенный
+   * последним сообщением череды, придёт уже после тишины и ответит на
+   * всё разом.
+   */
+  await new Promise((resolve) => setTimeout(resolve, CONCIERGE_QUIET_MS + 500));
+
+  // Часы набираются один раз: Telegram гасит их через пять секунд сам, а
+  // держать их обновлением значит ждать ответа ради этого обновления.
+  await ctx.replyWithChatAction('typing').catch(() => undefined);
+
+  const { notifications, handedToHuman } = await getCore().answerAsConcierge({
+    telegramUserId: clientId,
+  });
+
+  for (const notification of notifications) {
+    await ctx
+      .reply(renderNotification(notification), WITHOUT_OLD_KEYBOARD)
+      .catch((error: unknown) => {
+        // Ответ записан в ленту, и менеджер его видит. Отказ доставки —
+        // повод для журнала, а не для повтора: повтор прислал бы клиенту
+        // второй такой же ответ.
+        console.error('Ответ помощника не доставлен:', error);
+      });
+  }
+
+  // Панель будим только на эскалации: обычный ответ повода для
+  // сотрудников не создаёт, и звать её за ним — стучаться впустую на
+  // каждое сообщение клиента.
+  if (handedToHuman) {
+    nudgeStaffAlerts();
   }
 }
 

@@ -1,40 +1,22 @@
-import { schedulerCallDenied } from '@nemo/http';
-import { deliverNotifications } from '@nemo/telegram';
-import { errorResponse, json } from '@/lib/api';
-import { loginBotToken } from '@/lib/auth/login-bot';
-import { getCore } from '@/lib/core';
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export { POST } from '../../staff/notify/route';
 
 /**
- * Разослать сотрудникам новые обращения.
+ * Старый адрес рассылки уведомлений сотрудникам.
  *
- * Отдельным маршрутом в панели, а не ответом на само сообщение: шлёт их
- * бот входа в админку, и его токен лежит только здесь (docs/adr/0005).
- * Клиентское приложение, которое принимает сообщение, до него не
- * дотягивается — и не должно: утечка клиентского контура отдавала бы
- * первый фактор входа.
+ * Поводов позвать менеджера стало несколько — обращения и новые заявки,
+ * — и рассылка переехала в `/api/staff/notify`: адрес, названный
+ * перепиской, о заявке на обмен уже не говорит. Здесь остался вход по
+ * прежнему пути: расписание планировщика живёт вне репозитория, и
+ * выкатка, меняющая его молча, оставила бы сотрудников без уведомлений
+ * до тех пор, пока кто-нибудь не заметит.
  *
- * Вызывается тем же планировщиком, что и проверка сроков оплаты, и тем
- * же секретом защищён. Отметка о рассылке ставится условным изменением:
- * два наложившихся вызова не разошлют одно обращение дважды.
+ * Убрать вместе с записью в `backlog.md`, когда расписание переедет.
+ *
+ * Обработчик реэкспортируется, а вот `runtime` и `dynamic` объявлены
+ * заново: реэкспортированные поля конфигурации Next не распознаёт и
+ * молча заменяет своими — предупреждением при сборке. Молча — это здесь
+ * и опасно: маршрут читает заголовок и без пометки собрался бы
+ * статическим.
  */
-export async function POST(request: Request): Promise<Response> {
-  const denied = schedulerCallDenied(request);
-  if (denied) return denied;
-
-  try {
-    const notifications = await getCore().takeStaffNotifications(new Date());
-    await deliverNotifications(notifications, {
-      botToken: loginBotToken(),
-      ...(process.env.ADMIN_URL
-        ? { panelUrl: `${process.env.ADMIN_URL.replace(/\/+$/, '')}/conversations` }
-        : {}),
-    });
-
-    return json({ sent: notifications.length });
-  } catch (error) {
-    return errorResponse(error);
-  }
-}
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
