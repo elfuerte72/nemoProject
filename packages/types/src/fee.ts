@@ -106,3 +106,82 @@ export function netAfterFee(usdAmount: Amount, schedule: readonly FeeTier[]): Am
   const net = Money.subtract(usdAmount, feeFor(usdAmount, schedule));
   return Money.isNegative(net) ? Money.ZERO : net;
 }
+
+/**
+ * До скольких знаков округляется найденная сумма. Столько же показывает
+ * экран: число, обрезанное при показе, перестало бы давать обещанное.
+ */
+const REVERSE_SCALE = 8;
+
+/**
+ * Обратный счёт: сколько отдать, чтобы после комиссии осталось не меньше
+ * названного.
+ *
+ * Вопрос звучит не реже прямого — с ним приходят за суммой брони, счёта
+ * или билета. Со ступенями он перестаёт быть делением: ставка берётся от
+ * всей суммы, и выдача на границах скачет. Часть сумм получения
+ * достижима двумя разными суммами отдачи, часть — ни одной.
+ *
+ * Поэтому решается перебором: на каждой ступени уравнение решается своё,
+ * решение отбрасывается, если выпало за её границы, и из уцелевших
+ * берётся наименьшее. Ступеней единицы, и перебор стоит ничего.
+ *
+ * К решениям добавляются сами границы: сумма, недостижимая внутри
+ * ступени, часто достижима ровно на её краю — там ставка ещё старая, а
+ * сумма уже больше.
+ *
+ * Округление вверх, а не вниз: отброшенный хвост возвращается вычетом
+ * комиссии как недостача, и клиент, просивший пятьдесят тысяч, получил
+ * бы 49 999.
+ */
+export function usdForNet(target: Amount, schedule: readonly FeeTier[]): Amount | null {
+  if (Money.isZero(target) || Money.isNegative(target)) return null;
+
+  const candidates: Amount[] = [];
+
+  for (const [index, tier] of schedule.entries()) {
+    const floorUsd = index === 0 ? null : (schedule[index - 1]?.upToUsd ?? null);
+
+    /*
+     * Решение уравнения этой ступени. С фиксированной ставкой оно
+     * прямое, с долей — деление вверх: делить вниз значило бы обещать
+     * сумму, которой не выйдет.
+     */
+    const solved =
+      tier.fixedUsd !== undefined
+        ? Money.add(target, tier.fixedUsd)
+        : Money.divideCeil(
+            target,
+            Money.subtract(Money.toAmount('1'), Money.percentOf(Money.toAmount('1'), tier.rateBps ?? 0)),
+            REVERSE_SCALE,
+          );
+
+    /*
+     * Решение засчитывается, только если попало в свою ступень: иначе
+     * ставка при такой сумме будет другой, и равенство развалится.
+     *
+     * Выпавшее на нижнюю границу — особый случай: сама граница
+     * принадлежит предыдущей ступени, где ставка выше, и решение там
+     * неверно. Но верный ответ лежит на волосок выше — первой суммой,
+     * которая уже считается по этой ставке.
+     */
+    const step = Money.toAmount(`0.${'0'.repeat(REVERSE_SCALE - 1)}1`);
+    const shifted =
+      floorUsd !== null && Money.compare(solved, floorUsd) <= 0
+        ? Money.add(floorUsd, step)
+        : solved;
+    const withinTop = tier.upToUsd === null || Money.compare(shifted, tier.upToUsd) <= 0;
+    if (withinTop && Money.compare(netAfterFee(shifted, schedule), target) >= 0) {
+      candidates.push(shifted);
+    }
+
+    // И сама граница: за ней ставка меняется, и сумма, недостижимая
+    // внутри ступени, оказывается достижимой ровно на её краю.
+    if (tier.upToUsd !== null && Money.compare(netAfterFee(tier.upToUsd, schedule), target) >= 0) {
+      candidates.push(tier.upToUsd);
+    }
+  }
+
+  if (candidates.length === 0) return null;
+  return candidates.reduce((least, one) => (Money.compare(one, least) < 0 ? one : least));
+}
