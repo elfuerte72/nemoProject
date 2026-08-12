@@ -147,14 +147,23 @@ export function usdForNet(target: Amount, schedule: readonly FeeTier[]): Amount 
      * прямое, с долей — деление вверх: делить вниз значило бы обещать
      * сумму, которой не выйдет.
      */
+    const share = Money.subtract(
+      Money.toAmount('1'),
+      Money.percentOf(Money.toAmount('1'), tier.rateBps ?? 0),
+    );
+    /*
+     * Ставка во всю сумму оставляет клиенту ноль, сколько бы он ни
+     * отдал: уравнение этой ступени решений не имеет. Пропускается
+     * молча — иначе деление на ноль роняло бы экран вместо честного
+     * «такой суммы не выйдет». Ограничение базы такую ставку
+     * пропускает: сто процентов — опечатка, а не невозможное значение.
+     */
+    if (tier.fixedUsd === undefined && Money.isZero(share)) continue;
+
     const solved =
       tier.fixedUsd !== undefined
         ? Money.add(target, tier.fixedUsd)
-        : Money.divideCeil(
-            target,
-            Money.subtract(Money.toAmount('1'), Money.percentOf(Money.toAmount('1'), tier.rateBps ?? 0)),
-            REVERSE_SCALE,
-          );
+        : Money.divideCeil(target, share, REVERSE_SCALE);
 
     /*
      * Решение засчитывается, только если попало в свою ступень: иначе
