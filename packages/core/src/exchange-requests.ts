@@ -1,11 +1,19 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { currencies, currencyPairs, exchangeRequestEvents, exchangeRequests } from '@nemo/db';
+import {
+  clientRequisites,
+  currencies,
+  currencyPairs,
+  exchangeRequestEvents,
+  exchangeRequests,
+} from '@nemo/db';
 import {
   Money,
+  payoutMethodOf,
   type Amount,
   type CurrencyKind,
   type ExchangeKind,
   type ExchangeRequestStatus,
+  type PayoutMethod,
 } from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
@@ -13,7 +21,7 @@ import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
-import { quoteForSubmission, roundPayout } from './rates.js';
+import { quoteForSubmission } from './rates.js';
 import { requireSuitableRequisites } from './requisites.js';
 import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
 
@@ -233,6 +241,33 @@ function thresholdSideOf(
   return null;
 }
 
+/**
+ * Каким способом уйдут деньги по этой записи — от него зависит ставка
+ * комиссии.
+ *
+ * Читается до транзакции вместе с котировкой: сетку выбирают по нему, а
+ * котировка это обращение к чужому API, и держать ради него открытую
+ * транзакцию нельзя. Пригодность записи проверяется всё равно внутри —
+ * здесь важно только, банк это или кошелёк.
+ *
+ * Чужая или удалённая запись отвечает пустотой, а не отказом: отказать
+ * должна проверка внутри транзакции, и своё сообщение у неё уже есть.
+ */
+async function readPayoutMethod(
+  executor: Executor,
+  clientId: bigint,
+  requisitesId: string,
+): Promise<PayoutMethod | undefined> {
+  const [row] = await executor
+    .select({ kind: clientRequisites.kind })
+    .from(clientRequisites)
+    .where(
+      and(eq(clientRequisites.id, requisitesId), eq(clientRequisites.clientId, clientId)),
+    )
+    .limit(1);
+  return row === undefined ? undefined : payoutMethodOf(row.kind);
+}
+
 export async function submitExchangeRequest(
   ctx: CoreConfig,
   actor: Actor,
@@ -263,14 +298,29 @@ export async function submitExchangeRequest(
   // и держать открытой транзакцию на время сетевого запроса значило бы
   // отдавать соединение с базой в распоряжение чужого сервиса. У
   // наличных курса нет вовсе — там курс называет менеджер.
-  const requestRate =
+  /*
+   * Способ выдачи говорит запись, на которую придут деньги, а не
+   * клиент: ставка у перевода в банк и в кошелёк разная, и позволить
+   * назвать её самому значило бы позволить выбрать цену. Читается до
+   * транзакции — вместе с котировкой, потому что от него зависит, по
+   * какой сетке считать.
+   */
+  const payoutMethod =
+    input.requisitesId === undefined
+      ? undefined
+      : await readPayoutMethod(ctx.db, clientId, input.requisitesId);
+
+  const quote =
     input.kind === 'electronic'
       ? await quoteForSubmission(ctx, {
           fromCode: input.fromCode,
           toCode: input.toCode,
+          fromAmount,
+          ...(payoutMethod === undefined ? {} : { payoutMethod }),
           asOf: input.quotedAt,
         })
       : null;
+  const requestRate = quote?.rate ?? null;
 
   return ctx.db.transaction(async (tx) => {
     await requireActivePair(tx, input);
@@ -279,7 +329,13 @@ export async function submitExchangeRequest(
     }
 
     const settings = await readServiceSettings(tx);
-    const measured = thresholdSideOf(input, fromAmount, requestRate);
+    /*
+     * Порог задан в USDT. Там, где цену назначает сетка, долларовый
+     * эквивалент уже посчитан ради выбора ступени — им и меряем: у пары
+     * «рубли — баты» этой валюты нет ни с одной стороны, и без него
+     * заявку можно было подать на полсотни рублей.
+     */
+    const measured = quote?.usdAmount ?? thresholdSideOf(input, fromAmount, requestRate);
     if (measured !== null && Money.compare(measured, settings.minExchangeAmount) < 0) {
       throw new InvalidInputError(
         `Минимальная сумма обмена — ${settings.minExchangeAmount} ${MIN_EXCHANGE_CODE}`,
@@ -299,8 +355,13 @@ export async function submitExchangeRequest(
         // видел её в калькуляторе и по ней принимал решение. Считается
         // здесь, а не набирается менеджером руками, иначе обещание
         // держалось бы на его внимательности.
-        toAmount:
-          requestRate === null ? null : roundPayout(Money.multiply(fromAmount, requestRate)),
+        /*
+         * Берётся из котировки, а не пересчитывается умножением: со
+         * ступенчатой комиссией курс — это уже частное от посчитанной
+         * выдачи, и обратное умножение разошлось бы с ней на хвост
+         * округления. Клиент видел именно это число.
+         */
+        toAmount: quote?.toAmount ?? null,
         requisitesId: input.requisitesId ?? null,
       })
       .returning();

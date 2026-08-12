@@ -3,6 +3,8 @@ import { addressEdges, generateRequisiteKeyPair, seal } from '@nemo/crypto';
 import {
   currencies,
   currencyPairs,
+  feeScheduleTiers,
+  feeSchedules,
   serviceAccounts,
   serviceSettings,
   staff,
@@ -193,4 +195,34 @@ export async function disableStaff(staffId: string): Promise<void> {
 
 export function asClient(telegramUserId: bigint): Actor {
   return { type: 'client', telegramUserId };
+}
+
+/**
+ * Сетка комиссии для валюты и способа выдачи. Ступени задаются в том же
+ * виде, в каком их присылает владелец: «до такой-то суммы в долларах —
+ * столько-то».
+ */
+export async function givenFeeSchedule(options: {
+  toCode: string;
+  payoutMethod: 'bank' | 'wallet' | 'cash';
+  tiers: readonly { upToUsd: string | null; fixedUsd?: string; rateBps?: number }[];
+  isActive?: boolean;
+}): Promise<void> {
+  await givenCurrency(options.toCode);
+  const [schedule] = await db
+    .insert(feeSchedules)
+    .values({
+      toCode: options.toCode,
+      payoutMethod: options.payoutMethod,
+      isActive: options.isActive ?? true,
+    })
+    .returning({ id: feeSchedules.id });
+  await db.insert(feeScheduleTiers).values(
+    options.tiers.map((tier) => ({
+      scheduleId: schedule!.id,
+      upToUsd: tier.upToUsd,
+      ...(tier.fixedUsd === undefined ? {} : { fixedUsd: tier.fixedUsd }),
+      ...(tier.rateBps === undefined ? {} : { rateBps: tier.rateBps }),
+    })),
+  );
 }
