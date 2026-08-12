@@ -128,6 +128,29 @@ export const requisiteKinds = [
 export const requisiteKindSchema = z.enum(requisiteKinds);
 export type RequisiteKind = z.infer<typeof requisiteKindSchema>;
 
+/**
+ * Куда уходит выдача. От этого зависит ставка комиссии: перевод в
+ * тайский банк стоит сервису не столько же, сколько перевод в кошелёк.
+ *
+ * Способов меньше, чем видов реквизита: перевод по телефону и на карту
+ * для сервиса одно и то же — банковский перевод. Наличные стоят
+ * третьим: у них своя ставка, а курс называет менеджер.
+ */
+export const payoutMethods = ['bank', 'wallet', 'cash'] as const;
+export const payoutMethodSchema = z.enum(payoutMethods);
+export type PayoutMethod = z.infer<typeof payoutMethodSchema>;
+
+/**
+ * Каким способом уйдут деньги по этому реквизиту.
+ *
+ * Правило живёт здесь, рядом с видами реквизита, а не в ядре: по нему
+ * же экран выбирает сетку, чтобы показать клиенту ту цену, по которой
+ * заявка и уйдёт.
+ */
+export function payoutMethodOf(kind: RequisiteKind): PayoutMethod {
+  return kind === 'wallet' ? 'wallet' : 'bank';
+}
+
 /** Валюта бывает фиатной и криптовалютной: от этого зависит, куда её отправлять. */
 export const currencyKinds = ['fiat', 'crypto'] as const;
 export const currencyKindSchema = z.enum(currencyKinds);

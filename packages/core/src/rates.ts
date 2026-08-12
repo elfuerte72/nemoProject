@@ -1,7 +1,16 @@
 import { and, eq } from 'drizzle-orm';
 import { currencyPairs } from '@nemo/db';
-import { MAX_ROUNDING_BPS, Money, withoutDivisionTail, type Amount } from '@nemo/types';
+import {
+  MAX_ROUNDING_BPS,
+  Money,
+  netAfterFee,
+  withoutDivisionTail,
+  type Amount,
+  type FeeTier,
+  type PayoutMethod,
+} from '@nemo/types';
 import type { CoreConfig, Executor } from './context.js';
+import { readFeeSchedule } from './fee-schedules.js';
 import { readServiceSettings } from './settings.js';
 
 /**
@@ -53,10 +62,42 @@ export interface QuoteView {
   readonly toAmount: Amount | null;
   readonly markupBps: number;
   readonly asOf: Date;
+  /**
+   * Долларовый эквивалент отдаваемой суммы — есть только там, где цену
+   * назначает сетка комиссии.
+   *
+   * Наружу он нужен не ради показа (клиент долларов не видит), а ради
+   * минимальной суммы обмена: порог задан в USDT, а у пары «рубли —
+   * баты» этой валюты нет ни с одной стороны. Без него заявку можно
+   * подать на полсотни рублей.
+   */
+  readonly usdAmount?: Amount;
+  /**
+   * Цена пути целиком — только там, где её назначает сетка комиссии.
+   *
+   * Отдаётся экрану, чтобы он считал сам, а не спрашивал сервер на
+   * каждую набранную цифру: со ступенями курс зависит от суммы, и круг
+   * по сети означал бы секунду ожидания на каждый символ. Считает экран
+   * той же арифметикой из `@nemo/types`, что и ядро, — число сходится
+   * с тем, что запишется в заявку.
+   */
+  readonly fee?: {
+    /** Сколько USDT за единицу отдаваемой валюты. */
+    readonly toBaseRate: Amount;
+    /** Сколько получаемой валюты за один USDT. */
+    readonly fromBaseRate: Amount;
+    readonly tiers: readonly FeeTier[];
+  };
 }
 
 export interface QuoteInput extends RatePair {
   readonly fromAmount?: string | undefined;
+  /**
+   * Куда уйдут деньги. От этого зависит ставка: перевод в тайский банк
+   * стоит сервису не столько же, сколько перевод в кошелёк. Без него
+   * берётся банковская сетка — тот способ, которым выдают чаще.
+   */
+  readonly payoutMethod?: PayoutMethod | undefined;
   /**
    * Отметка времени курса, который клиент увидел. Подача присылает её
    * обратно, чтобы заявка ушла по показанному курсу, а не по тому,
@@ -182,6 +223,18 @@ export async function getQuote(
 
   if (!(await hasElectronicPair(ctx.db, input))) return null;
 
+  /*
+   * Сетка комиссии, если владелец прислал её на это направление. Есть —
+   * считаем по ТЗ, через долларовый эквивалент; нет — по наценке, как
+   * было до ступеней.
+   */
+  const schedule = await readFeeSchedule(
+    ctx.db,
+    input.toCode,
+    input.payoutMethod ?? 'bank',
+  );
+  if (schedule) return quoteByFee(ctx, input, schedule);
+
   const quoted = await source.quote(
     { fromCode: input.fromCode, toCode: input.toCode },
     input.asOf,
@@ -200,6 +253,90 @@ export async function getQuote(
         : null,
     markupBps,
     asOf: quoted.asOf,
+  };
+}
+
+/** Опорная валюта пути: через неё идут и деньги сервиса, и расчёт ступени. */
+const BASE_CODE = 'USDT';
+
+/**
+ * Котировка направления, у которого есть сетка комиссии.
+ *
+ * Путь из ТЗ владельца: `RUB → USD → комиссия → THB`. Сумма переводится
+ * в доллары, по долларовому эквиваленту выбирается ступень, ставка
+ * вычитается в долларах, остаток умножается на курс валюты выдачи.
+ * Клиент долларов не видит — они нужны затем, чтобы у бата и юаня
+ * ступени считались одной линейкой.
+ *
+ * Наценка сервиса сюда не приходит вовсе: комиссия её заменяет, а не
+ * дополняет, иначе клиент платит дважды — процент, спрятанный в курсе,
+ * и ставку поверх него.
+ *
+ * Без суммы котировки нет. Со ступенями курс от неё зависит: на ста
+ * долларах фиксированная ставка — это десятая часть, на пяти тысячах —
+ * две тысячных. Один курс на направление тут назвать нечем, а назвать
+ * его без комиссии значило бы пообещать больше, чем сервис отдаст.
+ */
+async function quoteByFee(
+  ctx: CoreConfig,
+  input: QuoteInput,
+  schedule: readonly FeeTier[],
+): Promise<QuoteView | null> {
+  const source = ctx.rateSource;
+  if (!source) return null;
+
+  const fromAmount = Money.amountSchema.safeParse(input.fromAmount ?? '');
+  if (!fromAmount.success || Money.isNegative(fromAmount.data) || Money.isZero(fromAmount.data)) {
+    return null;
+  }
+
+  /*
+   * Оба звена пути спрашиваются на одну отметку времени: заявка уходит
+   * по тому курсу, который клиент видел, и свежая половина рядом со
+   * старой дала бы цену, которой на экране не было.
+   *
+   * USDT считается долларом (docs/adr/0007), поэтому у монеты первое
+   * звено — единица, а не запрос к провайдеру о самой себе.
+   */
+  const fromBase = await source.quote(
+    { fromCode: BASE_CODE, toCode: input.toCode },
+    input.asOf,
+  );
+  if (!fromBase) return null;
+
+  /*
+   * У монеты первое звено — единица, а не запрос к провайдеру о самой
+   * себе. Отметка времени у неё берётся от второго звена: своей у
+   * единицы нет, а «сейчас» означало бы, что половина цены свежее, чем
+   * весь остальной путь.
+   */
+  const toBase =
+    input.fromCode.toUpperCase() === BASE_CODE
+      ? { rate: Money.toAmount('1'), asOf: fromBase.asOf }
+      : await source.quote({ fromCode: input.fromCode, toCode: BASE_CODE }, input.asOf);
+  if (!toBase) return null;
+
+  const usdAmount = Money.multiply(fromAmount.data, toBase.rate);
+  const payout = roundPayout(Money.multiply(netAfterFee(usdAmount, schedule), fromBase.rate));
+
+  /*
+   * Курс называется от посчитанной выдачи, а не наоборот: показанное
+   * число должно сходиться с тем, что сервис отдаст, а обратный порядок
+   * (посчитать курс, потом умножить) разошёлся бы с ним на хвост
+   * округления.
+   */
+  const rate = Money.divide(payout, fromAmount.data);
+
+  return {
+    rate,
+    toAmount: payout,
+    usdAmount,
+    fee: { toBaseRate: toBase.rate, fromBaseRate: fromBase.rate, tiers: schedule },
+    // Наценки в этой цене нет: её место заняла комиссия.
+    markupBps: 0,
+    // Отметка старшего из звеньев: цена не свежее самой несвежей своей
+    // половины.
+    asOf: toBase.asOf <= fromBase.asOf ? toBase.asOf : fromBase.asOf,
   };
 }
 
@@ -227,10 +364,9 @@ export async function getQuote(
 export async function quoteForSubmission(
   ctx: CoreConfig,
   input: QuoteInput,
-): Promise<Amount | null> {
+): Promise<QuoteView | null> {
   try {
-    const quote = await getQuote(ctx, input);
-    return quote?.rate ?? null;
+    return await getQuote(ctx, input);
   } catch (error) {
     console.error('Не удалось получить котировку', error);
     return null;

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "fee_schedule_tiers_single_top" ON "fee_schedule_tiers" USING btree ("schedule_id") WHERE "fee_schedule_tiers"."up_to_usd" is null;

@@ -15,6 +15,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
@@ -61,6 +62,16 @@ export const withdrawalRequestStatusEnum = pgEnum('withdrawal_request_status', [
 ]);
 
 export const withdrawalMethodEnum = pgEnum('withdrawal_method', ['bank', 'crypto']);
+
+/**
+ * Куда уходит выдача — от этого зависит ставка комиссии.
+ *
+ * Не то же, что вид реквизита: видов три (телефон, карта, кошелёк), а
+ * способов выдачи два, потому что перевод по телефону и на карту для
+ * сервиса одно и то же — банковский перевод. Наличные стоят третьим:
+ * ставку им владелец задаёт отдельно.
+ */
+export const payoutMethodEnum = pgEnum('payout_method', ['bank', 'wallet', 'cash']);
 
 export const cardApplicationStatusEnum = pgEnum('card_application_status', [
   'submitted',
@@ -525,6 +536,101 @@ export const currencyPairs = pgTable(
     isActive: boolean('is_active').default(true).notNull(),
   },
   (table) => [unique('currency_pairs_direction').on(table.fromCode, table.toCode, table.kind)],
+);
+
+/**
+ * Сетка комиссии: чем сервис берёт за выдачу этой валюты этим способом.
+ *
+ * Своя на каждую пару «валюта плюс способ»: владелец присылает их по
+ * одной, письмом на направление, и экономика у них разная — на одной и
+ * той же ступени бат стоит 4,5%, а юань 2%. Одной настройкой сервиса,
+ * как наценка, это не выражается.
+ *
+ * Направления, на которые сетка не заведена, считаются наценкой из
+ * настроек — той самой, что была до ступеней. Два правила цены разом
+ * существуют намеренно: у обмена USDT на рубли своя экономика, и
+ * ступени бата туда не переносятся.
+ */
+export const feeSchedules = pgTable(
+  'fee_schedules',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    /** Валюта, которую сервис выдаёт по этой сетке. */
+    toCode: text('to_code')
+      .notNull()
+      .references(() => currencies.code),
+    /**
+     * Куда уходят деньги. Берётся из вида реквизита клиента: перевод на
+     * карту или по телефону — банк, на кошелёк — кошелёк. Наличные
+     * стоят отдельно: их ставку владелец задаёт сам, а курс им называет
+     * менеджер.
+     */
+    payoutMethod: payoutMethodEnum('payout_method').notNull(),
+    /** Погашенная сетка не применяется, и направление считается наценкой. */
+    isActive: boolean('is_active').default(true).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [unique('fee_schedules_target').on(table.toCode, table.payoutMethod)],
+);
+
+/**
+ * Ступень сетки: до какой суммы она действует и сколько стоит.
+ *
+ * Ставка ровно одного вида — либо фиксированная сумма в долларах, либо
+ * доля в базисных пунктах, — и это проверяет база, а не форма: строка,
+ * где заданы обе, означает, что никто не знает, сколько стоит обмен.
+ *
+ * Пороги в долларах: клиент их не видит, но у бата и юаня они общие, и
+ * считать ступень в валюте выдачи значило бы держать четыре разных
+ * лестницы вместо одной.
+ */
+export const feeScheduleTiers = pgTable(
+  'fee_schedule_tiers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    scheduleId: uuid('schedule_id')
+      .notNull()
+      .references(() => feeSchedules.id, { onDelete: 'cascade' }),
+    /**
+     * Верхняя граница ступени включительно; пусто у последней — она
+     * действует на всё, что выше. Ровно пятьсот долларов это ещё нижняя
+     * ступень, а 500,01 — уже следующая.
+     */
+    upToUsd: money('up_to_usd'),
+    fixedUsd: money('fixed_usd'),
+    rateBps: integer('rate_bps'),
+  },
+  (table) => [
+    // Ровно одна ставка на ступень: сумма или доля.
+    check(
+      'fee_schedule_tiers_single_rate',
+      sql`(${table.fixedUsd} is null) <> (${table.rateBps} is null)`,
+    ),
+    check(
+      'fee_schedule_tiers_rate_range',
+      sql`${table.rateBps} is null or ${table.rateBps} between 0 and 10000`,
+    ),
+    check(
+      'fee_schedule_tiers_fixed_non_negative',
+      sql`${table.fixedUsd} is null or ${table.fixedUsd} >= 0`,
+    ),
+    check(
+      'fee_schedule_tiers_threshold_positive',
+      sql`${table.upToUsd} is null or ${table.upToUsd} > 0`,
+    ),
+    // Порог не повторяется внутри сетки: две ступени «до 500» означают,
+    // что цена зависит от порядка строк.
+    unique('fee_schedule_tiers_threshold').on(table.scheduleId, table.upToUsd),
+    /*
+     * И ровно одна ступень без верхней границы. Обычная уникальность
+     * этого не ловит: в Postgres пустое значение не равно другому
+     * пустому, и две строки «и всё, что выше» прошли бы обе — с разной
+     * ставкой и без правила, какая из них верна.
+     */
+    uniqueIndex('fee_schedule_tiers_single_top')
+      .on(table.scheduleId)
+      .where(sql`${table.upToUsd} is null`),
+  ],
 );
 
 /**

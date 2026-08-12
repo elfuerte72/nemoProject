@@ -1,3 +1,4 @@
+import { payoutMethodSchema } from '@nemo/types';
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
 
@@ -21,10 +22,20 @@ export async function GET(request: Request): Promise<Response> {
       return json({ quote: null });
     }
 
+    /*
+     * Способ выдачи приходит от экрана, но решает не он: заявка возьмёт
+     * его из записи, на которую придут деньги. Здесь он нужен затем,
+     * чтобы показанная цена совпала с той, по которой заявка уйдёт, —
+     * ставка у банка и кошелька разная. Чужое значение операция просто
+     * не узнает и посчитает по банковской сетке.
+     */
+    const payoutMethod = payoutMethodSchema.safeParse(url.searchParams.get('payoutMethod'));
+
     const quote = await getCore().getQuote({
       fromCode,
       toCode,
       fromAmount: url.searchParams.get('fromAmount') ?? undefined,
+      ...(payoutMethod.success ? { payoutMethod: payoutMethod.data } : {}),
     });
     return json({ quote });
   } catch (error) {
