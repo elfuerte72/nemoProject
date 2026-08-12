@@ -10,8 +10,11 @@ import type {
 } from '@nemo/core';
 import {
   Money,
+  netAfterFee,
+  payoutMethodOf,
   requisiteKinds,
   requisiteKindSuits,
+  usdForNet,
   type Amount,
   type ExchangeKind,
 } from '@nemo/types';
@@ -360,8 +363,18 @@ export function ExchangeScreen({
     setSelected(lastUsed ?? offered[0]?.id);
   }, [offered, requests, toCode, selected]);
 
+  /**
+   * Каким способом уйдут деньги — банком или кошельком. Ставка у них
+   * разная, поэтому от него зависит и показанная цена; решает всё равно
+   * запись, на которую придут деньги, а не клиент.
+   */
+  const payoutMethod = useMemo(() => {
+    const picked = requisites.find((one) => one.id === selected);
+    return picked ? payoutMethodOf(picked.kind) : undefined;
+  }, [requisites, selected]);
+
   /** Направление одной строкой: им помечается ответ о курсе. */
-  const pairKey = `${fromCode}/${toCode}/${kind}`;
+  const pairKey = `${fromCode}/${toCode}/${kind}/${payoutMethod ?? ''}`;
 
   /**
    * Курс этого направления — или его отсутствие. `undefined` означает
@@ -395,7 +408,26 @@ export function ExchangeScreen({
     let cancelled = false;
     const ask = () => {
       void get<{ quote: QuoteView | null }>(
-        `/api/quote?${new URLSearchParams({ fromCode, toCode }).toString()}`,
+        `/api/quote?${new URLSearchParams({
+          fromCode,
+          toCode,
+          /*
+           * Сумма здесь фиктивная и намеренно единичная.
+           *
+           * У направлений со ступенчатой комиссией курс зависит от
+           * суммы, но зависит он от неё считаемым образом: сервер
+           * присылает оба звена пути и саму сетку, а экран считает по
+           * ним ту же арифметику, что и ядро. Спрашивать сервер на
+           * каждую набранную цифру значило бы платить кругом по сети за
+           * каждый символ.
+           *
+           * Само число в ответе при этом не используется — им пользуется
+           * только направление без сетки, где курс от суммы не зависит
+           * вовсе.
+           */
+          fromAmount: '1',
+          ...(payoutMethod ? { payoutMethod } : {}),
+        }).toString()}`,
       )
         .then((result) => {
           if (!cancelled) setQuote({ pair: pairKey, view: result.quote });
@@ -423,7 +455,7 @@ export function ExchangeScreen({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [kind, fromCode, toCode, pairKey]);
+  }, [kind, fromCode, toCode, pairKey, payoutMethod]);
 
   /**
    * Обе стороны сделки числами. Считается та, в которую не вводят.
@@ -448,7 +480,7 @@ export function ExchangeScreen({
        * бы драйвер базы. Разойтись они не должны, и проверяет это не
        * типаж, а то, что обе стороны считают одной и той же `Money`.
        */
-      return { give: value, get: rate ? Money.floor(Money.multiply(value, rate.rate)) : null };
+      return { give: value, get: rate ? payoutFor(value, rate) : null };
     }
 
     /*
@@ -457,7 +489,33 @@ export function ExchangeScreen({
      * умножением на курс как недостача: клиент просил пятьдесят тысяч,
      * а ядро, считая выдачу вниз до целого, записало бы 49 999.
      */
-    if (!rate || Money.isZero(rate.rate)) return { give: null, get: value };
+    if (!rate) return { give: null, get: value };
+
+    /*
+     * Со ступенчатой комиссией обратный счёт перестаёт быть делением:
+     * ставка берётся от всей суммы, и выдача на границах скачет. Правило
+     * — наименьшая сумма, при которой клиент получает не меньше, чем
+     * просил; считает его та же `usdForNet`, что и ядро.
+     */
+    if (rate.fee) {
+      const { toBaseRate, fromBaseRate, tiers } = rate.fee;
+      if (Money.isZero(fromBaseRate) || Money.isZero(toBaseRate)) {
+        return { give: null, get: value };
+      }
+      const neededUsd = usdForNet(
+        Money.divideCeil(value, fromBaseRate, MAX_FRACTION_DIGITS),
+        tiers,
+      );
+      return {
+        give:
+          neededUsd === null
+            ? null
+            : Money.divideCeil(neededUsd, toBaseRate, MAX_FRACTION_DIGITS),
+        get: value,
+      };
+    }
+
+    if (Money.isZero(rate.rate)) return { give: null, get: value };
     return {
       give: Money.divideCeil(value, rate.rate, MAX_FRACTION_DIGITS),
       get: value,
@@ -474,7 +532,7 @@ export function ExchangeScreen({
    * подтверждении надо то, что запишет ядро.
    */
   const payout = useMemo(
-    () => (rate && sides.give ? Money.floor(Money.multiply(sides.give, rate.rate)) : null),
+    () => (rate && sides.give ? payoutFor(sides.give, rate) : null),
     [rate, sides.give],
   );
 
@@ -856,11 +914,19 @@ export function ExchangeScreen({
               */}
               <span
                 className={
-                  rate ? 'calc__rate' : 'calc__rate calc__rate--absent'
+                  rate && shownRate(rate, sides.give)
+                    ? 'calc__rate'
+                    : 'calc__rate calc__rate--absent'
                 }
               >
                 {rate
-                  ? formatRate(rate.rate, fromCode, toCode)
+                  ? // Со ступенчатой комиссией курс считается от
+                    // набранной суммы, и до неё строка пуста: обещать
+                    // курс, которого ещё нет, нечем.
+                    (() => {
+                      const shown = shownRate(rate, sides.give);
+                      return shown ? formatRate(shown, fromCode, toCode) : '';
+                    })()
                   : rate === null
                     ? 'Курс назовёт менеджер'
                     : ''}
@@ -1190,7 +1256,11 @@ export function ExchangeScreen({
               <div className="summary__row">
                 <span className="summary__label">Курс</span>
                 <span className="summary__value">
-                  {formatRate(sheet.rate.rate, sheet.fromCode, sheet.toCode)}
+                  {formatRate(
+                    shownRate(sheet.rate, sheet.give) ?? sheet.rate.rate,
+                    sheet.fromCode,
+                    sheet.toCode,
+                  )}
                 </span>
               </div>
             ) : undefined}
@@ -1309,6 +1379,41 @@ export function ExchangeScreen({
   );
 }
 
+
+/**
+ * Курс, который видит клиент.
+ *
+ * Со ступенчатой комиссией он зависит от суммы: на минимальной заявке
+ * фиксированная ставка съедает десятую часть, на крупной — тысячные. По
+ * направлению его назвать нечем, поэтому он считается от набранного —
+ * как частное того, что клиент получит, на то, что отдаёт. Пока сумма не
+ * набрана, курса нет вовсе: назвать его без комиссии значило бы обещать
+ * больше, чем сервис отдаст.
+ */
+function shownRate(quote: QuoteView, give: Amount | null): Amount | null {
+  if (!quote.fee) return quote.rate;
+  if (!give || Money.isZero(give)) return null;
+  return Money.divide(payoutFor(give, quote), give);
+}
+
+/**
+ * Сколько клиент получит, отдав столько.
+ *
+ * Там, где цену назначает сетка комиссии, считается путь целиком:
+ * сумма переводится в доллары, из них вычитается ставка своей ступени,
+ * остаток идёт в валюту выдачи. Той же арифметикой из `@nemo/types`,
+ * какой считает ядро, — иначе экран пообещал бы одно, а заявка записала
+ * другое.
+ *
+ * Считается здесь, а не на сервере: со ступенями курс зависит от суммы,
+ * и круг по сети означал бы секунду ожидания на каждую набранную цифру.
+ */
+function payoutFor(give: Amount, quote: QuoteView): Amount {
+  if (!quote.fee) return Money.floor(Money.multiply(give, quote.rate));
+  const { toBaseRate, fromBaseRate, tiers } = quote.fee;
+  const usd = Money.multiply(give, toBaseRate);
+  return Money.floor(Money.multiply(netAfterFee(usd, tiers), fromBaseRate));
+}
 
 /**
  * Класс строки калькулятора с анимацией разворота.

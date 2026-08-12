@@ -72,6 +72,22 @@ export interface QuoteView {
    * подать на полсотни рублей.
    */
   readonly usdAmount?: Amount;
+  /**
+   * Цена пути целиком — только там, где её назначает сетка комиссии.
+   *
+   * Отдаётся экрану, чтобы он считал сам, а не спрашивал сервер на
+   * каждую набранную цифру: со ступенями курс зависит от суммы, и круг
+   * по сети означал бы секунду ожидания на каждый символ. Считает экран
+   * той же арифметикой из `@nemo/types`, что и ядро, — число сходится
+   * с тем, что запишется в заявку.
+   */
+  readonly fee?: {
+    /** Сколько USDT за единицу отдаваемой валюты. */
+    readonly toBaseRate: Amount;
+    /** Сколько получаемой валюты за один USDT. */
+    readonly fromBaseRate: Amount;
+    readonly tiers: readonly FeeTier[];
+  };
 }
 
 export interface QuoteInput extends RatePair {
@@ -315,6 +331,7 @@ async function quoteByFee(
     rate,
     toAmount: payout,
     usdAmount,
+    fee: { toBaseRate: toBase.rate, fromBaseRate: fromBase.rate, tiers: schedule },
     // Наценки в этой цене нет: её место заняла комиссия.
     markupBps: 0,
     // Отметка старшего из звеньев: цена не свежее самой несвежей своей
