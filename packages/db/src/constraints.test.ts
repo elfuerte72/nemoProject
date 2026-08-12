@@ -3,7 +3,10 @@ import { eq } from 'drizzle-orm';
 import {
   clientRequisites,
   clients,
+  currencies,
   exchangeRequests,
+  feeScheduleTiers,
+  feeSchedules,
   referrals,
   serviceSettings,
   transferNetworks,
@@ -221,5 +224,80 @@ describe('настройки сервиса', () => {
 
   it('существуют в единственном экземпляре', async () => {
     await expect(db.insert(serviceSettings).values({ id: 1 })).rejects.toThrow();
+  });
+});
+
+describe('сетка комиссии', () => {
+  /** Заводит пустую сетку и отдаёт её номер. */
+  async function insertSchedule(): Promise<string> {
+    await db.insert(currencies).values({ code: 'THB', decimals: 2, kind: 'fiat' });
+    const [schedule] = await db
+      .insert(feeSchedules)
+      .values({ toCode: 'THB', payoutMethod: 'bank' })
+      .returning({ id: feeSchedules.id });
+    return schedule!.id;
+  }
+
+  it('не держит ступень с двумя ставками сразу', async () => {
+    // Сумма и доля в одной строке означают, что никто не знает, сколько
+    // стоит обмен: считающий возьмёт ту, что первой попалась под руку.
+    const scheduleId = await insertSchedule();
+
+    await expect(
+      db.insert(feeScheduleTiers).values({
+        scheduleId,
+        upToUsd: '500',
+        fixedUsd: '5',
+        rateBps: 450,
+      }),
+    ).rejects.toThrow(/fee_schedule_tiers_single_rate/);
+  });
+
+  it('не держит ступень вовсе без ставки', async () => {
+    const scheduleId = await insertSchedule();
+
+    await expect(
+      db.insert(feeScheduleTiers).values({ scheduleId, upToUsd: '500' }),
+    ).rejects.toThrow(/fee_schedule_tiers_single_rate/);
+  });
+
+  it('держит ровно одну ступень без верхней границы', async () => {
+    // Обычная уникальность этого не ловит: пустое значение в Postgres не
+    // равно другому пустому, и две строки «и всё, что выше» прошли бы
+    // обе — с разными ставками и без правила, какая из них верна.
+    const scheduleId = await insertSchedule();
+    await db.insert(feeScheduleTiers).values({ scheduleId, upToUsd: null, rateBps: 250 });
+
+    await expect(
+      db.insert(feeScheduleTiers).values({ scheduleId, upToUsd: null, rateBps: 350 }),
+    ).rejects.toThrow(/fee_schedule_tiers_single_top/);
+  });
+
+  it('не держит две ступени с одним порогом', async () => {
+    const scheduleId = await insertSchedule();
+    await db.insert(feeScheduleTiers).values({ scheduleId, upToUsd: '500', fixedUsd: '5' });
+
+    await expect(
+      db.insert(feeScheduleTiers).values({ scheduleId, upToUsd: '500', rateBps: 450 }),
+    ).rejects.toThrow(/fee_schedule_tiers_threshold/);
+  });
+
+  it('не держит двух сеток на одну валюту и способ', async () => {
+    await insertSchedule();
+
+    await expect(
+      db.insert(feeSchedules).values({ toCode: 'THB', payoutMethod: 'bank' }),
+    ).rejects.toThrow(/fee_schedules_target/);
+  });
+
+  it('уносит ступени вместе со снятой сеткой', async () => {
+    // Ступень без сетки — цена без направления: применить её не к чему,
+    // а найти её потом можно только в дампе.
+    const scheduleId = await insertSchedule();
+    await db.insert(feeScheduleTiers).values({ scheduleId, upToUsd: null, rateBps: 250 });
+
+    await db.delete(feeSchedules).where(eq(feeSchedules.id, scheduleId));
+
+    expect(await db.select().from(feeScheduleTiers)).toHaveLength(0);
   });
 });

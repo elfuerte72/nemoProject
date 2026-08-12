@@ -17,6 +17,7 @@
     "reissue-second-factor": "tsx --env-file-if-exists=.env scripts/reissue-second-factor.mts",
     "set-telegram-webhook": "tsx --env-file-if-exists=.env scripts/set-telegram-webhook.mts",
     "seed-directories": "tsx --env-file-if-exists=.env scripts/seed-directories.mts",
+    "seed-fee-schedules": "tsx --env-file-if-exists=.env scripts/seed-fee-schedules.mts",
     "seed-concierge-knowledge": "tsx --env-file-if-exists=.env scripts/seed-concierge-knowledge.mts",
     "probe-concierge": "tsx --env-file-if-exists=.env scripts/probe-concierge.mts"
   },

@@ -148,6 +148,20 @@
       "when": 1786103788910,
       "tag": "0020_red_caretaker",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786523448028,
+      "tag": "0021_lethal_tusk",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786523491542,
+      "tag": "0022_marvelous_nicolaos",
+      "breakpoints": true
     }
   ]
 }
