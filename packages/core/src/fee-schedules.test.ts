@@ -313,18 +313,25 @@ describe('сетки комиссии в панели', () => {
     ).rejects.toThrow(InvalidInputError);
   });
 
-  it('отвергает сетку для наличных', async () => {
-    await givenCurrency('THB');
+  it('принимает сетку для наличных отдельно от безналичных', async () => {
+    await givenCurrency('RUB');
 
-    await expect(
-      core.saveFeeSchedule(admin, {
-        toCode: 'THB',
-        // Наличным курс называет менеджер: сетка к ним не применяется
-        // нигде, а на экране выглядела бы действующей ставкой.
-        payoutMethod: 'cash',
-        tiers: [{ upToUsd: null, rateBps: 250 }],
-      }),
-    ).rejects.toThrow(InvalidInputError);
+    const cash = await core.saveFeeSchedule(admin, {
+      toCode: 'RUB',
+      payoutMethod: 'cash',
+      tiers: [{ upToUsd: null, rateBps: 300 }],
+    });
+    const bank = await core.saveFeeSchedule(admin, {
+      toCode: 'RUB',
+      payoutMethod: 'bank',
+      tiers: [{ upToUsd: null, rateBps: 150 }],
+    });
+
+    // Наличный обмен стоит сервису другого, чем перевод, и ставка у
+    // него своя: одна сетка не подменяет другую.
+    expect(cash.id).not.toBe(bank.id);
+    const list = await core.listFeeSchedules(admin);
+    expect(list.map((one) => one.payoutMethod).sort()).toEqual(['bank', 'cash']);
   });
 
   it('пишет правку ставок в журнал настроек', async () => {

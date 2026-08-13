@@ -6,6 +6,7 @@ import {
   netAfterFee,
   withoutDivisionTail,
   type Amount,
+  type ExchangeKind,
   type FeeTier,
   type PayoutMethod,
 } from '@nemo/types';
@@ -189,7 +190,18 @@ export function roundPayout(amount: Amount): Amount {
 }
 
 /** Заведено ли направление безналичного обмена и не выключено ли оно. */
-async function hasElectronicPair(executor: Executor, pair: RatePair): Promise<boolean> {
+/**
+ * Есть ли такое направление и таким ли способом.
+ *
+ * Вид сделки спрашивается вместе с парой: наличными и переводом сервис
+ * торгует не одним и тем же списком, и курс наличных у направления,
+ * которого наличными нет, взяться не может.
+ */
+async function hasActivePair(
+  executor: Executor,
+  pair: RatePair,
+  kind: ExchangeKind,
+): Promise<boolean> {
   const [row] = await executor
     .select({ id: currencyPairs.id })
     .from(currencyPairs)
@@ -197,7 +209,7 @@ async function hasElectronicPair(executor: Executor, pair: RatePair): Promise<bo
       and(
         eq(currencyPairs.fromCode, pair.fromCode),
         eq(currencyPairs.toCode, pair.toCode),
-        eq(currencyPairs.kind, 'electronic'),
+        eq(currencyPairs.kind, kind),
         eq(currencyPairs.isActive, true),
       ),
     )
@@ -221,19 +233,30 @@ export async function getQuote(
   const source = ctx.rateSource;
   if (!source) return null;
 
-  if (!(await hasElectronicPair(ctx.db, input))) return null;
+  /*
+   * Способ выдачи говорит и о виде сделки: наличные не приходят ни на
+   * карту, ни на кошелёк, и заявка с ними — наличная. Поэтому пара
+   * ищется того же вида, а не всегда безналичная.
+   */
+  const payoutMethod = input.payoutMethod ?? 'bank';
+  const cash = payoutMethod === 'cash';
+  if (!(await hasActivePair(ctx.db, input, cash ? 'cash' : 'electronic'))) return null;
 
   /*
    * Сетка комиссии, если владелец прислал её на это направление. Есть —
    * считаем по ТЗ, через долларовый эквивалент; нет — по наценке, как
    * было до ступеней.
    */
-  const schedule = await readFeeSchedule(
-    ctx.db,
-    input.toCode,
-    input.payoutMethod ?? 'bank',
-  );
+  const schedule = await readFeeSchedule(ctx.db, input.toCode, payoutMethod);
   if (schedule) return quoteByFee(ctx, input, schedule);
+
+  /*
+   * У наличных без своей сетки курса нет вовсе, и наценка сюда не
+   * подставляется: она посчитана для перевода, а наличный обмен стоит
+   * сервису другого — своя касса, свой курьер, свой риск. Пустая сетка
+   * означает прежний порядок: цену называет менеджер после подачи.
+   */
+  if (cash) return null;
 
   const quoted = await source.quote(
     { fromCode: input.fromCode, toCode: input.toCode },

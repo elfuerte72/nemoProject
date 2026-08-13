@@ -9,7 +9,7 @@ import type {
   ServiceSettingsView,
   StaffView,
 } from '@nemo/core';
-import type { StaffRole } from '@nemo/types';
+import type { PayoutMethod, StaffRole } from '@nemo/types';
 import { KIND_LABELS } from '@/lib/exchange-request-labels';
 import { FEE_PAYOUT_LABELS, pillClass, ROLE_LABELS } from '@/lib/labels';
 import { bpsToPercent, isWholeNumber, percentToBps } from '@/lib/percent';
@@ -536,10 +536,6 @@ const DEFAULT_TIERS: readonly TierDraft[] = [
   { upToUsd: '', kind: 'rate', value: '2.5' },
 ];
 
-function payoutLabel(method: FeeScheduleView['payoutMethod']): string {
-  return method === 'bank' || method === 'wallet' ? FEE_PAYOUT_LABELS[method] : 'наличными';
-}
-
 function toDrafts(tiers: FeeScheduleView['tiers']): TierDraft[] {
   return tiers.map((tier) => ({
     upToUsd: tier.upToUsd ?? '',
@@ -618,7 +614,7 @@ function FeeSchedules({
   // предлагать в ней валюту, которой сервис не отдаёт, незачем.
   const codes = [...new Set(directions.map((direction) => direction.toCode))].sort();
   const [newCode, setNewCode] = useState(codes[0] ?? '');
-  const [newMethod, setNewMethod] = useState<'bank' | 'wallet'>('bank');
+  const [newMethod, setNewMethod] = useState<PayoutMethod>('bank');
 
   const taken = schedules.some(
     (schedule) => schedule.toCode === newCode && schedule.payoutMethod === newMethod,
@@ -635,6 +631,13 @@ function FeeSchedules({
         выключенная сетка к ней и возвращает, а не закрывает направление. Новая сетка
         заводится выключенной со ступенями бата — поправьте числа под свою валюту и
         включите: включённая сразу меняет цену тем, кто в эту минуту считает обмен.
+      </p>
+      <p className="card__note">
+        У наличных ставка своя и работает иначе: пока её нет, курс наличной сделки не
+        называется вовсе — клиент подаёт заявку, а цену говорит менеджер, как было
+        всегда. С первой включённой ступенью курс появляется у клиента на экране и
+        записывается в заявку так же, как безналичный: сервис его держит, и менеджер
+        поверх не назначает.
       </p>
 
       {schedules.length === 0 ? (
@@ -679,7 +682,7 @@ function FeeSchedules({
           <select
             className="input"
             value={newMethod}
-            onChange={(event) => setNewMethod(event.target.value as 'bank' | 'wallet')}
+            onChange={(event) => setNewMethod(event.target.value as PayoutMethod)}
           >
             {Object.entries(FEE_PAYOUT_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -737,7 +740,7 @@ function FeeScheduleCard({
       <div className="row__side" style={{ justifyContent: 'space-between' }}>
         <div className="row__main">
           <span className="row__title">
-            {schedule.toCode} · {payoutLabel(schedule.payoutMethod)}
+            {schedule.toCode} · {FEE_PAYOUT_LABELS[schedule.payoutMethod]}
           </span>
           <span className="row__meta">
             {schedule.isActive ? 'Действует' : 'Выключена — считается по наценке'}
