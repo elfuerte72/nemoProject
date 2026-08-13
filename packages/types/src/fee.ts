@@ -32,8 +32,22 @@ import type { Amount } from './money.js';
  */
 export const feeTierSchema = z
   .object({
-    upToUsd: Money.amountSchema.nullable(),
-    fixedUsd: Money.amountSchema.optional(),
+    /*
+     * Порог строго больше нуля, а ставка не отрицательна — те же
+     * пределы, что держит база (`fee_schedule_tiers_threshold_positive`
+     * и соседи). Записаны и здесь, потому что сюда приходит набранное
+     * руками: без них ноль в поле «до» доезжал бы до `insert` и
+     * возвращался администратору внутренней ошибкой вместо объяснения.
+     */
+    upToUsd: Money.amountSchema
+      .nullable()
+      .refine(
+        (value) => value === null || (!Money.isZero(value) && !Money.isNegative(value)),
+        'Порог ступени должен быть больше нуля',
+      ),
+    fixedUsd: Money.amountSchema
+      .refine((value) => !Money.isNegative(value), 'Ставка не может быть отрицательной')
+      .optional(),
     rateBps: z.number().int().min(0).max(10_000).optional(),
   })
   .refine(
