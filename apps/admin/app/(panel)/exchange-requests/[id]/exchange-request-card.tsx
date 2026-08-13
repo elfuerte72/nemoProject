@@ -39,6 +39,7 @@ export function ExchangeRequestCard({
   client,
   accounts,
   markupBps,
+  pricedBySchedule,
   viewerStaffId,
 }: {
   request: ExchangeRequestForDisplay;
@@ -49,6 +50,11 @@ export function ExchangeRequestCard({
   accounts: readonly ServiceAccountView[];
   /** Наценка сервиса: по ней считается подсказка дохода. */
   markupBps: number;
+  /**
+   * Цена заявки назначена сеткой ступеней, а не наценкой. Тогда наценки
+   * в курсе нет вовсе, и подсказка дохода молчит.
+   */
+  pricedBySchedule: boolean;
   viewerStaffId: string;
 }) {
   const router = useRouter();
@@ -80,13 +86,15 @@ export function ExchangeRequestCard({
    * которой доход называют: доход в рублях — от рублёвой стороны, в
    * монетах — от монетной.
    *
-   * Только там, где курс пришёл из котировки: наценка сидит в нём, и
-   * оттуда её и вынимают. У наличной заявки и у той, что подана при
-   * молчащем источнике, курс назвал менеджер — наценки в нём нет, и
-   * посчитанное по ней число было бы выдумкой, поданной как расчёт.
+   * Только там, где курс пришёл из котировки по наценке: она сидит в
+   * нём, и оттуда её и вынимают. Курс, названный менеджером, и курс,
+   * посчитанный по сетке ступеней, наценки не содержат — и то же число,
+   * поданное как расчёт, было бы выдумкой. Доход при этом уходит в
+   * реферальные начисления и потом не правится, поэтому подсказка
+   * молчит, а не угадывает.
    */
   const givenSide = serviceIncomeCode === request.fromCode;
-  const incomeHint = request.requestRate
+  const incomeHint = request.requestRate && !pricedBySchedule
     ? suggestServiceIncome({
         amount: givenSide ? request.fromAmount : request.toAmount,
         markupBps,

@@ -64,7 +64,7 @@ export default async function RequestPage({
    * панель, а не операция: число уходит в реферальные начисления, и
    * подтверждать его должен человек.
    */
-  const [accounts, markupBps] = await Promise.all([
+  const [accounts, markupBps, pricedBySchedule] = await Promise.all([
     request.kind === 'electronic'
       ? core.listServiceAccounts(actor, {
           currencyCode: request.fromCode,
@@ -72,6 +72,12 @@ export default async function RequestPage({
         })
       : [],
     core.getServiceMarkupBps(actor),
+    /*
+     * Считается ли цена сеткой ступеней. У такой заявки наценки в курсе
+     * нет, и подсказка дохода по ней молчит: посчитанное по наценке
+     * число было бы выдумкой, поданной как расчёт.
+     */
+    core.isRequestPricedBySchedule(actor, id),
   ]);
 
   return (
@@ -80,6 +86,7 @@ export default async function RequestPage({
       events={events}
       accounts={accounts}
       markupBps={markupBps}
+      pricedBySchedule={pricedBySchedule}
       client={
         card
           ? {

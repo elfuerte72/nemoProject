@@ -12,6 +12,7 @@ import {
   asClient,
   givenCurrencyPair,
   givenFeeSchedule,
+  givenNetwork,
   givenServiceSettings,
   givenStaff,
 } from './test-support.js';
@@ -191,5 +192,65 @@ describe('наличная заявка', () => {
         paymentInstructions: 'Офис на Тверской, завтра с 12 до 18',
       }),
     ).rejects.toThrow(InvalidInputError);
+  });
+});
+
+describe('подсказка дохода', () => {
+  /*
+   * Подсказка вынимает наценку из курса. Там, где цену назначила сетка,
+   * наценки в курсе нет вовсе, и посчитанное по ней число было бы
+   * выдумкой, поданной как расчёт, — а доход по заявке это база
+   * реферальных начислений (docs/adr/0003), и поправить его потом
+   * нельзя.
+   */
+  it('молчит у заявки, посчитанной по сетке', async () => {
+    await core.registerClient({ telegramUserId: CLIENT_ID });
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
+    await givenFeeSchedule({ toCode: 'RUB', payoutMethod: 'cash', tiers: CASH_TIERS });
+
+    const { request } = await core.submitExchangeRequest(asClient(CLIENT_ID), {
+      kind: 'cash',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+    });
+
+    expect(await core.isRequestPricedBySchedule(manager, request.id)).toBe(true);
+  });
+
+  it('считает у заявки, посчитанной по наценке', async () => {
+    await core.registerClient({ telegramUserId: CLIENT_ID });
+    await givenServiceSettings({ markupBps: 200, minExchangeAmount: '0' });
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB' });
+    await givenNetwork('TRC20');
+    const requisites = await core.saveRequisites(asClient(CLIENT_ID), {
+      kind: 'phone',
+      bankName: 'Сбербанк',
+      phone: '+79990000000',
+    });
+
+    const { request } = await core.submitExchangeRequest(asClient(CLIENT_ID), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+      requisitesId: requisites.id,
+    });
+
+    expect(await core.isRequestPricedBySchedule(manager, request.id)).toBe(false);
+  });
+
+  it('молчит у заявки без курса подачи: цену назвал менеджер', async () => {
+    await core.registerClient({ telegramUserId: CLIENT_ID });
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
+
+    const { request } = await core.submitExchangeRequest(asClient(CLIENT_ID), {
+      kind: 'cash',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+    });
+
+    expect(await core.isRequestPricedBySchedule(manager, request.id)).toBe(false);
   });
 });
