@@ -134,6 +134,7 @@ import {
   countExchangeRequestQueue,
   countExchangeRequestsInProgress,
   confirmExchangeRate,
+  isRequestPricedBySchedule,
   getExchangeRequestForStaff,
   listExchangeRequestEvents,
   listExchangeRequestQueue,
@@ -252,6 +253,13 @@ export function createCore(ctx: CoreConfig) {
       claimExchangeRequest(ctx, actor, requestId),
     confirmExchangeRate: (actor: Actor, requestId: string, input: ConfirmExchangeRateInput) =>
       confirmExchangeRate(ctx, actor, requestId, input),
+    /*
+     * Считается ли цена этой заявки сеткой ступеней. Нужно подсказке
+     * дохода: там, где курс пришёл от сетки, наценки в нём нет, и
+     * посчитанное по ней число было бы выдумкой.
+     */
+    isRequestPricedBySchedule: (actor: Actor, requestId: string) =>
+      isRequestPricedBySchedule(ctx, actor, requestId),
     markPaymentReceived: (actor: Actor, requestId: string) =>
       markPaymentReceived(ctx, actor, requestId),
     completeExchangeRequest: (

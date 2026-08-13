@@ -12,11 +12,19 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
-import { clients, currencies, exchangeRequestEvents, exchangeRequests, staff } from '@nemo/db';
+import {
+  clientRequisites,
+  clients,
+  currencies,
+  exchangeRequestEvents,
+  exchangeRequests,
+  staff,
+} from '@nemo/db';
 import {
   canTransition,
   inProgressExchangeStatuses,
   Money,
+  payoutMethodOf,
   type ActorType,
   type Amount,
   type ExchangeKind,
@@ -35,6 +43,7 @@ import {
 import { toExchangeRequestView, type ExchangeRequestView } from './exchange-requests.js';
 import type { Notification } from './notifications.js';
 import { accrueReferralBonuses } from './referral-accruals.js';
+import { readFeeSchedule } from './fee-schedules.js';
 import { describeServiceAccount, issueServiceAccount } from './service-accounts.js';
 import { readServiceSettings } from './settings.js';
 
@@ -536,6 +545,56 @@ export async function getExchangeRequestForStaff(
     throw new NotFoundError('Заявка на обмен не найдена');
   }
   return toManagerView(row.request, row.username, row.managerName);
+}
+
+/**
+ * Назначена ли цена этой заявки сеткой ступеней, а не наценкой.
+ *
+ * Нужно одной подсказке — той, что предлагает менеджеру доход по
+ * заявке. Считает она его из наценки, вынимая её из курса, и там, где
+ * курс пришёл от сетки, наценки в нём нет вовсе: посчитанное по ней
+ * число было бы выдумкой, поданной как расчёт. А доход — база
+ * реферальных начислений (docs/adr/0003), и поправить его потом нельзя.
+ *
+ * Отдельной операцией, а не полем заявки: в очереди подсказки нет, и
+ * платить за неё запросом на каждую строку списка не за что. Своей
+ * копии правила «какой сеткой считается заявка» здесь тоже нет — способ
+ * выдачи выводится ровно так же, как при подаче.
+ */
+export async function isRequestPricedBySchedule(
+  ctx: CoreConfig,
+  actor: Actor,
+  requestId: string,
+): Promise<boolean> {
+  requireStaff(actor);
+
+  const [row] = await ctx.db
+    .select({
+      kind: exchangeRequests.kind,
+      toCode: exchangeRequests.toCode,
+      requestRate: exchangeRequests.requestRate,
+      requisiteKind: clientRequisites.kind,
+    })
+    .from(exchangeRequests)
+    .leftJoin(clientRequisites, eq(clientRequisites.id, exchangeRequests.requisitesId))
+    .where(eq(exchangeRequests.id, requestId))
+    .limit(1);
+  if (!row) {
+    throw new NotFoundError('Заявка на обмен не найдена');
+  }
+
+  // Курса подачи нет — цену назвал менеджер, и наценки в ней нет тем
+  // более: подсказка молчит и без сетки.
+  if (row.requestRate === null) return false;
+
+  const payoutMethod =
+    row.kind === 'cash'
+      ? 'cash'
+      : row.requisiteKind === null
+        ? 'bank'
+        : payoutMethodOf(row.requisiteKind);
+
+  return (await readFeeSchedule(ctx.db, row.toCode, payoutMethod)) !== null;
 }
 
 export async function listExchangeRequestEvents(
