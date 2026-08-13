@@ -187,14 +187,6 @@ export async function saveFeeSchedule(
     throw new InvalidInputError('Неизвестный способ выдачи');
   }
   const payoutMethod = method.data;
-  if (payoutMethod === 'cash') {
-    // Наличная сделка через источник курса не проходит вовсе: цену ей
-    // называет менеджер. Сетка для наличных не применилась бы нигде, а
-    // на экране выглядела бы действующей ставкой.
-    throw new InvalidInputError(
-      'Наличным курс называет менеджер: сетка комиссии к ним не применяется',
-    );
-  }
 
   const toCode = input.toCode.trim().toUpperCase();
   const tiers = requireValidTiers(input.tiers);

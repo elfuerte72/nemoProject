@@ -34,10 +34,12 @@ import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
  * (docs/adr/0006). Обязательство ограничено сроком: не оплатил вовремя
  * — заявка отменяется.
  *
- * У наличной заявки курса нет: котировок наличного рынка у сервиса нет,
- * и называет его менеджер. Так же ведёт себя безналичная заявка,
- * поданная при молчащем источнике котировок, — отказывать в подаче
- * из-за молчания провайдера нельзя, для клиента это выглядит поломкой.
+ * У наличной заявки курс появляется вместе со своей ставкой: наличный
+ * обмен стоит сервису другого, чем перевод, и сетку для него
+ * администратор заводит отдельно. Пока её нет, заявка уходит без курса
+ * и цену называет менеджер — так же ведёт себя безналичная заявка,
+ * поданная при молчащем источнике котировок: отказывать в подаче из-за
+ * молчания провайдера нельзя, для клиента это выглядит поломкой.
  */
 
 /**
@@ -310,16 +312,23 @@ export async function submitExchangeRequest(
       ? undefined
       : await readPayoutMethod(ctx.db, clientId, input.requisitesId);
 
-  const quote =
-    input.kind === 'electronic'
-      ? await quoteForSubmission(ctx, {
-          fromCode: input.fromCode,
-          toCode: input.toCode,
-          fromAmount,
-          ...(payoutMethod === undefined ? {} : { payoutMethod }),
-          asOf: input.quotedAt,
-        })
-      : null;
+  /*
+   * У наличной сделки способ выдачи один — из рук в руки, — и ставка у
+   * него своя: наличный обмен стоит сервису другого, чем перевод. Пока
+   * администратор её не завёл, котировки нет и заявка уходит без курса,
+   * как было до ступеней, — цену называет менеджер.
+   */
+  const quote = await quoteForSubmission(ctx, {
+    fromCode: input.fromCode,
+    toCode: input.toCode,
+    fromAmount,
+    ...(input.kind === 'cash'
+      ? { payoutMethod: 'cash' as const }
+      : payoutMethod === undefined
+        ? {}
+        : { payoutMethod }),
+    asOf: input.quotedAt,
+  });
   const requestRate = quote?.rate ?? null;
 
   return ctx.db.transaction(async (tx) => {
