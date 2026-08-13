@@ -770,7 +770,15 @@ function FeeScheduleCard({
               <select
                 className="input"
                 value={draft.kind}
-                onChange={(event) => change(index, { kind: event.target.value as TierKind })}
+                onChange={(event) =>
+                  /*
+                   * Со сменой вида ставки поле очищается: пять долларов,
+                   * оставшиеся в поле после переключения на проценты,
+                   * становятся пятью процентами — и уезжают в ядро,
+                   * потому что число само по себе годное.
+                   */
+                  change(index, { kind: event.target.value as TierKind, value: '' })
+                }
               >
                 <option value="fixed">Сумма, $</option>
                 <option value="rate">Доля, %</option>

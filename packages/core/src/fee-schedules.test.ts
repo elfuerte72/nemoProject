@@ -313,6 +313,39 @@ describe('сетки комиссии в панели', () => {
     ).rejects.toThrow(InvalidInputError);
   });
 
+  it('отвергает сетку для наличных', async () => {
+    await givenCurrency('THB');
+
+    await expect(
+      core.saveFeeSchedule(admin, {
+        toCode: 'THB',
+        // Наличным курс называет менеджер: сетка к ним не применяется
+        // нигде, а на экране выглядела бы действующей ставкой.
+        payoutMethod: 'cash',
+        tiers: [{ upToUsd: null, rateBps: 250 }],
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('пишет правку ставок в журнал настроек', async () => {
+    await givenCurrency('THB');
+
+    const saved = await core.saveFeeSchedule(admin, {
+      toCode: 'THB',
+      payoutMethod: 'bank',
+      tiers: BANK_TIERS,
+    });
+    await core.setFeeScheduleActive(admin, saved.id, true);
+
+    const log = await core.listSettingsAuditLog(admin);
+    const entries = log.filter((entry) => entry.subject === 'fee_schedule');
+
+    // Вопрос «почему за эту заявку взяли столько» должен иметь ответ, а
+    // ставка — единственное в цене, что меняется руками.
+    expect(entries).toHaveLength(2);
+    expect(entries.every((entry) => entry.subjectId === saved.id)).toBe(true);
+  });
+
   it('отвергает пустую сетку', async () => {
     await givenCurrency('THB');
 
