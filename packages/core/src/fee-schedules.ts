@@ -182,7 +182,11 @@ export async function saveFeeSchedule(
 ): Promise<FeeScheduleView> {
   const admin = requireAdmin(actor);
 
-  const payoutMethod = payoutMethodSchema.parse(input.payoutMethod);
+  const method = payoutMethodSchema.safeParse(input.payoutMethod);
+  if (!method.success) {
+    throw new InvalidInputError('Неизвестный способ выдачи');
+  }
+  const payoutMethod = method.data;
   if (payoutMethod === 'cash') {
     // Наличная сделка через источник курса не проходит вовсе: цену ей
     // называет менеджер. Сетка для наличных не применилась бы нигде, а
@@ -207,9 +211,16 @@ export async function saveFeeSchedule(
 
     const [existing] = await readSchedulesByTarget(tx, toCode, payoutMethod);
 
+    /*
+     * Новая сетка заводится погашенной, и это важнее удобства: строка
+     * появляется со ступенями, которые администратор ещё не правил, —
+     * а действующая сетка сразу меняет цену живым клиентам. Включает её
+     * он сам, разобравшись с числами. Правка существующей состояния не
+     * трогает: выключенную правят выключенной, действующую — на ходу.
+     */
     const [row] = await tx
       .insert(feeSchedules)
-      .values({ toCode, payoutMethod })
+      .values({ toCode, payoutMethod, isActive: false })
       .onConflictDoUpdate({
         target: [feeSchedules.toCode, feeSchedules.payoutMethod],
         set: { updatedAt: new Date() },

@@ -106,11 +106,14 @@ describe('сетки комиссии в панели', () => {
 
   it('сохранённая ставка идёт в следующую котировку', async () => {
     await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
-    await core.saveFeeSchedule(admin, {
+    const saved = await core.saveFeeSchedule(admin, {
       toCode: 'THB',
       payoutMethod: 'bank',
       tiers: BANK_TIERS,
     });
+    // Заведённая сетка ждёт включения: до него направление считается по
+    // наценке, и это проверяется отдельным тестом ниже.
+    await core.setFeeScheduleActive(admin, saved.id, true);
 
     const quote = await core.getQuote({
       fromCode: 'RUB',
@@ -126,11 +129,12 @@ describe('сетки комиссии в панели', () => {
 
   it('переписывает ступени целиком, а не дописывает к прежним', async () => {
     await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
-    await core.saveFeeSchedule(admin, {
+    const saved = await core.saveFeeSchedule(admin, {
       toCode: 'THB',
       payoutMethod: 'bank',
       tiers: BANK_TIERS,
     });
+    await core.setFeeScheduleActive(admin, saved.id, true);
 
     await core.saveFeeSchedule(admin, {
       toCode: 'THB',
@@ -162,6 +166,7 @@ describe('сетки комиссии в панели', () => {
       payoutMethod: 'bank',
       tiers: BANK_TIERS,
     });
+    await core.setFeeScheduleActive(admin, saved.id, true);
 
     const off = await core.setFeeScheduleActive(admin, saved.id, false);
     expect(off.isActive).toBe(false);
@@ -229,6 +234,81 @@ describe('сетки комиссии в панели', () => {
         toCode: 'THB',
         payoutMethod: 'bank',
         tiers: [{ upToUsd: null }],
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('заводит новую сетку погашенной, а правку действующей не гасит', async () => {
+    await givenCurrency('THB');
+
+    const created = await core.saveFeeSchedule(admin, {
+      toCode: 'THB',
+      payoutMethod: 'bank',
+      tiers: BANK_TIERS,
+    });
+
+    // Ступени в новой сетке ещё не правили — включённой она меняла бы
+    // цену тем, кто в эту минуту считает обмен.
+    expect(created.isActive).toBe(false);
+
+    await core.setFeeScheduleActive(admin, created.id, true);
+    const saved = await core.saveFeeSchedule(admin, {
+      toCode: 'THB',
+      payoutMethod: 'bank',
+      tiers: [{ upToUsd: null, rateBps: 300 }],
+    });
+    expect(saved.isActive).toBe(true);
+  });
+
+  it('отвергает нулевой и отрицательный порог', async () => {
+    await givenCurrency('THB');
+
+    await expect(
+      core.saveFeeSchedule(admin, {
+        toCode: 'THB',
+        payoutMethod: 'bank',
+        tiers: [
+          { upToUsd: '0', fixedUsd: '5' },
+          { upToUsd: null, rateBps: 250 },
+        ],
+      }),
+    ).rejects.toThrow(InvalidInputError);
+
+    await expect(
+      core.saveFeeSchedule(admin, {
+        toCode: 'THB',
+        payoutMethod: 'bank',
+        tiers: [
+          { upToUsd: '-500', fixedUsd: '5' },
+          { upToUsd: null, rateBps: 250 },
+        ],
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('отвергает отрицательную фиксированную ставку', async () => {
+    await givenCurrency('THB');
+
+    await expect(
+      core.saveFeeSchedule(admin, {
+        toCode: 'THB',
+        payoutMethod: 'bank',
+        tiers: [{ upToUsd: null, fixedUsd: '-5' }],
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('отвергает неизвестный способ выдачи внятной ошибкой', async () => {
+    await givenCurrency('THB');
+
+    await expect(
+      core.saveFeeSchedule(admin, {
+        toCode: 'THB',
+        // Мимо формы: маршрут такое не пропустит, но операцию зовут не
+        // только с экрана, и отвечать она должна отказом, а не разбором
+        // схемы наружу.
+        payoutMethod: 'sms' as 'bank',
+        tiers: [{ upToUsd: null, rateBps: 250 }],
       }),
     ).rejects.toThrow(InvalidInputError);
   });
