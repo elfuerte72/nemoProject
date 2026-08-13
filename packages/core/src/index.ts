@@ -52,6 +52,12 @@ import {
 import { getClientHistory } from './history-feed.js';
 import { listDirections, setDirectionActive } from './directions.js';
 import {
+  listFeeSchedules,
+  saveFeeSchedule,
+  setFeeScheduleActive,
+  type SaveFeeScheduleInput,
+} from './fee-schedules.js';
+import {
   listActiveNetworks,
   listNetworks,
   setNetworkActive,
@@ -343,6 +349,17 @@ export function createCore(ctx: CoreConfig) {
       setDirectionActive(ctx, actor, directionId, isActive),
 
     /*
+     * Ставки комиссии по ступеням. Заводит и правит их администратор:
+     * цена обмена — решение о деньгах, и держать её в коде значило бы
+     * менять проценты выкаткой.
+     */
+    listFeeSchedules: (actor: Actor) => listFeeSchedules(ctx, actor),
+    saveFeeSchedule: (actor: Actor, input: SaveFeeScheduleInput) =>
+      saveFeeSchedule(ctx, actor, input),
+    setFeeScheduleActive: (actor: Actor, scheduleId: string, isActive: boolean) =>
+      setFeeScheduleActive(ctx, actor, scheduleId, isActive),
+
+    /*
      * Текст заготовки без исполнителя: его читает бот, чтобы показать
      * клиенту, и права здесь спрашивать не у кого.
      */
@@ -396,6 +413,7 @@ export type {
 } from './service-accounts.js';
 export type { NetworkView } from './networks.js';
 export type { DirectionView } from './directions.js';
+export type { FeeScheduleView, SaveFeeScheduleInput } from './fee-schedules.js';
 export {
   botTextKeys,
   BOT_TEXTS,

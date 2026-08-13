@@ -4,13 +4,14 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type {
   DirectionView,
+  FeeScheduleView,
   NetworkView,
   ServiceSettingsView,
   StaffView,
 } from '@nemo/core';
 import type { StaffRole } from '@nemo/types';
 import { KIND_LABELS } from '@/lib/exchange-request-labels';
-import { pillClass, ROLE_LABELS } from '@/lib/labels';
+import { FEE_PAYOUT_LABELS, pillClass, ROLE_LABELS } from '@/lib/labels';
 import { bpsToPercent, isWholeNumber, percentToBps } from '@/lib/percent';
 
 /**
@@ -32,11 +33,13 @@ export function SettingsForms({
   settings,
   networks,
   directions,
+  feeSchedules,
   staff,
 }: {
   settings: ServiceSettingsView;
   networks: readonly NetworkView[];
   directions: readonly DirectionView[];
+  feeSchedules: readonly FeeScheduleView[];
   staff: readonly StaffForDisplay[];
 }) {
   const router = useRouter();
@@ -292,6 +295,13 @@ export function SettingsForms({
         </div>
       </section>
 
+      <FeeSchedules
+        schedules={feeSchedules}
+        directions={directions}
+        busy={busy}
+        onSend={send}
+      />
+
       <ExchangeDirections directions={directions} busy={busy} onToggle={send} />
 
       <TransferNetworks networks={networks} busy={busy} onToggle={send} />
@@ -492,6 +502,338 @@ function ExchangeDirections({
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * Ставка ступени: либо сумма в долларах, либо доля. Двух сразу не
+ * бывает — сумма и процент в одной строке означали бы, что никто не
+ * знает, сколько стоит обмен.
+ */
+type TierKind = 'fixed' | 'rate';
+
+interface TierDraft {
+  /** Пусто у последней ступени: она действует на всё, что выше. */
+  readonly upToUsd: string;
+  readonly kind: TierKind;
+  /** Доллары у фиксированной ставки, проценты у доли. */
+  readonly value: string;
+}
+
+/**
+ * С чего начинается новая сетка — ступени бата на банк, те самые, что
+ * заводит скрипт развёртывания.
+ *
+ * Не «пустая форма»: администратор правит цифры, а не изобретает
+ * устройство сетки, и четыре ступени с фиксом на нижней — это форма, о
+ * которой уже договорились с владельцем. Числа он поправит под свою
+ * валюту, а порядок «фикс, потом убывающие проценты» останется.
+ */
+const DEFAULT_TIERS: readonly TierDraft[] = [
+  { upToUsd: '500', kind: 'fixed', value: '5' },
+  { upToUsd: '2000', kind: 'rate', value: '4.5' },
+  { upToUsd: '5000', kind: 'rate', value: '3.5' },
+  { upToUsd: '', kind: 'rate', value: '2.5' },
+];
+
+function payoutLabel(method: FeeScheduleView['payoutMethod']): string {
+  return method === 'bank' || method === 'wallet' ? FEE_PAYOUT_LABELS[method] : 'наличными';
+}
+
+function toDrafts(tiers: FeeScheduleView['tiers']): TierDraft[] {
+  return tiers.map((tier) => ({
+    upToUsd: tier.upToUsd ?? '',
+    kind: tier.fixedUsd === undefined ? 'rate' : 'fixed',
+    value: tier.fixedUsd ?? bpsToPercent(tier.rateBps ?? 0),
+  }));
+}
+
+/** Число в денежном поле — хоть с запятой, хоть с точкой, но число. */
+function isAmount(value: string): boolean {
+  return /^\d+([.,]\d+)?$/.test(value.trim());
+}
+
+/**
+ * Кнопка гаснет на недобранной сетке: отправленная, она вернулась бы
+ * отказом ядра, а администратор видит перед собой поле, в котором
+ * опечатка. Возрастание порогов здесь не проверяется — это правило
+ * домена, и отвечает за него операция: два места, где оно записано,
+ * однажды разойдутся.
+ */
+function draftsReady(drafts: readonly TierDraft[]): boolean {
+  return drafts.every((draft, index) => {
+    const last = index === drafts.length - 1;
+    const threshold = last || isAmount(draft.upToUsd);
+    const rate =
+      draft.kind === 'fixed' ? isAmount(draft.value) : percentToBps(draft.value) !== null;
+    return threshold && rate;
+  });
+}
+
+function toTiers(drafts: readonly TierDraft[]) {
+  return drafts.map((draft, index) => ({
+    upToUsd:
+      index === drafts.length - 1 ? null : draft.upToUsd.replace(',', '.').trim(),
+    ...(draft.kind === 'fixed'
+      ? { fixedUsd: draft.value.replace(',', '.').trim() }
+      : { rateBps: percentToBps(draft.value) ?? 0 }),
+  }));
+}
+
+/**
+ * Комиссия по ступеням: сетка на валюту и способ выдачи.
+ *
+ * Ставки — решение о деньгах, и меняет их администратор, а не выкатка:
+ * владелец присылает таблицу письмом, и между письмом и ценой на экране
+ * не должно стоять ни релиза, ни разработчика.
+ *
+ * Направление, у которого сетки нет, считается наценкой — той единой
+ * ставкой, что задана выше. Это не «обмен закрыт», а другая цена: у
+ * обмена USDT на рубли своя экономика, и ступени бата туда не
+ * переносятся.
+ */
+function FeeSchedules({
+  schedules,
+  directions,
+  busy,
+  onSend,
+}: {
+  schedules: readonly FeeScheduleView[];
+  directions: readonly DirectionView[];
+  busy: boolean;
+  onSend: (path: string, body: unknown) => Promise<unknown>;
+}) {
+  // Валюты, которые сервис выдаёт: сетка назначает цену выдачи, и
+  // предлагать в ней валюту, которой сервис не отдаёт, незачем.
+  const codes = [...new Set(directions.map((direction) => direction.toCode))].sort();
+  const [newCode, setNewCode] = useState(codes[0] ?? '');
+  const [newMethod, setNewMethod] = useState<'bank' | 'wallet'>('bank');
+
+  const taken = schedules.some(
+    (schedule) => schedule.toCode === newCode && schedule.payoutMethod === newMethod,
+  );
+
+  return (
+    <section className="card">
+      <h2 className="card__title">Комиссия по ступеням</h2>
+      <p className="card__note">
+        Ставка берётся от всей суммы, а не от превышения над порогом: отдавший 500,01 $
+        платит по следующей ступени целиком. Пороги заданы в долларах — клиент их не
+        видит, они нужны, чтобы у всех валют ступени считались одной линейкой. Последняя
+        ступень действует на всё, что выше. Там, где сетки нет, цену назначает наценка;
+        выключенная сетка к ней и возвращает, а не закрывает направление.
+      </p>
+
+      {schedules.length === 0 ? (
+        <p className="empty">
+          Сеток пока нет — обмен считается по наценке. Заведите сетку той валюте, на
+          которую владелец прислал таблицу ставок.
+        </p>
+      ) : (
+        <div className="rows">
+          {schedules.map((schedule) => (
+            // Ключ с отметкой правки: после сохранения страница
+            // перечитывается, и карточка должна показать сохранённое, а
+            // не то, что осталось в полях от прошлого набора.
+            <FeeScheduleCard
+              key={`${schedule.id}:${String(schedule.updatedAt)}`}
+              schedule={schedule}
+              busy={busy}
+              onSend={onSend}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="form-row">
+        <label className="field field--narrow">
+          <span className="label">Валюта выдачи</span>
+          <select
+            className="input"
+            value={newCode}
+            onChange={(event) => setNewCode(event.target.value)}
+          >
+            {codes.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </label>
+        {/* Способ назван словами, и в узкое поле подпись не помещается. */}
+        <label className="field field--wide">
+          <span className="label">Способ выдачи</span>
+          <select
+            className="input"
+            value={newMethod}
+            onChange={(event) => setNewMethod(event.target.value as 'bank' | 'wallet')}
+          >
+            {Object.entries(FEE_PAYOUT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={busy || !newCode || taken}
+          className="btn btn--ghost"
+          onClick={() =>
+            onSend('/api/fee-schedules', {
+              action: 'save',
+              toCode: newCode,
+              payoutMethod: newMethod,
+              tiers: toTiers(DEFAULT_TIERS),
+            })
+          }
+        >
+          Завести сетку
+        </button>
+      </div>
+      {taken ? (
+        <p className="card__note">
+          Такая сетка уже заведена — правьте её выше. Заведение поверх переписало бы
+          ставки значениями по умолчанию.
+        </p>
+      ) : undefined}
+    </section>
+  );
+}
+
+/** Одна сетка: ступени правятся здесь же, целиком и одним сохранением. */
+function FeeScheduleCard({
+  schedule,
+  busy,
+  onSend,
+}: {
+  schedule: FeeScheduleView;
+  busy: boolean;
+  onSend: (path: string, body: unknown) => Promise<unknown>;
+}) {
+  const [drafts, setDrafts] = useState<TierDraft[]>(() => toDrafts(schedule.tiers));
+
+  function change(index: number, patch: Partial<TierDraft>) {
+    setDrafts((current) =>
+      current.map((draft, at) => (at === index ? { ...draft, ...patch } : draft)),
+    );
+  }
+
+  return (
+    <div className="row row--stack">
+      <div className="row__side" style={{ justifyContent: 'space-between' }}>
+        <div className="row__main">
+          <span className="row__title">
+            {schedule.toCode} · {payoutLabel(schedule.payoutMethod)}
+          </span>
+          <span className="row__meta">
+            {schedule.isActive ? 'Действует' : 'Выключена — считается по наценке'}
+          </span>
+        </div>
+        {schedule.isActive ? undefined : <span className={pillClass('off')}>Выключена</span>}
+      </div>
+
+      {drafts.map((draft, index) => {
+        const last = index === drafts.length - 1;
+        return (
+          <div className="form-row" key={index}>
+            <label className="field field--narrow">
+              <span className="label">До, $</span>
+              {/*
+                У последней ступени порога нет, и вместо подписи сбоку
+                тут стоит погашенное поле: колонка полей остаётся
+                колонкой, а короткая строка вместо ввода уводила бы
+                подпись выше соседних.
+              */}
+              <input
+                className="input"
+                value={last ? 'и всё, что выше' : draft.upToUsd}
+                onChange={(event) => change(index, { upToUsd: event.target.value })}
+                inputMode="decimal"
+                disabled={last}
+              /></label>
+            <label className="field field--narrow">
+              <span className="label">Вид ставки</span>
+              <select
+                className="input"
+                value={draft.kind}
+                onChange={(event) => change(index, { kind: event.target.value as TierKind })}
+              >
+                <option value="fixed">Сумма, $</option>
+                <option value="rate">Доля, %</option>
+              </select>
+            </label>
+            <label className="field field--narrow">
+              <span className="label">{draft.kind === 'fixed' ? 'Сумма, $' : 'Доля, %'}</span>
+              <input
+                className="input"
+                value={draft.value}
+                onChange={(event) => change(index, { value: event.target.value })}
+                inputMode="decimal"
+              />
+            </label>
+            <button
+              type="button"
+              // Последнюю ступень убрать нельзя: без неё у сетки нет
+              // цены для сумм выше верхнего порога.
+              disabled={busy || last}
+              className="btn btn--ghost"
+              onClick={() => setDrafts((current) => current.filter((_, at) => at !== index))}
+            >
+              Убрать
+            </button>
+          </div>
+        );
+      })}
+
+      <div className="row__actions">
+        <button
+          type="button"
+          disabled={busy}
+          className="btn btn--ghost"
+          onClick={() =>
+            // Новая ступень встаёт перед последней: та действует на всё,
+            // что выше, и остаётся последней всегда.
+            setDrafts((current) => [
+              ...current.slice(0, -1),
+              { upToUsd: '', kind: 'rate', value: '' },
+              ...current.slice(-1),
+            ])
+          }
+        >
+          Добавить ступень
+        </button>
+        <button
+          type="button"
+          disabled={busy || !draftsReady(drafts)}
+          className="btn btn--gold"
+          onClick={() =>
+            onSend('/api/fee-schedules', {
+              action: 'save',
+              toCode: schedule.toCode,
+              payoutMethod: schedule.payoutMethod,
+              tiers: toTiers(drafts),
+            })
+          }
+        >
+          Сохранить ставки
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          className={schedule.isActive ? 'btn btn--danger' : 'btn btn--ghost'}
+          onClick={() =>
+            onSend('/api/fee-schedules', {
+              action: 'active',
+              scheduleId: schedule.id,
+              isActive: !schedule.isActive,
+            })
+          }
+        >
+          {schedule.isActive ? 'Выключить' : 'Включить'}
+        </button>
+      </div>
+    </div>
   );
 }
 
