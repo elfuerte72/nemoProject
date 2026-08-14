@@ -99,9 +99,6 @@ const DEFAULT_TIMEOUT_MS = 3_000;
  */
 const DEFAULT_MAX_AGE_MS = 5 * 60_000;
 
-/** Снимки ради отметок времени в поданных заявках. */
-const SNAPSHOTS = 30;
-
 export interface HtxOptions {
   readonly ttlMs?: number;
   readonly timeoutMs?: number;
@@ -249,7 +246,6 @@ export function createHtxRateSource(options: HtxOptions = {}): RateSource {
     load: fetchRate,
     ttlMs: options.ttlMs ?? DEFAULT_TTL_MS,
     maxAgeMs: options.maxAgeMs ?? DEFAULT_MAX_AGE_MS,
-    keep: SNAPSHOTS,
     provider: 'HTX',
     ...(options.now ? { now: options.now } : {}),
   });

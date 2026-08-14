@@ -51,16 +51,13 @@ const DEFAULT_TIMEOUT_MS = 3_000;
  */
 const DEFAULT_MAX_AGE_MS = 5 * 60_000;
 
-/**
- * Сколько снимков курса помнить.
- *
- * Клиент подаёт заявку по курсу, который увидел, и присылает отметку
- * его времени. Чтобы ответить именно тем курсом, снимки надо хранить, а
- * не только последний: между показом и нажатием кэш успевает
- * обновиться. Тридцати снимков при обновлении раз в десять секунд
- * хватает на те же пять минут, что и потолок устаревания.
+/*
+ * Сколько снимков курса помнить, здесь не задаётся: клиент подаёт
+ * заявку по курсу, который увидел, и снимков надо ровно столько, чтобы
+ * они покрывали срок жизни этого курса. Считает это `snapshots.ts` из
+ * срока обновления и потолка устаревания — заданное числом расходилось
+ * с ними молча.
  */
-const SNAPSHOTS = 30;
 
 export interface RapiraOptions {
   /**
@@ -141,7 +138,6 @@ export function createRapiraRateSource(options: RapiraOptions = {}): RateSource 
     load: fetchRates,
     ttlMs: options.ttlMs ?? DEFAULT_TTL_MS,
     maxAgeMs: options.maxAgeMs ?? DEFAULT_MAX_AGE_MS,
-    keep: SNAPSHOTS,
     provider: 'Rapira',
     ...(options.now ? { now: options.now } : {}),
   });
