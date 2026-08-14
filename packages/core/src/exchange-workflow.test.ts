@@ -348,17 +348,20 @@ describe('курс заявки', () => {
   });
 
   it('называется менеджером там, где курса подачи нет', async () => {
-    // Наличные: котировок наличного рынка у сервиса нет вовсе.
+    // Источника котировок у этого ядра нет вовсе, поэтому заявка ушла
+    // без курса. Наличная она или безналичная, роли не играет: с 14
+    // августа 2026 наличная сделка считается так же, как перевод, и
+    // курса лишена ровно там же — где его никто не назвал.
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
-    const { request } = await withRate.submitExchangeRequest(asClient(100n), {
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
       kind: 'cash',
       fromCode: 'USDT',
       toCode: 'RUB',
       fromAmount: '1000',
     });
-    await withRate.claimExchangeRequest(manager, request.id);
+    await core.claimExchangeRequest(manager, request.id);
 
-    const confirmed = await withRate.confirmExchangeRate(manager, request.id, {
+    const confirmed = await core.confirmExchangeRate(manager, request.id, {
       finalRate: '93',
       paymentInstructions: 'наличными в офисе',
     });
