@@ -69,4 +69,16 @@ describe('сборка источников курса', () => {
     expect((await rates.quote({ fromCode: 'USDT', toCode: 'THB' }))?.rate).toBe('33.07');
     expect(bank.asked).toHaveLength(0);
   });
+
+  it('берёт доллар у биржи, а не приравнивает его к монете', async () => {
+    // У банка USDT приравнен к доллару таблицей, то есть курс ровно
+    // единица. Биржа даёт за монету 0,9989, и разницу сервис выдавал бы
+    // сверх купленного. Проверяется здесь потому, что молчит она:
+    // единица выглядит как верный курс, а не как отсутствие цены.
+    const exchange = givenSource({ 'USDT/USD': '0.9989' });
+    const bank = givenSource({ 'USDT/USD': '1' });
+    const rates = composeRateSources([exchange.source, bank.source]);
+
+    expect((await rates.quote({ fromCode: 'USDT', toCode: 'USD' }))?.rate).toBe('0.9989');
+  });
 });

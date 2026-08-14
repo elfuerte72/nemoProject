@@ -4,6 +4,7 @@ import { createChainRateSource } from './chain.js';
 import { createCrossRateSource, type CrossRateOptions } from './cross.js';
 import { createFiatRateSource } from './fiat.js';
 import { createHtxRateSource } from './htx.js';
+import { createKrakenRateSource } from './kraken.js';
 import { createRapiraRateSource } from './rapira.js';
 
 /**
@@ -23,6 +24,7 @@ export { createChainRateSource } from './chain.js';
 export { createCrossRateSource, type CrossRateOptions } from './cross.js';
 export { createFiatRateSource, type FiatRatesOptions } from './fiat.js';
 export { createHtxRateSource, type HtxOptions } from './htx.js';
+export { createKrakenRateSource, type KrakenOptions } from './kraken.js';
 export { createRapiraRateSource, type RapiraOptions } from './rapira.js';
 export { createSnapshotCache, type Snapshot, type SnapshotCache } from './snapshots.js';
 
@@ -53,10 +55,11 @@ export function composeRateSources(
  * первое обращение после запуска процесса, и прогрев съедает его до
  * прихода первого клиента.
  *
- * Bitkub и HTX стоят раньше ЕЦБ намеренно: бат и юань есть у всех, но у
- * банка они опорные и суточные, а сервис покупает валюту на рынке. ЕЦБ
- * при этом остаётся за ними обоими — не запасным путём, а тем же
- * правилом цепочки: пару отдаёт первый, кто её знает, и молчащая
+ * Биржи стоят раньше ЕЦБ намеренно: бат, юань, доллар и евро есть и у
+ * банка, но там они опорные и суточные, а сервис покупает валюту на
+ * рынке. Доллар у банка и вовсе стоял единицей — USDT приравнен к нему
+ * таблицей. ЕЦБ при этом остаётся за всеми ними — не запасным путём, а
+ * тем же правилом цепочки: пару отдаёт первый, кто её знает, и молчащая
  * площадка не оставляет клиента без курса.
  */
 export function ratesFromEnvironment(): RateSource {
@@ -64,6 +67,7 @@ export function ratesFromEnvironment(): RateSource {
     createRapiraRateSource({ apiKey: process.env.RAPIRA_KEY, warmUp: true }),
     createBitkubRateSource({ warmUp: true }),
     createHtxRateSource({ warmUp: true }),
+    createKrakenRateSource({ warmUp: true }),
     createFiatRateSource({ warmUp: true }),
   ]);
 }
