@@ -61,9 +61,6 @@ const DEFAULT_TIMEOUT_MS = 3_000;
  */
 const DEFAULT_MAX_AGE_MS = 5 * 60_000;
 
-/** Снимки ради отметок времени в поданных заявках — на те же пять минут. */
-const SNAPSHOTS = 30;
-
 export interface KrakenOptions {
   readonly ttlMs?: number;
   readonly timeoutMs?: number;
@@ -185,7 +182,6 @@ export function createKrakenRateSource(options: KrakenOptions = {}): RateSource 
     load: fetchTickers,
     ttlMs: options.ttlMs ?? DEFAULT_TTL_MS,
     maxAgeMs: options.maxAgeMs ?? DEFAULT_MAX_AGE_MS,
-    keep: SNAPSHOTS,
     provider: 'Kraken',
     ...(options.now ? { now: options.now } : {}),
   });

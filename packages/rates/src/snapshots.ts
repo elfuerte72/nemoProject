@@ -29,8 +29,18 @@ export interface SnapshotCacheOptions<T> {
   readonly ttlMs: number;
   /** Насколько старый снимок ещё можно показывать, пока провайдер молчит. */
   readonly maxAgeMs: number;
-  /** Сколько снимков помнить ради отметок времени в поданных заявках. */
-  readonly keep: number;
+  /**
+   * Сколько снимков помнить ради отметок времени в поданных заявках.
+   *
+   * По умолчанию — ровно столько, чтобы память покрывала весь срок, в
+   * течение которого курс ещё можно показывать: обновление приходит раз
+   * в `ttlMs`, показывать снимок можно `maxAgeMs`, и на краю нужен ещё
+   * один. Заданное числом покрытие расходится с этим сроком молча: у
+   * заявки, поданной по курсу пятиминутной давности, снимок оказывался
+   * вытеснен, и она уходила по текущему курсу — то есть не по тому,
+   * который клиент видел.
+   */
+  readonly keep?: number;
   /** Чьё молчание попадёт в журнал. */
   readonly provider: string;
   /**
@@ -77,6 +87,7 @@ export interface SnapshotCache<T> {
 
 export function createSnapshotCache<T>(options: SnapshotCacheOptions<T>): SnapshotCache<T> {
   const now = options.now ?? Date.now;
+  const keep = options.keep ?? Math.ceil(options.maxAgeMs / options.ttlMs) + 1;
 
   /** Снимки, новейший последний. */
   const snapshots: Snapshot<T>[] = [];
@@ -109,7 +120,7 @@ export function createSnapshotCache<T>(options: SnapshotCacheOptions<T>): Snapsh
       .then((value) => {
         const snapshot: Snapshot<T> = { at: now(), value };
         snapshots.push(snapshot);
-        if (snapshots.length > options.keep) snapshots.shift();
+        if (snapshots.length > keep) snapshots.shift();
         return snapshot;
       })
       .finally(() => {

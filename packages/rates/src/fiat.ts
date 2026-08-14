@@ -63,13 +63,12 @@ const DEFAULT_TIMEOUT_MS = 3_000;
  */
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60_000;
 
-/**
- * Сколько снимков помнить. При обновлении раз в час двадцати четырёх
- * хватает ровно на тот же срок, что и потолок устаревания: заявка,
- * поданная по показанному курсу, найдёт свой снимок, пока курс вообще
- * можно показывать.
+/*
+ * Сколько снимков помнить, здесь не задаётся: их нужно ровно столько,
+ * чтобы память покрывала срок, в течение которого курс можно
+ * показывать. Считает это `snapshots.ts` — из срока обновления и
+ * потолка устаревания.
  */
-const SNAPSHOTS = 24;
 
 export interface FiatRatesOptions {
   readonly ttlMs?: number;
@@ -133,7 +132,6 @@ export function createFiatRateSource(options: FiatRatesOptions = {}): RateSource
     load: fetchRates,
     ttlMs: options.ttlMs ?? DEFAULT_TTL_MS,
     maxAgeMs: options.maxAgeMs ?? DEFAULT_MAX_AGE_MS,
-    keep: SNAPSHOTS,
     provider: 'ЕЦБ',
     ...(options.now ? { now: options.now } : {}),
   });
