@@ -121,6 +121,53 @@ describe('курс доллара и евро у Kraken', () => {
     expect(await source.quote({ fromCode: 'USDT', toCode: 'USD' })).toBeNull();
   });
 
+  it('читает котировки, пришедшие с предупреждением', async () => {
+    // У Kraken первая буква говорит о тяжести: `E` — отказ, `W` —
+    // предупреждение, и приходит оно вместе с рабочим ответом.
+    // Выброшенный из-за него ответ увёл бы обе пары к банку, где доллар
+    // стоит ровно единицу, — то есть вернул бы ту самую цену, ради
+    // ухода от которой источник и заведён.
+    const { fetch } = givenResponse({
+      error: ['WGeneral:Delay in market data'],
+      result: LIVE_RESPONSE.result,
+    });
+    const source = createKrakenRateSource({ fetch });
+
+    expect((await source.quote({ fromCode: 'USDT', toCode: 'USD' }))?.rate).toBe('0.9989');
+  });
+
+  it('считает отказом ответ без единой котировки', async () => {
+    // Пустой список — это не «пар нет», а невнятный отказ. Принятый за
+    // удачный ответ, он лёг бы в кэш свежим снимком и вытеснил бы
+    // последнюю хорошую цену: клиент увидел бы курс банка вместо
+    // биржевого, хотя биржа отвечала минуту назад.
+    const { fetch } = givenResponse({ error: [], result: {} });
+    const source = createKrakenRateSource({ fetch });
+
+    expect(await source.quote({ fromCode: 'USDT', toCode: 'USD' })).toBeNull();
+  });
+
+  it('держит последнюю цену, когда биржа отвечает пустотой', async () => {
+    // То же правило с другой стороны: пустой ответ не должен стирать
+    // снимок, по которому сервис ещё вправе называть цену.
+    let body: unknown = LIVE_RESPONSE;
+    let at = 0;
+    const fetch = (async () =>
+      ({ ok: true, status: 200, json: async () => body }) as Response) as typeof globalThis.fetch;
+    const source = createKrakenRateSource({ fetch, ttlMs: 10, now: () => at });
+
+    expect((await source.quote({ fromCode: 'USDT', toCode: 'USD' }))?.rate).toBe('0.9989');
+
+    // Снимок протух, биржа отвечает пустотой — обновление уходит в фон
+    // и должно провалиться, оставив прежнюю цену.
+    body = { error: [], result: {} };
+    at = 100;
+    await source.quote({ fromCode: 'USDT', toCode: 'USD' });
+    await Promise.resolve();
+
+    expect((await source.quote({ fromCode: 'USDT', toCode: 'USD' }))?.rate).toBe('0.9989');
+  });
+
   it('молчит, когда биржа отвечает отказом', async () => {
     const { fetch } = givenResponse(LIVE_RESPONSE, false);
     const source = createKrakenRateSource({ fetch });

@@ -142,9 +142,18 @@ export function createKrakenRateSource(options: KrakenOptions = {}): RateSource 
      * `result`. Так она отвечает и на незнакомую пару, и на слишком
      * частый запрос. Принятый за удачный ответ, он застыл бы в кэше на
      * весь срок его жизни, и курс пропал бы при живой бирже.
+     *
+     * Считается при этом только `E` — первая буква у Kraken говорит о
+     * тяжести, и `W` это предупреждение, приходящее вместе с рабочим
+     * ответом. Выброшенный из-за него ответ увёл бы обе пары к банку,
+     * где доллар стоит ровно единицу, — то есть вернул бы ту самую
+     * цену, ради ухода от которой источник и заведён.
      */
-    if (Array.isArray(body.error) && body.error.length > 0) {
-      throw new Error(`Kraken отказала: ${body.error.join('; ')}`);
+    const refusals = Array.isArray(body.error)
+      ? body.error.filter((one) => typeof one === 'string' && one.startsWith('E'))
+      : [];
+    if (refusals.length > 0) {
+      throw new Error(`Kraken отказала: ${refusals.join('; ')}`);
     }
     const result = body.result;
     if (typeof result !== 'object' || result === null) {
@@ -158,6 +167,16 @@ export function createKrakenRateSource(options: KrakenOptions = {}): RateSource 
       if (bid !== null && ask !== null) {
         book.set(symbol.toUpperCase(), { bid, ask });
       }
+    }
+    /*
+     * Ни одной цены — тоже отказ, а не «пар нет». Принятая за удачный
+     * ответ пустота легла бы в кэш свежим снимком и вытеснила бы
+     * последнюю хорошую цену: клиент увидел бы курс банка, где доллар
+     * стоит единицу, хотя биржа отвечала минуту назад. Ошибка же
+     * оставляет прежний снимок жить положенные ему пять минут.
+     */
+    if (book.size === 0) {
+      throw new Error('Kraken отдала пустой список котировок');
     }
     return book;
   }
