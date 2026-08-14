@@ -3,15 +3,17 @@ import { createBitkubRateSource } from './bitkub.js';
 import { createChainRateSource } from './chain.js';
 import { createCrossRateSource, type CrossRateOptions } from './cross.js';
 import { createFiatRateSource } from './fiat.js';
+import { createHtxRateSource } from './htx.js';
 import { createRapiraRateSource } from './rapira.js';
 
 /**
  * Источники курса для приложения.
  *
  * Делят они справочник по природе валют: криптовалютную сторону
- * котирует биржа, фиатную — центральный банк (docs/adr/0007), а бат —
- * тайская биржа, потому что там он торгуется, а не публикуется
- * справочно. Наружу все отдаются одним интерфейсом `RateSource` из
+ * котирует биржа, фиатную — центральный банк (docs/adr/0007), а бат и
+ * юань — площадки, на которых они торгуются на самом деле: тайская
+ * биржа и красный стакан HTX. У банка эти двое тоже есть, но опорным
+ * курсом, по которому не купить. Наружу все отдаются одним интерфейсом `RateSource` из
  * `@nemo/core`: заявка на обмен не знает, у кого спрошена цена, и знать
  * не должна.
  */
@@ -20,6 +22,7 @@ export { createBitkubRateSource, type BitkubOptions } from './bitkub.js';
 export { createChainRateSource } from './chain.js';
 export { createCrossRateSource, type CrossRateOptions } from './cross.js';
 export { createFiatRateSource, type FiatRatesOptions } from './fiat.js';
+export { createHtxRateSource, type HtxOptions } from './htx.js';
 export { createRapiraRateSource, type RapiraOptions } from './rapira.js';
 export { createSnapshotCache, type Snapshot, type SnapshotCache } from './snapshots.js';
 
@@ -50,13 +53,17 @@ export function composeRateSources(
  * первое обращение после запуска процесса, и прогрев съедает его до
  * прихода первого клиента.
  *
- * Bitkub стоит раньше ЕЦБ намеренно: бат есть у обоих, но у банка он
- * опорный и суточный, а сервис покупает баты на рынке.
+ * Bitkub и HTX стоят раньше ЕЦБ намеренно: бат и юань есть у всех, но у
+ * банка они опорные и суточные, а сервис покупает валюту на рынке. ЕЦБ
+ * при этом остаётся за ними обоими — не запасным путём, а тем же
+ * правилом цепочки: пару отдаёт первый, кто её знает, и молчащая
+ * площадка не оставляет клиента без курса.
  */
 export function ratesFromEnvironment(): RateSource {
   return composeRateSources([
     createRapiraRateSource({ apiKey: process.env.RAPIRA_KEY, warmUp: true }),
     createBitkubRateSource({ warmUp: true }),
+    createHtxRateSource({ warmUp: true }),
     createFiatRateSource({ warmUp: true }),
   ]);
 }
