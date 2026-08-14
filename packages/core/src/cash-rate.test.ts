@@ -20,16 +20,19 @@ import {
 /**
  * Курс наличной сделки.
  *
- * До сих пор у наличных курса не было вовсе: котировок наличного рынка
- * сервис не покупает, и цену называл менеджер после подачи. Теперь она
- * берётся из сетки ступеней, которую администратор заводит в панели
- * отдельно от безналичных, — наличный обмен стоит сервису дороже, и
- * ставка у него своя.
+ * Правило: **курс у наличной сделки есть везде, где есть котировка.**
+ * Клиент видит цену до подачи, а не узнаёт её из разговора, — цена и
+ * есть то, за чем открывают обменник.
  *
- * Правило, которое здесь и проверяется: **курс у наличных появляется
- * только вместе со ставкой**. Пустая сетка означает прежнее поведение —
- * заявка подаётся без курса, и называет его менеджер. Иначе первая же
- * выкатка назвала бы клиентам цену, которой никто не назначал.
+ * Считается она по наличной сетке ступеней, если администратор завёл её
+ * в панели, и по наценке сервиса, если не завёл. Так же устроен и
+ * перевод: сетка, а без неё наценка. Раньше пустая наличная сетка
+ * означала отсутствие курса вовсе — правило отменено 14 августа 2026,
+ * потому что заводить сетку на каждое наличное направление, чтобы
+ * клиент просто увидел число, оказалось дорогой в никуда.
+ *
+ * Без курса наличная заявка остаётся только там, где котировки нет ни у
+ * кого: тогда, как и прежде, цену называет менеджер.
  */
 
 function givenRates(rates: Record<string, string>): RateSource {
@@ -82,15 +85,34 @@ describe('курс наличной сделки', () => {
     expect(quote?.toAmount).toBe('97000');
   });
 
-  it('не называется, пока ставка не заведена', async () => {
+  it('считается по наценке, пока своя ставка не заведена', async () => {
+    await givenServiceSettings({ markupBps: 200, minExchangeAmount: '0' });
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
 
-    // Прежнее поведение: цену называет менеджер. Наценка сюда не
-    // подставляется — она посчитана для перевода, а наличный обмен
-    // стоит сервису другого.
+    // Курс у наличных есть всегда, когда есть котировка: клиент видит
+    // цену до подачи, а не после разговора с менеджером. Пустая
+    // наличная сетка означает наценку сервиса — ту же, по которой
+    // считается перевод без своей сетки.
     const quote = await core.getQuote({
       fromCode: 'USDT',
       toCode: 'RUB',
+      fromAmount: '1000',
+      payoutMethod: 'cash',
+    });
+
+    // Сто рублей за доллар минус два процента наценки — 98.
+    expect(quote?.rate).toBe('98');
+    expect(quote?.toAmount).toBe('98000');
+  });
+
+  it('молчит, когда котировки нет вовсе', async () => {
+    // Провайдер не знает пары — назвать нечего, и это рабочее
+    // состояние: заявку клиент подаст, а цену назовёт менеджер.
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'THB', kind: 'cash' });
+
+    const quote = await core.getQuote({
+      fromCode: 'USDT',
+      toCode: 'THB',
       fromAmount: '1000',
       payoutMethod: 'cash',
     });
@@ -156,14 +178,30 @@ describe('наличная заявка', () => {
     expect(request.toAmount).toBe('97000');
   });
 
-  it('без заведённой ставки уходит без курса, как раньше', async () => {
+  it('без своей ставки уходит с курсом по наценке', async () => {
     await core.registerClient({ telegramUserId: CLIENT_ID });
+    await givenServiceSettings({ markupBps: 200, minExchangeAmount: '0' });
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
 
     const { request } = await core.submitExchangeRequest(asClient(CLIENT_ID), {
       kind: 'cash',
       fromCode: 'USDT',
       toCode: 'RUB',
+      fromAmount: '1000',
+    });
+
+    expect(request.requestRate).toBe('98');
+    expect(request.toAmount).toBe('98000');
+  });
+
+  it('уходит без курса, когда котировки нет вовсе', async () => {
+    await core.registerClient({ telegramUserId: CLIENT_ID });
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'THB', kind: 'cash' });
+
+    const { request } = await core.submitExchangeRequest(asClient(CLIENT_ID), {
+      kind: 'cash',
+      fromCode: 'USDT',
+      toCode: 'THB',
       fromAmount: '1000',
     });
 
@@ -241,13 +279,15 @@ describe('подсказка дохода', () => {
   });
 
   it('молчит у заявки без курса подачи: цену назвал менеджер', async () => {
+    // Котировки на это направление нет ни у кого, поэтому заявка ушла
+    // без курса, и вынимать наценку не из чего.
     await core.registerClient({ telegramUserId: CLIENT_ID });
-    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'THB', kind: 'cash' });
 
     const { request } = await core.submitExchangeRequest(asClient(CLIENT_ID), {
       kind: 'cash',
       fromCode: 'USDT',
-      toCode: 'RUB',
+      toCode: 'THB',
       fromAmount: '1000',
     });
 

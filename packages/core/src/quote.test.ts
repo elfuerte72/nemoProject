@@ -277,8 +277,13 @@ describe('поданная заявка', () => {
     expect(request.requestRate).toBe('98');
   });
 
-  it('наличными идёт без курса вовсе', async () => {
+  it('наличными идёт с курсом — тем же, что видел клиент', async () => {
+    // Раньше наличная заявка уходила без курса вовсе, и провайдера ради
+    // неё не спрашивали. Теперь цена у неё такая же, как у перевода:
+    // наценка поверх котировки, пока администратор не завёл наличную
+    // сетку.
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
+    await givenServiceSettings({ markupBps: 200 });
     const source = givenRateSource('100');
     const core = createCore({ db, rateSource: source });
     await core.registerClient({ telegramUserId: 100n });
@@ -290,7 +295,7 @@ describe('поданная заявка', () => {
       fromAmount: '100',
     });
 
-    expect(request.requestRate).toBeNull();
-    expect(source.calls).toEqual([]);
+    expect(request.requestRate).toBe('98');
+    expect(request.toAmount).toBe('9800');
   });
 });
