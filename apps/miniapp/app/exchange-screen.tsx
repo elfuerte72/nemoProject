@@ -19,7 +19,7 @@ import {
   type ExchangeKind,
   type PayoutMethod,
 } from '@nemo/types';
-import { ApiError, get, post } from '@/lib/client-api';
+import { ApiError, get, post, SESSION_STALE_MESSAGE } from '@/lib/client-api';
 import { haptic, openSupport, supportLink } from '@/lib/telegram/webapp';
 import {
   isOpen,
@@ -100,16 +100,6 @@ const QUOTE_REFRESH_MS = 30_000;
  * которого уже нет.
  */
 const REQUESTS_REFRESH_MS = 20_000;
-
-/**
- * Что сказать, когда сервис перестал узнавать запуск.
- *
- * Подпись, которой Telegram отмечает открытие Mini App, живёт сутки, а
- * само приложение висит открытым дольше: свёрнутое окно Telegram держит
- * его в памяти неделями. Отказывать после этого будет каждый запрос, и
- * поправить это может только сам человек — переоткрыв приложение.
- */
-const SESSION_EXPIRED = 'Сессия устарела. Закройте и откройте приложение заново.';
 
 const SUBMITTED = {
   title: 'Заявка принята',
@@ -428,6 +418,11 @@ export function ExchangeScreen({
 
     let cancelled = false;
     const ask = () => {
+      // Спрятанное приложение курс не спрашивает — по той же причине,
+      // что и заявки ниже: свёрнутый Mini App живёт часами, и всё это
+      // время полл тикал бы впустую. Вернувшемуся курс приходит сразу —
+      // тем же обработчиком.
+      if (document.visibilityState !== 'visible') return;
       void get<{ quote: QuoteView | null }>(
         `/api/quote?${new URLSearchParams({
           fromCode,
@@ -451,7 +446,12 @@ export function ExchangeScreen({
         }).toString()}`,
       )
         .then((result) => {
-          if (!cancelled) setQuote({ pair: pairKey, view: result.quote });
+          if (cancelled) return;
+          setQuote({ pair: pairKey, view: result.quote });
+          // Запрос прошёл — значит запуск снова узнают, и совет
+          // переоткрыть приложение больше не о чем. Прижившись, он
+          // пережил бы и мимолётный отказ на перевыкатке.
+          setError((current) => (current === SESSION_STALE_MESSAGE ? undefined : current));
         })
         // Отсутствие курса — не ошибка экрана: заявку можно подать и без
         // него, а сказать клиенту нужно то же самое, что при наличных.
@@ -462,14 +462,12 @@ export function ExchangeScreen({
            * столько и висит открытым — Telegram держит его в памяти.
            * Тогда отказом отвечает каждый запрос, курс перестаёт
            * обновляться вовсе, и человек читает «курс назовёт менеджер»,
-           * не догадываясь, что достаточно переоткрыть приложение.
-           *
-           * Названа при этом не причина, а выход: чем именно подпись не
-           * понравилась, сервер намеренно не сообщает — по этому ответу
-           * её подбирали бы.
+           * не догадываясь, что дальше делать. Текст один на все экраны
+           * и живёт в `client-api`; здесь он только поднимается на
+           * видное место — прочие ошибки полла молчат, как молчали.
            */
           if (failure instanceof ApiError && failure.status === 401) {
-            setError(SESSION_EXPIRED);
+            setError(failure.message);
           }
           setQuote({ pair: pairKey, view: null });
         });
@@ -486,10 +484,14 @@ export function ExchangeScreen({
      * движений рынка не дёргается.
      */
     const timer = setInterval(ask, QUOTE_REFRESH_MS);
+    // Вернувшемуся из свёрнутого приложения курс нужен сразу, а не
+    // через полминуты: пропущенные в фоне поллы навёрстывает возврат.
+    document.addEventListener('visibilitychange', ask);
 
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', ask);
     };
   }, [kind, fromCode, toCode, pairKey, payoutMethod]);
 

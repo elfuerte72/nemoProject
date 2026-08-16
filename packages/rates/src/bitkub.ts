@@ -161,13 +161,22 @@ export function createBitkubRateSource(options: BitkubOptions = {}): RateSource 
 
   if (options.warmUp) cache.warmUp();
 
+  const symbol = (options.symbol ?? DEFAULT_SYMBOL).toUpperCase();
+
   return {
     async quote(pair: RatePair, at?: Date): Promise<RateQuote | null> {
+      const from = pair.fromCode.toUpperCase();
+      const to = pair.toCode.toUpperCase();
+
+      // Спрошенная у биржи пара одна, и известна она до похода в кэш.
+      // Чужие пары молчат, не читая его: чтение умеет ждать провайдера,
+      // и в цепочке эти ожидания складывались бы у пар, которых биржа
+      // не знает вовсе.
+      if (`${from}_${to}` !== symbol && `${to}_${from}` !== symbol) return null;
+
       const snapshot = await cache.read(at);
       if (!snapshot) return null;
 
-      const from = pair.fromCode.toUpperCase();
-      const to = pair.toCode.toUpperCase();
       const asOf = new Date(snapshot.at);
 
       // Прямая пара: сервис отдаёт то, что стоит в основании пары, и

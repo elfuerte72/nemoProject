@@ -103,18 +103,25 @@ describe('курс бата у тайской биржи', () => {
 
   it('переживает нечисловую цену в чужом ответе', async () => {
     // Строка, которая не число, роняла разбор целиком: `Money` на такой
-    // бросает, и весь ответ превращался в молчание биржи — то есть курс
-    // пропадал у всех из-за одного мусорного поля.
-    const { fetch } = givenResponse([
-      { symbol: 'USDT_THB', highest_bid: 'n/a', lowest_ask: '33.08' },
-      { symbol: 'BTC_THB', highest_bid: '2100000', lowest_ask: '2100100' },
-    ]);
+    // бросает, и весь ответ превращался в молчание биржи. Молчание же
+    // означает пустой кэш и новый стук на каждый вопрос — а пережитый
+    // мусор ложится снимком, и второй вопрос к бирже не ходит.
+    let calls = 0;
+    const fetch = (async () => {
+      calls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{ symbol: 'USDT_THB', highest_bid: 'n/a', lowest_ask: '33.08' }],
+      } as Response;
+    }) as typeof globalThis.fetch;
     const source = createBitkubRateSource({ fetch });
 
     // Испорченная пара молчит: неполной цене верить нельзя.
     expect(await source.quote({ fromCode: 'USDT', toCode: 'THB' })).toBeNull();
-    // Соседняя строка при этом прочитана — значит разбор не рухнул.
-    expect((await source.quote({ fromCode: 'BTC', toCode: 'THB' }))?.rate).toBe('2100000');
+    expect(await source.quote({ fromCode: 'USDT', toCode: 'THB' })).toBeNull();
+    // Ответ при этом прочитан и лёг снимком — биржу не спрашивали снова.
+    expect(calls).toBe(1);
   });
 
   it('считает пустой список отказом', async () => {

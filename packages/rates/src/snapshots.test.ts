@@ -122,29 +122,61 @@ describe('курс не пропадает', () => {
     expect((await cache.read())?.value).toBe('снимок 2');
   });
 
-  it('молчащего провайдера ждёт только первый клиент', async () => {
+  it('пришедшие следом делят с первым один запрос и один ответ', async () => {
     /*
-     * Ожидание одно на всех: пока провайдер лежит, второй и третий
-     * клиент от своего ожидания ничего не выигрывают — ответ им придёт
-     * тот же самый.
+     * Так спрашивает бот: все направления разом, `Promise.all`, и у
+     * рублёвых пар кэш один на всех. Пока первый ждёт провайдера,
+     * остальные приходили на выставленный им признак «уже ждём» и
+     * получали пустоту — доска курса выходила дырявой с первого нажатия
+     * и целой со второго, то есть ровно та жалоба, которую всё это
+     * чинит. Запрос к провайдеру при этом уже шёл, и ответ его общий.
      */
     let calls = 0;
     const cache = createSnapshotCache({
-      // Провайдер, который не ответит никогда: так выглядит запрос,
-      // висящий до собственного срока.
       load: async () => {
         calls += 1;
-        return new Promise<string>(() => {});
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return `снимок ${calls}`;
       },
       ttlMs: 10_000,
       maxAgeMs: 60_000,
       provider: 'Провайдер',
     });
 
-    void cache.read();
-    await vi.waitFor(() => expect(calls).toBe(1));
+    const [first, second, third] = await Promise.all([cache.read(), cache.read(), cache.read()]);
 
-    // Вернулся, не дожидаясь: иначе этот `await` не кончился бы вовсе.
+    expect(first?.value).toBe('снимок 1');
+    expect(second?.value).toBe('снимок 1');
+    expect(third?.value).toBe('снимок 1');
+    // Запрос был один: склейка обращений никуда не делась.
+    expect(calls).toBe(1);
+  });
+
+  it('лежащего провайдера не ждут заново, отведав отказа', async () => {
+    /*
+     * Пока провайдер лежит, каждое новое ожидание — плата ни за что:
+     * ответ один и тот же. Ждут идущий запрос; нет запроса — пусто
+     * сразу, а стучится в провайдера фон.
+     */
+    let calls = 0;
+    const cache = createSnapshotCache({
+      load: async () => {
+        calls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        throw new Error('провайдер лежит');
+      },
+      ttlMs: 10_000,
+      maxAgeMs: 60_000,
+      provider: 'Провайдер',
+    });
+
+    // Первая волна: все дождались общего отказа, запрос был один.
+    const wave = await Promise.all([cache.read(), cache.read()]);
+    expect(wave).toEqual([undefined, undefined]);
+    expect(calls).toBe(1);
+
+    // Фоновый пинок второй волны уже мог уйти — дать ему отказать.
+    await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(1));
     expect(await cache.read()).toBeUndefined();
   });
 
@@ -241,6 +273,67 @@ describe('обновление без клиента', () => {
     }
   });
 
+  it('пропускает тик, когда снимок и так свежий', async () => {
+    /*
+     * Снимок появляется и мимо расписания — от чтения на границе срока
+     * или от затянувшегося прошлого ответа. Тик, пришедший следом,
+     * стучал бы в провайдера ради того, что уже есть.
+     */
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      // Первый ответ ползёт восемь секунд, остальные приходят сразу:
+      // так снимок встаёт перед самым тиком.
+      const cache = createSnapshotCache({
+        load: async () => {
+          calls += 1;
+          if (calls === 1) await new Promise((resolve) => setTimeout(resolve, 8_000));
+          return `снимок ${calls}`;
+        },
+        ttlMs: 10_000,
+        maxAgeMs: 60_000,
+        provider: 'Провайдер',
+      });
+
+      cache.warmUp();
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(calls).toBe(1);
+
+      // Тик 10-й секунды пропущен: снимку две секунды. Тики 20-й и
+      // 30-й обновляют как обычно.
+      await vi.advanceTimersByTimeAsync(27_000);
+      expect(calls).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('останавливается, когда кэш попросили остановиться', async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const cache = createSnapshotCache({
+        load: async () => {
+          calls += 1;
+          return `снимок ${calls}`;
+        },
+        ttlMs: 10_000,
+        maxAgeMs: 60_000,
+        provider: 'Провайдер',
+      });
+
+      const stop = cache.warmUp();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(calls).toBe(2);
+
+      stop();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(calls).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('не держит процесс: таймер отпущен', () => {
     /*
      * Иначе процесс, которому пора закончиться, ждал бы следующего
@@ -262,6 +355,61 @@ describe('обновление без клиента', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('отметка показанного курса', () => {
+  it('старше своего срока — не принимается: заявка уходит по текущему', async () => {
+    /*
+     * Потолок показа поднят до часа ради молчащего провайдера, но он не
+     * должен был поднять и это: отметку времени присылает клиент, и час
+     * памяти означал бы час выбора — держать показанный курс и подать
+     * заявку тогда, когда рынок ушёл дальше наценки. Между взглядом и
+     * нажатием проходят минуты, и срок у отметки свой.
+     */
+    let clock = 0;
+    let value = 'показанный';
+    const cache = createSnapshotCache({
+      load: async () => value,
+      ttlMs: 10_000,
+      maxAgeMs: 60 * 60_000,
+      provider: 'Провайдер',
+      now: () => clock,
+    });
+
+    const seen = await cache.read();
+    expect(seen?.value).toBe('показанный');
+
+    // Десять минут спустя рынок ушёл, и в памяти уже новый снимок — в
+    // работе его приносит обновление по таймеру.
+    clock = 10 * 60_000;
+    value = 'текущий';
+    await cache.read();
+    await vi.waitFor(async () => expect((await cache.read())?.value).toBe('текущий'));
+
+    const submitted = await cache.read(new Date(0));
+    expect(submitted?.value).toBe('текущий');
+  });
+
+  it('в своём сроке — принимается и отвечает тем же курсом', async () => {
+    let clock = 0;
+    let value = 'показанный';
+    const cache = createSnapshotCache({
+      load: async () => value,
+      ttlMs: 10_000,
+      maxAgeMs: 60 * 60_000,
+      provider: 'Провайдер',
+      now: () => clock,
+    });
+
+    await cache.read();
+
+    // Три минуты — обычная пауза между показом и подтверждением сводки.
+    clock = 3 * 60_000;
+    value = 'обновившийся';
+
+    const submitted = await cache.read(new Date(0));
+    expect(submitted?.value).toBe('показанный');
   });
 });
 
