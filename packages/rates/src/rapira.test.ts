@@ -222,7 +222,19 @@ describe('обновление в фоне', () => {
   });
 
   it('но не показывает курс, устаревший до бессмысленности', async () => {
-    const { fetch } = givenRapira([{ symbol: 'USDT/RUB', close: 95 }]);
+    // Биржа ответила однажды и замолчала: обновить переживший свой срок
+    // снимок нечем.
+    let calls = 0;
+    const fetch = (async () => {
+      calls += 1;
+      if (calls > 1) throw new Error('соединение оборвалось');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [{ symbol: 'USDT/RUB', close: 95 }] }),
+      } as Response;
+    }) as typeof globalThis.fetch;
+
     let clock = 0;
     const source = createRapiraRateSource({
       fetch,
@@ -237,6 +249,37 @@ describe('обновление в фоне', () => {
     // По такому курсу подают заявку, а она обязательство сервиса:
     // лучше сказать, что курса нет, чем назвать вчерашний.
     expect(await source.quote({ fromCode: 'USDT', toCode: 'RUB' })).toBeNull();
+  });
+
+  it('а пережив срок при живой бирже — спрашивает заново, а не отказывает', async () => {
+    /*
+     * Разница с предыдущим случаем в том, кто молчит. Там биржа, и
+     * показывать действительно нечего. Здесь она отвечает за доли
+     * секунды — и отказ означал бы, что клиент остался без курса ровно
+     * потому, что до него полчаса никто не заходил.
+     */
+    let close = 95;
+    const fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [{ symbol: 'USDT/RUB', close }] }),
+      }) as Response) as typeof globalThis.fetch;
+
+    let clock = 0;
+    const source = createRapiraRateSource({
+      fetch,
+      now: () => clock,
+      ttlMs: 1000,
+      maxAgeMs: 5000,
+    });
+
+    await source.quote({ fromCode: 'USDT', toCode: 'RUB' });
+
+    close = 96;
+    clock = 5001;
+
+    expect((await source.quote({ fromCode: 'USDT', toCode: 'RUB' }))?.rate).toBe('96');
   });
 });
 
