@@ -10,11 +10,11 @@ import type {
 } from '@nemo/core';
 import {
   Money,
-  netAfterFee,
+  payoutAfterFee,
   payoutMethodOf,
   requisiteKinds,
   requisiteKindSuits,
-  usdForNet,
+  usdForPayout,
   type Amount,
   type ExchangeKind,
   type PayoutMethod,
@@ -533,17 +533,16 @@ export function ExchangeScreen({
      * Со ступенчатой комиссией обратный счёт перестаёт быть делением:
      * ставка берётся от всей суммы, и выдача на границах скачет. Правило
      * — наименьшая сумма, при которой клиент получает не меньше, чем
-     * просил; считает его та же `usdForNet`, что и ядро.
+     * просил; считает его та же `usdForPayout`, что и ядро. Цель уходит
+     * в него в валюте выдачи, а не долларами: фикс ступени бывает задан
+     * этой валютой, и деление на курс живёт внутри перебора ступеней.
      */
     if (rate.fee) {
       const { toBaseRate, fromBaseRate, tiers } = rate.fee;
       if (Money.isZero(fromBaseRate) || Money.isZero(toBaseRate)) {
         return { give: null, get: value };
       }
-      const neededUsd = usdForNet(
-        Money.divideCeil(value, fromBaseRate, MAX_FRACTION_DIGITS),
-        tiers,
-      );
+      const neededUsd = usdForPayout(value, fromBaseRate, tiers);
       return {
         give:
           neededUsd === null
@@ -1464,7 +1463,9 @@ function payoutFor(give: Amount, quote: QuoteView): Amount {
   if (!quote.fee) return Money.floor(Money.multiply(give, quote.rate));
   const { toBaseRate, fromBaseRate, tiers } = quote.fee;
   const usd = Money.multiply(give, toBaseRate);
-  return Money.floor(Money.multiply(netAfterFee(usd, tiers), fromBaseRate));
+  // Путь целиком, а не «остаток на курс»: фикс ступени бывает задан в
+  // валюте выдачи и вычитается уже после умножения.
+  return Money.floor(payoutAfterFee(usd, fromBaseRate, tiers));
 }
 
 /**
