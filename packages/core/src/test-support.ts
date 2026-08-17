@@ -211,6 +211,7 @@ export async function givenFeeSchedule(options: {
     rateBps?: number;
     fixedPayout?: string;
   }[];
+  minUsd?: string;
   isActive?: boolean;
 }): Promise<void> {
   await givenCurrency(options.toCode);
@@ -219,6 +220,7 @@ export async function givenFeeSchedule(options: {
     .values({
       toCode: options.toCode,
       payoutMethod: options.payoutMethod,
+      ...(options.minUsd === undefined ? {} : { minUsd: options.minUsd }),
       isActive: options.isActive ?? true,
     })
     .returning({ id: feeSchedules.id });

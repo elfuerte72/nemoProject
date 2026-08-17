@@ -4,6 +4,7 @@ import {
   feeScheduleSchema,
   Money,
   payoutMethodSchema,
+  type Amount,
   type FeeTier,
   type PayoutMethod,
 } from '@nemo/types';
@@ -11,6 +12,18 @@ import { requireAdmin, type Actor } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import { recordSettingsChange } from './settings-audit.js';
+
+/**
+ * Действующая сетка направления: ступени и минимальный порог.
+ *
+ * Порог живёт у сетки, а не у ступени: «меньше пятисот долларов —
+ * недоступно» относится к направлению целиком, и глобальный минимум
+ * сервиса действует поверх него, а не вместо.
+ */
+export interface ActiveFeeSchedule {
+  readonly tiers: readonly FeeTier[];
+  readonly minUsd: Amount | null;
+}
 
 /**
  * Сетка комиссии для валюты и способа выдачи — или её отсутствие.
@@ -29,13 +42,14 @@ export async function readFeeSchedule(
   executor: Executor,
   toCode: string,
   payoutMethod: PayoutMethod,
-): Promise<readonly FeeTier[] | null> {
+): Promise<ActiveFeeSchedule | null> {
   const rows = await executor
     .select({
       upToUsd: feeScheduleTiers.upToUsd,
       fixedUsd: feeScheduleTiers.fixedUsd,
       rateBps: feeScheduleTiers.rateBps,
       fixedPayout: feeScheduleTiers.fixedPayout,
+      minUsd: feeSchedules.minUsd,
     })
     .from(feeScheduleTiers)
     .innerJoin(feeSchedules, eq(feeScheduleTiers.scheduleId, feeSchedules.id))
@@ -52,9 +66,13 @@ export async function readFeeSchedule(
     // все суммы.
     .orderBy(sql`${feeScheduleTiers.upToUsd} asc nulls last`, asc(feeScheduleTiers.id));
 
-  if (rows.length === 0) return null;
+  const first = rows[0];
+  if (first === undefined) return null;
 
-  return rows.map(toTier);
+  return {
+    tiers: rows.map(toTier),
+    minUsd: first.minUsd === null ? null : Money.toAmount(first.minUsd),
+  };
 }
 
 function toTier(row: {
@@ -83,6 +101,7 @@ export interface FeeScheduleView {
   readonly toCode: string;
   readonly payoutMethod: PayoutMethod;
   readonly isActive: boolean;
+  readonly minUsd: Amount | null;
   readonly tiers: readonly FeeTier[];
   readonly updatedAt: Date;
 }
@@ -91,6 +110,8 @@ export interface FeeScheduleView {
 export interface SaveFeeScheduleInput {
   readonly toCode: string;
   readonly payoutMethod: PayoutMethod;
+  /** Минимум направления в долларах; не задан — порога нет. */
+  readonly minUsd?: string | undefined;
   readonly tiers: readonly {
     readonly upToUsd: string | null;
     readonly fixedUsd?: string | undefined;
@@ -138,6 +159,7 @@ async function readSchedules(
     toCode: schedule.toCode,
     payoutMethod: schedule.payoutMethod,
     isActive: schedule.isActive,
+    minUsd: schedule.minUsd === null ? null : Money.toAmount(schedule.minUsd),
     updatedAt: schedule.updatedAt,
     tiers: tiers.filter((tier) => tier.scheduleId === schedule.id).map(toTier),
   }));
@@ -171,6 +193,24 @@ function requireValidTiers(input: SaveFeeScheduleInput['tiers']): readonly FeeTi
 }
 
 /**
+ * Минимум направления — положительное число долларов или ничего.
+ *
+ * Ноль не принимается: «порога нет» выражается пустым полем, и ноль,
+ * сохранённый как порог, читался бы администратором как действующее
+ * правило. Тот же предел держит база (`fee_schedules_min_positive`) —
+ * здесь он повторён, чтобы набранное руками вернулось объяснением, а не
+ * внутренней ошибкой.
+ */
+function requireValidMin(minUsd: string | undefined): Amount | null {
+  if (minUsd === undefined) return null;
+  const parsed = Money.amountSchema.safeParse(minUsd.trim());
+  if (!parsed.success || Money.isZero(parsed.data) || Money.isNegative(parsed.data)) {
+    throw new InvalidInputError('Минимальная сумма сетки должна быть больше нуля');
+  }
+  return parsed.data;
+}
+
+/**
  * Завести сетку или переписать её ступени.
  *
  * Валюта и способ выдачи — ключ, а не поля: сетка «бат на кошелёк» и
@@ -178,6 +218,8 @@ function requireValidTiers(input: SaveFeeScheduleInput['tiers']): readonly FeeTi
  * бы, что администратор молча перенёс ставки не туда. Меняются только
  * ступени, и меняются целиком — дописывание строк к прежним оставляло
  * бы в сетке пороги, которых администратор на экране уже не видит.
+ * Минимум направления — часть той же правки: не присланный, он
+ * снимается, а не остаётся от прошлого сохранения.
  */
 export async function saveFeeSchedule(
   ctx: CoreConfig,
@@ -194,6 +236,7 @@ export async function saveFeeSchedule(
 
   const toCode = input.toCode.trim().toUpperCase();
   const tiers = requireValidTiers(input.tiers);
+  const minUsd = requireValidMin(input.minUsd);
 
   return ctx.db.transaction(async (tx) => {
     const [currency] = await tx
@@ -216,10 +259,10 @@ export async function saveFeeSchedule(
      */
     const [row] = await tx
       .insert(feeSchedules)
-      .values({ toCode, payoutMethod, isActive: false })
+      .values({ toCode, payoutMethod, minUsd, isActive: false })
       .onConflictDoUpdate({
         target: [feeSchedules.toCode, feeSchedules.payoutMethod],
-        set: { updatedAt: new Date() },
+        set: { minUsd, updatedAt: new Date() },
       })
       .returning({ id: feeSchedules.id });
 

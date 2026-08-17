@@ -745,12 +745,16 @@ function FeeScheduleCard({
   onSend: (path: string, body: unknown) => Promise<unknown>;
 }) {
   const [drafts, setDrafts] = useState<TierDraft[]>(() => toDrafts(schedule.tiers));
+  const [minUsd, setMinUsd] = useState(schedule.minUsd ?? '');
 
   function change(index: number, patch: Partial<TierDraft>) {
     setDrafts((current) =>
       current.map((draft, at) => (at === index ? { ...draft, ...patch } : draft)),
     );
   }
+
+  // Пустое поле — «порога нет», а не ноль: ноль отвергнет ядро.
+  const minReady = minUsd.trim() === '' || isAmount(minUsd);
 
   return (
     <div className="row row--stack">
@@ -764,6 +768,23 @@ function FeeScheduleCard({
           </span>
         </div>
         {schedule.isActive ? undefined : <span className={pillClass('off')}>Выключена</span>}
+      </div>
+
+      {/*
+        Минимум относится к направлению целиком, а не к ступени, потому
+        и стоит над лестницей. Клиент видит его до подачи, подача ниже
+        порога отвергается; общий минимум сервиса действует поверх.
+      */}
+      <div className="form-row">
+        <label className="field field--narrow">
+          <span className="label">Минимум, $ (пусто — нет)</span>
+          <input
+            className="input"
+            value={minUsd}
+            onChange={(event) => setMinUsd(event.target.value)}
+            inputMode="decimal"
+          />
+        </label>
       </div>
 
       {drafts.map((draft, index) => {
@@ -867,13 +888,18 @@ function FeeScheduleCard({
         </button>
         <button
           type="button"
-          disabled={busy || !draftsReady(drafts)}
+          disabled={busy || !draftsReady(drafts) || !minReady}
           className="btn btn--gold"
           onClick={() =>
             onSend('/api/fee-schedules', {
               action: 'save',
               toCode: schedule.toCode,
               payoutMethod: schedule.payoutMethod,
+              // Пустой минимум не отправляется вовсе: не присланный,
+              // он снимается — сетка сохраняется целиком.
+              ...(minUsd.trim() === ''
+                ? {}
+                : { minUsd: minUsd.replace(',', '.').trim() }),
               tiers: toTiers(drafts),
             })
           }

@@ -297,6 +297,26 @@ describe('сетка комиссии', () => {
     ).rejects.toThrow(/fee_schedule_tiers_payout_non_negative/);
   });
 
+  it('не держит нулевой и отрицательный минимум сетки', async () => {
+    // Ноль в поле минимума — опечатка, а не «порога нет»: для «нет»
+    // есть пустое значение, и ноль, сохранённый как порог, читался бы
+    // администратором как действующее правило.
+    await db.insert(currencies).values({ code: 'EUR', decimals: 2, kind: 'fiat' });
+
+    await expect(
+      db.insert(feeSchedules).values({ toCode: 'EUR', payoutMethod: 'bank', minUsd: '0' }),
+    ).rejects.toThrow(/fee_schedules_min_positive/);
+    await expect(
+      db.insert(feeSchedules).values({ toCode: 'EUR', payoutMethod: 'bank', minUsd: '-5' }),
+    ).rejects.toThrow(/fee_schedules_min_positive/);
+
+    // Положительный — держит, пустой — тем более.
+    await db
+      .insert(feeSchedules)
+      .values({ toCode: 'EUR', payoutMethod: 'bank', minUsd: '500' });
+    await db.insert(feeSchedules).values({ toCode: 'EUR', payoutMethod: 'wallet' });
+  });
+
   it('держит ровно одну ступень без верхней границы', async () => {
     // Обычная уникальность этого не ловит: пустое значение в Postgres не
     // равно другому пустому, и две строки «и всё, что выше» прошли бы

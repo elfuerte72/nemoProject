@@ -350,6 +350,24 @@ export async function submitExchangeRequest(
       );
     }
 
+    /*
+     * Свой минимум направления — поверх общего: владелец задаёт евро
+     * «меньше пятисот долларов — недоступно». Порог приходит вместе с
+     * котировкой и меряется тем же долларовым эквивалентом; без
+     * котировки его не посчитать, и заявка уходит без курса — отказ по
+     * числу, которого у сервиса в этот момент нет, выглядел бы поломкой.
+     */
+    const directionMin = quote?.fee?.minUsd ?? null;
+    if (
+      directionMin !== null &&
+      quote?.usdAmount !== undefined &&
+      Money.compare(quote.usdAmount, directionMin) < 0
+    ) {
+      throw new InvalidInputError(
+        `Минимальная сумма для этого направления — ${directionMin} $`,
+      );
+    }
+
     const [row] = await tx
       .insert(exchangeRequests)
       .values({

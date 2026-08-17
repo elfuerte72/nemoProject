@@ -816,6 +816,20 @@ export function ExchangeScreen({
     terms && measured && Money.compare(measured, terms.minAmount) < 0,
   );
 
+  /**
+   * Свой порог направления — поверх общего: владелец задаёт евро
+   * «меньше пятисот долларов — недоступно». Порог приезжает вместе с
+   * курсом и меряется тем же долларовым эквивалентом, которым ядро
+   * выбирает ступень; без курса эквивалента нет, и экран о пороге
+   * молчит — как молчит о нём и подача.
+   */
+  const directionMin = rate?.fee?.minUsd ?? null;
+  const measuredUsd =
+    rate?.fee && sides.give ? Money.multiply(sides.give, rate.fee.toBaseRate) : null;
+  const belowDirectionMinimum = Boolean(
+    directionMin && measuredUsd && Money.compare(measuredUsd, directionMin) < 0,
+  );
+
   const ready =
     !busy &&
     Boolean(fromCode) &&
@@ -826,6 +840,7 @@ export function ExchangeScreen({
     sides.give !== null &&
     !Money.isZero(sides.give) &&
     !belowMinimum &&
+    !belowDirectionMinimum &&
     // Пока ответ о курсе не пришёл, подавать нечего: на экране в этот
     // момент нет ни курса, ни суммы получения, а заявка ушла бы без
     // отметки — то есть по курсу, который ядро спросит заново и которого
@@ -849,9 +864,11 @@ export function ExchangeScreen({
   const obstacle =
     belowMinimum && terms
       ? `Меньше минимальной суммы обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
-      : electronic && selected === undefined
-        ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
-        : undefined;
+      : belowDirectionMinimum && directionMin
+        ? `Меньше минимальной суммы направления — ${formatMoney(directionMin, '$')}.`
+        : electronic && selected === undefined
+          ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
+          : undefined;
 
   const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
@@ -1118,6 +1135,17 @@ export function ExchangeScreen({
             */}
             {terms && minimumApplies && !belowMinimum
               ? ` Минимальная сумма обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
+              : ''}
+            {/*
+              Порог направления — тем же правилом: справкой, пока не
+              нарушен. В долларах, как его и задал владелец: клиент
+              долларов на этом экране больше нигде не видит, но порог —
+              число из письма владельца, и переводить его в валюту
+              отдачи значило бы называть порог, которого владелец не
+              называл.
+            */}
+            {directionMin && !belowDirectionMinimum
+              ? ` Минимальная сумма направления — ${formatMoney(directionMin, '$')}.`
               : ''}
           </p>
         </>

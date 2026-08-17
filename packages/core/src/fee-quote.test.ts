@@ -399,3 +399,133 @@ describe('котировка с фиксом в валюте выдачи', () =
     expect(request.toAmount).toBe('655');
   });
 });
+
+describe('минимум направления у сетки', () => {
+  /** Сетка евро с порогом владельца: меньше пятисот долларов — отказ. */
+  const TIERS_WITH_MIN = {
+    toCode: 'EUR',
+    payoutMethod: 'bank' as const,
+    minUsd: '500',
+    tiers: [{ upToUsd: null, rateBps: 330, fixedPayout: '10' }],
+  };
+
+  function coreWith(rates: Record<string, string>): ReturnType<typeof createCore> {
+    return createCore({
+      db,
+      rateSource: givenRates(rates),
+      requisites: {
+        publicKey: testRequisiteKeys.publicKey,
+        privateKey: testRequisiteKeys.privateKey,
+      },
+    });
+  }
+
+  async function givenClient(core: ReturnType<typeof createCore>): Promise<string> {
+    await core.registerClient({ telegramUserId: 100n, username: 'elfuerte' });
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Kasikornbank',
+      cardNumber: '4111111111111111',
+    });
+    return requisites.id;
+  }
+
+  it('отвергает подачу ниже порога направления с внятным текстом', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenFeeSchedule(TIERS_WITH_MIN);
+    // Глобальный минимум ниже порога сетки: отказ должен прийти именно
+    // от направления, а не от общего правила.
+    await givenServiceSettings({ minExchangeAmount: '35' });
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+    const requisitesId = await givenClient(core);
+
+    // 7 000 ₽ — это 70 $: выше глобальных 35, ниже пятисот сетки.
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'RUB',
+        toCode: 'EUR',
+        fromAmount: '7000',
+        requisitesId,
+      }),
+    ).rejects.toThrow(/Минимальная сумма для этого направления — 500 \$/);
+  });
+
+  it('ровно на пороге подача проходит', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenFeeSchedule(TIERS_WITH_MIN);
+    await givenServiceSettings({ minExchangeAmount: '35' });
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+    const requisitesId = await givenClient(core);
+
+    // 50 000 ₽ — ровно 500 $: порог включительный, как и у ступеней.
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'RUB',
+      toCode: 'EUR',
+      fromAmount: '50000',
+      requisitesId,
+    });
+    expect(request.toAmount).not.toBeNull();
+  });
+
+  it('глобальный минимум продолжает действовать поверх', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    // Сетка без своего порога, глобальный — сотня.
+    await givenFeeSchedule({
+      toCode: 'EUR',
+      payoutMethod: 'bank',
+      tiers: [{ upToUsd: null, rateBps: 330, fixedPayout: '10' }],
+    });
+    await givenServiceSettings({ minExchangeAmount: '100' });
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+    const requisitesId = await givenClient(core);
+
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'RUB',
+        toCode: 'EUR',
+        fromAmount: '7000',
+        requisitesId,
+      }),
+    ).rejects.toThrow(/Минимальная сумма обмена/);
+  });
+
+  it('не применяет порог там, где долларовый эквивалент не посчитан', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenFeeSchedule(TIERS_WITH_MIN);
+    await givenServiceSettings({ minExchangeAmount: '35' });
+    // Провайдер молчит: котировки нет, долларов не посчитать. Отказ по
+    // числу, которого у сервиса в этот момент нет, выглядел бы поломкой
+    // — заявка уходит без курса, цену назовёт менеджер.
+    const core = coreWith({});
+    const requisitesId = await givenClient(core);
+
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'RUB',
+      toCode: 'EUR',
+      fromAmount: '7000',
+      requisitesId,
+    });
+    expect(request.requestRate).toBeNull();
+  });
+
+  it('квота несёт порог направления экрану', async () => {
+    // Экран говорит о пороге до подачи — тем же способом, каким называет
+    // общий минимум. Числа для этого должны приехать вместе с курсом.
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenFeeSchedule(TIERS_WITH_MIN);
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+
+    const quote = await core.getQuote({
+      fromCode: 'RUB',
+      toCode: 'EUR',
+      fromAmount: '100000',
+      payoutMethod: 'bank',
+    });
+
+    expect(quote?.fee?.minUsd).toBe('500');
+  });
+});

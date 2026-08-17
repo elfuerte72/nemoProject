@@ -566,11 +566,25 @@ export const feeSchedules = pgTable(
      * менеджер.
      */
     payoutMethod: payoutMethodEnum('payout_method').notNull(),
+    /**
+     * Минимальная сумма направления в долларовом эквиваленте: владелец
+     * задаёт евро «меньше пятисот долларов — недоступно». Пусто — порога
+     * нет, и действует только общий минимум сервиса; заведённый порог
+     * работает поверх общего, а не вместо него.
+     */
+    minUsd: money('min_usd'),
     /** Погашенная сетка не применяется, и направление считается наценкой. */
     isActive: boolean('is_active').default(true).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [unique('fee_schedules_target').on(table.toCode, table.payoutMethod)],
+  (table) => [
+    unique('fee_schedules_target').on(table.toCode, table.payoutMethod),
+    // Ноль — опечатка, а не «порога нет»: для «нет» есть пустое значение.
+    check(
+      'fee_schedules_min_positive',
+      sql`${table.minUsd} is null or ${table.minUsd} > 0`,
+    ),
+  ],
 );
 
 /**

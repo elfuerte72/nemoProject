@@ -238,6 +238,43 @@ describe('сетки комиссии в панели', () => {
     ).rejects.toThrow(/не оба разом/);
   });
 
+  it('сохраняет и читает минимальную сумму сетки', async () => {
+    await givenCurrency('EUR');
+
+    const saved = await core.saveFeeSchedule(admin, {
+      toCode: 'EUR',
+      payoutMethod: 'bank',
+      minUsd: '500',
+      tiers: [{ upToUsd: null, rateBps: 230, fixedPayout: '10' }],
+    });
+    expect(saved.minUsd).toBe('500');
+
+    // Правка без поля минимум снимает: форма шлёт сетку целиком, и
+    // оставшееся от прошлого сохранения значение было бы порогом,
+    // которого администратор на экране уже не видит.
+    const cleared = await core.saveFeeSchedule(admin, {
+      toCode: 'EUR',
+      payoutMethod: 'bank',
+      tiers: [{ upToUsd: null, rateBps: 230, fixedPayout: '10' }],
+    });
+    expect(cleared.minUsd).toBeNull();
+  });
+
+  it('отвергает минимум сетки, который не положительное число', async () => {
+    await givenCurrency('EUR');
+
+    for (const minUsd of ['0', '-5', 'сто']) {
+      await expect(
+        core.saveFeeSchedule(admin, {
+          toCode: 'EUR',
+          payoutMethod: 'bank',
+          minUsd,
+          tiers: [{ upToUsd: null, rateBps: 230 }],
+        }),
+      ).rejects.toThrow(InvalidInputError);
+    }
+  });
+
   it('сохраняет и читает ступень «доля + фикс в валюте выдачи»', async () => {
     await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
     const saved = await core.saveFeeSchedule(admin, {

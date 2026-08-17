@@ -11,7 +11,7 @@ import {
   type PayoutMethod,
 } from '@nemo/types';
 import type { CoreConfig, Executor } from './context.js';
-import { readFeeSchedule } from './fee-schedules.js';
+import { readFeeSchedule, type ActiveFeeSchedule } from './fee-schedules.js';
 import { readServiceSettings } from './settings.js';
 
 /**
@@ -91,6 +91,12 @@ export interface QuoteView {
     /** Сколько получаемой валюты за один USDT. */
     readonly fromBaseRate: Amount;
     readonly tiers: readonly FeeTier[];
+    /**
+     * Минимум направления в долларовом эквиваленте — если владелец его
+     * задал. Экран говорит о нём до подачи, подача сверяет; глобальный
+     * минимум сервиса действует поверх, а не вместо.
+     */
+    readonly minUsd: Amount | null;
   };
 }
 
@@ -308,7 +314,7 @@ const BASE_CODE = 'USDT';
 async function quoteByFee(
   ctx: CoreConfig,
   input: QuoteInput,
-  schedule: readonly FeeTier[],
+  schedule: ActiveFeeSchedule,
 ): Promise<QuoteView | null> {
   const source = ctx.rateSource;
   if (!source) return null;
@@ -350,7 +356,7 @@ async function quoteByFee(
    * фикс ступени бывает задан в валюте выдачи и вычитается после
    * умножения — десять евро остаются десятью при любом курсе.
    */
-  const payout = roundPayout(payoutAfterFee(usdAmount, fromBase.rate, schedule));
+  const payout = roundPayout(payoutAfterFee(usdAmount, fromBase.rate, schedule.tiers));
 
   /*
    * Курс называется от посчитанной выдачи, а не наоборот: показанное
@@ -364,7 +370,12 @@ async function quoteByFee(
     rate,
     toAmount: payout,
     usdAmount,
-    fee: { toBaseRate: toBase.rate, fromBaseRate: fromBase.rate, tiers: schedule },
+    fee: {
+      toBaseRate: toBase.rate,
+      fromBaseRate: fromBase.rate,
+      tiers: schedule.tiers,
+      minUsd: schedule.minUsd,
+    },
     // Наценки в этой цене нет: её место заняла комиссия.
     markupBps: 0,
     // Отметка старшего из звеньев: цена не свежее самой несвежей своей

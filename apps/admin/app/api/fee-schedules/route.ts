@@ -29,6 +29,8 @@ const schema = z.discriminatedUnion('action', [
     action: z.literal('save'),
     toCode: z.string().min(1),
     payoutMethod: payoutMethodSchema,
+    /** Минимум направления в долларах; отсутствие снимает порог. */
+    minUsd: z.string().optional(),
     tiers: z
       .array(
         z.object({
@@ -61,6 +63,7 @@ export async function POST(request: Request): Promise<Response> {
         ? await core.saveFeeSchedule(actor, {
             toCode: parsed.data.toCode,
             payoutMethod: parsed.data.payoutMethod,
+            minUsd: parsed.data.minUsd,
             tiers: parsed.data.tiers,
           })
         : await core.setFeeScheduleActive(
