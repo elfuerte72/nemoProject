@@ -3,7 +3,7 @@ import { currencyPairs } from '@nemo/db';
 import {
   MAX_ROUNDING_BPS,
   Money,
-  netAfterFee,
+  payoutAfterFee,
   withoutDivisionTail,
   type Amount,
   type ExchangeKind,
@@ -345,7 +345,12 @@ async function quoteByFee(
   if (!toBase) return null;
 
   const usdAmount = Money.multiply(fromAmount.data, toBase.rate);
-  const payout = roundPayout(Money.multiply(netAfterFee(usdAmount, schedule), fromBase.rate));
+  /*
+   * Путь целиком считает `payoutAfterFee`, а не «остаток на курс»:
+   * фикс ступени бывает задан в валюте выдачи и вычитается после
+   * умножения — десять евро остаются десятью при любом курсе.
+   */
+  const payout = roundPayout(payoutAfterFee(usdAmount, fromBase.rate, schedule));
 
   /*
    * Курс называется от посчитанной выдачи, а не наоборот: показанное

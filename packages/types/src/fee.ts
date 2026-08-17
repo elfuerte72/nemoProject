@@ -25,10 +25,11 @@ import type { Amount } from './money.js';
  * Ступень: до какой суммы она действует и сколько стоит.
  *
  * `upToUsd` — верхняя граница включительно; `null` у последней ступени
- * означает «и всё, что выше». Ставка ровно одного вида: либо
- * фиксированная сумма в долларах, либо доля в базисных пунктах. Двух
- * сразу не бывает — сумма и процент в одной строке означали бы, что
- * никто не знает, сколько стоит обмен.
+ * означает «и всё, что выше». Ставка — доля в базисных пунктах, фикс в
+ * долларах или фикс в валюте выдачи; доля сочетается с любым фиксом
+ * (формула владельца для евро: «3,3 % и 10 EUR сверху»). Два фикса
+ * разом — нельзя: один вычитается до умножения на курс, второй после,
+ * и вместе они означали бы, что никто не знает, сколько стоит обмен.
  */
 export const feeTierSchema = z
   .object({
@@ -49,10 +50,23 @@ export const feeTierSchema = z
       .refine((value) => !Money.isNegative(value), 'Ставка не может быть отрицательной')
       .optional(),
     rateBps: z.number().int().min(0).max(10_000).optional(),
+    /**
+     * Фиксированная часть в валюте выдачи: десять евро остаются десятью
+     * при любом курсе, долларом их не задать. Вычитается после перевода
+     * остатка по курсу — в отличие от `fixedUsd`, который уходит до.
+     */
+    fixedPayout: Money.amountSchema
+      .refine((value) => !Money.isNegative(value), 'Ставка не может быть отрицательной')
+      .optional(),
   })
   .refine(
-    (tier) => (tier.fixedUsd === undefined) !== (tier.rateBps === undefined),
-    'У ступени должна быть ровно одна ставка: сумма или доля',
+    (tier) =>
+      tier.fixedUsd !== undefined || tier.rateBps !== undefined || tier.fixedPayout !== undefined,
+    'У ступени должна быть хотя бы одна ставка: доля или фиксированная сумма',
+  )
+  .refine(
+    (tier) => tier.fixedUsd === undefined || tier.fixedPayout === undefined,
+    'Фикс на ступени один: в долларах или в валюте выдачи, но не оба разом',
   );
 
 export type FeeTier = z.infer<typeof feeTierSchema>;
@@ -97,14 +111,14 @@ function tierFor(usdAmount: Amount, schedule: readonly FeeTier[]): FeeTier | und
 }
 
 /**
- * Сколько сервис берёт с этой суммы. Считается в долларах — той валюте,
- * в которой заданы и пороги, и фиксированная ставка.
+ * Долларовая часть комиссии: доля от всей суммы плюс долларовый фикс.
+ * Фикс в валюте выдачи сюда не входит — он вычитается после перевода по
+ * курсу, и в долларах его не выразить (`payoutAfterFee`).
  */
 export function feeFor(usdAmount: Amount, schedule: readonly FeeTier[]): Amount {
   const tier = tierFor(usdAmount, schedule);
   if (!tier) return Money.ZERO;
-  if (tier.fixedUsd !== undefined) return tier.fixedUsd;
-  return Money.percentOf(usdAmount, tier.rateBps ?? 0);
+  return Money.add(tier.fixedUsd ?? Money.ZERO, Money.percentOf(usdAmount, tier.rateBps ?? 0));
 }
 
 /**
@@ -122,14 +136,35 @@ export function netAfterFee(usdAmount: Amount, schedule: readonly FeeTier[]): Am
 }
 
 /**
+ * Выдача целиком: долларовый остаток переводится по курсу, и уже из
+ * него вычитается фикс в валюте выдачи.
+ *
+ * `fromBaseRate` — сколько валюты выдачи дают за один доллар. Считать
+ * по-прежнему «остаток на курс» снаружи нельзя: фикс в валюте выдачи
+ * потерялся бы молча, и экран пообещал бы больше, чем запишет ядро.
+ *
+ * Ниже нуля не опускается — по той же причине, что и `netAfterFee`.
+ */
+export function payoutAfterFee(
+  usdAmount: Amount,
+  fromBaseRate: Amount,
+  schedule: readonly FeeTier[],
+): Amount {
+  const gross = Money.multiply(netAfterFee(usdAmount, schedule), fromBaseRate);
+  const fixed = tierFor(usdAmount, schedule)?.fixedPayout ?? Money.ZERO;
+  const payout = Money.subtract(gross, fixed);
+  return Money.isNegative(payout) ? Money.ZERO : payout;
+}
+
+/**
  * До скольких знаков округляется найденная сумма. Столько же показывает
  * экран: число, обрезанное при показе, перестало бы давать обещанное.
  */
 const REVERSE_SCALE = 8;
 
 /**
- * Обратный счёт: сколько отдать, чтобы после комиссии осталось не меньше
- * названного.
+ * Обратный счёт: сколько долларов отдать, чтобы после комиссии в валюте
+ * выдачи вышло не меньше названного.
  *
  * Вопрос звучит не реже прямого — с ним приходят за суммой брони, счёта
  * или билета. Со ступенями он перестаёт быть делением: ставка берётся от
@@ -147,9 +182,21 @@ const REVERSE_SCALE = 8;
  * Округление вверх, а не вниз: отброшенный хвост возвращается вычетом
  * комиссии как недостача, и клиент, просивший пятьдесят тысяч, получил
  * бы 49 999.
+ *
+ * Цель названа в валюте выдачи, а не в долларах: фикс ступени может
+ * быть задан этой валютой, и перевод цели в доллары зависит от того, на
+ * какую ступень попадёт ответ, — деление на курс живёт внутри перебора,
+ * а не до него.
  */
-export function usdForNet(target: Amount, schedule: readonly FeeTier[]): Amount | null {
+export function usdForPayout(
+  target: Amount,
+  fromBaseRate: Amount,
+  schedule: readonly FeeTier[],
+): Amount | null {
   if (Money.isZero(target) || Money.isNegative(target)) return null;
+  // Нулевым курсом не делят, отрицательный — испорченные данные: сумму
+  // отдачи по ним не выдумать.
+  if (Money.isZero(fromBaseRate) || Money.isNegative(fromBaseRate)) return null;
 
   const candidates: Amount[] = [];
 
@@ -157,9 +204,10 @@ export function usdForNet(target: Amount, schedule: readonly FeeTier[]): Amount 
     const floorUsd = index === 0 ? null : (schedule[index - 1]?.upToUsd ?? null);
 
     /*
-     * Решение уравнения этой ступени. С фиксированной ставкой оно
-     * прямое, с долей — деление вверх: делить вниз значило бы обещать
-     * сумму, которой не выйдет.
+     * Решение уравнения этой ступени:
+     * `usd = ((цель + фикс валюты) / курс + фикс долларов) / (1 − доля)`.
+     * Каждое деление — вверх: делить вниз значило бы обещать сумму,
+     * которой не выйдет.
      */
     const share = Money.subtract(
       Money.toAmount('1'),
@@ -172,12 +220,18 @@ export function usdForNet(target: Amount, schedule: readonly FeeTier[]): Amount 
      * «такой суммы не выйдет». Ограничение базы такую ставку
      * пропускает: сто процентов — опечатка, а не невозможное значение.
      */
-    if (tier.fixedUsd === undefined && Money.isZero(share)) continue;
+    if (Money.isZero(share)) continue;
 
-    const solved =
-      tier.fixedUsd !== undefined
-        ? Money.add(target, tier.fixedUsd)
-        : Money.divideCeil(target, share, REVERSE_SCALE);
+    const grossUsd = Money.divideCeil(
+      Money.add(target, tier.fixedPayout ?? Money.ZERO),
+      fromBaseRate,
+      REVERSE_SCALE,
+    );
+    const solved = Money.divideCeil(
+      Money.add(grossUsd, tier.fixedUsd ?? Money.ZERO),
+      share,
+      REVERSE_SCALE,
+    );
 
     /*
      * Решение засчитывается, только если попало в свою ступень: иначе
@@ -194,17 +248,32 @@ export function usdForNet(target: Amount, schedule: readonly FeeTier[]): Amount 
         ? Money.add(floorUsd, step)
         : solved;
     const withinTop = tier.upToUsd === null || Money.compare(shifted, tier.upToUsd) <= 0;
-    if (withinTop && Money.compare(netAfterFee(shifted, schedule), target) >= 0) {
+    if (
+      withinTop &&
+      Money.compare(payoutAfterFee(shifted, fromBaseRate, schedule), target) >= 0
+    ) {
       candidates.push(shifted);
     }
 
     // И сама граница: за ней ставка меняется, и сумма, недостижимая
     // внутри ступени, оказывается достижимой ровно на её краю.
-    if (tier.upToUsd !== null && Money.compare(netAfterFee(tier.upToUsd, schedule), target) >= 0) {
+    if (
+      tier.upToUsd !== null &&
+      Money.compare(payoutAfterFee(tier.upToUsd, fromBaseRate, schedule), target) >= 0
+    ) {
       candidates.push(tier.upToUsd);
     }
   }
 
   if (candidates.length === 0) return null;
   return candidates.reduce((least, one) => (Money.compare(one, least) < 0 ? one : least));
+}
+
+/**
+ * Тот же обратный счёт, но с целью в долларах — для сеток, где фикса в
+ * валюте выдачи нет. Частный случай `usdForPayout` с курсом-единицей:
+ * два перебора разошлись бы на первом же исправлении.
+ */
+export function usdForNet(target: Amount, schedule: readonly FeeTier[]): Amount | null {
+  return usdForPayout(target, Money.toAmount('1'), schedule);
 }

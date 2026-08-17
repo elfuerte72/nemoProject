@@ -238,9 +238,14 @@ describe('сетка комиссии', () => {
     return schedule!.id;
   }
 
-  it('не держит ступень с двумя ставками сразу', async () => {
-    // Сумма и доля в одной строке означают, что никто не знает, сколько
-    // стоит обмен: считающий возьмёт ту, что первой попалась под руку.
+  it('не держит ступень с двумя фиксами разом', async () => {
+    /*
+     * Прежний запрет «двух ставок» сужен 17 августа 2026: формула
+     * владельца для евро — «3,3 % и 10 EUR сверху», доля сочетается с
+     * любым фиксом. Бессмысленной осталась ровно пара фиксов: один
+     * вычитается до умножения на курс, второй после, и вместе они
+     * означали бы, что никто не знает, сколько стоит обмен.
+     */
     const scheduleId = await insertSchedule();
 
     await expect(
@@ -248,9 +253,9 @@ describe('сетка комиссии', () => {
         scheduleId,
         upToUsd: '500',
         fixedUsd: '5',
-        rateBps: 450,
+        fixedPayout: '10',
       }),
-    ).rejects.toThrow(/fee_schedule_tiers_single_rate/);
+    ).rejects.toThrow(/fee_schedule_tiers_single_fixed/);
   });
 
   it('не держит ступень вовсе без ставки', async () => {
@@ -258,7 +263,38 @@ describe('сетка комиссии', () => {
 
     await expect(
       db.insert(feeScheduleTiers).values({ scheduleId, upToUsd: '500' }),
-    ).rejects.toThrow(/fee_schedule_tiers_single_rate/);
+    ).rejects.toThrow(/fee_schedule_tiers_any_rate/);
+  });
+
+  it('держит долю с фиксом — в долларах и в валюте выдачи', async () => {
+    const scheduleId = await insertSchedule();
+
+    await db.insert(feeScheduleTiers).values({
+      scheduleId,
+      upToUsd: '2000',
+      rateBps: 330,
+      fixedPayout: '10',
+    });
+    await db.insert(feeScheduleTiers).values({
+      scheduleId,
+      upToUsd: null,
+      rateBps: 450,
+      fixedUsd: '5',
+    });
+
+    expect(await db.select().from(feeScheduleTiers)).toHaveLength(2);
+  });
+
+  it('не держит отрицательный фикс в валюте выдачи', async () => {
+    const scheduleId = await insertSchedule();
+
+    await expect(
+      db.insert(feeScheduleTiers).values({
+        scheduleId,
+        upToUsd: null,
+        fixedPayout: '-10',
+      }),
+    ).rejects.toThrow(/fee_schedule_tiers_payout_non_negative/);
   });
 
   it('держит ровно одну ступень без верхней границы', async () => {

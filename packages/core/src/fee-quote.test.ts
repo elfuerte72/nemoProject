@@ -318,3 +318,84 @@ describe('заявка по сетке комиссии', () => {
     expect(request.toAmount).toBe('28650');
   });
 });
+
+/**
+ * Сетка с фиксом в валюте выдачи — формула владельца для евро от 17
+ * августа 2026: процент от суммы и десять евро сверху
+ * (`.scratch/eur-usd-fee/spec.md`).
+ */
+const EUR_TIERS = [
+  { upToUsd: '2000', rateBps: 330, fixedPayout: '10' },
+  { upToUsd: null, rateBps: 230, fixedPayout: '10' },
+];
+
+describe('котировка с фиксом в валюте выдачи', () => {
+  it('вычитает фикс после перевода по курсу', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenFeeSchedule({ toCode: 'EUR', payoutMethod: 'bank', tiers: EUR_TIERS });
+    const core = createCore({
+      db,
+      rateSource: givenRates({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' }),
+    });
+
+    const quote = await core.getQuote({
+      fromCode: 'RUB',
+      toCode: 'EUR',
+      fromAmount: '100000',
+      payoutMethod: 'bank',
+    });
+
+    // 100 000 ₽ — 1 000 $: 3,3% — 33 $, остаток 967 $ по 0,8649 —
+    // 836,3583 €, минус десять евро и вниз до целого — 826 €.
+    expect(quote?.toAmount).toBe('826');
+    // Ступени доезжают до экрана целиком: по ним он считает сам, и фикс
+    // в валюте выдачи обязан в них быть.
+    expect(quote?.fee?.tiers[0]?.fixedPayout).toBe('10');
+  });
+
+  it('сходится с проверкой владельца: 70 000 ₽ дают 655 евро', async () => {
+    // Числа из его сообщения: 70 000 / 87,98 — доллары, ступень до двух
+    // тысяч, 3,3% и десять евро. Его формула даёт 655,44 € — целыми 655.
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenFeeSchedule({ toCode: 'EUR', payoutMethod: 'bank', tiers: EUR_TIERS });
+    await givenServiceSettings({ minExchangeAmount: '100' });
+    const core = createCore({
+      db,
+      // Одна восемьдесят седьмая и девяносто восемь сотых, как её отдал
+      // бы составной источник: 18 знаков, обрезание вниз.
+      rateSource: givenRates({
+        'RUB/USDT': '0.011366219595362582',
+        'USDT/EUR': '0.8649',
+      }),
+      requisites: {
+        publicKey: testRequisiteKeys.publicKey,
+        privateKey: testRequisiteKeys.privateKey,
+      },
+    });
+    await core.registerClient({ telegramUserId: 100n, username: 'elfuerte' });
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Kasikornbank',
+      cardNumber: '4111111111111111',
+    });
+    const requisitesId = requisites.id;
+
+    const quote = await core.getQuote({
+      fromCode: 'RUB',
+      toCode: 'EUR',
+      fromAmount: '70000',
+      payoutMethod: 'bank',
+    });
+    expect(quote?.toAmount).toBe('655');
+
+    // Заявка — обязательство: записывается ровно то, что видел клиент.
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'RUB',
+      toCode: 'EUR',
+      fromAmount: '70000',
+      requisitesId,
+    });
+    expect(request.toAmount).toBe('655');
+  });
+});

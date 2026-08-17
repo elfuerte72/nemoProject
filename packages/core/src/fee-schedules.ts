@@ -35,6 +35,7 @@ export async function readFeeSchedule(
       upToUsd: feeScheduleTiers.upToUsd,
       fixedUsd: feeScheduleTiers.fixedUsd,
       rateBps: feeScheduleTiers.rateBps,
+      fixedPayout: feeScheduleTiers.fixedPayout,
     })
     .from(feeScheduleTiers)
     .innerJoin(feeSchedules, eq(feeScheduleTiers.scheduleId, feeSchedules.id))
@@ -60,11 +61,13 @@ function toTier(row: {
   upToUsd: string | null;
   fixedUsd: string | null;
   rateBps: number | null;
+  fixedPayout: string | null;
 }): FeeTier {
   return {
     upToUsd: row.upToUsd === null ? null : Money.toAmount(row.upToUsd),
     ...(row.fixedUsd === null ? {} : { fixedUsd: Money.toAmount(row.fixedUsd) }),
     ...(row.rateBps === null ? {} : { rateBps: row.rateBps }),
+    ...(row.fixedPayout === null ? {} : { fixedPayout: Money.toAmount(row.fixedPayout) }),
   };
 }
 
@@ -92,6 +95,7 @@ export interface SaveFeeScheduleInput {
     readonly upToUsd: string | null;
     readonly fixedUsd?: string | undefined;
     readonly rateBps?: number | undefined;
+    readonly fixedPayout?: string | undefined;
   }[];
 }
 
@@ -227,6 +231,7 @@ export async function saveFeeSchedule(
         upToUsd: tier.upToUsd,
         ...(tier.fixedUsd === undefined ? {} : { fixedUsd: tier.fixedUsd }),
         ...(tier.rateBps === undefined ? {} : { rateBps: tier.rateBps }),
+        ...(tier.fixedPayout === undefined ? {} : { fixedPayout: tier.fixedPayout }),
       })),
     );
 
