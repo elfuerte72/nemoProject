@@ -50,7 +50,12 @@ function givenRates(rates: Record<string, string>): RateSource {
  * Прямая пара нужна только там, где сетки нет: с сеткой ядро идёт через
  * доллар и у источника её не спрашивает вовсе.
  */
-const RATES = { 'RUB/USDT': '0.01', 'USDT/THB': '30', 'RUB/THB': '0.3' };
+const RATES = {
+  'RUB/USDT': '0.01',
+  'USDT/THB': '30',
+  'RUB/THB': '0.3',
+  'USDT/EUR': '0.8649',
+};
 
 /** Сетка бата на банк из ТЗ владельца — та, что заводится скриптом. */
 const BANK_TIERS = [
@@ -214,16 +219,91 @@ describe('сетки комиссии в панели', () => {
     ).rejects.toThrow(InvalidInputError);
   });
 
-  it('отвергает ступень с двумя ставками сразу', async () => {
+  it('отвергает ступень с двумя фиксами разом', async () => {
+    /*
+     * Прежний запрет «двух ставок» сужен 17 августа 2026 по формуле
+     * владельца («3,3 % и 10 EUR сверху»): доля сочетается с любым
+     * фиксом. Бессмысленной осталась ровно пара фиксов — один вычитается
+     * до умножения на курс, второй после, и вместе они означали бы, что
+     * никто не знает, сколько стоит обмен.
+     */
     await givenCurrency('THB');
 
     await expect(
       core.saveFeeSchedule(admin, {
         toCode: 'THB',
         payoutMethod: 'bank',
-        tiers: [{ upToUsd: null, fixedUsd: '5', rateBps: 250 }],
+        tiers: [{ upToUsd: null, fixedUsd: '5', fixedPayout: '10' }],
       }),
-    ).rejects.toThrow(InvalidInputError);
+    ).rejects.toThrow(/не оба разом/);
+  });
+
+  it('сохраняет и читает минимальную сумму сетки', async () => {
+    await givenCurrency('EUR');
+
+    const saved = await core.saveFeeSchedule(admin, {
+      toCode: 'EUR',
+      payoutMethod: 'bank',
+      minUsd: '500',
+      tiers: [{ upToUsd: null, rateBps: 230, fixedPayout: '10' }],
+    });
+    expect(saved.minUsd).toBe('500');
+
+    // Правка без поля минимум снимает: форма шлёт сетку целиком, и
+    // оставшееся от прошлого сохранения значение было бы порогом,
+    // которого администратор на экране уже не видит.
+    const cleared = await core.saveFeeSchedule(admin, {
+      toCode: 'EUR',
+      payoutMethod: 'bank',
+      tiers: [{ upToUsd: null, rateBps: 230, fixedPayout: '10' }],
+    });
+    expect(cleared.minUsd).toBeNull();
+  });
+
+  it('отвергает минимум сетки, который не положительное число', async () => {
+    await givenCurrency('EUR');
+
+    for (const minUsd of ['0', '-5', 'сто']) {
+      await expect(
+        core.saveFeeSchedule(admin, {
+          toCode: 'EUR',
+          payoutMethod: 'bank',
+          minUsd,
+          tiers: [{ upToUsd: null, rateBps: 230 }],
+        }),
+      ).rejects.toThrow(InvalidInputError);
+    }
+  });
+
+  it('сохраняет и читает ступень «доля + фикс в валюте выдачи»', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    const saved = await core.saveFeeSchedule(admin, {
+      toCode: 'EUR',
+      payoutMethod: 'bank',
+      tiers: [
+        { upToUsd: '2000', rateBps: 330, fixedPayout: '10' },
+        { upToUsd: null, rateBps: 230, fixedPayout: '10' },
+      ],
+    });
+    await core.setFeeScheduleActive(admin, saved.id, true);
+
+    // Перечитанная сетка несёт фикс в валюте выдачи, а не теряет его
+    // молча: потерянный, он всплыл бы только расхождением цены.
+    const [schedule] = await core.listFeeSchedules(admin);
+    expect(schedule?.tiers).toEqual([
+      { upToUsd: '2000', rateBps: 330, fixedPayout: '10' },
+      { upToUsd: null, rateBps: 230, fixedPayout: '10' },
+    ]);
+
+    // И считается: 100 000 ₽ — 1 000 $, 3,3% — 33 $, остаток 967 $ по
+    // 0,8649 — 836,3583 €, минус десять евро, вниз до целого — 826 €.
+    const quote = await core.getQuote({
+      fromCode: 'RUB',
+      toCode: 'EUR',
+      fromAmount: '100000',
+      payoutMethod: 'bank',
+    });
+    expect(quote?.toAmount).toBe('826');
   });
 
   it('отвергает ступень без ставки вовсе', async () => {

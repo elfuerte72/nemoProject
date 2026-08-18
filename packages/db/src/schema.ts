@@ -566,19 +566,36 @@ export const feeSchedules = pgTable(
      * менеджер.
      */
     payoutMethod: payoutMethodEnum('payout_method').notNull(),
+    /**
+     * Минимальная сумма направления в долларовом эквиваленте: владелец
+     * задаёт евро «меньше пятисот долларов — недоступно». Пусто — порога
+     * нет, и действует только общий минимум сервиса; заведённый порог
+     * работает поверх общего, а не вместо него.
+     */
+    minUsd: money('min_usd'),
     /** Погашенная сетка не применяется, и направление считается наценкой. */
     isActive: boolean('is_active').default(true).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [unique('fee_schedules_target').on(table.toCode, table.payoutMethod)],
+  (table) => [
+    unique('fee_schedules_target').on(table.toCode, table.payoutMethod),
+    // Ноль — опечатка, а не «порога нет»: для «нет» есть пустое значение.
+    check(
+      'fee_schedules_min_positive',
+      sql`${table.minUsd} is null or ${table.minUsd} > 0`,
+    ),
+  ],
 );
 
 /**
  * Ступень сетки: до какой суммы она действует и сколько стоит.
  *
- * Ставка ровно одного вида — либо фиксированная сумма в долларах, либо
- * доля в базисных пунктах, — и это проверяет база, а не форма: строка,
- * где заданы обе, означает, что никто не знает, сколько стоит обмен.
+ * Ставка — доля в базисных пунктах, фикс в долларах или фикс в валюте
+ * выдачи; доля сочетается с любым фиксом (формула владельца для евро:
+ * «3,3 % и 10 EUR сверху»). Два фикса разом база не держит: один
+ * вычитается до умножения на курс, второй после, и вместе они означали
+ * бы, что никто не знает, сколько стоит обмен. Проверяет это база, а не
+ * форма: форма не единственный способ завести строку.
  *
  * Пороги в долларах: клиент их не видит, но у бата и юаня они общие, и
  * считать ступень в валюте выдачи значило бы держать четыре разных
@@ -599,12 +616,28 @@ export const feeScheduleTiers = pgTable(
     upToUsd: money('up_to_usd'),
     fixedUsd: money('fixed_usd'),
     rateBps: integer('rate_bps'),
+    /**
+     * Фиксированная часть в валюте выдачи: десять евро остаются десятью
+     * при любом курсе, долларом их не задать. Вычитается после перевода
+     * остатка по курсу — в отличие от долларового фикса, который уходит
+     * до.
+     */
+    fixedPayout: money('fixed_payout'),
   },
   (table) => [
-    // Ровно одна ставка на ступень: сумма или доля.
+    // Хотя бы одна ставка на ступень: без единой у строки нет цены.
     check(
-      'fee_schedule_tiers_single_rate',
-      sql`(${table.fixedUsd} is null) <> (${table.rateBps} is null)`,
+      'fee_schedule_tiers_any_rate',
+      sql`${table.fixedUsd} is not null or ${table.rateBps} is not null or ${table.fixedPayout} is not null`,
+    ),
+    // Фикс один: в долларах или в валюте выдачи, но не оба разом.
+    check(
+      'fee_schedule_tiers_single_fixed',
+      sql`${table.fixedUsd} is null or ${table.fixedPayout} is null`,
+    ),
+    check(
+      'fee_schedule_tiers_payout_non_negative',
+      sql`${table.fixedPayout} is null or ${table.fixedPayout} >= 0`,
     ),
     check(
       'fee_schedule_tiers_rate_range',

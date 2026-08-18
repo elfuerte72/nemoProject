@@ -506,18 +506,24 @@ function ExchangeDirections({
 }
 
 /**
- * Ставка ступени: либо сумма в долларах, либо доля. Двух сразу не
- * бывает — сумма и процент в одной строке означали бы, что никто не
- * знает, сколько стоит обмен.
+ * Ставка ступени: доля в процентах и фикс, порознь или вместе, — так
+ * владелец задаёт евро («3,3 % и 10 EUR сверху»). Фикс один, и валюту
+ * ему называет администратор: доллары вычитаются до перевода по курсу,
+ * валюта выдачи — после. Двух фиксов разом не бывает — это означало бы,
+ * что никто не знает, сколько стоит обмен, и такую строку отвергнет
+ * ядро.
  */
-type TierKind = 'fixed' | 'rate';
+type FixedCurrency = 'usd' | 'payout';
 
 interface TierDraft {
   /** Пусто у последней ступени: она действует на всё, что выше. */
   readonly upToUsd: string;
-  readonly kind: TierKind;
-  /** Доллары у фиксированной ставки, проценты у доли. */
-  readonly value: string;
+  /** Доля в процентах; пустая строка — доли нет. */
+  readonly rate: string;
+  /** Фикс; пустая строка — фикса нет. */
+  readonly fixed: string;
+  /** В чём задан фикс: доллары или валюта выдачи. */
+  readonly fixedIn: FixedCurrency;
 }
 
 /**
@@ -530,17 +536,18 @@ interface TierDraft {
  * валюту, а порядок «фикс, потом убывающие проценты» останется.
  */
 const DEFAULT_TIERS: readonly TierDraft[] = [
-  { upToUsd: '500', kind: 'fixed', value: '5' },
-  { upToUsd: '2000', kind: 'rate', value: '4.5' },
-  { upToUsd: '5000', kind: 'rate', value: '3.5' },
-  { upToUsd: '', kind: 'rate', value: '2.5' },
+  { upToUsd: '500', rate: '', fixed: '5', fixedIn: 'usd' },
+  { upToUsd: '2000', rate: '4.5', fixed: '', fixedIn: 'usd' },
+  { upToUsd: '5000', rate: '3.5', fixed: '', fixedIn: 'usd' },
+  { upToUsd: '', rate: '2.5', fixed: '', fixedIn: 'usd' },
 ];
 
 function toDrafts(tiers: FeeScheduleView['tiers']): TierDraft[] {
   return tiers.map((tier) => ({
     upToUsd: tier.upToUsd ?? '',
-    kind: tier.fixedUsd === undefined ? 'rate' : 'fixed',
-    value: tier.fixedUsd ?? bpsToPercent(tier.rateBps ?? 0),
+    rate: tier.rateBps === undefined ? '' : bpsToPercent(tier.rateBps),
+    fixed: tier.fixedUsd ?? tier.fixedPayout ?? '',
+    fixedIn: tier.fixedPayout === undefined ? 'usd' : 'payout',
   }));
 }
 
@@ -573,7 +580,11 @@ function draftsReady(drafts: readonly TierDraft[]): boolean {
   return drafts.every((draft, index) => {
     const last = index === drafts.length - 1;
     const threshold = last || isAmount(draft.upToUsd);
-    return threshold && isAmount(draft.value);
+    // Хотя бы одна ставка на ступень, и каждая заполненная — число.
+    const hasAny = draft.rate.trim() !== '' || draft.fixed.trim() !== '';
+    const rateOk = draft.rate.trim() === '' || isAmount(draft.rate);
+    const fixedOk = draft.fixed.trim() === '' || isAmount(draft.fixed);
+    return threshold && hasAny && rateOk && fixedOk;
   });
 }
 
@@ -581,9 +592,12 @@ function toTiers(drafts: readonly TierDraft[]) {
   return drafts.map((draft, index) => ({
     upToUsd:
       index === drafts.length - 1 ? null : draft.upToUsd.replace(',', '.').trim(),
-    ...(draft.kind === 'fixed'
-      ? { fixedUsd: draft.value.replace(',', '.').trim() }
-      : { rateBps: percentToBps(draft.value) ?? 0 }),
+    ...(draft.rate.trim() === '' ? {} : { rateBps: percentToBps(draft.rate) ?? 0 }),
+    ...(draft.fixed.trim() === ''
+      ? {}
+      : draft.fixedIn === 'payout'
+        ? { fixedPayout: draft.fixed.replace(',', '.').trim() }
+        : { fixedUsd: draft.fixed.replace(',', '.').trim() }),
   }));
 }
 
@@ -627,7 +641,10 @@ function FeeSchedules({
         Ставка берётся от всей суммы, а не от превышения над порогом: отдавший 500,01 $
         платит по следующей ступени целиком. Пороги заданы в долларах — клиент их не
         видит, они нужны, чтобы у всех валют ступени считались одной линейкой. Последняя
-        ступень действует на всё, что выше. Там, где сетки нет, цену назначает наценка;
+        ступень действует на всё, что выше. У ступени доля и фикс заполняются порознь или
+        вместе — «3,3 % и 10 EUR сверху» задаётся одной строкой. Фикс в долларах
+        вычитается до перевода по курсу, фикс в валюте выдачи — после: десять евро
+        остаются десятью при любом курсе. Там, где сетки нет, цену назначает наценка;
         выключенная сетка к ней и возвращает, а не закрывает направление. Новая сетка
         заводится выключенной со ступенями бата — поправьте числа под свою валюту и
         включите: включённая сразу меняет цену тем, кто в эту минуту считает обмен.
@@ -728,12 +745,19 @@ function FeeScheduleCard({
   onSend: (path: string, body: unknown) => Promise<unknown>;
 }) {
   const [drafts, setDrafts] = useState<TierDraft[]>(() => toDrafts(schedule.tiers));
+  const [minUsd, setMinUsd] = useState(schedule.minUsd ?? '');
 
   function change(index: number, patch: Partial<TierDraft>) {
     setDrafts((current) =>
       current.map((draft, at) => (at === index ? { ...draft, ...patch } : draft)),
     );
   }
+
+  // Пустое поле — «порога нет», а не ноль: набранный ноль гасит
+  // кнопку, иначе о нём рассказал бы отказ ядра после нажатия.
+  const minReady =
+    minUsd.trim() === '' ||
+    (isAmount(minUsd) && Number(minUsd.replace(',', '.')) > 0);
 
   return (
     <div className="row row--stack">
@@ -747,6 +771,24 @@ function FeeScheduleCard({
           </span>
         </div>
         {schedule.isActive ? undefined : <span className={pillClass('off')}>Выключена</span>}
+      </div>
+
+      {/*
+        Минимум относится к направлению целиком, а не к ступени, потому
+        и стоит над лестницей. Клиент видит его до подачи, подача ниже
+        порога отвергается; общий минимум сервиса действует поверх.
+      */}
+      <div className="form-row">
+        <label className="field field--narrow">
+          <span className="label">Минимум, $</span>
+          <input
+            className="input"
+            value={minUsd}
+            onChange={(event) => setMinUsd(event.target.value)}
+            placeholder="порога нет"
+            inputMode="decimal"
+          />
+        </label>
       </div>
 
       {drafts.map((draft, index) => {
@@ -768,33 +810,54 @@ function FeeScheduleCard({
                 inputMode="decimal"
                 disabled={last}
               /></label>
+            {/*
+              Доля и фикс — два поля, а не переключатель: владелец задаёт
+              евро как «3,3 % и 10 EUR сверху», и ступень несёт обе части
+              разом. Пустое поле значит «этой части нет».
+            */}
             <label className="field field--narrow">
-              <span className="label">Вид ставки</span>
-              <select
-                className="input"
-                value={draft.kind}
-                onChange={(event) =>
-                  /*
-                   * Со сменой вида ставки поле очищается: пять долларов,
-                   * оставшиеся в поле после переключения на проценты,
-                   * становятся пятью процентами — и уезжают в ядро,
-                   * потому что число само по себе годное.
-                   */
-                  change(index, { kind: event.target.value as TierKind, value: '' })
-                }
-              >
-                <option value="fixed">Сумма, $</option>
-                <option value="rate">Доля, %</option>
-              </select>
-            </label>
-            <label className="field field--narrow">
-              <span className="label">{draft.kind === 'fixed' ? 'Сумма, $' : 'Доля, %'}</span>
+              <span className="label">Доля, %</span>
               <input
                 className="input"
-                value={draft.value}
-                onChange={(event) => change(index, { value: event.target.value })}
+                value={draft.rate}
+                onChange={(event) => change(index, { rate: event.target.value })}
                 inputMode="decimal"
               />
+            </label>
+            <label className="field field--narrow">
+              <span className="label">Фикс</span>
+              <input
+                className="input"
+                value={draft.fixed}
+                onChange={(event) => change(index, { fixed: event.target.value })}
+                inputMode="decimal"
+              />
+            </label>
+            <label className="field field--narrow">
+              <span className="label">Валюта фикса</span>
+              {/*
+                Доллары вычитаются до перевода по курсу, валюта выдачи —
+                после: десять евро остаются десятью при любом курсе, а
+                десять долларов — переменным числом евро.
+
+                Со сменой валюты поле фикса очищается: десять долларов,
+                оставшиеся в поле после переключения на баты, становятся
+                десятью батами — и уезжают в ядро, потому что число само
+                по себе годное.
+              */}
+              <select
+                className="input"
+                value={draft.fixedIn}
+                onChange={(event) =>
+                  change(index, {
+                    fixedIn: event.target.value as FixedCurrency,
+                    fixed: '',
+                  })
+                }
+              >
+                <option value="usd">$</option>
+                <option value="payout">{schedule.toCode}</option>
+              </select>
             </label>
             <button
               type="button"
@@ -820,7 +883,7 @@ function FeeScheduleCard({
             // что выше, и остаётся последней всегда.
             setDrafts((current) => [
               ...current.slice(0, -1),
-              { upToUsd: '', kind: 'rate', value: '' },
+              { upToUsd: '', rate: '', fixed: '', fixedIn: 'usd' },
               ...current.slice(-1),
             ])
           }
@@ -829,13 +892,18 @@ function FeeScheduleCard({
         </button>
         <button
           type="button"
-          disabled={busy || !draftsReady(drafts)}
+          disabled={busy || !draftsReady(drafts) || !minReady}
           className="btn btn--gold"
           onClick={() =>
             onSend('/api/fee-schedules', {
               action: 'save',
               toCode: schedule.toCode,
               payoutMethod: schedule.payoutMethod,
+              // Пустой минимум не отправляется вовсе: не присланный,
+              // он снимается — сетка сохраняется целиком.
+              ...(minUsd.trim() === ''
+                ? {}
+                : { minUsd: minUsd.replace(',', '.').trim() }),
               tiers: toTiers(drafts),
             })
           }

@@ -18,8 +18,8 @@ export const dynamic = 'force-dynamic';
  * Ступени приезжают строками: денежная величина через `number` теряет
  * точность, а порог — это доллары, по которым считается цена.
  * Правдоподобие сетки — возрастание порогов, последняя ступень без
- * границы, ровно одна ставка на строку — проверяет операция ядра: форма
- * не единственный способ её позвать.
+ * границы, хотя бы одна ставка на строку и не оба фикса разом —
+ * проверяет операция ядра: форма не единственный способ её позвать.
  *
  * Право администратора тоже проверяет операция, а не маршрут: правило,
  * повторённое здесь, когда-нибудь разошлось бы с ядром.
@@ -29,12 +29,15 @@ const schema = z.discriminatedUnion('action', [
     action: z.literal('save'),
     toCode: z.string().min(1),
     payoutMethod: payoutMethodSchema,
+    /** Минимум направления в долларах; отсутствие снимает порог. */
+    minUsd: z.string().optional(),
     tiers: z
       .array(
         z.object({
           upToUsd: z.string().nullable(),
           fixedUsd: z.string().optional(),
           rateBps: z.number().int().optional(),
+          fixedPayout: z.string().optional(),
         }),
       )
       .min(1),
@@ -60,6 +63,7 @@ export async function POST(request: Request): Promise<Response> {
         ? await core.saveFeeSchedule(actor, {
             toCode: parsed.data.toCode,
             payoutMethod: parsed.data.payoutMethod,
+            minUsd: parsed.data.minUsd,
             tiers: parsed.data.tiers,
           })
         : await core.setFeeScheduleActive(

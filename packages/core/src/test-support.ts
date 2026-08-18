@@ -205,7 +205,13 @@ export function asClient(telegramUserId: bigint): Actor {
 export async function givenFeeSchedule(options: {
   toCode: string;
   payoutMethod: 'bank' | 'wallet' | 'cash';
-  tiers: readonly { upToUsd: string | null; fixedUsd?: string; rateBps?: number }[];
+  tiers: readonly {
+    upToUsd: string | null;
+    fixedUsd?: string;
+    rateBps?: number;
+    fixedPayout?: string;
+  }[];
+  minUsd?: string;
   isActive?: boolean;
 }): Promise<void> {
   await givenCurrency(options.toCode);
@@ -214,6 +220,7 @@ export async function givenFeeSchedule(options: {
     .values({
       toCode: options.toCode,
       payoutMethod: options.payoutMethod,
+      ...(options.minUsd === undefined ? {} : { minUsd: options.minUsd }),
       isActive: options.isActive ?? true,
     })
     .returning({ id: feeSchedules.id });
@@ -223,6 +230,7 @@ export async function givenFeeSchedule(options: {
       upToUsd: tier.upToUsd,
       ...(tier.fixedUsd === undefined ? {} : { fixedUsd: tier.fixedUsd }),
       ...(tier.rateBps === undefined ? {} : { rateBps: tier.rateBps }),
+      ...(tier.fixedPayout === undefined ? {} : { fixedPayout: tier.fixedPayout }),
     })),
   );
 }

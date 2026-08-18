@@ -10,11 +10,11 @@ import type {
 } from '@nemo/core';
 import {
   Money,
-  netAfterFee,
+  payoutAfterFee,
   payoutMethodOf,
   requisiteKinds,
   requisiteKindSuits,
-  usdForNet,
+  usdForPayout,
   type Amount,
   type ExchangeKind,
   type PayoutMethod,
@@ -533,17 +533,16 @@ export function ExchangeScreen({
      * Со ступенчатой комиссией обратный счёт перестаёт быть делением:
      * ставка берётся от всей суммы, и выдача на границах скачет. Правило
      * — наименьшая сумма, при которой клиент получает не меньше, чем
-     * просил; считает его та же `usdForNet`, что и ядро.
+     * просил; считает его та же `usdForPayout`, что и ядро. Цель уходит
+     * в него в валюте выдачи, а не долларами: фикс ступени бывает задан
+     * этой валютой, и деление на курс живёт внутри перебора ступеней.
      */
     if (rate.fee) {
       const { toBaseRate, fromBaseRate, tiers } = rate.fee;
       if (Money.isZero(fromBaseRate) || Money.isZero(toBaseRate)) {
         return { give: null, get: value };
       }
-      const neededUsd = usdForNet(
-        Money.divideCeil(value, fromBaseRate, MAX_FRACTION_DIGITS),
-        tiers,
-      );
+      const neededUsd = usdForPayout(value, fromBaseRate, tiers);
       return {
         give:
           neededUsd === null
@@ -806,16 +805,52 @@ export function ExchangeScreen({
    * порога не проверяет; экран о нём тогда молчит, потому что число, ни
    * на что не влияющее, читается как обещание.
    */
+  /**
+   * Долларовый эквивалент отданного — там, где цену назначает сетка.
+   * Им ядро меряет оба порога, глобальный и направленческий, — экран
+   * меряет тем же числом, иначе кнопка горела бы на заявке, которую
+   * подача отвергнет.
+   */
+  const measuredUsd =
+    rate?.fee && sides.give ? Money.multiply(sides.give, rate.fee.toBaseRate) : null;
+
+  /*
+   * Сторона глобального порога: у пары с USDT — сама сумма в USDT, у
+   * пары через сетку — долларовый эквивалент (USDT считается долларом).
+   * Без того и другого порог не меряется, и экран о нём молчит — как
+   * молчит и подача.
+   */
+  const measured =
+    (terms ? thresholdSide(terms.minAmountCode, { fromCode, toCode }, sides) : null) ??
+    measuredUsd;
   const minimumApplies = Boolean(
     terms &&
-      (fromCode === terms.minAmountCode || (toCode === terms.minAmountCode && rate)),
+      (fromCode === terms.minAmountCode ||
+        (toCode === terms.minAmountCode && rate) ||
+        measuredUsd !== null),
   );
-  const measured = terms
-    ? thresholdSide(terms.minAmountCode, { fromCode, toCode }, sides)
-    : null;
   const belowMinimum = Boolean(
     terms && measured && Money.compare(measured, terms.minAmount) < 0,
   );
+
+  /**
+   * Свой порог направления — поверх общего: владелец задаёт евро
+   * «меньше пятисот долларов — недоступно». Порог приезжает вместе с
+   * курсом и меряется тем же долларовым эквивалентом, которым ядро
+   * выбирает ступень; без курса эквивалента нет, и экран о пороге
+   * молчит — как молчит о нём и подача.
+   */
+  const directionMin = rate?.fee?.minUsd ?? null;
+  const belowDirectionMinimum = Boolean(
+    directionMin && measuredUsd && Money.compare(measuredUsd, directionMin) < 0,
+  );
+
+  /**
+   * Выдача, съеденная комиссией целиком: арифметика клампит ноль, и
+   * кнопка на нём обязана погаснуть — подавать «0 по курсу 0» ядро всё
+   * равно откажется, но узнать об этом клиент должен до нажатия.
+   */
+  const nothingLeft = Boolean(payout && Money.isZero(payout));
 
   const ready =
     !busy &&
@@ -827,6 +862,8 @@ export function ExchangeScreen({
     sides.give !== null &&
     !Money.isZero(sides.give) &&
     !belowMinimum &&
+    !belowDirectionMinimum &&
+    !nothingLeft &&
     // Пока ответ о курсе не пришёл, подавать нечего: на экране в этот
     // момент нет ни курса, ни суммы получения, а заявка ушла бы без
     // отметки — то есть по курсу, который ядро спросит заново и которого
@@ -850,9 +887,13 @@ export function ExchangeScreen({
   const obstacle =
     belowMinimum && terms
       ? `Меньше минимальной суммы обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
-      : electronic && selected === undefined
-        ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
-        : undefined;
+      : belowDirectionMinimum && directionMin
+        ? `Меньше минимальной суммы направления — ${formatMoney(directionMin, '$')}.`
+        : nothingLeft
+          ? 'Сумма слишком мала: после комиссии к выдаче ничего не останется.'
+          : electronic && selected === undefined
+            ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
+            : undefined;
 
   const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
@@ -1119,6 +1160,17 @@ export function ExchangeScreen({
             */}
             {terms && minimumApplies && !belowMinimum
               ? ` Минимальная сумма обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
+              : ''}
+            {/*
+              Порог направления — тем же правилом: справкой, пока не
+              нарушен. В долларах, как его и задал владелец: клиент
+              долларов на этом экране больше нигде не видит, но порог —
+              число из письма владельца, и переводить его в валюту
+              отдачи значило бы называть порог, которого владелец не
+              называл.
+            */}
+            {directionMin && !belowDirectionMinimum
+              ? ` Минимальная сумма направления — ${formatMoney(directionMin, '$')}.`
               : ''}
           </p>
         </>
@@ -1464,7 +1516,9 @@ function payoutFor(give: Amount, quote: QuoteView): Amount {
   if (!quote.fee) return Money.floor(Money.multiply(give, quote.rate));
   const { toBaseRate, fromBaseRate, tiers } = quote.fee;
   const usd = Money.multiply(give, toBaseRate);
-  return Money.floor(Money.multiply(netAfterFee(usd, tiers), fromBaseRate));
+  // Путь целиком, а не «остаток на курс»: фикс ступени бывает задан в
+  // валюте выдачи и вычитается уже после умножения.
+  return Money.floor(payoutAfterFee(usd, fromBaseRate, tiers));
 }
 
 /**
