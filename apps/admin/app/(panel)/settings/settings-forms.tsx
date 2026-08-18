@@ -753,8 +753,11 @@ function FeeScheduleCard({
     );
   }
 
-  // Пустое поле — «порога нет», а не ноль: ноль отвергнет ядро.
-  const minReady = minUsd.trim() === '' || isAmount(minUsd);
+  // Пустое поле — «порога нет», а не ноль: набранный ноль гасит
+  // кнопку, иначе о нём рассказал бы отказ ядра после нажатия.
+  const minReady =
+    minUsd.trim() === '' ||
+    (isAmount(minUsd) && Number(minUsd.replace(',', '.')) > 0);
 
   return (
     <div className="row row--stack">
@@ -777,11 +780,12 @@ function FeeScheduleCard({
       */}
       <div className="form-row">
         <label className="field field--narrow">
-          <span className="label">Минимум, $ (пусто — нет)</span>
+          <span className="label">Минимум, $</span>
           <input
             className="input"
             value={minUsd}
             onChange={(event) => setMinUsd(event.target.value)}
+            placeholder="порога нет"
             inputMode="decimal"
           />
         </label>

@@ -805,13 +805,30 @@ export function ExchangeScreen({
    * порога не проверяет; экран о нём тогда молчит, потому что число, ни
    * на что не влияющее, читается как обещание.
    */
+  /**
+   * Долларовый эквивалент отданного — там, где цену назначает сетка.
+   * Им ядро меряет оба порога, глобальный и направленческий, — экран
+   * меряет тем же числом, иначе кнопка горела бы на заявке, которую
+   * подача отвергнет.
+   */
+  const measuredUsd =
+    rate?.fee && sides.give ? Money.multiply(sides.give, rate.fee.toBaseRate) : null;
+
+  /*
+   * Сторона глобального порога: у пары с USDT — сама сумма в USDT, у
+   * пары через сетку — долларовый эквивалент (USDT считается долларом).
+   * Без того и другого порог не меряется, и экран о нём молчит — как
+   * молчит и подача.
+   */
+  const measured =
+    (terms ? thresholdSide(terms.minAmountCode, { fromCode, toCode }, sides) : null) ??
+    measuredUsd;
   const minimumApplies = Boolean(
     terms &&
-      (fromCode === terms.minAmountCode || (toCode === terms.minAmountCode && rate)),
+      (fromCode === terms.minAmountCode ||
+        (toCode === terms.minAmountCode && rate) ||
+        measuredUsd !== null),
   );
-  const measured = terms
-    ? thresholdSide(terms.minAmountCode, { fromCode, toCode }, sides)
-    : null;
   const belowMinimum = Boolean(
     terms && measured && Money.compare(measured, terms.minAmount) < 0,
   );
@@ -824,11 +841,16 @@ export function ExchangeScreen({
    * молчит — как молчит о нём и подача.
    */
   const directionMin = rate?.fee?.minUsd ?? null;
-  const measuredUsd =
-    rate?.fee && sides.give ? Money.multiply(sides.give, rate.fee.toBaseRate) : null;
   const belowDirectionMinimum = Boolean(
     directionMin && measuredUsd && Money.compare(measuredUsd, directionMin) < 0,
   );
+
+  /**
+   * Выдача, съеденная комиссией целиком: арифметика клампит ноль, и
+   * кнопка на нём обязана погаснуть — подавать «0 по курсу 0» ядро всё
+   * равно откажется, но узнать об этом клиент должен до нажатия.
+   */
+  const nothingLeft = Boolean(payout && Money.isZero(payout));
 
   const ready =
     !busy &&
@@ -841,6 +863,7 @@ export function ExchangeScreen({
     !Money.isZero(sides.give) &&
     !belowMinimum &&
     !belowDirectionMinimum &&
+    !nothingLeft &&
     // Пока ответ о курсе не пришёл, подавать нечего: на экране в этот
     // момент нет ни курса, ни суммы получения, а заявка ушла бы без
     // отметки — то есть по курсу, который ядро спросит заново и которого
@@ -866,9 +889,11 @@ export function ExchangeScreen({
       ? `Меньше минимальной суммы обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
       : belowDirectionMinimum && directionMin
         ? `Меньше минимальной суммы направления — ${formatMoney(directionMin, '$')}.`
-        : electronic && selected === undefined
-          ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
-          : undefined;
+        : nothingLeft
+          ? 'Сумма слишком мала: после комиссии к выдаче ничего не останется.'
+          : electronic && selected === undefined
+            ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
+            : undefined;
 
   const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';

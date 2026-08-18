@@ -512,6 +512,33 @@ describe('минимум направления у сетки', () => {
     expect(request.requestRate).toBeNull();
   });
 
+  it('отвергает подачу, за которой к выдаче не остаётся ничего', async () => {
+    // Фикс валюты выдачи больше всей выдачи: арифметика клампит ноль, и
+    // без своего правила заявка ушла бы обязательством «0 EUR по курсу
+    // 0». Глобальный минимум в норме отсекает такие суммы раньше, но он
+    // настройка, а не гарантия.
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenFeeSchedule({
+      toCode: 'EUR',
+      payoutMethod: 'bank',
+      tiers: [{ upToUsd: null, rateBps: 330, fixedPayout: '10' }],
+    });
+    await givenServiceSettings({ minExchangeAmount: '1' });
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+    const requisitesId = await givenClient(core);
+
+    // 700 ₽ — это 7 $: после 3,3% и десяти евро остаётся меньше нуля.
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'RUB',
+        toCode: 'EUR',
+        fromAmount: '700',
+        requisitesId,
+      }),
+    ).rejects.toThrow(/к выдаче ничего не остаётся/);
+  });
+
   it('квота несёт порог направления экрану', async () => {
     // Экран говорит о пороге до подачи — тем же способом, каким называет
     // общий минимум. Числа для этого должны приехать вместе с курсом.
