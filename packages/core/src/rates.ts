@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { currencyPairs } from '@nemo/db';
+import { currencies, currencyPairs } from '@nemo/db';
 import {
   MAX_ROUNDING_BPS,
   Money,
@@ -65,6 +65,15 @@ export interface QuoteView {
   /** Сколько клиент получит по этому курсу. `null`, если сумма не указана. */
   readonly toAmount: Amount | null;
   readonly markupBps: number;
+  /**
+   * Сколько знаков у валюты выдачи — тот же, каким округлило ядро.
+   *
+   * Отдаётся экрану не ради показа, а ради счёта: сумму он считает сам,
+   * и округлять её обязан тем же знаком. Свой список точностей на
+   * клиенте разошёлся бы со справочником в тот день, когда
+   * администратор заведёт новую валюту.
+   */
+  readonly payoutDecimals: number;
   readonly asOf: Date;
   /**
    * Долларовый эквивалент отдаваемой суммы — есть только там, где цену
@@ -182,20 +191,39 @@ function roundRate(rate: Amount): Amount {
 }
 
 /**
- * Сколько клиент получит — целым числом единиц.
+ * Сколько клиент получит — с точностью самой валюты.
  *
- * Дробный хвост здесь не точность, а помеха: «588,23529411 USDT»
- * читается хуже, чем «588», и ни клиенту, ни менеджеру эти знаки ничего
- * не сообщают. Как и у курса, округляется не показ, а сама величина:
- * она уходит в заявку и по ней выдают деньги, а число на экране,
- * разошедшееся с выплатой, — худшее из возможного.
+ * Как и у курса, округляется не показ, а сама величина: она уходит в
+ * заявку и по ней выдают деньги, а число на экране, разошедшееся с
+ * выплатой, — худшее из возможного.
  *
- * Вниз, а не к ближайшему: вверх сервис выдавал бы больше, чем купил.
- * Хвост при этом остаётся у сервиса и на рублёвой стороне не превышает
- * рубля, а на криптовалютной — единицы монеты.
+ * До целого числа единиц округляли до 24 августа 2026, и правило это
+ * отменено: хвост доставался сервису сверх уже названной комиссии — до
+ * единицы валюты, то есть около доллара на монете, — а клиент, считая
+ * по названной ставке, получал меньше своего расчёта. Владелец сверял
+ * доллар и не досчитался восьмидесяти трёх центов. Теперь знак берётся
+ * из справочника валют, и округление идёт к ближайшему.
  */
-export function roundPayout(amount: Amount): Amount {
-  return Money.isNegative(amount) ? amount : Money.floor(amount);
+export function roundPayout(amount: Amount, decimals: number): Amount {
+  return Money.isNegative(amount) ? amount : Money.roundTo(amount, decimals);
+}
+
+/**
+ * Сколько знаков у валюты выдачи.
+ *
+ * Спрашивается у справочника, а не берётся из таблицы в коде: состав
+ * валют — решение администратора, и вторая правда о точности разошлась
+ * бы с первой молча. Неизвестной валюты здесь быть не может — пару
+ * проверяют выше по коду, — но если справочник промолчал, целое
+ * безопаснее выдумки: так считалось до этой правки.
+ */
+async function readPayoutDecimals(executor: Executor, code: string): Promise<number> {
+  const [row] = await executor
+    .select({ decimals: currencies.decimals })
+    .from(currencies)
+    .where(eq(currencies.code, code))
+    .limit(1);
+  return row?.decimals ?? 0;
 }
 
 /**
@@ -278,14 +306,16 @@ export async function getQuote(
   const { markupBps } = await readServiceSettings(ctx.db);
   const rate = roundRate(applyMarkup(quoted.rate, markupBps));
   const fromAmount = Money.amountSchema.safeParse(input.fromAmount ?? '');
+  const payoutDecimals = await readPayoutDecimals(ctx.db, input.toCode);
 
   return {
     rate,
     toAmount:
       fromAmount.success && !Money.isNegative(fromAmount.data)
-        ? roundPayout(Money.multiply(fromAmount.data, rate))
+        ? roundPayout(Money.multiply(fromAmount.data, rate), payoutDecimals)
         : null,
     markupBps,
+    payoutDecimals,
     asOf: quoted.asOf,
   };
 }
@@ -351,12 +381,16 @@ async function quoteByFee(
   if (!toBase) return null;
 
   const usdAmount = Money.multiply(fromAmount.data, toBase.rate);
+  const payoutDecimals = await readPayoutDecimals(ctx.db, input.toCode);
   /*
    * Путь целиком считает `payoutAfterFee`, а не «остаток на курс»:
    * фикс ступени бывает задан в валюте выдачи и вычитается после
    * умножения — десять евро остаются десятью при любом курсе.
    */
-  const payout = roundPayout(payoutAfterFee(usdAmount, fromBase.rate, schedule.tiers));
+  const payout = roundPayout(
+    payoutAfterFee(usdAmount, fromBase.rate, schedule.tiers),
+    payoutDecimals,
+  );
 
   /*
    * Курс называется от посчитанной выдачи, а не наоборот: показанное
@@ -378,6 +412,7 @@ async function quoteByFee(
     },
     // Наценки в этой цене нет: её место заняла комиссия.
     markupBps: 0,
+    payoutDecimals,
     // Отметка старшего из звеньев: цена не свежее самой несвежей своей
     // половины.
     asOf: toBase.asOf <= fromBase.asOf ? toBase.asOf : fromBase.asOf,

@@ -134,6 +134,29 @@ export function round(value: Amount): Amount {
   return toAmount(new Decimal(value).toDecimalPlaces(0, Decimal.ROUND_HALF_UP));
 }
 
+/**
+ * Округление к ближайшему на знаке самой валюты.
+ *
+ * Столько знаков, сколько у валюты в справочнике: два у доллара и евро,
+ * шесть у монеты. Этим сервис называет сумму выдачи — и её же
+ * записывает в заявку, потому что округляется величина, а не показ.
+ *
+ * К ближайшему, а не вниз. Вниз хвост доставался сервису сверх уже
+ * названной комиссии — до целой единицы валюты, то есть около доллара
+ * на монете, — и расчёт клиента с калькулятором не сходился с экраном.
+ * И не вверх: половину сервис отдаёт, половину оставляет, и на длинной
+ * дистанции это ноль, а не подарок.
+ *
+ * Знак задаёт вызывающий: справочник валют живёт в базе, а этот модуль
+ * о базе не знает и знать не должен.
+ */
+export function roundTo(value: Amount, decimals: number): Amount {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > SCALE) {
+    throw new RangeError(`Знаков после запятой должно быть от 0 до ${SCALE}: ${decimals}`);
+  }
+  return toAmount(new Decimal(value).toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP));
+}
+
 /** Доля от суммы в базисных пунктах: 100 bps = 1%. */
 export function percentOf(amount: Amount, basisPoints: number): Amount {
   if (!Number.isInteger(basisPoints) || basisPoints < 0) {

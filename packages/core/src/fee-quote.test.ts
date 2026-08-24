@@ -346,8 +346,8 @@ describe('котировка с фиксом в валюте выдачи', () =
     });
 
     // 100 000 ₽ — 1 000 $: 3,3% — 33 $, остаток 967 $ по 0,8649 —
-    // 836,3583 €, минус десять евро и вниз до целого — 826 €.
-    expect(quote?.toAmount).toBe('826');
+    // 836,3583 €, минус десять евро — 826,3583 €, на двух знаках 826,36.
+    expect(quote?.toAmount).toBe('826.36');
     // Ступени доезжают до экрана целиком: по ним он считает сам, и фикс
     // в валюте выдачи обязан в них быть.
     expect(quote?.fee?.tiers[0]?.fixedPayout).toBe('10');
@@ -355,7 +355,8 @@ describe('котировка с фиксом в валюте выдачи', () =
 
   it('сходится с проверкой владельца: 70 000 ₽ дают 655 евро', async () => {
     // Числа из его сообщения: 70 000 / 87,98 — доллары, ступень до двух
-    // тысяч, 3,3% и десять евро. Его формула даёт 655,44 € — целыми 655.
+    // тысяч, 3,3% и десять евро. Его формула даёт 655,44 € — ровно это
+    // сервис теперь и называет: у евро два знака.
     await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
     await givenFeeSchedule({ toCode: 'EUR', payoutMethod: 'bank', tiers: EUR_TIERS });
     await givenServiceSettings({ minExchangeAmount: '100' });
@@ -386,7 +387,7 @@ describe('котировка с фиксом в валюте выдачи', () =
       fromAmount: '70000',
       payoutMethod: 'bank',
     });
-    expect(quote?.toAmount).toBe('655');
+    expect(quote?.toAmount).toBe('655.44');
 
     // Заявка — обязательство: записывается ровно то, что видел клиент.
     const { request } = await core.submitExchangeRequest(asClient(100n), {
@@ -396,7 +397,49 @@ describe('котировка с фиксом в валюте выдачи', () =
       fromAmount: '70000',
       requisitesId,
     });
-    expect(request.toAmount).toBe('655');
+    expect(request.toAmount).toBe('655.44');
+  });
+
+  /**
+   * Проверка владельца по доллару, присланная 24 августа 2026.
+   *
+   * Его расчёт: 70 000 / 87,98 — себестоимость 795,63 $, минус 4,5% —
+   * 759,83 $. Целое число единиц дало бы 759 и разошлось бы с его
+   * калькулятором на восемьдесят три цента; с точностью валюты сходится
+   * ровно.
+   */
+  it('сходится с проверкой владельца по доллару: 70 000 ₽ дают 759,83', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USD' });
+    await givenFeeSchedule({
+      toCode: 'USD',
+      payoutMethod: 'bank',
+      // Лестница, заведённая в панели: 795,63 попадает в ступень до
+      // двух тысяч, а там 4,5% — та ставка, по которой считал владелец.
+      tiers: [
+        { upToUsd: '500', fixedUsd: '5' },
+        { upToUsd: '2000', rateBps: 450 },
+        { upToUsd: '5000', rateBps: 350 },
+        { upToUsd: null, rateBps: 250 },
+      ],
+    });
+    const core = createCore({
+      db,
+      rateSource: givenRates({
+        'RUB/USDT': '0.011366219595362582',
+        // USDT приравнен к доллару таблицей в `fiat.ts` — как и в пути,
+        // которым идут деньги сервиса.
+        'USDT/USD': '1',
+      }),
+    });
+
+    const quote = await core.getQuote({
+      fromCode: 'RUB',
+      toCode: 'USD',
+      fromAmount: '70000',
+      payoutMethod: 'bank',
+    });
+
+    expect(quote?.toAmount).toBe('759.83');
   });
 });
 
