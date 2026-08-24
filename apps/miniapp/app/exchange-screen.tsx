@@ -513,10 +513,11 @@ export function ExchangeScreen({
 
     if (side === 'give') {
       /*
-       * Вниз до целого — тем же правилом, что и `roundPayout` в ядре.
-       * Своей копией, а не импортом: за `@nemo/core` в браузер приехал
-       * бы драйвер базы. Разойтись они не должны, и проверяет это не
-       * типаж, а то, что обе стороны считают одной и той же `Money`.
+       * До знака валюты — тем же правилом, что и `roundPayout` в ядре,
+       * и тем же знаком: он приезжает с котировкой. Своей копией, а не
+       * импортом: за `@nemo/core` в браузер приехал бы драйвер базы.
+       * Разойтись они не должны, и проверяет это не типаж, а то, что
+       * обе стороны считают одной и той же `Money`.
        */
       return { give: value, get: rate ? payoutFor(value, rate) : null };
     }
@@ -524,8 +525,8 @@ export function ExchangeScreen({
     /*
      * Обратный счёт округляется вверх, и притом до того же знака, до
      * какого сумма показывается. Отброшенный вниз хвост возвращается
-     * умножением на курс как недостача: клиент просил пятьдесят тысяч,
-     * а ядро, считая выдачу вниз до целого, записало бы 49 999.
+     * умножением на курс как недостача: просивший пятьдесят тысяч
+     * получил бы 49 999,99.
      */
     if (!rate) return { give: null, get: value };
 
@@ -1513,12 +1514,15 @@ function shownRate(quote: QuoteView, give: Amount | null): Amount | null {
  * и круг по сети означал бы секунду ожидания на каждую набранную цифру.
  */
 function payoutFor(give: Amount, quote: QuoteView): Amount {
-  if (!quote.fee) return Money.floor(Money.multiply(give, quote.rate));
+  // Знак — тот же, каким округлило ядро: он приезжает с котировкой, и
+  // свой список точностей здесь разошёлся бы со справочником валют.
+  const decimals = quote.payoutDecimals;
+  if (!quote.fee) return Money.roundTo(Money.multiply(give, quote.rate), decimals);
   const { toBaseRate, fromBaseRate, tiers } = quote.fee;
   const usd = Money.multiply(give, toBaseRate);
   // Путь целиком, а не «остаток на курс»: фикс ступени бывает задан в
   // валюте выдачи и вычитается уже после умножения.
-  return Money.floor(payoutAfterFee(usd, fromBaseRate, tiers));
+  return Money.roundTo(payoutAfterFee(usd, fromBaseRate, tiers), decimals);
 }
 
 /**
