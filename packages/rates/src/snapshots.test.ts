@@ -452,3 +452,114 @@ describe('память снимков', () => {
     expect(found?.value).toBe('первый');
   });
 });
+
+describe('потерянный запрос', () => {
+  /** Провайдер, у которого первый запрос виснет навсегда, а дальше отвечает. */
+  function givenStallingProvider() {
+    let calls = 0;
+    let stalled: ((value: string) => void) | undefined;
+    return {
+      calls: () => calls,
+      /** Довести первый, брошенный запрос до ответа — задним числом. */
+      settleStalled: (value: string) => stalled?.(value),
+      load: () => {
+        calls += 1;
+        if (calls === 1) {
+          return new Promise<string>((resolve) => {
+            stalled = resolve;
+          });
+        }
+        return Promise.resolve(`снимок ${calls}`);
+      },
+    };
+  }
+
+  it('бросает запрос, не завершившийся в срок, и клиент не ждёт его вечно', async () => {
+    /*
+     * 27 августа 2026 на боевом запрос к провайдеру завис посреди
+     * сетевого сбоя — ни ответа, ни отказа, — и кэш ждал его девять
+     * часов вместе со всеми клиентами. Теперь у ожидания есть потолок.
+     */
+    vi.useFakeTimers();
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const provider = givenStallingProvider();
+      const cache = createSnapshotCache({
+        load: provider.load,
+        ttlMs: 10_000,
+        maxAgeMs: 60_000,
+        stallMs: 15_000,
+        provider: 'Провайдер',
+      });
+
+      const reading = cache.read();
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      expect(await reading).toBeUndefined();
+      // Потеря записана: раньше о ней не было ни строки.
+      expect(complaint).toHaveBeenCalledWith(
+        expect.stringContaining('клиент ждал ответа'),
+        expect.objectContaining({ message: expect.stringContaining('брошен') }),
+      );
+    } finally {
+      complaint.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('следующее обновление идёт к провайдеру заново, а не ждёт брошенный', async () => {
+    vi.useFakeTimers();
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const provider = givenStallingProvider();
+      const cache = createSnapshotCache({
+        load: provider.load,
+        ttlMs: 10_000,
+        maxAgeMs: 60_000,
+        stallMs: 15_000,
+        provider: 'Провайдер',
+        warmUpRetryMs: 0,
+      });
+
+      // Прогрев попал на потерянный запрос: после потолка он пробует снова.
+      cache.warmUp();
+      await vi.advanceTimersByTimeAsync(15_001);
+
+      expect(provider.calls()).toBe(2);
+      expect((await cache.read())?.value).toBe('снимок 2');
+    } finally {
+      complaint.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('поздний ответ брошенного запроса в снимки не попадает', async () => {
+    // Иначе он лёг бы новейшим поверх настоящего свежего снимка — и
+    // клиент видел бы цену, которая старше той, что сервис уже знает.
+    vi.useFakeTimers();
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const provider = givenStallingProvider();
+      const cache = createSnapshotCache({
+        load: provider.load,
+        ttlMs: 10_000,
+        maxAgeMs: 60_000,
+        stallMs: 15_000,
+        provider: 'Провайдер',
+        warmUpRetryMs: 0,
+      });
+
+      cache.warmUp();
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect((await cache.read())?.value).toBe('снимок 2');
+
+      provider.settleStalled('снимок 1, опоздавший');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect((await cache.read())?.value).toBe('снимок 2');
+    } finally {
+      complaint.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+});

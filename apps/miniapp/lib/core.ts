@@ -21,10 +21,26 @@ import { ratesFromEnvironment } from '@nemo/rates';
  * потому что бот, которого клиент запускал, живёт там.
  */
 
-let instance: Core | undefined;
+/**
+ * Ядро одно на процесс, и держится оно на `globalThis`, а не в
+ * переменной модуля.
+ *
+ * Next собирает `instrumentation.ts` и маршруты в разные бандлы, и у
+ * каждого свой экземпляр этого модуля со своей переменной. С ней ядер
+ * выходило два: одно заводил хук прогрева при старте, и его никто не
+ * спрашивал, второе — первый же маршрут, и грелось оно на первом
+ * клиенте, то есть ровно так, как до хука. Замечено 27 августа 2026
+ * по десяти таймерам кэшей курса в процессе вместо пяти. Ключ —
+ * строка на `globalThis`: два бандла должны сойтись на одном имени, а
+ * не на одном объекте-символе.
+ */
+const CORE_KEY = '__nemoMiniappCore';
+type CoreHolder = { [CORE_KEY]?: Core };
 
 export function getCore(): Core {
-  if (instance) return instance;
+  const holder = globalThis as typeof globalThis & CoreHolder;
+  const shared = holder[CORE_KEY];
+  if (shared) return shared;
 
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -32,11 +48,12 @@ export function getCore(): Core {
   }
 
   const concierge = conciergeFromEnvironment();
-  instance = createCore({
+  const instance = createCore({
     db: createDatabase(url),
     requisites: { publicKey: process.env.REQUISITES_PUBLIC_KEY },
     rateSource: ratesFromEnvironment(),
     ...(concierge ? { concierge } : {}),
   });
+  holder[CORE_KEY] = instance;
   return instance;
 }
