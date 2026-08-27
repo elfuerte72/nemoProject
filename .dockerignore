@@ -11,6 +11,11 @@ node_modules
 **/*.tsbuildinfo
 
 .git
+# Кроме трёх путей, по которым сборка узнаёт свой коммит: его называет
+# `/api/health`, и без них версия была бы пустой (см. scripts/git-sha.mjs).
+!.git/HEAD
+!.git/refs/heads
+!.git/packed-refs
 .github
 
 # Секреты. В образ они попадают переменными окружения, а не файлом:

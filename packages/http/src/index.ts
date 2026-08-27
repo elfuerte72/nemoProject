@@ -97,3 +97,5 @@ export function schedulerCallDenied(request: Request): Response | null {
 
   return ok ? null : new Response('Неверный секрет', { status: 401 });
 }
+
+export { healthResponse, type DatabaseState, type HealthProbe } from './health.js';

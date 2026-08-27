@@ -62,6 +62,7 @@ import {
   listNetworks,
   setNetworkActive,
 } from './networks.js';
+import { pingDatabase } from './health.js';
 import { getQuote, type QuoteInput } from './rates.js';
 import { getServiceMarkupBps } from './settings.js';
 import { submitInquiry, type SubmitInquiryInput } from './inquiries.js';
@@ -190,6 +191,8 @@ export function createCore(ctx: CoreConfig) {
     // Без исполнителя: сети нужны и клиенту в форме реквизитов, и
     // менеджеру в панели, и секрета в списке нет.
     listActiveNetworks: () => listActiveNetworks(ctx),
+    /** Пульс базы для `/api/health`; о содержимом не говорит ничего. */
+    pingDatabase: () => pingDatabase(ctx),
 
     setMarketingConsent: (actor: Actor, consent: boolean) =>
       setMarketingConsent(ctx, actor, consent),

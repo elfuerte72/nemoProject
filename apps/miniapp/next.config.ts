@@ -1,7 +1,17 @@
 import { fileURLToPath } from 'node:url';
 import type { NextConfig } from 'next';
+import { gitSha } from '../../scripts/git-sha.mjs';
+
+const root = fileURLToPath(new URL('../..', import.meta.url));
 
 const config: NextConfig = {
+  /**
+   * Коммит сборки — в `APP_VERSION`, который отдаёт `/api/health`.
+   * Подставляется здесь, а не читается на старте: `.git` в образе нет,
+   * а `env` Next вшивает в код в момент сборки. Пустая строка — сборка
+   * вне репозитория; маршрут показывает её как `null`.
+   */
+  env: { APP_VERSION: gitSha(root) ?? '' },
   transpilePackages: [
     '@nemo/core',
     '@nemo/http',
@@ -19,7 +29,7 @@ const config: NextConfig = {
    * приложение падало бы на первом же обращении к базе. Образ несёт всё
    * рабочее пространство целиком; он крупнее, но работает.
    */
-  outputFileTracingRoot: fileURLToPath(new URL('../..', import.meta.url)),
+  outputFileTracingRoot: root,
   /**
    * Mini App проверяется с телефона, а телефон приходит не на localhost:
    * Telegram открывает только https, и разработка идёт через туннель.
