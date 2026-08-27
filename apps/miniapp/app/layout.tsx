@@ -1,4 +1,4 @@
-import { Manrope } from 'next/font/google';
+import { Onest } from 'next/font/google';
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
@@ -37,19 +37,30 @@ export const viewport: Viewport = {
  * Шрифт попадает в сборку, а не тянется с чужого домена: Mini App
  * открывают на любой сети, и лишний круг до стороннего хоста виден
  * прямо в первой отрисовке.
+ *
+ * Гарнитура здесь та, у которой кириллица нарисована первой, а не
+ * следом за латиницей. Стоял Manrope, и русский текст в нём заметно
+ * уже латинского: «ж», «щ» и «ю» на сноске в 12,5 пикселя сливаются, а
+ * его собственная документация предупреждает о неровном рисунке на
+ * малых кеглях в вариативном виде — то есть ровно в том, как шрифт
+ * здесь и применён. Onest на настоящих строках приложения шире всего
+ * на процент-другой, поэтому вёрстка осталась на месте.
+ *
+ * Переменная названа по роли, а не по гарнитуре: следующая смена
+ * шрифта не должна перебирать стили в двух приложениях.
  */
-const manrope = Manrope({
+const ui = Onest({
   subsets: ['latin', 'cyrillic'],
   // Начертания перечислены списком, но шрифт вариативный: на вес
   // сборки их число не влияет — файлы те же самые.
   weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-manrope',
+  variable: '--font-ui',
   display: 'swap',
 });
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ru" className={manrope.variable}>
+    <html lang="ru" className={ui.variable}>
       <head>
         {/*
           Без `async`: данные запуска нужны первому же запросу к серверу,
