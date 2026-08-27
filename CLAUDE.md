@@ -624,7 +624,8 @@ Single-context: `CONTEXT.md` at the root, ADRs under `docs/adr/`. See `docs/agen
 
 Ветка идёт в `dev`, не в `main`: слитое в `dev` само выезжает на
 тестовый контур с ботом `@devnemobot_bot`, и только проверенное там
-уходит PR-ом из `dev` в `main` — на боевой. README, «Два контура».
+уходит на боевой через `pnpm release` — fast-forward `main` до `dev`,
+без PR и без коммитов в `main`. README, «Два контура».
 
 ### Parallel sessions
 

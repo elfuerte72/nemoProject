@@ -9,6 +9,7 @@
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "test": "turbo test",
+    "release": "git fetch origin && git push origin origin/dev:main",
     "db:generate": "pnpm --filter @nemo/db generate",
     "db:migrate": "pnpm --filter @nemo/db migrate",
     "db:studio": "pnpm --filter @nemo/db studio",
