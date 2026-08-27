@@ -105,7 +105,7 @@ body {
   background-image: var(--bg-field);
   background-attachment: fixed;
   color: var(--text);
-  font-family: var(--font-manrope), system-ui, sans-serif;
+  font-family: var(--font-ui), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* Mini App разворачивается на весь экран: тянуть страницу целиком
