@@ -68,6 +68,20 @@ export interface SnapshotCacheOptions<T> {
    * провайдер не оживает от того, что в него стучат чаще.
    */
   readonly warmUpRetryMs?: number;
+  /**
+   * Сколько ждать запрос, который не завершается ни ответом, ни отказом,
+   * прежде чем бросить его.
+   *
+   * Такое бывает: 27 августа 2026 на боевом запрос к провайдеру завис
+   * посреди сетевого сбоя — не ответил, не отказал, и срок запроса у
+   * провайдера не сработал. Один запрос на всех означал, что вместе с
+   * ним девять часов ждали все клиенты и все тики таймера; в журнал не
+   * попало ни строки, потому что отказа не было. Потолок стоит выше
+   * срока запроса у любого провайдера — обычный отказ приходит раньше —
+   * и означает не «провайдер молчит», а «запрос потерян»: он бросается
+   * с записью в журнал, а следующее обновление идёт заново.
+   */
+  readonly stallMs?: number;
   /** Подменяется в тестах, чтобы проверить устаревание. */
   readonly now?: () => number;
 }
@@ -79,6 +93,13 @@ export interface SnapshotCacheOptions<T> {
  */
 const DEFAULT_WARM_UP_ATTEMPTS = 4;
 const DEFAULT_WARM_UP_RETRY_MS = 2_000;
+
+/**
+ * Потолок ожидания одного запроса. В пять раз больше срока запроса у
+ * провайдеров (три секунды): попасть под него может только запрос,
+ * который потерян, а не медленный.
+ */
+const DEFAULT_STALL_MS = 15_000;
 
 /**
  * Срок отметки по умолчанию — прежний потолок показа. Пять минут
@@ -108,8 +129,31 @@ export interface SnapshotCache<T> {
   warmUp(): () => void;
 }
 
+/**
+ * Обещание с потолком: не завершилось в срок — отвергается, а поздний
+ * исход самого запроса больше никого не интересует. Таймер отпущен,
+ * как и таймер обновления: ждать его процессу незачем.
+ */
+function withStallCeiling<T>(pending: Promise<T>, ms: number, stalled: () => Error): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(stalled()), ms);
+    if (typeof timer === 'object' && 'unref' in timer) timer.unref();
+    pending.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
 export function createSnapshotCache<T>(options: SnapshotCacheOptions<T>): SnapshotCache<T> {
   const now = options.now ?? Date.now;
+  const stallMs = options.stallMs ?? DEFAULT_STALL_MS;
   const quotedAgeMs = options.quotedAgeMs ?? DEFAULT_QUOTED_AGE_MS;
   // Отметка не переживает и потолка показа: память под неё длиннее его
   // была бы памятью под то, что всё равно не отдать.
@@ -146,8 +190,16 @@ export function createSnapshotCache<T>(options: SnapshotCacheOptions<T>): Snapsh
    * посетителей.
    */
   function refresh(): Promise<Snapshot<T>> {
-    inFlight ??= options
-      .load()
+    if (inFlight) return inFlight;
+
+    const attempt: Promise<Snapshot<T>> = withStallCeiling(
+      options.load(),
+      stallMs,
+      () =>
+        new Error(
+          `${options.provider}: запрос не завершился за ${stallMs / 1000} с ни ответом, ни отказом — брошен`,
+        ),
+    )
       .then((value) => {
         const snapshot: Snapshot<T> = { at: now(), value };
         snapshots.push(snapshot);
@@ -163,9 +215,13 @@ export function createSnapshotCache<T>(options: SnapshotCacheOptions<T>): Snapsh
         return snapshot;
       })
       .finally(() => {
-        inFlight = undefined;
+        // Место освобождается только за собой: брошенный запрос
+        // освобождает его раньше, и к этому моменту оно может быть
+        // занято следующим.
+        if (inFlight === attempt) inFlight = undefined;
       });
-    return inFlight;
+    inFlight = attempt;
+    return attempt;
   }
 
   /**
