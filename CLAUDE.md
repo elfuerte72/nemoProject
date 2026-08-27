@@ -620,6 +620,12 @@ The five canonical triage roles, unchanged: `needs-triage`, `needs-info`, `ready
 
 Single-context: `CONTEXT.md` at the root, ADRs under `docs/adr/`. See `docs/agents/domain.md`.
 
+### Контуры
+
+Ветка идёт в `dev`, не в `main`: слитое в `dev` само выезжает на
+тестовый контур с ботом `@devnemobot_bot`, и только проверенное там
+уходит PR-ом из `dev` в `main` — на боевой. README, «Два контура».
+
 ### Parallel sessions
 
 Several agents at once: one worktree per session, one branch that touches
