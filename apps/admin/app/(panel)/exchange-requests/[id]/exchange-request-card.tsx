@@ -345,7 +345,7 @@ export function ExchangeRequestCard({
                   <div className="row__main">
                     <span className="row__meta">
                       QR — отсканировать вторым устройством или сохранить в альбом. На
-                      iPhone: удерживайте картинку и выберите «Сохранить в Фото»
+                      iPhone: удерживайте QR и выберите «Сохранить в Фото»
                     </span>
                     <img src={qrImage} alt={`QR: ${REQUISITE_KIND_LABELS[requisites.kind]}`} className="qr" />
                     <div className="row__actions">
@@ -361,7 +361,7 @@ export function ExchangeRequestCard({
                         onClick={() => void saveQrImage(qrImage, `${requisites.kind}-${request.id.slice(0, 6)}.png`)}
                         className="btn btn--soft"
                       >
-                        Сохранить картинкой
+                        Сохранить QR
                       </button>
                     </div>
                   </div>

@@ -437,7 +437,7 @@ export const REQUISITE_COMPLAINTS = {
   holderName: 'Имя получателя — как его показывает приложение получателя, не по-русски и не длиннее ста знаков',
   alipayAccount: 'Аккаунт Alipay — это телефон или e-mail',
   alipayQr: 'Это не QR приёма Alipay: внутри должна быть ссылка на alipay.com',
-  noQr: 'На картинке не нашлось QR. Выберите скриншот, где QR виден целиком и крупно',
+  noQr: 'QR на скриншоте не нашёлся. Выберите скриншот, где QR виден целиком и крупно',
 } as const;
 
 /**
@@ -488,7 +488,7 @@ const PROMPTPAY_ID_TAGS: Readonly<Record<string, PromptPayIdType>> = {
   '03': 'ewallet',
 };
 
-const PROMPTPAY_NOT_QR = 'Это не QR для перевода: выберите картинку с PromptPay-QR';
+const PROMPTPAY_NOT_QR = 'Это не QR для перевода: выберите PromptPay-QR';
 
 /** Поля «тег, длина, значение» подряд; `null`, если строка не разбирается. */
 function readTlv(payload: string): Map<string, string> | null {
@@ -539,7 +539,7 @@ export function parsePromptPay(payload: string): PromptPayParse {
   if (crc16(value.slice(0, crcAt + 4)) !== value.slice(crcAt + 4).toUpperCase()) {
     return {
       ok: false,
-      complaint: 'QR прочитан не целиком: контрольная сумма не сходится, выберите картинку почётче',
+      complaint: 'QR прочитан не целиком: контрольная сумма не сходится, выберите QR почётче',
     };
   }
 
@@ -561,7 +561,7 @@ export function parsePromptPay(payload: string): PromptPayParse {
 
   const ids = [...inner.entries()].filter(([tag]) => tag in PROMPTPAY_ID_TAGS);
   if (ids.length !== 1) {
-    return { ok: false, complaint: 'В QR не один получатель: выберите другую картинку' };
+    return { ok: false, complaint: 'В QR не один получатель: выберите другой QR' };
   }
 
   if (fields.has('54')) {
