@@ -29,6 +29,17 @@ describe('renderRatesMessage', () => {
     expect(message).toContain('Покупаете USDT по 83 ₽');
   });
 
+  it('называет рубль с копейками — тем же числом, что на черте курса', () => {
+    // Письмо владельца: продажа 85,5 − 2 % = 83,79, покупка хранится
+    // частным от 87,25. Целого в сообщении больше нет.
+    const message = renderRatesMessage({
+      quoted: [pair('USDT', 'RUB', '83.79'), pair('RUB', 'USDT', '0.011461318051575931')],
+      hasCash: false,
+    });
+    expect(message).toContain('Продаёте USDT по 83,79 ₽');
+    expect(message).toContain('Покупаете USDT по 87,25 ₽');
+  });
+
   it('ведёт столбец валют выдачи одной стороной — за монету', () => {
     const message = renderRatesMessage({ quoted: DIRECTORY, hasCash: true });
     // У валюты, которой за монету дают меньше одной, строка не
