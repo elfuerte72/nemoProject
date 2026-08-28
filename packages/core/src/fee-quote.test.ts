@@ -181,8 +181,10 @@ describe('котировка по сетке комиссии', () => {
       payoutMethod: 'bank',
     });
 
-    // Без комиссии и без наценки: сотая доллара на тридцать бат — 0,3.
-    expect(quote?.toAmount).toBe('30000');
+    // Без комиссии и без наценки — по котировке 0,3 бата за рубль,
+    // округлённой до сотых крупной стороной: 3,333… рубля за бат вверх
+    // это 3,34, и сто тысяч рублей дают 29 940,12 бата.
+    expect(quote?.toAmount).toBe('29940.12');
   });
 
   it('молчит, когда молчит хотя бы одно звено пути', async () => {
@@ -220,13 +222,14 @@ describe('котировка по сетке комиссии', () => {
 });
 
 describe('заявка по сетке комиссии', () => {
-  /** Клиент с реквизитом для рублёвой выдачи — карта тайского банка. */
-  async function givenClientWithCard(core: ReturnType<typeof createCore>): Promise<string> {
+  /** Клиент с реквизитом для батов — счёт в тайском банке. */
+  async function givenClientWithAccount(core: ReturnType<typeof createCore>): Promise<string> {
     await core.registerClient({ telegramUserId: 100n, username: 'elfuerte' });
     const requisites = await core.saveRequisites(asClient(100n), {
-      kind: 'card',
+      kind: 'account',
       bankName: 'Kasikornbank',
-      cardNumber: '4111111111111111',
+      accountNumber: '766-0-246658',
+      holderName: 'ALEKSEI PLOTNIKOV',
     });
     return requisites.id;
   }
@@ -243,7 +246,7 @@ describe('заявка по сетке комиссии', () => {
         privateKey: testRequisiteKeys.privateKey,
       },
     });
-    const requisitesId = await givenClientWithCard(core);
+    const requisitesId = await givenClientWithAccount(core);
 
     const { request } = await core.submitExchangeRequest(asClient(100n), {
       kind: 'electronic',
@@ -274,7 +277,7 @@ describe('заявка по сетке комиссии', () => {
         privateKey: testRequisiteKeys.privateKey,
       },
     });
-    const requisitesId = await givenClientWithCard(core);
+    const requisitesId = await givenClientWithAccount(core);
 
     // 5 000 ₽ — это 50 $ при пороге в сотню.
     await expect(
@@ -289,8 +292,9 @@ describe('заявка по сетке комиссии', () => {
   });
 
   it('берёт ставку того способа, которым уйдут деньги по реквизиту', async () => {
-    // Карта — банковский перевод, кошелёк — кошельковая ставка. Клиент
-    // способ не называет: его говорит запись, на которую придут деньги.
+    // Тайский счёт — банковский перевод, кошелёк — кошельковая ставка.
+    // Клиент способ не называет: его говорит запись, на которую придут
+    // деньги.
     await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
     await givenFeeSchedule({ toCode: 'THB', payoutMethod: 'bank', tiers: BANK_TIERS });
     await givenFeeSchedule({ toCode: 'THB', payoutMethod: 'wallet', tiers: WALLET_TIERS });
@@ -303,7 +307,7 @@ describe('заявка по сетке комиссии', () => {
         privateKey: testRequisiteKeys.privateKey,
       },
     });
-    const requisitesId = await givenClientWithCard(core);
+    const requisitesId = await givenClientWithAccount(core);
 
     const { request } = await core.submitExchangeRequest(asClient(100n), {
       kind: 'electronic',
@@ -314,7 +318,7 @@ describe('заявка по сетке комиссии', () => {
     });
 
     // Банковская ставка (4,5%), а не кошельковая (5,5%): деньги идут на
-    // карту.
+    // банковский счёт.
     expect(request.toAmount).toBe('28650');
   });
 });
@@ -373,14 +377,6 @@ describe('котировка с фиксом в валюте выдачи', () =
         privateKey: testRequisiteKeys.privateKey,
       },
     });
-    await core.registerClient({ telegramUserId: 100n, username: 'elfuerte' });
-    const requisites = await core.saveRequisites(asClient(100n), {
-      kind: 'card',
-      bankName: 'Kasikornbank',
-      cardNumber: '4111111111111111',
-    });
-    const requisitesId = requisites.id;
-
     const quote = await core.getQuote({
       fromCode: 'RUB',
       toCode: 'EUR',
@@ -388,16 +384,8 @@ describe('котировка с фиксом в валюте выдачи', () =
       payoutMethod: 'bank',
     });
     expect(quote?.toAmount).toBe('655.44');
-
-    // Заявка — обязательство: записывается ровно то, что видел клиент.
-    const { request } = await core.submitExchangeRequest(asClient(100n), {
-      kind: 'electronic',
-      fromCode: 'RUB',
-      toCode: 'EUR',
-      fromAmount: '70000',
-      requisitesId,
-    });
-    expect(request.toAmount).toBe('655.44');
+    // Что заявка записывает ровно посчитанное, проверено на батах выше:
+    // заявка на евро не подаётся, пока у евро нет родов записи.
   });
 
   /**
@@ -444,9 +432,13 @@ describe('котировка с фиксом в валюте выдачи', () =
 });
 
 describe('минимум направления у сетки', () => {
-  /** Сетка евро с порогом владельца: меньше пятисот долларов — отказ. */
+  /**
+   * Сетка с порогом владельца — тем, что он задал евро: меньше пятисот
+   * долларов — отказ. Заведена на баты, потому что заявка на евро не
+   * подаётся, пока у евро нет родов записи; порог от валюты не зависит.
+   */
   const TIERS_WITH_MIN = {
-    toCode: 'EUR',
+    toCode: 'THB',
     payoutMethod: 'bank' as const,
     minUsd: '500',
     tiers: [{ upToUsd: null, rateBps: 330, fixedPayout: '10' }],
@@ -466,20 +458,21 @@ describe('минимум направления у сетки', () => {
   async function givenClient(core: ReturnType<typeof createCore>): Promise<string> {
     await core.registerClient({ telegramUserId: 100n, username: 'elfuerte' });
     const requisites = await core.saveRequisites(asClient(100n), {
-      kind: 'card',
+      kind: 'account',
       bankName: 'Kasikornbank',
-      cardNumber: '4111111111111111',
+      accountNumber: '766-0-246658',
+      holderName: 'ALEKSEI PLOTNIKOV',
     });
     return requisites.id;
   }
 
   it('отвергает подачу ниже порога направления с внятным текстом', async () => {
-    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
     await givenFeeSchedule(TIERS_WITH_MIN);
     // Глобальный минимум ниже порога сетки: отказ должен прийти именно
     // от направления, а не от общего правила.
     await givenServiceSettings({ minExchangeAmount: '35' });
-    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/THB': '32.82' });
     const requisitesId = await givenClient(core);
 
     // 7 000 ₽ — это 70 $: выше глобальных 35, ниже пятисот сетки.
@@ -487,7 +480,7 @@ describe('минимум направления у сетки', () => {
       core.submitExchangeRequest(asClient(100n), {
         kind: 'electronic',
         fromCode: 'RUB',
-        toCode: 'EUR',
+        toCode: 'THB',
         fromAmount: '7000',
         requisitesId,
       }),
@@ -495,17 +488,17 @@ describe('минимум направления у сетки', () => {
   });
 
   it('ровно на пороге подача проходит', async () => {
-    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
     await givenFeeSchedule(TIERS_WITH_MIN);
     await givenServiceSettings({ minExchangeAmount: '35' });
-    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/THB': '32.82' });
     const requisitesId = await givenClient(core);
 
     // 50 000 ₽ — ровно 500 $: порог включительный, как и у ступеней.
     const { request } = await core.submitExchangeRequest(asClient(100n), {
       kind: 'electronic',
       fromCode: 'RUB',
-      toCode: 'EUR',
+      toCode: 'THB',
       fromAmount: '50000',
       requisitesId,
     });
@@ -513,22 +506,22 @@ describe('минимум направления у сетки', () => {
   });
 
   it('глобальный минимум продолжает действовать поверх', async () => {
-    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
     // Сетка без своего порога, глобальный — сотня.
     await givenFeeSchedule({
-      toCode: 'EUR',
+      toCode: 'THB',
       payoutMethod: 'bank',
       tiers: [{ upToUsd: null, rateBps: 330, fixedPayout: '10' }],
     });
     await givenServiceSettings({ minExchangeAmount: '100' });
-    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/THB': '32.82' });
     const requisitesId = await givenClient(core);
 
     await expect(
       core.submitExchangeRequest(asClient(100n), {
         kind: 'electronic',
         fromCode: 'RUB',
-        toCode: 'EUR',
+        toCode: 'THB',
         fromAmount: '7000',
         requisitesId,
       }),
@@ -536,7 +529,7 @@ describe('минимум направления у сетки', () => {
   });
 
   it('не применяет порог там, где долларовый эквивалент не посчитан', async () => {
-    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
     await givenFeeSchedule(TIERS_WITH_MIN);
     await givenServiceSettings({ minExchangeAmount: '35' });
     // Провайдер молчит: котировки нет, долларов не посчитать. Отказ по
@@ -548,7 +541,7 @@ describe('минимум направления у сетки', () => {
     const { request } = await core.submitExchangeRequest(asClient(100n), {
       kind: 'electronic',
       fromCode: 'RUB',
-      toCode: 'EUR',
+      toCode: 'THB',
       fromAmount: '7000',
       requisitesId,
     });
@@ -557,25 +550,26 @@ describe('минимум направления у сетки', () => {
 
   it('отвергает подачу, за которой к выдаче не остаётся ничего', async () => {
     // Фикс валюты выдачи больше всей выдачи: арифметика клампит ноль, и
-    // без своего правила заявка ушла бы обязательством «0 EUR по курсу
+    // без своего правила заявка ушла бы обязательством «0 THB по курсу
     // 0». Глобальный минимум в норме отсекает такие суммы раньше, но он
     // настройка, а не гарантия.
-    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
     await givenFeeSchedule({
-      toCode: 'EUR',
+      toCode: 'THB',
       payoutMethod: 'bank',
-      tiers: [{ upToUsd: null, rateBps: 330, fixedPayout: '10' }],
+      tiers: [{ upToUsd: null, rateBps: 330, fixedPayout: '300' }],
     });
     await givenServiceSettings({ minExchangeAmount: '1' });
-    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/THB': '32.82' });
     const requisitesId = await givenClient(core);
 
-    // 700 ₽ — это 7 $: после 3,3% и десяти евро остаётся меньше нуля.
+    // 700 ₽ — это 7 $, то есть 222 бата: после 3,3% и трёхсот бат фикса
+    // остаётся меньше нуля.
     await expect(
       core.submitExchangeRequest(asClient(100n), {
         kind: 'electronic',
         fromCode: 'RUB',
-        toCode: 'EUR',
+        toCode: 'THB',
         fromAmount: '700',
         requisitesId,
       }),
@@ -585,17 +579,136 @@ describe('минимум направления у сетки', () => {
   it('квота несёт порог направления экрану', async () => {
     // Экран говорит о пороге до подачи — тем же способом, каким называет
     // общий минимум. Числа для этого должны приехать вместе с курсом.
-    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'EUR' });
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
     await givenFeeSchedule(TIERS_WITH_MIN);
-    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/EUR': '0.8649' });
+    const core = coreWith({ 'RUB/USDT': '0.01', 'USDT/THB': '32.82' });
 
     const quote = await core.getQuote({
       fromCode: 'RUB',
-      toCode: 'EUR',
+      toCode: 'THB',
       fromAmount: '100000',
       payoutMethod: 'bank',
     });
 
     expect(quote?.fee?.minUsd).toBe('500');
+  });
+});
+
+/*
+ * Способ выдачи говорит сама запись, а не только её род: PromptPay из
+ * кошелька идёт по кошельковой сетке, PromptPay из банка — по
+ * банковской, Alipay — по кошельковой. Иначе юань по телефону шёл бы по
+ * общей наценке вместо своей ставки — так и было до этой правки.
+ */
+describe('сетка по записи, на которую придут деньги', () => {
+  const PROMPTPAY_EWALLET =
+    '00020101021129390016A000000677010111031514000000000061453037645802TH63042D0B';
+  const PROMPTPAY_PHONE =
+    '00020101021129370016A0000006770101110113006681234567853037645802TH6304823E';
+
+  async function givenThaiSchedules(): Promise<ReturnType<typeof createCore>> {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'THB' });
+    await givenFeeSchedule({ toCode: 'THB', payoutMethod: 'bank', tiers: BANK_TIERS });
+    await givenFeeSchedule({ toCode: 'THB', payoutMethod: 'wallet', tiers: WALLET_TIERS });
+    const core = createCore({
+      db,
+      rateSource: givenRates(RATES),
+      requisites: { publicKey: testRequisiteKeys.publicKey },
+    });
+    await core.registerClient({ telegramUserId: 100n });
+    return core;
+  }
+
+  it('PromptPay из кошелька — по кошельковой сетке', async () => {
+    const core = await givenThaiSchedules();
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'promptpay',
+      qr: PROMPTPAY_EWALLET,
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'THB',
+      fromAmount: '100',
+      requisitesId: requisites.id,
+    });
+
+    // Сто долларов минус фикс кошелька в десять — девяносто, по тридцать.
+    expect(request.toAmount).toBe('2700');
+  });
+
+  it('PromptPay из банка — по банковской', async () => {
+    const core = await givenThaiSchedules();
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'promptpay',
+      qr: PROMPTPAY_PHONE,
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'THB',
+      fromAmount: '100',
+      requisitesId: requisites.id,
+    });
+
+    // Фикс банка — пять: девяносто пять по тридцать.
+    expect(request.toAmount).toBe('2850');
+  });
+
+  it('тайский счёт — по банковской', async () => {
+    const core = await givenThaiSchedules();
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'account',
+      bankName: 'Kasikornbank',
+      accountNumber: '766-0-246658',
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'THB',
+      fromAmount: '100',
+      requisitesId: requisites.id,
+    });
+
+    expect(request.toAmount).toBe('2850');
+  });
+
+  it('Alipay — по кошельковой сетке юаня, а не по наценке', async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'CNY' });
+    // Сетка юаня из ТЗ: десять долларов до пятисот.
+    await givenFeeSchedule({
+      toCode: 'CNY',
+      payoutMethod: 'wallet',
+      tiers: [{ upToUsd: '500', fixedUsd: '10' }, { upToUsd: null, rateBps: 200 }],
+    });
+    await givenServiceSettings({ markupBps: 200 });
+    const core = createCore({
+      db,
+      rateSource: givenRates({ ...RATES, 'USDT/CNY': '7' }),
+      requisites: { publicKey: testRequisiteKeys.publicKey },
+    });
+    await core.registerClient({ telegramUserId: 100n });
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'alipay',
+      account: '7-9536656387',
+      holderName: 'IAKHIN RADMIR',
+    });
+
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'CNY',
+      fromAmount: '100',
+      requisitesId: requisites.id,
+    });
+
+    // Девяносто долларов по семь — 630 юаней; по наценке было бы 686.
+    expect(request.toAmount).toBe('630');
   });
 });

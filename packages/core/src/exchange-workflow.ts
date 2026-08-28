@@ -574,6 +574,7 @@ export async function isRequestPricedBySchedule(
       toCode: exchangeRequests.toCode,
       requestRate: exchangeRequests.requestRate,
       requisiteKind: clientRequisites.kind,
+      promptpayIdType: clientRequisites.promptpayIdType,
     })
     .from(exchangeRequests)
     .leftJoin(clientRequisites, eq(clientRequisites.id, exchangeRequests.requisitesId))
@@ -592,7 +593,7 @@ export async function isRequestPricedBySchedule(
       ? 'cash'
       : row.requisiteKind === null
         ? 'bank'
-        : payoutMethodOf(row.requisiteKind);
+        : payoutMethodOf({ kind: row.requisiteKind, promptpayIdType: row.promptpayIdType });
 
   return (await readFeeSchedule(ctx.db, row.toCode, payoutMethod)) !== null;
 }

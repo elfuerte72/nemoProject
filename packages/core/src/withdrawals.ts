@@ -13,7 +13,8 @@ import {
   withdrawalRequestStatuses,
   isWithdrawalOpen,
   type Amount,
-  type RequisiteKind,
+  isServiceCurrencyRequisiteKind,
+  type ServiceCurrencyRequisiteKind,
   type WithdrawalMethod,
   type WithdrawalRequestStatus,
 } from '@nemo/types';
@@ -134,9 +135,17 @@ function notificationFor(row: WithdrawalRow): Notification {
  * отправляет деньги через банк. Кошелёк — это криптовалюта, и другого
  * способа у него нет.
  */
-function methodOf(kind: RequisiteKind): WithdrawalMethod {
+function methodOf(kind: ServiceCurrencyRequisiteKind): WithdrawalMethod {
   return kind === 'wallet' ? 'crypto' : 'bank';
 }
+
+/**
+ * Баллы выплачиваются в рублях и USDT — на телефон, карту и
+ * криптокошелёк. Тайский счёт, PromptPay и Alipay — роды батов и юаней,
+ * а в них сервис баллов не платит; подача такую запись отвергает, и до
+ * раскрытия она не доходит.
+ */
+const NOT_FOR_BONUSES = 'Баллы выплачиваются на телефон, карту или криптокошелёк: выберите другую запись';
 
 /**
  * Реквизит одной строкой — так, как его читает менеджер перед выплатой.
@@ -166,6 +175,10 @@ function revealed(
       ]
         .filter(Boolean)
         .join(' · ');
+    default:
+      // Подача отвергает такие записи раньше, и до раскрытия они не
+      // доходят: это инвариант, а не отказ клиенту.
+      throw new Error(`Заявка на вывод ссылается на запись рода ${requisites.kind}`);
   }
 }
 
@@ -223,6 +236,9 @@ export async function submitWithdrawalRequest(
       .limit(1);
     if (!requisites) {
       throw new NotFoundError('Реквизиты не найдены');
+    }
+    if (!isServiceCurrencyRequisiteKind(requisites.kind)) {
+      throw new InvalidInputError(NOT_FOR_BONUSES);
     }
 
     // Сеть могла быть выключена после того, как клиент завёл кошелёк:

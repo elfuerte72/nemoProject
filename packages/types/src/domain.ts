@@ -124,9 +124,83 @@ export const requisiteKinds = [
   'phone', // перевод по номеру телефона
   'card', // перевод на карту
   'wallet', // перевод на криптокошелёк
+  'account', // перевод на тайский банковский счёт
+  'promptpay', // Thai QR: PromptPay по QR из банка или кошелька
+  'alipay', // Alipay по телефону или e-mail аккаунта
+  'alipay_qr', // Alipay по QR приёма
 ] as const;
 export const requisiteKindSchema = z.enum(requisiteKinds);
 export type RequisiteKind = z.infer<typeof requisiteKindSchema>;
+
+/**
+ * Роды записи в валютах сервиса — рублях и USDT, тех, что он держит сам.
+ *
+ * По ним сервис принимает оплату (счета сервиса) и выплачивает баллы:
+ * в батах и юанях он не принимает и баллов не платит, и роды этих валют
+ * ни там, ни там не предлагаются.
+ */
+export const serviceCurrencyRequisiteKinds = ['phone', 'card', 'wallet'] as const;
+export type ServiceCurrencyRequisiteKind = (typeof serviceCurrencyRequisiteKinds)[number];
+
+export function isServiceCurrencyRequisiteKind(
+  kind: RequisiteKind,
+): kind is ServiceCurrencyRequisiteKind {
+  return (serviceCurrencyRequisiteKinds as readonly RequisiteKind[]).includes(kind);
+}
+
+/**
+ * Что внутри PromptPay-QR: к чему привязан получатель.
+ *
+ * Телефон и ID-карта ведут на банковский счёт, пятнадцатизначный номер —
+ * на электронный кошелёк (TrueMoney и подобные). От этого зависит
+ * способ выдачи, а с ним и сетка комиссии.
+ */
+export const promptPayIdTypes = ['phone', 'national_id', 'ewallet'] as const;
+export const promptPayIdTypeSchema = z.enum(promptPayIdTypes);
+export type PromptPayIdType = z.infer<typeof promptPayIdTypeSchema>;
+
+/**
+ * Тип идентификатора словами — так запись узнаётся в списке клиента, в
+ * журнале доступа и в карточке менеджера. Слова здесь, как и у курса
+ * (`sayRate`): три копии в трёх приложениях разошлись бы первой правкой.
+ */
+export const PROMPTPAY_ID_LABELS: Record<PromptPayIdType, string> = {
+  phone: 'телефон',
+  national_id: 'ID-карта',
+  ewallet: 'кошелёк',
+};
+
+/**
+ * Какими родами записи валюта приходит клиенту.
+ *
+ * Таблица, а не правило по природе валюты: тайский счёт — фиатный, но
+ * рубли на него не приходят, и «фиат — телефон или карта» с валютами
+ * выдачи перестало быть правдой. У валюты, которой здесь нет, родов
+ * нет вовсе: клиент видит «в разработке», и заявка не подаётся.
+ *
+ * Живёт в доменных типах рядом с родами: по ней ядро принимает запись к
+ * заявке, а экран показывает подходящие записи и роды формы — своя
+ * копия у экрана разошлась бы с ядром молча.
+ */
+const REQUISITE_KINDS_BY_CURRENCY: Readonly<Record<string, readonly RequisiteKind[]>> = {
+  RUB: ['phone', 'card'],
+  USDT: ['wallet'],
+  THB: ['account', 'promptpay'],
+  CNY: ['alipay', 'alipay_qr'],
+};
+
+export function requisiteKindsFor(currencyCode: string): readonly RequisiteKind[] {
+  return REQUISITE_KINDS_BY_CURRENCY[currencyCode.toUpperCase()] ?? [];
+}
+
+/** Валюты, у которых есть роды записи: их и предлагает форма в профиле. */
+export function requisiteCurrencyCodes(): readonly string[] {
+  return Object.keys(REQUISITE_KINDS_BY_CURRENCY);
+}
+
+export function requisiteKindSuitsCurrency(kind: RequisiteKind, currencyCode: string): boolean {
+  return requisiteKindsFor(currencyCode).includes(kind);
+}
 
 /**
  * Куда уходит выдача. От этого зависит ставка комиссии: перевод в
@@ -141,14 +215,32 @@ export const payoutMethodSchema = z.enum(payoutMethods);
 export type PayoutMethod = z.infer<typeof payoutMethodSchema>;
 
 /**
- * Каким способом уйдут деньги по этому реквизиту.
+ * Каким способом уйдут деньги по этой записи.
  *
- * Правило живёт здесь, рядом с видами реквизита, а не в ядре: по нему
- * же экран выбирает сетку, чтобы показать клиенту ту цену, по которой
- * заявка и уйдёт.
+ * Из записи, а не из одного рода: у PromptPay способ говорит тип
+ * идентификатора внутри QR — телефон и ID-карта привязаны к банку,
+ * кошелёк к кошельку. Тайский счёт — банк; оба Alipay — кошелёк.
+ *
+ * Правило живёт здесь, рядом с родами, а не в ядре: по нему же экран
+ * выбирает сетку, чтобы показать клиенту ту цену, по которой заявка и
+ * уйдёт.
  */
-export function payoutMethodOf(kind: RequisiteKind): PayoutMethod {
-  return kind === 'wallet' ? 'wallet' : 'bank';
+export function payoutMethodOf(record: {
+  readonly kind: RequisiteKind;
+  readonly promptpayIdType: PromptPayIdType | null;
+}): PayoutMethod {
+  switch (record.kind) {
+    case 'wallet':
+    case 'alipay':
+    case 'alipay_qr':
+      return 'wallet';
+    case 'promptpay':
+      return record.promptpayIdType === 'ewallet' ? 'wallet' : 'bank';
+    case 'phone':
+    case 'card':
+    case 'account':
+      return 'bank';
+  }
 }
 
 /** Валюта бывает фиатной и криптовалютной: от этого зависит, куда её отправлять. */
@@ -172,16 +264,16 @@ export const inProgressExchangeStatuses = exchangeRequestStatuses.filter(
 );
 
 /**
- * Подходит ли реквизит валюте, которую по нему отправляют или на
- * которую по нему принимают.
+ * Подходит ли счёт сервиса валюте, в которой на него принимают.
  *
  * Рубли приходят на карту или по телефону, USDT — на кошелёк. Правило
- * живёт в доменных типах, а не в операции: отказывает всё равно
- * операция, но экран должен показать только подходящие записи — и
- * делать это по своей копии правила означало бы разойтись с ядром
- * молча.
+ * по природе валюты, а не по таблице родов: счета сервиса заводятся
+ * только в валютах сервиса, и новые роды — тайский счёт, PromptPay,
+ * Alipay — сюда не проходят: в батах и юанях сервис не принимает. Записи
+ * клиента подбираются по таблице (`requisiteKindSuitsCurrency`).
  */
-export function requisiteKindSuits(kind: RequisiteKind, currency: CurrencyKind): boolean {
+export function serviceAccountKindSuits(kind: RequisiteKind, currency: CurrencyKind): boolean {
+  if (!isServiceCurrencyRequisiteKind(kind)) return false;
   return currency === 'crypto' ? kind === 'wallet' : kind !== 'wallet';
 }
 
@@ -272,6 +364,215 @@ const WALLET_ADDRESS_FORMS: Readonly<Record<string, RegExp>> = {
 export function looksLikeWalletAddress(network: string, address: string): boolean {
   const form = WALLET_ADDRESS_FORMS[network.toUpperCase()];
   return form ? form.test(address.trim()) : address.trim().length > 0;
+}
+
+/**
+ * Номер тайского банковского счёта — по числу цифр.
+ *
+ * У большинства банков десять, у GSB и BAAC двенадцать; в приложении
+ * банка номер напечатан с дефисами — «766-0-246658», — и разделители
+ * снимаются. Контрольной суммы у тайского номера счёта не существует,
+ * и ловится здесь только не то число цифр.
+ */
+export function looksLikeThaiAccountNumber(value: string): boolean {
+  if (!NUMBER_NOISE.test(value)) return false;
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 12;
+}
+
+/**
+ * Имя получателя — как его показывает приложение получателя перед
+ * отправкой: менеджер сверяет его глазами. Непустое, не длиннее строки,
+ * которую можно сверить, и не кириллицей: тайский банк и Alipay пишут
+ * имя латиницей — «ALEKSEI PLOTNIKOV», «IAKHIN RADMIR», — а клиент,
+ * набравший его по-русски, сверить менеджеру ничего не даст. Тайское
+ * и китайское письмо не запрещены: у местного получателя имя своё.
+ */
+export const MAX_HOLDER_NAME = 100;
+const CYRILLIC = /[\u0400-\u04ff]/;
+
+export function looksLikeHolderName(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= MAX_HOLDER_NAME && !CYRILLIC.test(trimmed);
+}
+
+/** Форма e-mail: что-то, «собака», домен с точкой. Опечатка, а не подделка. */
+const EMAIL_FORM = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Аккаунт Alipay — телефон или e-mail: так в Alipay находят получателя.
+ * Телефон — по нынешнему правилу для телефона, e-mail — по форме.
+ */
+export function looksLikeAlipayAccount(value: string): boolean {
+  const trimmed = value.trim();
+  return looksLikePhone(trimmed) || EMAIL_FORM.test(trimmed);
+}
+
+/**
+ * Содержимое QR приёма Alipay — ссылка на домен Alipay.
+ *
+ * Регистр не важен: сканер часто отдаёт QR прописными. Домен проверяется
+ * как хост, а не как подстрока: «alipay.com.example.net» — чужой.
+ */
+const ALIPAY_QR_FORM = /^https?:\/\/(?:[a-z0-9-]+\.)*alipay\.com\/\S+$/i;
+
+export function looksLikeAlipayQr(value: string): boolean {
+  return ALIPAY_QR_FORM.test(value.trim());
+}
+
+/**
+ * Чем запись отвергается — словами, одними на операцию и на форму.
+ *
+ * Форма говорит их до сохранения, операция — отказом; живут они здесь,
+ * потому что форма в браузере ядра не видит, а разойтись двум наборам
+ * слов об одной ошибке нельзя: клиент читал бы два разных объяснения
+ * одной опечатки.
+ */
+export const REQUISITE_COMPLAINTS = {
+  phone: 'Телефон не похож на номер: в нём должно быть от 10 до 15 цифр',
+  card: 'Номер карты не сходится по контрольной цифре — проверьте, не переставлены ли цифры',
+  walletAddress: (network: string) =>
+    `Адрес не похож на адрес сети ${network} — проверьте, целиком ли он скопирован`,
+  thaiAccount: 'Номер счёта не похож на тайский: в нём от 10 до 12 цифр',
+  holderName: 'Имя получателя — как его показывает приложение получателя, не по-русски и не длиннее ста знаков',
+  alipayAccount: 'Аккаунт Alipay — это телефон или e-mail',
+  alipayQr: 'Это не QR приёма Alipay: внутри должна быть ссылка на alipay.com',
+  noQr: 'На картинке не нашлось QR. Выберите скриншот, где QR виден целиком и крупно',
+} as const;
+
+/**
+ * Хвост идентификатора из QR — всё, что о нём видно без расшифровки.
+ *
+ * Три знака у PromptPay — столько же показывает сам кошелёк
+ * («140-*********-614»); четыре — у кода в ссылке Alipay, без параметров
+ * и закрывающей косой черты: они одну ссылку от другой не отличают.
+ * Считается здесь, чтобы форма показала клиенту ровно тот хвост, под
+ * которым запись потом встанет в список.
+ */
+export function promptPayHint(id: string): string {
+  return `…${id.slice(-3)}`;
+}
+
+export function alipayQrHint(url: string): string {
+  const code = url.trim().replace(/[?#].*$/, '').replace(/\/+$/, '');
+  return `…${code.slice(-4)}`;
+}
+
+/**
+ * Разбор PromptPay-QR — строки по стандарту EMVCo MPM.
+ *
+ * QR читается на устройстве клиента, и сюда приходит только строка.
+ * Внутри — поля «тег, длина, значение»: индикатор формата, шаблон счёта
+ * с идентификатором приложения PromptPay и одним идентификатором
+ * получателя, валюта, страна, контрольная сумма. Проверяется ровно то,
+ * что делает строку переводом на этого получателя: приложение —
+ * PromptPay-перевод, а не оплата счёта; идентификатор — ровно один;
+ * контрольная сумма сходится — иначе картинка прочитана не целиком;
+ * поля суммы нет — QR с зашитой суммой отправит не то, что просили.
+ *
+ * Отказ — словами: их же показывает форма до сохранения и называет
+ * операция при отказе, чтобы клиент выбрал другую картинку, а не
+ * гадал, что не так.
+ */
+export type PromptPayParse =
+  | { readonly ok: true; readonly idType: PromptPayIdType; readonly id: string }
+  | { readonly ok: false; readonly complaint: string };
+
+/** Идентификатор приложения PromptPay для перевода (credit transfer). */
+const PROMPTPAY_TRANSFER_AID = 'A000000677010111';
+
+/** Теги идентификатора получателя внутри шаблона счёта. */
+const PROMPTPAY_ID_TAGS: Readonly<Record<string, PromptPayIdType>> = {
+  '01': 'phone',
+  '02': 'national_id',
+  '03': 'ewallet',
+};
+
+const PROMPTPAY_NOT_QR = 'Это не QR для перевода: выберите картинку с PromptPay-QR';
+
+/** Поля «тег, длина, значение» подряд; `null`, если строка не разбирается. */
+function readTlv(payload: string): Map<string, string> | null {
+  const fields = new Map<string, string>();
+  let at = 0;
+  while (at < payload.length) {
+    const tag = payload.slice(at, at + 2);
+    const length = Number(payload.slice(at + 2, at + 4));
+    if (tag.length < 2 || !/^\d{2}$/.test(payload.slice(at + 2, at + 4))) return null;
+    const value = payload.slice(at + 4, at + 4 + length);
+    if (value.length !== length) return null;
+    fields.set(tag, value);
+    at += 4 + length;
+  }
+  return fields;
+}
+
+/**
+ * CRC-16/CCITT-FALSE — контрольная сумма стандарта EMVCo: многочлен
+ * 0x1021, начальное значение 0xFFFF, без отражения. Считается по байтам
+ * UTF-8, а не по знакам строки: QR из банка несёт имя получателя, и
+ * тайское имя в нём — три байта на знак.
+ */
+function crc16(value: string): string {
+  let crc = 0xffff;
+  for (const byte of new TextEncoder().encode(value)) {
+    crc ^= byte << 8;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
+
+export function parsePromptPay(payload: string): PromptPayParse {
+  const value = payload.trim();
+  const fields = readTlv(value);
+  if (!fields || fields.get('00') !== '01') {
+    return { ok: false, complaint: PROMPTPAY_NOT_QR };
+  }
+
+  // Контрольная сумма — последнее поле, и считается по всему, что перед
+  // её значением, включая её собственные тег и длину.
+  const crcAt = value.length - 8;
+  if (crcAt < 0 || value.slice(crcAt, crcAt + 4) !== '6304') {
+    return { ok: false, complaint: PROMPTPAY_NOT_QR };
+  }
+  if (crc16(value.slice(0, crcAt + 4)) !== value.slice(crcAt + 4).toUpperCase()) {
+    return {
+      ok: false,
+      complaint: 'QR прочитан не целиком: контрольная сумма не сходится, выберите картинку почётче',
+    };
+  }
+
+  // Шаблоны счетов живут в тегах 26–51, и их бывает несколько; PromptPay
+  // узнаётся по идентификатору приложения в первом поле шаблона.
+  const templates = [...fields.entries()]
+    .filter(([tag]) => Number(tag) >= 26 && Number(tag) <= 51)
+    .map(([, value]) => readTlv(value));
+  if (templates.some((template) => template === null)) {
+    return { ok: false, complaint: PROMPTPAY_NOT_QR };
+  }
+  const inner = templates.find((template) => template?.get('00') === PROMPTPAY_TRANSFER_AID);
+  if (!inner) {
+    return {
+      ok: false,
+      complaint: 'Это не PromptPay-перевод: нужен QR для перевода на счёт или кошелёк, а не для оплаты',
+    };
+  }
+
+  const ids = [...inner.entries()].filter(([tag]) => tag in PROMPTPAY_ID_TAGS);
+  if (ids.length !== 1) {
+    return { ok: false, complaint: 'В QR не один получатель: выберите другую картинку' };
+  }
+
+  if (fields.has('54')) {
+    return {
+      ok: false,
+      complaint: 'В этот QR зашита сумма — по нему уйдёт не та сумма, что в заявке. Нужен QR без суммы',
+    };
+  }
+
+  const [tag, id] = ids[0]!;
+  return { ok: true, idType: PROMPTPAY_ID_TAGS[tag]!, id };
 }
 
 /**

@@ -2,10 +2,20 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import { addressEdges, lastFour, seal } from '@nemo/crypto';
 import { clientRequisites, currencies, transferNetworks } from '@nemo/db';
 import {
+  alipayQrHint,
+  looksLikeAlipayAccount,
+  looksLikeAlipayQr,
   looksLikeCardNumber,
+  looksLikeHolderName,
   looksLikePhone,
+  looksLikeThaiAccountNumber,
   looksLikeWalletAddress,
-  requisiteKindSuits,
+  parsePromptPay,
+  promptPayHint,
+  PROMPTPAY_ID_LABELS,
+  REQUISITE_COMPLAINTS,
+  requisiteKindSuitsCurrency,
+  type PromptPayIdType,
   type RequisiteKind,
 } from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
@@ -18,19 +28,22 @@ import { requireActiveNetwork } from './networks.js';
  * заявке.
  *
  * Запись описывает один способ получения целиком — перевод по номеру
- * телефона, на карту или на криптокошелёк, — а не набор необязательных
- * полей. Внутри способа обязательно всё: записи, по которой нельзя
- * отправить деньги, не существует, и проверяет это ограничение базы, а
- * не только форма.
+ * телефона, на карту, на криптокошелёк, на тайский банковский счёт, по
+ * PromptPay-QR, на Alipay по аккаунту или по QR приёма, — а не набор
+ * необязательных полей. Внутри способа обязательно всё: записи, по
+ * которой нельзя отправить деньги, не существует, и проверяет это
+ * ограничение базы, а не только форма.
  *
- * Номер карты и адрес кошелька хранятся только зашифрованными, и
- * расшифровать их может лишь админ-панель — в клиентском деплое
- * приватного ключа нет физически (docs/adr/0002). Клиент, единожды
- * сохранив запись, больше не видит её целиком: ему показываются
- * последние четыре цифры карты и края адреса — их достаточно, чтобы
- * узнать свою запись в списке.
+ * Номер карты, адрес кошелька, номер счёта и содержимое QR хранятся
+ * только зашифрованными, и расшифровать их может лишь админ-панель — в
+ * клиентском деплое приватного ключа нет физически (docs/adr/0002).
+ * Клиент, единожды сохранив запись, больше не видит её целиком: ему
+ * показываются последние четыре цифры карты и счёта, края адреса и
+ * хвост идентификатора из QR — их достаточно, чтобы узнать свою запись
+ * в списке. QR при этом читается на устройстве клиента, и сюда
+ * приходит только строка: картинка телефон не покидает (docs/adr/0012).
  *
- * Записей у клиента столько, сколько ему нужно: карта, телефон и
+ * Записей у клиента столько, сколько ему нужно: карта, тайский счёт и
  * кошелёк — разные способы, а не смена одного другим. Удаление —
  * архивирование: на запись ссылаются исполненные заявки, и в разборе
  * спорного обмена должно быть видно, куда деньги ушли тогда.
@@ -46,6 +59,20 @@ export interface RequisitesView {
   readonly network: string | null;
   /** Всё, что клиент видит от адреса кошелька: его начало и конец. */
   readonly addressHint: string | null;
+  /** Имя получателя — у тайского счёта, PromptPay и Alipay. */
+  readonly holderName: string | null;
+  /** Всё, что клиент видит от номера тайского счёта. */
+  readonly accountLast4: string | null;
+  /** Хвост идентификатора из QR — PromptPay или Alipay. */
+  readonly qrHint: string | null;
+  /**
+   * К чему привязан получатель внутри PromptPay-QR. Доезжает до экрана,
+   * потому что от него зависит способ выдачи, а с ним сетка: показанная
+   * цена обязана совпасть с той, по которой заявка уйдёт.
+   */
+  readonly promptpayIdType: PromptPayIdType | null;
+  /** Телефон или e-mail аккаунта Alipay — открыт, как телефон. */
+  readonly alipayAccount: string | null;
   /**
    * Можно ли подать заявку на эту запись прямо сейчас. Ложь у кошелька
    * в сети, которую администратор погасил: запись остаётся у клиента —
@@ -65,7 +92,16 @@ export interface RequisitesView {
 export type SaveRequisitesInput =
   | { readonly kind: 'phone'; readonly bankName: string; readonly phone: string }
   | { readonly kind: 'card'; readonly bankName: string; readonly cardNumber: string }
-  | { readonly kind: 'wallet'; readonly network: string; readonly address: string };
+  | { readonly kind: 'wallet'; readonly network: string; readonly address: string }
+  | {
+      readonly kind: 'account';
+      readonly bankName: string;
+      readonly accountNumber: string;
+      readonly holderName: string;
+    }
+  | { readonly kind: 'promptpay'; readonly qr: string; readonly holderName: string }
+  | { readonly kind: 'alipay'; readonly account: string; readonly holderName: string }
+  | { readonly kind: 'alipay_qr'; readonly qr: string; readonly holderName: string };
 
 type RequisitesRow = typeof clientRequisites.$inferSelect;
 
@@ -83,6 +119,11 @@ function toView(row: RequisitesRow, isAvailable = true): RequisitesView {
     cardLast4: row.cardLast4,
     network: row.network,
     addressHint: row.addressHint,
+    holderName: row.holderName,
+    accountLast4: row.accountLast4,
+    qrHint: row.qrHint,
+    promptpayIdType: row.promptpayIdType,
+    alipayAccount: row.alipayAccount,
     isAvailable,
     createdAt: row.createdAt,
   };
@@ -105,6 +146,10 @@ export function describeRequisites(view: {
   cardLast4: string | null;
   network: string | null;
   addressHint: string | null;
+  accountLast4: string | null;
+  qrHint: string | null;
+  promptpayIdType: PromptPayIdType | null;
+  alipayAccount: string | null;
 }): string {
   switch (view.kind) {
     case 'phone':
@@ -115,6 +160,19 @@ export function describeRequisites(view: {
         .join(' · ');
     case 'wallet':
       return [view.network, view.addressHint].filter(Boolean).join(' · ');
+    case 'account':
+      return [view.bankName, `счёт •••• ${view.accountLast4 ?? ''}`.trim()]
+        .filter(Boolean)
+        .join(' · ');
+    case 'promptpay':
+      return [
+        'PromptPay',
+        `${PROMPTPAY_ID_LABELS[view.promptpayIdType ?? 'phone']} ${view.qrHint ?? ''}`.trim(),
+      ].join(' · ');
+    case 'alipay':
+      return ['Alipay', view.alipayAccount].filter(Boolean).join(' · ');
+    case 'alipay_qr':
+      return ['Alipay', `QR ${view.qrHint ?? ''}`.trim()].join(' · ');
   }
 }
 
@@ -158,6 +216,15 @@ function sealCard(ctx: CoreConfig, cardNumber: string): { last4: string; sealed:
   }
 }
 
+/** Имя получателя — обязательно у всех родов, где менеджер его сверяет. */
+function holderName(value: string): string {
+  return plausible(
+    required(value, 'Имя получателя'),
+    looksLikeHolderName,
+    REQUISITE_COMPLAINTS.holderName,
+  );
+}
+
 /**
  * Строка для вставки. Собирается до транзакции, потому что шифрование —
  * работа процессора, а не базы, и держать ради него открытую транзакцию
@@ -181,7 +248,7 @@ function rowFor(
         phone: plausible(
           required(input.phone, 'Телефон для перевода'),
           looksLikePhone,
-          'Телефон не похож на номер: в нём должно быть от 10 до 15 цифр',
+          REQUISITE_COMPLAINTS.phone,
         ),
       };
     case 'card': {
@@ -190,7 +257,7 @@ function rowFor(
         plausible(
           required(input.cardNumber, 'Номер карты'),
           looksLikeCardNumber,
-          'Номер карты не сходится по контрольной цифре — проверьте, не переставлены ли цифры',
+          REQUISITE_COMPLAINTS.card,
         ),
       );
       return {
@@ -206,7 +273,7 @@ function rowFor(
       const address = plausible(
         required(input.address, 'Адрес кошелька'),
         (value) => looksLikeWalletAddress(network, value),
-        `Адрес не похож на адрес сети ${network} — проверьте, целиком ли он скопирован`,
+        REQUISITE_COMPLAINTS.walletAddress(network),
       );
       return {
         clientId,
@@ -214,6 +281,65 @@ function rowFor(
         network,
         addressSealed: seal(requirePublicKey(ctx), address),
         addressHint: addressEdges(address),
+      };
+    }
+    case 'account': {
+      // Шифруются цифры без разделителей: в приложении банка номер
+      // напечатан с дефисами, а набирают его без них.
+      const number = plausible(
+        required(input.accountNumber, 'Номер счёта'),
+        looksLikeThaiAccountNumber,
+        REQUISITE_COMPLAINTS.thaiAccount,
+      ).replace(/\D/g, '');
+      return {
+        clientId,
+        kind: 'account',
+        bankName: required(input.bankName, 'Банк'),
+        holderName: holderName(input.holderName),
+        accountLast4: lastFour(number),
+        accountSealed: seal(requirePublicKey(ctx), number),
+      };
+    }
+    case 'promptpay': {
+      const qr = required(input.qr, 'QR');
+      const parsed = parsePromptPay(qr);
+      if (!parsed.ok) {
+        throw new InvalidInputError(parsed.complaint);
+      }
+      return {
+        clientId,
+        kind: 'promptpay',
+        holderName: holderName(input.holderName),
+        qrSealed: seal(requirePublicKey(ctx), qr),
+        qrHint: promptPayHint(parsed.id),
+        promptpayIdType: parsed.idType,
+      };
+    }
+    case 'alipay':
+      return {
+        clientId,
+        kind: 'alipay',
+        holderName: holderName(input.holderName),
+        // Аккаунт остаётся открытым, как телефон: по нему менеджер и
+        // находит получателя в Alipay.
+        alipayAccount: plausible(
+          required(input.account, 'Аккаунт Alipay'),
+          looksLikeAlipayAccount,
+          REQUISITE_COMPLAINTS.alipayAccount,
+        ),
+      };
+    case 'alipay_qr': {
+      const qr = plausible(
+        required(input.qr, 'QR'),
+        looksLikeAlipayQr,
+        REQUISITE_COMPLAINTS.alipayQr,
+      );
+      return {
+        clientId,
+        kind: 'alipay_qr',
+        holderName: holderName(input.holderName),
+        qrSealed: seal(requirePublicKey(ctx), qr),
+        qrHint: alipayQrHint(qr),
       };
     }
   }
@@ -299,8 +425,10 @@ export async function archiveRequisites(
  *
  * Чужие и архивные не подходят: деньги ушли бы не туда и не тому. Не
  * подходят и записи не того рода — рубли приходят на карту или по
- * телефону, USDT на кошелёк, — иначе менеджер получил бы заявку, по
- * которой нечего исполнять.
+ * телефону, USDT на кошелёк, баты на тайский счёт и PromptPay, юани на
+ * Alipay, — иначе менеджер получил бы заявку, по которой нечего
+ * исполнять. Какой род подходит валюте, говорит таблица в доменных
+ * типах; у валюты без родов не подходит ничего.
  */
 export async function requireSuitableRequisites(
   executor: Executor,
@@ -325,7 +453,7 @@ export async function requireSuitableRequisites(
   }
 
   const [currency] = await executor
-    .select({ kind: currencies.kind })
+    .select({ code: currencies.code })
     .from(currencies)
     .where(eq(currencies.code, toCode))
     .limit(1);
@@ -333,7 +461,7 @@ export async function requireSuitableRequisites(
   if (!currency) {
     throw new NotFoundError(`Валюта ${toCode} недоступна`);
   }
-  if (!requisiteKindSuits(row.kind, currency.kind)) {
+  if (!requisiteKindSuitsCurrency(row.kind, currency.code)) {
     throw new InvalidInputError(
       `Эти реквизиты не подходят для получения ${toCode}: выберите другой способ`,
     );

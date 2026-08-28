@@ -36,6 +36,8 @@ const db = testDatabase();
 const KNOWN_CURRENCIES: Record<string, { decimals: number; kind: 'fiat' | 'crypto' }> = {
   RUB: { decimals: 2, kind: 'fiat' },
   EUR: { decimals: 2, kind: 'fiat' },
+  THB: { decimals: 2, kind: 'fiat' },
+  CNY: { decimals: 2, kind: 'fiat' },
   USDT: { decimals: 6, kind: 'crypto' },
   BTC: { decimals: 8, kind: 'crypto' },
 };

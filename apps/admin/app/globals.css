@@ -1120,6 +1120,20 @@ select.input {
   text-wrap: pretty;
 }
 
+/*
+  QR реквизита, нарисованный заново. На белом и с полем — так его читает
+  сканер с чужого экрана; шире 240 px ему быть незачем.
+*/
+.qr {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  margin: 8px 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: #fff;
+}
+
 .mono {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.2px;

@@ -209,6 +209,21 @@ describe('подача заявки на вывод', () => {
   });
 });
 
+describe('баллы — только в рублях и USDT', () => {
+  it('не выплачиваются на Alipay: в юанях сервис баллов не платит', async () => {
+    await givenClientWithBonuses(5000);
+    const alipay = await core.saveRequisites(asClient(1n), {
+      kind: 'alipay',
+      account: '7-9536656387',
+      holderName: 'IAKHIN RADMIR',
+    });
+
+    await expect(
+      core.submitWithdrawalRequest(asClient(1n), { amount: '1000', requisitesId: alipay.id }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+});
+
 describe('реквизиты получения', () => {
   it('клиенту видны только подписью', async () => {
     await givenClientWithBonuses(5000);

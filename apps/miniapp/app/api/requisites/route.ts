@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { InvalidInputError } from '@nemo/core';
-import { networkCodeSchema } from '@nemo/types';
+import { MAX_HOLDER_NAME, networkCodeSchema } from '@nemo/types';
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
 
@@ -10,9 +10,9 @@ export const dynamic = 'force-dynamic';
 /**
  * Реквизиты клиента.
  *
- * Номер карты и адрес кошелька уходят сюда открытыми и дальше в ответах
- * не появляются никогда: наружу возвращаются последние четыре цифры и
- * края адреса. Логировать тело этого запроса нельзя — здесь единственное
+ * Номер карты, адрес кошелька, номер счёта и содержимое QR уходят сюда
+ * открытыми и дальше в ответах не появляются никогда: наружу
+ * возвращаются последние четыре цифры, края адреса и хвост QR. Логировать тело этого запроса нельзя — здесь единственное
  * место во всём клиентском приложении, где реквизит вообще виден.
  *
  * Схема разобрана по способу получения, а не собрана из необязательных
@@ -34,6 +34,29 @@ const saveSchema = z.discriminatedUnion('kind', [
     kind: z.literal('wallet'),
     network: networkCodeSchema,
     address: z.string().min(1).max(120),
+  }),
+  z.object({
+    kind: z.literal('account'),
+    bankName: z.string().min(1).max(100),
+    accountNumber: z.string().min(1).max(40),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+  // QR приходит строкой: картинку клиент читает у себя на телефоне, и
+  // сюда она не попадает никогда (docs/adr/0012).
+  z.object({
+    kind: z.literal('promptpay'),
+    qr: z.string().min(1).max(1000),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+  z.object({
+    kind: z.literal('alipay'),
+    account: z.string().min(1).max(120),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+  z.object({
+    kind: z.literal('alipay_qr'),
+    qr: z.string().min(1).max(1000),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
   }),
 ]);
 

@@ -12,8 +12,7 @@ import {
   Money,
   payoutAfterFee,
   payoutMethodOf,
-  requisiteKinds,
-  requisiteKindSuits,
+  requisiteKindsFor,
   usdForPayout,
   type Amount,
   type ExchangeKind,
@@ -329,25 +328,16 @@ export function ExchangeScreen({
 
   /**
    * Реквизиты, подходящие валюте получения: рубли приходят по телефону
-   * или на карту, USDT — на кошелёк. Правило берётся из доменных типов,
-   * а не пишется здесь заново: отказывает всё равно операция, и своя
-   * копия правила разошлась бы с ней молча.
+   * или на карту, USDT — на кошелёк, баты — на тайский счёт и PromptPay,
+   * юани — на Alipay. Таблица берётся из доменных типов, а не пишется
+   * здесь заново: отказывает всё равно операция, и своя копия правила
+   * разошлась бы с ней молча. У валюты без родов список пуст — и клиент
+   * видит «в разработке» вместо формы.
    */
-  const toCurrency = useMemo(
-    () => terms?.currencies.find((currency) => currency.code === toCode),
-    [terms, toCode],
-  );
-  const suitableKinds = useMemo(
-    () =>
-      toCurrency ? requisiteKinds.filter((one) => requisiteKindSuits(one, toCurrency.kind)) : [],
-    [toCurrency],
-  );
+  const suitableKinds = useMemo(() => requisiteKindsFor(toCode), [toCode]);
   const suitable = useMemo(
-    () =>
-      toCurrency
-        ? requisites.filter((one) => requisiteKindSuits(one.kind, toCurrency.kind))
-        : [],
-    [requisites, toCurrency],
+    () => requisites.filter((one) => suitableKinds.includes(one.kind)),
+    [requisites, suitableKinds],
   );
   /*
    * Кошелёк в погашенной сети из выбора уходит, а из списка — нет:
@@ -380,7 +370,7 @@ export function ExchangeScreen({
     // своя: наличный обмен стоит сервису другого, чем перевод.
     if (kind === 'cash') return 'cash';
     const picked = requisites.find((one) => one.id === selected);
-    return picked ? payoutMethodOf(picked.kind) : undefined;
+    return picked ? payoutMethodOf(picked) : undefined;
   }, [kind, requisites, selected]);
 
   /** Направление одной строкой: им помечается ответ о курсе. */
@@ -916,9 +906,11 @@ export function ExchangeScreen({
         ? `Меньше минимальной суммы направления — ${formatMoney(directionMin, '$')}.`
         : nothingLeft
           ? 'Сумма слишком мала: после комиссии к выдаче ничего не останется.'
-          : electronic && selected === undefined
-            ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
-            : undefined;
+          : electronic && suitableKinds.length === 0
+            ? `Получение ${toCode} переводом пока в разработке: реквизиты для этой валюты сервис ещё не принимает.`
+            : electronic && selected === undefined
+              ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
+              : undefined;
 
   const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
@@ -1091,7 +1083,23 @@ export function ExchangeScreen({
             </div>
           ) : undefined}
 
-          {electronic ? (
+          {/*
+            У валюты без родов записи — евро, доллара, лиры, рупии, рэнда
+            — на месте плитки стоит честное «в разработке», а не форма
+            рублёвой карты: перевод в эти валюты сервис пока не принимает
+            реквизитами, и заявка не подаётся.
+          */}
+          {electronic && suitableKinds.length === 0 ? (
+            <div className="tile exchange__requisites" aria-disabled="true">
+              <span className="tile__icon">
+                <CardIcon />
+              </span>
+              <span className="tile__body">
+                <span className="tile__label">Деньги придут на</span>
+                <span className="tile__value">В разработке</span>
+              </span>
+            </div>
+          ) : electronic ? (
             <button
               type="button"
               onClick={() => setSheet({ kind: 'requisites' })}
@@ -1447,7 +1455,7 @@ export function ExchangeScreen({
           <RequisitesSheet
             requisites={suitable}
             selectedId={selected}
-            kinds={suitableKinds}
+            currency={toCode}
             networks={networks}
             onPick={(picked) => {
               setSelected(picked.id);

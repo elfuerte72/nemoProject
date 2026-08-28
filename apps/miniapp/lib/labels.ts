@@ -45,6 +45,10 @@ export const REQUISITE_KIND_LABELS: Record<RequisiteKind, string> = {
   phone: 'По номеру телефона',
   card: 'На карту',
   wallet: 'На криптокошелёк',
+  account: 'На тайский банковский счёт',
+  promptpay: 'Thai QR (PromptPay)',
+  alipay: 'На Alipay по телефону или e-mail',
+  alipay_qr: 'На Alipay по QR',
 };
 
 export const BONUS_KIND_LABELS: Record<BonusTransactionKind, string> = {

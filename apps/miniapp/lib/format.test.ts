@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describeRequisites as coreDescribeRequisites } from '@nemo/core';
 import {
+  describeRequisites,
   formatAmount,
   formatDay,
   formatMonth,
@@ -45,32 +47,34 @@ describe('formatAmount', () => {
 });
 
 describe('formatRateValue', () => {
-  it('показывает курс целым числом', () => {
+  it('целый курс не удлиняет нулями', () => {
     expect(formatRateValue('82')).toBe('82');
   });
 
-  it('крупный курс тоже целым', () => {
+  it('крупный курс ставит разряды', () => {
     expect(formatRateValue('5224938')).toBe(`5${NBSP}224${NBSP}938`);
   });
 
   /*
-   * Курс приходит из ядра уже целым. Дробный сюда попадает только из
-   * старых заявок, поданных до округления, — их карточки открывают и
-   * сегодня, и число в них должно читаться так же, как в новых.
-   *
-   * Отбрасывается вниз: 82,66, показанные как 83, обещали бы клиенту
-   * рубль, которого сделка не даёт.
+   * Курс приходит из ядра округлённым до сотых, и показ ничего не
+   * переокругляет: 82,66 читается как 82,66. Дробный хвост длиннее
+   * сотых попадает сюда только из старых заявок, поданных до округления,
+   * — их карточки открывают и сегодня, и отбрасывается он вниз: 82,666,
+   * показанные как 82,67, обещали бы клиенту копейку, которой сделка
+   * не даёт.
    */
-  it('дробный курс из прежних заявок отбрасывает вниз', () => {
-    expect(formatRateValue('82.6612')).toBe('82');
-    expect(formatRateValue('82.4')).toBe('82');
+  it('сотые показывает как есть, лишнее отбрасывает вниз', () => {
+    expect(formatRateValue('82.66')).toBe('82,66');
+    expect(formatRateValue('82.6612')).toBe('82,66');
+    expect(formatRateValue('82.4')).toBe('82,4');
+    expect(formatRateValue('83.79')).toBe('83,79');
   });
 
   /*
-   * Курс около единицы целым не показывается вовсе: у пары USDT → EUR
-   * он читался как «1 USDT за 1 EUR», хотя за евро просят 1,18 монеты.
+   * У пары USDT → EUR курс 0,847 читается перевёрнутым — «1,19 USDT за
+   * 1 EUR»: сотая вверх, в пользу сервиса.
    */
-  it('курс около единицы остаётся дробным', () => {
+  it('перевёрнутый курс около единицы поднимает вверх до сотых', () => {
     expect(formatRateValue('0.847')).toBe('1,19');
   });
 
@@ -95,12 +99,16 @@ describe('formatRate', () => {
     expect(formatRate('0.012195121951219512', 'RUB', 'USDT')).toBe('82 RUB за 1 USDT');
   });
 
+  it('покупку монеты называет с копейками, как ядро её посчитало', () => {
+    // 1/87,25 — так ядро хранит курс покупки по письму владельца.
+    expect(formatRate('0.011461318051575931', 'RUB', 'USDT')).toBe('87,25 RUB за 1 USDT');
+  });
+
   /*
    * Пара, у которой обе стороны около единицы: переворот подписывает
-   * её верной парой, а число остаётся дробным — целое здесь врало бы
-   * впятеро сильнее наценки.
+   * её верной парой, а число называется до сотых вверх.
    */
-  it('не врёт на курсе около единицы', () => {
+  it('переворачивает пару около единицы вместе с подписью', () => {
     expect(formatRate('0.847', 'USDT', 'EUR')).toBe('1,19 USDT за 1 EUR');
   });
 });
@@ -181,5 +189,52 @@ describe('formatMonth', () => {
 
   it('переживает то, что датой не является', () => {
     expect(formatMonth('не дата')).toBe('');
+  });
+});
+
+/*
+ * Подпись записи — копия той, что в ядре: ядро тянет драйвер базы и в
+ * браузер не идёт. Копии обязаны совпадать — один реквизит в приложении
+ * и в панели должен называться одинаково, — и совпадение здесь
+ * закреплено на всех семи родах, а не проверяется глазами.
+ */
+describe('describeRequisites', () => {
+  const empty = {
+    bankName: null,
+    phone: null,
+    cardLast4: null,
+    network: null,
+    addressHint: null,
+    accountLast4: null,
+    qrHint: null,
+    promptpayIdType: null,
+    alipayAccount: null,
+  };
+  const records = [
+    { ...empty, kind: 'phone' as const, bankName: 'Сбербанк', phone: '+79990000000' },
+    { ...empty, kind: 'card' as const, bankName: 'Тинькофф', cardLast4: '5679' },
+    { ...empty, kind: 'wallet' as const, network: 'TRC20', addressHint: 'TQmX…aU6e' },
+    { ...empty, kind: 'account' as const, bankName: 'Kasikornbank', accountLast4: '6658' },
+    { ...empty, kind: 'promptpay' as const, qrHint: '…614', promptpayIdType: 'ewallet' as const },
+    { ...empty, kind: 'alipay' as const, alipayAccount: '7-9536656387' },
+    { ...empty, kind: 'alipay_qr' as const, qrHint: '…abcd' },
+  ];
+
+  it('называет запись так, как её узнаёт клиент', () => {
+    expect(records.map(describeRequisites)).toEqual([
+      'Сбербанк · +79990000000',
+      'Тинькофф · карта •••• 5679',
+      'TRC20 · TQmX…aU6e',
+      'Kasikornbank · счёт •••• 6658',
+      'PromptPay · кошелёк …614',
+      'Alipay · 7-9536656387',
+      'Alipay · QR …abcd',
+    ]);
+  });
+
+  it('совпадает с подписью ядра на каждом роде', () => {
+    for (const record of records) {
+      expect(describeRequisites(record)).toBe(coreDescribeRequisites(record));
+    }
   });
 });

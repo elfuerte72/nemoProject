@@ -1194,6 +1194,15 @@ button.tile:hover {
     transform 0.15s ease;
 }
 
+/*
+  Кнопка-ярлык с невидимым полем файла внутри: фокус получает поле, а
+  видно должно быть кнопку — иначе с клавиатуры выбор картинки слепой.
+*/
+.btn:focus-within:has(.sr-only:focus-visible) {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+}
+
 .btn:active:not(:disabled) {
   transform: scale(0.96);
 }
@@ -2617,6 +2626,13 @@ button.tile:hover {
     border-color 0.15s ease,
     background 0.15s ease,
     color 0.15s ease;
+}
+
+/* Чипса с флагом: флаг и код стоят вплотную, как в строке выбора валюты. */
+.chips__item--flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .chips__item:hover {

@@ -7,7 +7,7 @@ import {
   requisiteAccessLog,
   staff,
 } from '@nemo/db';
-import type { RequisiteKind } from '@nemo/types';
+import { parsePromptPay, type PromptPayIdType, type RequisiteKind } from '@nemo/types';
 import { requireAdmin, requireStaff, type Actor } from './actor.js';
 import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
 import { ForbiddenError, NotFoundError } from './errors.js';
@@ -42,6 +42,20 @@ export interface RevealedRequisites {
   /** Сеть кошелька. Ошибка сети необратима, поэтому она идёт рядом с адресом. */
   readonly network: string | null;
   readonly address: string | null;
+  /** Имя получателя — менеджер сверяет его перед отправкой. */
+  readonly holderName: string | null;
+  /** Полный номер тайского счёта — цифрами, без разделителей. */
+  readonly accountNumber: string | null;
+  /**
+   * Содержимое QR строкой — PromptPay или ссылка Alipay. Панель рисует
+   * по ней QR заново: менеджер сканирует его вторым устройством или
+   * сохраняет в альбом.
+   */
+  readonly qr: string | null;
+  /** Что внутри PromptPay-QR: тип и сам идентификатор — набрать руками. */
+  readonly promptpayIdType: PromptPayIdType | null;
+  readonly promptpayId: string | null;
+  readonly alipayAccount: string | null;
 }
 
 export interface RequisiteAccessEntry {
@@ -183,6 +197,12 @@ export async function revealRequisites(
       exchangeRequestId: request.id,
     });
 
+    const qr = row.qrSealed ? open(privateKey, row.qrSealed) : null;
+    // Идентификатор разбирается из расшифрованной строки заново, а не
+    // хранится рядом: он и есть содержимое QR, и вторая копия ничего не
+    // добавила бы, кроме возможности разойтись.
+    const promptpay = row.kind === 'promptpay' && qr ? parsePromptPay(qr) : null;
+
     return {
       kind: row.kind,
       bankName: row.bankName,
@@ -191,6 +211,12 @@ export async function revealRequisites(
       cardLast4: row.cardLast4,
       network: row.network,
       address: row.addressSealed ? open(privateKey, row.addressSealed) : null,
+      holderName: row.holderName,
+      accountNumber: row.accountSealed ? open(privateKey, row.accountSealed) : null,
+      qr,
+      promptpayIdType: row.promptpayIdType,
+      promptpayId: promptpay?.ok ? promptpay.id : null,
+      alipayAccount: row.alipayAccount,
     };
   });
 }

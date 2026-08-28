@@ -482,3 +482,301 @@ describe('подбор реквизита при подаче заявки', () 
     ).rejects.toThrow(InvalidInputError);
   });
 });
+
+/*
+ * Роды, заведённые 28 августа 2026 по письму владельца: тайский счёт,
+ * PromptPay (Thai QR), Alipay по аккаунту и по QR. У всех обязательно
+ * имя получателя — менеджер сверяет его с тем, что покажет приложение
+ * перед отправкой, — а номер счёта и содержимое QR хранятся так же, как
+ * номер карты: шифротекстом с открытым хвостом.
+ */
+describe('тайский счёт', () => {
+  it('показывает клиенту только последние четыре цифры и имя', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'account',
+      bankName: 'Kasikornbank',
+      accountNumber: '766-0-246658',
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    expect(saved).toMatchObject({
+      kind: 'account',
+      bankName: 'Kasikornbank',
+      accountLast4: '6658',
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+    expect(JSON.stringify(saved)).not.toContain('7660');
+  });
+
+  it('не оставляет открытого номера в базе', async () => {
+    await core.saveRequisites(asClient(100n), {
+      kind: 'account',
+      bankName: 'Kasikornbank',
+      accountNumber: '766-0-246658',
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    const [row] = await db.select().from(clientRequisites);
+
+    expect(row!.accountSealed).toBeInstanceOf(Buffer);
+    expect(row!.accountSealed!.toString('utf8')).not.toContain('246658');
+  });
+
+  it('отвергает номер не из десяти–двенадцати цифр', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'account',
+        bankName: 'Kasikornbank',
+        accountNumber: '766-0-24665',
+        holderName: 'ALEKSEI PLOTNIKOV',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('не сохраняется без имени получателя', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'account',
+        bankName: 'Kasikornbank',
+        accountNumber: '766-0-246658',
+        holderName: ' ',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+});
+
+/** Строки PromptPay — те же, что в тестах доменных типов. */
+const PROMPTPAY_EWALLET =
+  '00020101021129390016A000000677010111031514000000000061453037645802TH63042D0B';
+const PROMPTPAY_PHONE = '00020101021129370016A0000006770101110113006681234567853037645802TH6304823E';
+const PROMPTPAY_WITH_AMOUNT =
+  '00020101021229370016A0000006770101110113006681234567853037645406100.005802TH6304F142';
+
+describe('PromptPay', () => {
+  it('сохраняет QR из кошелька: тип идентификатора и хвост открыты', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'promptpay',
+      qr: PROMPTPAY_EWALLET,
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    expect(saved).toMatchObject({
+      kind: 'promptpay',
+      promptpayIdType: 'ewallet',
+      qrHint: '…614',
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+    expect(JSON.stringify(saved)).not.toContain('140000000000614');
+  });
+
+  it('узнаёт телефон внутри QR из банка', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'promptpay',
+      qr: PROMPTPAY_PHONE,
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    expect(saved.promptpayIdType).toBe('phone');
+    expect(saved.qrHint).toBe('…678');
+  });
+
+  it('не оставляет содержимого QR открытым в базе', async () => {
+    await core.saveRequisites(asClient(100n), {
+      kind: 'promptpay',
+      qr: PROMPTPAY_EWALLET,
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    const [row] = await db.select().from(clientRequisites);
+
+    expect(row!.qrSealed).toBeInstanceOf(Buffer);
+    expect(row!.qrSealed!.toString('utf8')).not.toContain('A000000677010111');
+  });
+
+  it('отвергает QR с зашитой суммой — словами про сумму', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'promptpay',
+        qr: PROMPTPAY_WITH_AMOUNT,
+        holderName: 'ALEKSEI PLOTNIKOV',
+      }),
+    ).rejects.toThrow(/сумм/);
+  });
+
+  it('отвергает строку не по стандарту', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'promptpay',
+        qr: 'https://qr.alipay.com/fkx12345abcd',
+        holderName: 'ALEKSEI PLOTNIKOV',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+});
+
+describe('Alipay', () => {
+  it('хранит аккаунт открытым: по нему менеджер и переводит', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'alipay',
+      account: '7-9536656387',
+      holderName: 'IAKHIN RADMIR',
+    });
+
+    expect(saved).toMatchObject({
+      kind: 'alipay',
+      alipayAccount: '7-9536656387',
+      holderName: 'IAKHIN RADMIR',
+    });
+  });
+
+  it('принимает e-mail аккаунта', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'alipay',
+      account: 'radmir@example.com',
+      holderName: 'IAKHIN RADMIR',
+    });
+
+    expect(saved.alipayAccount).toBe('radmir@example.com');
+  });
+
+  it('отвергает аккаунт, который ни телефон, ни e-mail', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'alipay',
+        account: 'radmir',
+        holderName: 'IAKHIN RADMIR',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('сохраняет QR приёма с открытым хвостом', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'alipay_qr',
+      qr: 'https://qr.alipay.com/fkx12345abcd',
+      holderName: 'IAKHIN RADMIR',
+    });
+
+    expect(saved).toMatchObject({ kind: 'alipay_qr', qrHint: '…abcd' });
+    expect(JSON.stringify(saved)).not.toContain('fkx12345');
+  });
+
+  it('хвост берёт от кода ссылки, а не от параметров за ним', async () => {
+    const saved = await core.saveRequisites(asClient(100n), {
+      kind: 'alipay_qr',
+      qr: 'https://qr.alipay.com/fkx12345abcd/?t=1',
+      holderName: 'IAKHIN RADMIR',
+    });
+
+    expect(saved.qrHint).toBe('…abcd');
+  });
+
+  it('отвергает QR не с домена Alipay', async () => {
+    await expect(
+      core.saveRequisites(asClient(100n), {
+        kind: 'alipay_qr',
+        qr: 'https://example.com/fkx12345abcd',
+        holderName: 'IAKHIN RADMIR',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+});
+
+/*
+ * Какая запись подходит валюте, говорит таблица в доменных типах, а не
+ * природа валюты: тайский счёт — фиатный, но рубли на него не приходят.
+ */
+describe('подбор записи по валюте выдачи', () => {
+  beforeEach(async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'THB', kind: 'electronic' });
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'CNY', kind: 'electronic' });
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'EUR', kind: 'electronic' });
+  });
+
+  it('баты приходят на тайский счёт и PromptPay', async () => {
+    const account = await core.saveRequisites(asClient(100n), {
+      kind: 'account',
+      bankName: 'Kasikornbank',
+      accountNumber: '766-0-246658',
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+    const promptpay = await core.saveRequisites(asClient(100n), {
+      kind: 'promptpay',
+      qr: PROMPTPAY_EWALLET,
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    for (const requisitesId of [account.id, promptpay.id]) {
+      const { request } = await core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'THB',
+        fromAmount: '100',
+        requisitesId,
+      });
+      expect(request.status).toBe('new');
+    }
+  });
+
+  it('баты не приходят на рублёвую карту', async () => {
+    const card = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
+      cardNumber: CARD,
+    });
+
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'THB',
+        fromAmount: '100',
+        requisitesId: card.id,
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('юани приходят на Alipay, а рубли — нет', async () => {
+    const alipay = await core.saveRequisites(asClient(100n), {
+      kind: 'alipay',
+      account: '7-9536656387',
+      holderName: 'IAKHIN RADMIR',
+    });
+
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'CNY',
+      fromAmount: '100',
+      requisitesId: alipay.id,
+    });
+    expect(request.status).toBe('new');
+
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+        requisitesId: alipay.id,
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('у евро родов нет: заявка не подаётся ни с какой записью', async () => {
+    const card = await core.saveRequisites(asClient(100n), {
+      kind: 'card',
+      bankName: 'Тинькофф',
+      cardNumber: CARD,
+    });
+
+    await expect(
+      core.submitExchangeRequest(asClient(100n), {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'EUR',
+        fromAmount: '100',
+        requisitesId: card.id,
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+});
