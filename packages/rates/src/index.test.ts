@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RatePair, RateQuote, RateSource } from '@nemo/core';
 import { Money } from '@nemo/types';
 import { composeRateSources } from './index.js';
+import { createPeggedRateSource } from './pegged.js';
 
 /**
  * Порядок провайдеров и место составного среди них.
@@ -70,15 +71,26 @@ describe('сборка источников курса', () => {
     expect(bank.asked).toHaveLength(0);
   });
 
-  it('берёт доллар у биржи, а не приравнивает его к монете', async () => {
-    // У банка USDT приравнен к доллару таблицей, то есть курс ровно
-    // единица. Биржа даёт за монету 0,9989, и разницу сервис выдавал бы
-    // сверх купленного. Проверяется здесь потому, что молчит она:
-    // единица выглядит как верный курс, а не как отсутствие цены.
+  it('доллар — единица по определению, и площадка её не переопределяет', async () => {
+    // USDT — доллар по ТЗ владельца от 29 августа 2026, без отдельной
+    // конвертации. Пары по определению стоят в сборке первыми: площадка,
+    // назвавшая за монету 0,9989 — или 1,03 со стакана с приманками, —
+    // до пары не доходит. Проверяется здесь потому, что молчит:
+    // единица выглядит как верный курс, а 1,03 — тоже.
+    const pegged = createPeggedRateSource();
     const exchange = givenSource({ 'USDT/USD': '0.9989' });
-    const bank = givenSource({ 'USDT/USD': '1' });
-    const rates = composeRateSources([exchange.source, bank.source]);
+    const rates = composeRateSources([pegged, exchange.source]);
 
-    expect((await rates.quote({ fromCode: 'USDT', toCode: 'USD' }))?.rate).toBe('0.9989');
+    expect((await rates.quote({ fromCode: 'USDT', toCode: 'USD' }))?.rate).toBe('1');
+    expect(exchange.asked).toHaveLength(0);
+  });
+
+  it('собирает рубль в доллар через USDT — единицей на втором звене', async () => {
+    // Путь из ТЗ: RUB → USDT по бирже, дальше USDT это и есть доллар.
+    const pegged = createPeggedRateSource();
+    const exchange = givenSource({ 'RUB/USDT': '0.0125' });
+    const rates = composeRateSources([pegged, exchange.source]);
+
+    expect((await rates.quote({ fromCode: 'RUB', toCode: 'USD' }))?.rate).toBe('0.0125');
   });
 });

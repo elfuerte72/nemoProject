@@ -640,7 +640,10 @@ function FeeSchedules({
       <p className="card__note">
         Ставка берётся от всей суммы, а не от превышения над порогом: отдавший 500,01 $
         платит по следующей ступени целиком. Пороги заданы в долларах — клиент их не
-        видит, они нужны, чтобы у всех валют ступени считались одной линейкой. Последняя
+        видит, они нужны, чтобы у всех валют ступени считались одной линейкой. Порог «До»
+        читается так, как написано в ТЗ на эту валюту: у бата и юаня «до 2 000
+        включительно», у доллара «меньше 2 000» — ровно две тысячи там уже верхняя
+        ступень; знак выбирается у сетки целиком. Последняя
         ступень действует на всё, что выше. У ступени доля и фикс заполняются порознь или
         вместе — «3,3 % и 10 EUR сверху» задаётся одной строкой. Фикс в долларах
         вычитается до перевода по курсу, фикс в валюте выдачи — после: десять евро
@@ -746,6 +749,7 @@ function FeeScheduleCard({
 }) {
   const [drafts, setDrafts] = useState<TierDraft[]>(() => toDrafts(schedule.tiers));
   const [minUsd, setMinUsd] = useState(schedule.minUsd ?? '');
+  const [inclusive, setInclusive] = useState(schedule.thresholdInclusive);
 
   function change(index: number, patch: Partial<TierDraft>) {
     setDrafts((current) =>
@@ -788,6 +792,23 @@ function FeeScheduleCard({
             placeholder="порога нет"
             inputMode="decimal"
           />
+        </label>
+        {/*
+          Знак границы — свойство сетки, а не ступени: владелец пишет
+          одним знаком всю лестницу. У бата и юаня «до 2 000
+          включительно», у доллара «меньше 2 000» — ровно две тысячи там
+          уже верхняя ступень.
+        */}
+        <label className="field field--wide">
+          <span className="label">Порог «До, $»</span>
+          <select
+            className="input"
+            value={inclusive ? 'inclusive' : 'strict'}
+            onChange={(event) => setInclusive(event.target.value === 'inclusive')}
+          >
+            <option value="inclusive">включительно (≤)</option>
+            <option value="strict">не включая (&lt;)</option>
+          </select>
         </label>
       </div>
 
@@ -904,6 +925,7 @@ function FeeScheduleCard({
               ...(minUsd.trim() === ''
                 ? {}
                 : { minUsd: minUsd.replace(',', '.').trim() }),
+              thresholdInclusive: inclusive,
               tiers: toTiers(drafts),
             })
           }

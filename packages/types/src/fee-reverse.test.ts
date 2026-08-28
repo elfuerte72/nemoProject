@@ -154,3 +154,40 @@ describe('обратный счёт с фиксом в валюте выдачи
     expect(usdForPayout(Money.toAmount('-5'), EUR_RATE, EUR)).toBeNull();
   });
 });
+
+/** Доллар по ТЗ от 29 августа 2026: граница ступени — не включая. */
+const USD: readonly FeeTier[] = [
+  { upToUsd: Money.toAmount('2000'), rateBps: 450 },
+  { upToUsd: null, rateBps: 350 },
+];
+
+const STRICT = { thresholdInclusive: false };
+
+describe('обратный счёт с границей не включая', () => {
+  it('на пороге отдаёт по верхней ступени', () => {
+    // 1 930 нетто — это ровно 2 000 по 3,5 %; включительно две тысячи
+    // считались бы по 4,5 % и давали 1 910.
+    expect(usdForNet(Money.toAmount('1930'), USD, STRICT)).toBe('2000');
+  });
+
+  it('не обещает сумму, достижимую только на самой границе нижней ступени', () => {
+    // 1 910 нетто: по 4,5 % это ровно две тысячи, но ровно две тысячи —
+    // уже верхняя ступень. Чуть меньше двух тысяч дают меньше 1 910, а
+    // две тысячи дают 1 930 — их и назвать.
+    expect(usdForNet(Money.toAmount('1910'), USD, STRICT)).toBe('2000');
+  });
+
+  it('внутри нижней ступени делит как прежде', () => {
+    expect(usdForNet(Money.toAmount('955'), USD, STRICT)).toBe('1000');
+  });
+
+  it('никогда не даёт меньше запрошенного', () => {
+    for (const target of ['100', '955', '1909.99', '1910', '1929', '1930', '1931', '4825']) {
+      const usd = usdForNet(Money.toAmount(target), USD, STRICT);
+      expect(usd).not.toBeNull();
+      expect(
+        Money.compare(netAfterFee(usd!, USD, STRICT), Money.toAmount(target)),
+      ).toBeGreaterThanOrEqual(0);
+    }
+  });
+});

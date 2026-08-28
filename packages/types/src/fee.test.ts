@@ -217,3 +217,39 @@ describe('правила ступени', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * Доллар — ТЗ владельца от 29 августа 2026: «меньше 2 000 — 4,5 %,
+ * иначе 3,5 %». Граница здесь не включительная: ровно две тысячи — уже
+ * верхняя ступень. В его же ТЗ по юаню написано «до 2 000
+ * включительно», и движок не выбирает между ними: знак границы —
+ * свойство сетки, и по умолчанию он тот, что был всегда.
+ */
+const USD: readonly FeeTier[] = [
+  { upToUsd: Money.toAmount('2000'), rateBps: 450 },
+  { upToUsd: null, rateBps: 350 },
+];
+
+describe('граница ступени не включая', () => {
+  it('ровно на пороге берёт ставку верхней ступени', () => {
+    expect(feeFor(Money.toAmount('2000'), USD, { thresholdInclusive: false })).toBe('70');
+    expect(feeFor(Money.toAmount('1999.99'), USD, { thresholdInclusive: false })).toBe(
+      '89.99955',
+    );
+  });
+
+  it('по умолчанию граница включительная, как у бата и юаня', () => {
+    expect(feeFor(Money.toAmount('2000'), USD)).toBe('90');
+    expect(feeFor(Money.toAmount('2000'), USD, { thresholdInclusive: true })).toBe('90');
+  });
+
+  it('выдача на пороге считается по верхней ступени', () => {
+    // 2 000 − 3,5 % = 1 930; включительно вышло бы 1 910.
+    expect(
+      payoutAfterFee(Money.toAmount('2000'), Money.toAmount('1'), USD, {
+        thresholdInclusive: false,
+      }),
+    ).toBe('1930');
+    expect(payoutAfterFee(Money.toAmount('2000'), Money.toAmount('1'), USD)).toBe('1910');
+  });
+});

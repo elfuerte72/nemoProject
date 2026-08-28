@@ -105,6 +105,13 @@ export interface QuoteView {
      * минимум сервиса действует поверх, а не вместо.
      */
     readonly minUsd: Amount | null;
+    /**
+     * Как читать порог ступени — включительно или нет. Едет к экрану
+     * вместе со ступенями: считая по ним сам, он обязан читать границу
+     * тем же знаком, что и ядро, иначе на ровно двух тысячах экран и
+     * заявка разошлись бы на процент.
+     */
+    readonly thresholdInclusive: boolean;
   };
 }
 
@@ -341,7 +348,9 @@ async function quoteByFee(
    * умножения — десять евро остаются десятью при любом курсе.
    */
   const payout = roundPayout(
-    payoutAfterFee(usdAmount, fromBase.rate, schedule.tiers),
+    payoutAfterFee(usdAmount, fromBase.rate, schedule.tiers, {
+      thresholdInclusive: schedule.thresholdInclusive,
+    }),
     payoutDecimals,
   );
 
@@ -362,6 +371,7 @@ async function quoteByFee(
       fromBaseRate: fromBase.rate,
       tiers: schedule.tiers,
       minUsd: schedule.minUsd,
+      thresholdInclusive: schedule.thresholdInclusive,
     },
     // Наценки в этой цене нет: её место заняла комиссия.
     markupBps: 0,

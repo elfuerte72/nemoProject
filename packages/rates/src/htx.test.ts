@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { createHtxRateSource } from './htx.js';
 
 /**
- * Разбор красного стакана HTX: сторона, фильтр по объёму заявки,
- * фильтр по истории мерчанта и медиана по верхушке.
+ * Разбор красного стакана HTX: сторона, фильтр по объёму заявки и
+ * правило сведения пятёрки — своё у каждого стакана. Юань — по букве
+ * ТЗ владельца: среднее первых пяти, без оглядки на историю мерчанта.
+ * Евро — с фильтром истории и медианой: о нём ТЗ нет, а стакан
+ * замусорен приманками.
  *
  * Кэш здесь не проверяется — он общий со всеми провайдерами и проверен
  * на нём самом. Здесь то, чем этот источник отличается от соседних: у
  * него не одна цена в ответе, а стакан, из которого цену ещё надо
- * собрать по правилу владельца, — и три таких стакана.
+ * собрать по правилу, — и два таких стакана.
  */
 
 /**
@@ -87,6 +90,10 @@ const EUR_PAGE_2 = [
  * двенадцатью сделками и стопроцентным исполнением. Пятёрка с историей
  * выходит 1,20 / 1,03 / 1,00 / 0,99 / 0,99: среднее обещало бы 1,04,
  * медиана называет доллар.
+ *
+ * Доллар со стакана с 29 августа 2026 не берётся — USDT это доллар по
+ * ТЗ, — а страницы остались: живой пример приманки с историей, и в
+ * тесте они подставлены под номер евро, где правило то же.
  */
 const USD_PAGE_1 = [
   { price: '1.20', minTradeLimit: '1000.00', maxTradeLimit: '10000.00', orderCompleteRate: '0', tradeMonthTimes: 0 },
@@ -166,14 +173,29 @@ function givenResponse(body: unknown, ok = true) {
 }
 
 describe('курс по красному стакану HTX', () => {
-  it('называет медиану пяти верхних объявлений', async () => {
-    // Первые пять юаня: 6,67 и четыре по 6,64. Медиана — 6,64; среднее
-    // дало бы 6,646, то есть верхняя строка одного мерчанта весила бы
-    // пятую часть цены.
+  it('юань — среднее первых пяти объявлений, как в ТЗ', async () => {
+    // Первые пять юаня: 6,67 и четыре по 6,64. Среднее — 6,646: так
+    // считает владелец, поставив на экране HTX тот же фильтр, и так
+    // его число сходится с нашим. Медиана дала бы 6,64 — на сверке это
+    // читалось как ошибка.
     const { fetch } = givenBoards({ [CNY]: [CNY_OFFERS] });
     const source = createHtxRateSource({ fetch });
 
-    expect((await source.quote(USDT_CNY))?.rate).toBe('6.64');
+    expect((await source.quote(USDT_CNY))?.rate).toBe('6.646');
+  });
+
+  it('юань считает и объявление без истории — в ТЗ фильтра истории нет', async () => {
+    // Верхняя строка с обнулённой историей — единственное сочинённое
+    // здесь поле. Владелец видит её на экране и считает; отбрось её
+    // источник, пятёрка сдвинулась бы на строку и число разошлось бы с
+    // его. Стакан юаня чист, и приманок в нём не замечено, — но правило
+    // здесь буква ТЗ, а не наша защита.
+    const [first, ...rest] = CNY_OFFERS;
+    const decoy = { ...first, orderCompleteRate: '0', tradeMonthTimes: 0 };
+    const { fetch } = givenBoards({ [CNY]: [[decoy, ...rest]] });
+    const source = createHtxRateSource({ fetch });
+
+    expect((await source.quote(USDT_CNY))?.rate).toBe('6.646');
   });
 
   it('берёт сторону, по которой сервис продаёт USDT', async () => {
@@ -202,15 +224,16 @@ describe('курс по красному стакану HTX', () => {
     expect(calls).toHaveLength(2);
   });
 
-  it('не даёт одной приманке с историей утащить цену', async () => {
-    // На долларе приманка прошла фильтр истории: 1,20 $ за USDT от
-    // мерчанта с двенадцатью сделками. Пятёрка вышла 1,20 / 1,03 / 1,00
-    // / 0,99 / 0,99 — среднее обещало бы 1,04 за монету, которая стоит
-    // доллар. Медиана называет доллар.
-    const { fetch, calls } = givenBoards({ [USD]: [USD_PAGE_1, USD_PAGE_2, USD_PAGE_3] });
+  it('не даёт одной приманке с историей утащить цену евро', async () => {
+    // Страницы долларового стакана под номером евро: правило у обоих
+    // одно, а пример живой. Приманка прошла фильтр истории: 1,20 за USDT
+    // от мерчанта с двенадцатью сделками. Пятёрка вышла 1,20 / 1,03 /
+    // 1,00 / 0,99 / 0,99 — среднее обещало бы 1,04 за монету, которая
+    // стоит единицу. Медиана называет единицу.
+    const { fetch, calls } = givenBoards({ [EUR]: [USD_PAGE_1, USD_PAGE_2, USD_PAGE_3] });
     const source = createHtxRateSource({ fetch });
 
-    expect((await source.quote(USDT_USD))?.rate).toBe('1');
+    expect((await source.quote(USDT_EUR))?.rate).toBe('1');
     expect(calls).toHaveLength(3);
     expect(calls[2]).toContain('currPage=3');
   });
@@ -218,13 +241,13 @@ describe('курс по красному стакану HTX', () => {
   it('пропускает лоты, которых фильтр стакана не касается', async () => {
     // Так выглядит ответ, если раздел проигнорировал `amount`: верх
     // занят лотами от 30 000 юаней по своей цене. Приняв их, сервис
-    // считал бы юань по 6,68 вместо 6,64 — полпроцента из своего
-    // кармана на каждой заявке. История у этих мерчантов настоящая —
-    // отсеивает их лот, а не история.
+    // считал бы юань по 6,68 вместо 6,646 — треть процента из своего
+    // кармана на каждой заявке. Отсеивает их лот: это тот самый фильтр
+    // «от 1 000 CNY» из ТЗ, и на юане он единственный.
     const { fetch } = givenBoards({ [CNY]: [CNY_LARGE_LOTS, CNY_OFFERS] });
     const source = createHtxRateSource({ fetch });
 
-    expect((await source.quote(USDT_CNY))?.rate).toBe('6.64');
+    expect((await source.quote(USDT_CNY))?.rate).toBe('6.646');
   });
 
   it('пропускает лот, на котором тысячи юаней не наберётся', async () => {
@@ -335,21 +358,18 @@ describe('курс по красному стакану HTX', () => {
 
   it('спрашивает каждый стакан его номером и с порогом от тысячи', async () => {
     // Монета и валюты — внутренние номера HTX, взятые из её же
-    // справочников: USDT это монета 2, юань — валюта 172, евро — 14,
-    // доллар — 2.
+    // справочников: USDT это монета 2, юань — валюта 172, евро — 14.
     const { fetch, calls } = givenBoards({
       [CNY]: [CNY_OFFERS],
       [EUR]: [EUR_PAGE_1, EUR_PAGE_2],
-      [USD]: [USD_PAGE_1, USD_PAGE_2, USD_PAGE_3],
     });
     const source = createHtxRateSource({ fetch });
 
     await source.quote(USDT_CNY);
     await source.quote(USDT_EUR);
-    await source.quote(USDT_USD);
 
     const first = calls.filter((url) => url.includes('currPage=1'));
-    expect(first).toHaveLength(3);
+    expect(first).toHaveLength(2);
     for (const url of first) {
       expect(url).toContain('https://www.htx.com/-/x/otc/v1/data/trade-market?');
       expect(url).toContain('coinId=2');
@@ -357,7 +377,17 @@ describe('курс по красному стакану HTX', () => {
     }
     expect(first[0]).toContain('currency=172');
     expect(first[1]).toContain('currency=14');
-    expect(first[2]).toContain('currency=2&');
+  });
+
+  it('о долларе молчит, не сходив в сеть: USDT — доллар по определению', async () => {
+    // До 29 августа 2026 доллар шёл отсюда, и медиана держалась на
+    // единице ровно до третьей приманки с историей. По ТЗ конвертации
+    // USDT → USD нет, и стакан о долларе не спрашивают вовсе.
+    const { fetch, calls } = givenBoards({ [USD]: [USD_PAGE_1, USD_PAGE_2, USD_PAGE_3] });
+    const source = createHtxRateSource({ fetch });
+
+    expect(await source.quote(USDT_USD)).toBeNull();
+    expect(calls).toEqual([]);
   });
 
   it('держит стаканы порознь: молчание одного не ронет другой', async () => {
@@ -367,6 +397,6 @@ describe('курс по красному стакану HTX', () => {
     const source = createHtxRateSource({ fetch });
 
     expect(await source.quote(USDT_EUR)).toBeNull();
-    expect((await source.quote(USDT_CNY))?.rate).toBe('6.64');
+    expect((await source.quote(USDT_CNY))?.rate).toBe('6.646');
   });
 });

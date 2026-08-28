@@ -26,6 +26,7 @@ const RUB_TO_EUR: QuoteView = {
       { upToUsd: null, rateBps: 230, fixedPayout: Money.toAmount('10') },
     ],
     minUsd: Money.toAmount('500'),
+    thresholdInclusive: true,
   },
 };
 
@@ -44,6 +45,7 @@ const USDT_TO_THB: QuoteView = {
       { upToUsd: null, rateBps: 250 },
     ],
     minUsd: null,
+    thresholdInclusive: true,
   },
 };
 

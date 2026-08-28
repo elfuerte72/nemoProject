@@ -659,6 +659,15 @@ export const feeSchedules = pgTable(
      * работает поверх общего, а не вместо него.
      */
     minUsd: money('min_usd'),
+    /**
+     * Как читать порог ступени: «до 2 000 включительно» (бат, юань,
+     * евро) или «до 2 000, не включая» (доллар — ТЗ владельца от 29
+     * августа 2026: «меньше 2 000 — 4,5 %, иначе 3,5 %»). Ровно две
+     * тысячи в первом случае — ещё нижняя ступень, во втором — уже
+     * верхняя. Свойство сетки, а не ступени: владелец пишет одним
+     * знаком всю лестницу.
+     */
+    thresholdInclusive: boolean('threshold_inclusive').default(true).notNull(),
     /** Погашенная сетка не применяется, и направление считается наценкой. */
     isActive: boolean('is_active').default(true).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

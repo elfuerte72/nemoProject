@@ -31,6 +31,8 @@ const schema = z.discriminatedUnion('action', [
     payoutMethod: payoutMethodSchema,
     /** Минимум направления в долларах; отсутствие снимает порог. */
     minUsd: z.string().optional(),
+    /** Порог ступени включительно (по умолчанию) или «не включая». */
+    thresholdInclusive: z.boolean().optional(),
     tiers: z
       .array(
         z.object({
@@ -64,6 +66,7 @@ export async function POST(request: Request): Promise<Response> {
             toCode: parsed.data.toCode,
             payoutMethod: parsed.data.payoutMethod,
             minUsd: parsed.data.minUsd,
+            thresholdInclusive: parsed.data.thresholdInclusive,
             tiers: parsed.data.tiers,
           })
         : await core.setFeeScheduleActive(

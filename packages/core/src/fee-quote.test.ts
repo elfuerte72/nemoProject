@@ -712,3 +712,63 @@ describe('сетка по записи, на которую придут ден�
     expect(request.toAmount).toBe('630');
   });
 });
+
+/**
+ * Доллар по ТЗ владельца от 29 августа 2026: рубли переводятся в USDT
+ * по Rapira, меньше 500 — отказ, меньше 2 000 — 4,5 %, иначе 3,5 %, и
+ * USDT считается долларом без отдельной конвертации. Граница ступени
+ * здесь «не включая»: ровно две тысячи — уже 3,5 %.
+ */
+describe('доллар по ТЗ: граница ступени не включая', () => {
+  const USD_TIERS = [
+    { upToUsd: '2000', rateBps: 450 },
+    { upToUsd: null, rateBps: 350 },
+  ];
+
+  it('ровно две тысячи долларов считает по верхней ступени', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USD' });
+    await givenFeeSchedule({
+      toCode: 'USD',
+      payoutMethod: 'bank',
+      tiers: USD_TIERS,
+      minUsd: '500',
+      thresholdInclusive: false,
+    });
+    const core = createCore({
+      db,
+      rateSource: givenRates({ 'RUB/USDT': '0.01', 'USDT/USD': '1' }),
+    });
+
+    const quote = await core.getQuote({
+      fromCode: 'RUB',
+      toCode: 'USD',
+      fromAmount: '200000',
+      payoutMethod: 'bank',
+    });
+
+    // 200 000 ₽ по сотой — ровно 2 000 $; минус 3,5 % — 1 930.
+    // Включительно было бы 4,5 % и 1 910.
+    expect(quote?.usdAmount).toBe('2000');
+    expect(quote?.toAmount).toBe('1930');
+    expect(quote?.fee?.thresholdInclusive).toBe(false);
+  });
+
+  it('без признака граница включительная, как у бата и юаня', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USD' });
+    await givenFeeSchedule({ toCode: 'USD', payoutMethod: 'bank', tiers: USD_TIERS });
+    const core = createCore({
+      db,
+      rateSource: givenRates({ 'RUB/USDT': '0.01', 'USDT/USD': '1' }),
+    });
+
+    const quote = await core.getQuote({
+      fromCode: 'RUB',
+      toCode: 'USD',
+      fromAmount: '200000',
+      payoutMethod: 'bank',
+    });
+
+    expect(quote?.toAmount).toBe('1910');
+    expect(quote?.fee?.thresholdInclusive).toBe(true);
+  });
+});

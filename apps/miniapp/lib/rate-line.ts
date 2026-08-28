@@ -45,15 +45,20 @@ export function rateLine(
 ): RateLine {
   if (!quote.fee) return { kind: 'rate', rate: quote.rate };
 
-  const { toBaseRate, fromBaseRate, tiers, minUsd } = quote.fee;
+  const { toBaseRate, fromBaseRate, tiers, minUsd, thresholdInclusive } = quote.fee;
   // Нулевым звеном ни делить, ни мерить; испорченная котировка — не курс.
   if (Money.isZero(toBaseRate) || Money.isNegative(toBaseRate)) return { kind: 'none' };
   const reference = minUsd ?? serviceMinUsd;
+  // Знак границы ступени — тот же, каким читает её ядро.
+  const options = { thresholdInclusive };
 
   const typed = give !== null && !Money.isZero(give) && !Money.isNegative(give);
   if (typed) {
     const usd = Money.multiply(give, toBaseRate);
-    const payout = Money.roundTo(payoutAfterFee(usd, fromBaseRate, tiers), quote.payoutDecimals);
+    const payout = Money.roundTo(
+      payoutAfterFee(usd, fromBaseRate, tiers, options),
+      quote.payoutDecimals,
+    );
     const belowMinimum = minUsd !== null && Money.compare(usd, minUsd) < 0;
     if (!belowMinimum && !Money.isZero(payout)) {
       return { kind: 'rate', rate: Money.divide(payout, give) };
@@ -67,7 +72,7 @@ export function rateLine(
   if (reference === null) return { kind: 'none' };
   const giveAtReference = Money.divide(reference, toBaseRate);
   const payout = Money.roundTo(
-    payoutAfterFee(reference, fromBaseRate, tiers),
+    payoutAfterFee(reference, fromBaseRate, tiers, options),
     quote.payoutDecimals,
   );
   if (Money.isZero(payout)) return { kind: 'none' };
