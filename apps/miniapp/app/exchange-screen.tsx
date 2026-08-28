@@ -30,6 +30,7 @@ import {
   stepOf,
 } from '@/lib/exchange-request-labels';
 import { sortCurrencies } from '@/lib/currencies';
+import { rateLine } from '@/lib/rate-line';
 import { CARD_STATUS_LABELS } from '@/lib/labels';
 import {
   describeRequisites,
@@ -288,19 +289,20 @@ export function ExchangeScreen({
   const pairs = useMemo(() => terms?.pairs ?? [], [terms]);
 
   /**
-   * Валюты, между которыми есть выбор помимо кнопки-переворота.
+   * Всё, что сервис принимает, — целиком, включая валюту, стоящую
+   * сейчас на стороне получения.
    *
-   * Встречная валюта из списка убирается: выбрать её значило бы
-   * развернуть направление, а это и делает кнопка. Когда меняется одна
-   * пара, после такой чистки остаётся один вариант — и вместо списка
-   * показывается подпись. Появится третья валюта — выбор вернётся сам.
+   * До 28 августа 2026 встречная валюта из списка убиралась: выбрать её
+   * значило развернуть направление, а это делает кнопка-переворот. На
+   * стартовой паре USDT → RUB от списка оставалась одна USDT, и вместо
+   * кнопки выбора стояла подпись. Клиент, открывший приложение с
+   * рублями, не находил, где выбрать рубли: кнопка-переворот — второй
+   * путь к тому же, а не единственный, и знать о ней заранее никто не
+   * обязан. Теперь выбор встречной валюты и есть разворот.
    */
   const fromCodes = useMemo(
-    () =>
-      sortCurrencies(
-        [...new Set(pairs.map((pair) => pair.fromCode))].filter((code) => code !== toCode),
-      ),
-    [pairs, toCode],
+    () => sortCurrencies([...new Set(pairs.map((pair) => pair.fromCode))]),
+    [pairs],
   );
   const toCodes = useMemo(
     () =>
@@ -575,6 +577,16 @@ export function ExchangeScreen({
   );
 
   /**
+   * Что стоит на черте курса. Правило в `lib/rate-line`: со ступенчатой
+   * сеткой курс зависит от суммы, и до набора черта называет его для
+   * наименьшей суммы направления, а на сумме ниже порога — сам порог,
+   * а не ноль. Общий минимум сервиса задан в USDT, то есть в долларах.
+   */
+  const line = rate
+    ? rateLine(rate, sides.give, terms?.minAmount ?? null)
+    : { kind: 'none' as const };
+
+  /**
    * Последняя посчитанная отдаваемая сумма.
    *
    * Нужна на случай, когда курс уходит из-под уже набранного «получаю»:
@@ -629,6 +641,18 @@ export function ExchangeScreen({
 
   /** Развернуть направление можно, только если обратное вообще меняют. */
   const canSwap = pairs.some((pair) => pair.fromCode === toCode && pair.toCode === fromCode);
+
+  /**
+   * Выбор валюты отдачи. Встречная — это разворот, и делается он тем же
+   * жестом, что и кнопкой: обе стороны меняются местами, а не одна.
+   */
+  function pickFrom(code: string) {
+    if (code === toCode) {
+      swap();
+      return;
+    }
+    setFromCode(code);
+  }
 
   function swap() {
     if (!canSwap) return;
@@ -962,7 +986,7 @@ export function ExchangeScreen({
                   label="Что отдаёте"
                   codes={fromCodes}
                   selected={fromCode}
-                  onPick={setFromCode}
+                  onPick={pickFrom}
                 />
               </div>
             </div>
@@ -994,22 +1018,19 @@ export function ExchangeScreen({
               */}
               <span
                 className={
-                  rate && shownRate(rate, sides.give)
-                    ? 'calc__rate'
-                    : 'calc__rate calc__rate--absent'
+                  line.kind === 'rate' ? 'calc__rate' : 'calc__rate calc__rate--absent'
                 }
               >
-                {rate
-                  ? // Со ступенчатой комиссией курс считается от
-                    // набранной суммы, и до неё строка пуста: обещать
-                    // курс, которого ещё нет, нечем.
-                    (() => {
-                      const shown = shownRate(rate, sides.give);
-                      return shown ? formatRate(shown, fromCode, toCode) : '';
-                    })()
-                  : rate === null
-                    ? 'Курс назовёт менеджер'
-                    : ''}
+                {line.kind === 'rate'
+                  ? formatRate(line.rate, fromCode, toCode)
+                  : line.kind === 'from'
+                    ? // Сумма ниже порога: вместо нуля — с чего
+                      // начинается направление, в валюте, которую
+                      // клиент набирает.
+                      `от ${formatMoney(line.giveAtLeast, fromCode)}`
+                    : rate === null
+                      ? 'Курс назовёт менеджер'
+                      : ''}
               </span>
               <span className="calc__rule" />
             </div>
