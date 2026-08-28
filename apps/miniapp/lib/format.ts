@@ -1,4 +1,11 @@
-import { Money, readRate, sayRate, type PromptPayIdType, type RequisiteKind } from '@nemo/types';
+import {
+  Money,
+  PROMPTPAY_ID_LABELS,
+  readRate,
+  sayRate,
+  type PromptPayIdType,
+  type RequisiteKind,
+} from '@nemo/types';
 
 /**
  * Числа и даты в том виде, в каком их читает клиент.
@@ -216,10 +223,3 @@ export function describeRequisites(requisites: {
       return ['Alipay', `QR ${requisites.qrHint ?? ''}`.trim()].join(' · ');
   }
 }
-
-/** Тип идентификатора PromptPay словами — так запись узнаётся в списке. */
-export const PROMPTPAY_ID_LABELS: Record<PromptPayIdType, string> = {
-  phone: 'телефон',
-  national_id: 'ID-карта',
-  ewallet: 'кошелёк',
-};

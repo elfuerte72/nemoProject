@@ -17,6 +17,7 @@ import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request
 import { formatAmount, formatMoney, formatRate } from '@/lib/format';
 import { suggestServiceIncome } from '@/lib/income';
 import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
+import { PROMPTPAY_ID_LABELS } from '@nemo/types';
 
 /**
  * Действия менеджера над заявкой.
@@ -78,7 +79,10 @@ export function ExchangeRequestCard({
   const [serviceIncome, setServiceIncome] = useState('');
   const [serviceIncomeCode, setServiceIncomeCode] = useState(request.toCode);
   const [reason, setReason] = useState('');
-  const [requisites, setRequisites] = useState<RevealedRequisites>();
+  /** Раскрытое — без самой строки QR: маршрут её не отдаёт, рисует картинку. */
+  const [requisites, setRequisites] = useState<Omit<RevealedRequisites, 'qr'>>();
+  /** QR, нарисованный сервером из расшифрованной строки, — картинкой для альбома. */
+  const [qrImage, setQrImage] = useState<string | null>(null);
 
   /*
    * Подсказка дохода — из того, что уже на экране: сумма сделки в
@@ -164,7 +168,8 @@ export function ExchangeRequestCard({
         method: 'POST',
       });
       const payload = (await response.json()) as {
-        requisites?: RevealedRequisites;
+        requisites?: Omit<RevealedRequisites, 'qr'>;
+        qrImage?: string | null;
         error?: string;
       };
       if (!response.ok || !payload.requisites) {
@@ -172,6 +177,7 @@ export function ExchangeRequestCard({
         return;
       }
       setRequisites(payload.requisites);
+      setQrImage(payload.qrImage ?? null);
     } catch {
       setError('Не удалось связаться с сервером. Повторите попытку.');
     } finally {
@@ -303,12 +309,70 @@ export function ExchangeRequestCard({
                   {requisites.address}
                 </Fact>
               ) : undefined}
+              {requisites.accountNumber ? (
+                <Fact label="Номер счёта" mono>
+                  {requisites.accountNumber}
+                </Fact>
+              ) : undefined}
+              {requisites.alipayAccount ? (
+                <Fact label="Аккаунт Alipay" mono>
+                  {requisites.alipayAccount}
+                </Fact>
+              ) : undefined}
+              {/*
+                Идентификатор из QR — текстом и с типом: менеджер может
+                набрать его руками, а телефон и ID-карта в тайском банке
+                вводятся в разные поля.
+              */}
+              {requisites.promptpayId && requisites.promptpayIdType ? (
+                <Fact
+                  label={`PromptPay · ${PROMPTPAY_ID_LABELS[requisites.promptpayIdType]}`}
+                  mono
+                >
+                  {requisites.promptpayId}
+                </Fact>
+              ) : undefined}
+              {/*
+                Имя получателя — рядом с идентификатором: перед отправкой
+                приложение получателя показывает имя, и менеджер сверяет
+                его с этим.
+              */}
+              {requisites.holderName ? (
+                <Fact label="Получатель">{requisites.holderName}</Fact>
+              ) : undefined}
+              {qrImage ? (
+                <li className="row">
+                  <div className="row__main">
+                    <span className="row__meta">
+                      QR — отсканировать вторым устройством или сохранить в альбом. На
+                      iPhone: удерживайте картинку и выберите «Сохранить в Фото»
+                    </span>
+                    <img src={qrImage} alt={`QR: ${REQUISITE_KIND_LABELS[requisites.kind]}`} className="qr" />
+                    <div className="row__actions">
+                      {/*
+                        Со своего же экрана QR не отсканировать: тайские
+                        банки и Alipay читают QR из галереи, и картинка
+                        сохраняется туда. Где есть общий доступ к файлам —
+                        системный лист с «Сохранить изображение»; иначе
+                        обычная загрузка.
+                      */}
+                      <button
+                        type="button"
+                        onClick={() => void saveQrImage(qrImage, `${requisites.kind}-${request.id.slice(0, 6)}.png`)}
+                        className="btn btn--soft"
+                      >
+                        Сохранить картинкой
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ) : undefined}
             </ul>
           ) : (
             <>
               <p className="card__note">
-                Открытие номера карты и адреса кошелька записывается в журнал:
-                администратор увидит, кто и когда их смотрел.
+                Открытие номера карты, счёта, адреса кошелька и QR записывается в
+                журнал: администратор увидит, кто и когда их смотрел.
               </p>
               <div className="row__actions">
                 <button
@@ -649,6 +713,32 @@ export function ExchangeRequestCard({
  * причина отмены — идут мелким: это цитата, а не число, и набранная
  * крупным она перетягивает на себя весь блок.
  */
+/**
+ * Картинку QR — в альбом менеджера.
+ *
+ * На iPhone `download` кладёт файл в «Файлы», а не в «Фото», откуда
+ * тайский банк и Alipay читают QR. Системный лист с «Сохранить
+ * изображение» открывает `navigator.share` с файлом; там, где его нет,
+ * остаётся обычная загрузка.
+ */
+async function saveQrImage(dataUrl: string, name: string): Promise<void> {
+  const blob = await (await fetch(dataUrl)).blob();
+  const file = new File([blob], name, { type: 'image/png' });
+  if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return;
+    } catch {
+      // Лист закрыли — или платформа передумала; остаётся загрузка.
+    }
+  }
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function Fact({
   label,
   children,

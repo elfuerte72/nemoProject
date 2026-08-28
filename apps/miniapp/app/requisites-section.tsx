@@ -13,6 +13,7 @@ import {
   looksLikeWalletAddress,
   parsePromptPay,
   promptPayHint,
+  PROMPTPAY_ID_LABELS,
   REQUISITE_COMPLAINTS,
   requisiteCurrencyCodes,
   requisiteKindsFor,
@@ -21,7 +22,7 @@ import {
 } from '@nemo/types';
 import { ApiError, del, post } from '@/lib/client-api';
 import { currencyName, currencyPlace, sortCurrencies } from '@/lib/currencies';
-import { describeRequisites, PROMPTPAY_ID_LABELS } from '@/lib/format';
+import { describeRequisites } from '@/lib/format';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { CurrencyFlag } from './ui/flags';
 import { TrashIcon } from './ui/icons';

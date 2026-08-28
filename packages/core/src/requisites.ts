@@ -12,6 +12,7 @@ import {
   looksLikeWalletAddress,
   parsePromptPay,
   promptPayHint,
+  PROMPTPAY_ID_LABELS,
   REQUISITE_COMPLAINTS,
   requisiteKindSuitsCurrency,
   type PromptPayIdType,
@@ -174,13 +175,6 @@ export function describeRequisites(view: {
       return ['Alipay', `QR ${view.qrHint ?? ''}`.trim()].join(' · ');
   }
 }
-
-/** Тип идентификатора PromptPay словами — так запись узнаётся в списке. */
-const PROMPTPAY_ID_LABELS: Record<PromptPayIdType, string> = {
-  phone: 'телефон',
-  national_id: 'ID-карта',
-  ewallet: 'кошелёк',
-};
 
 /** Обязательное поле записи: пустое означало бы реквизит, по которому не отправить. */
 function required(value: string, subject: string): string {

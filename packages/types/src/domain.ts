@@ -160,6 +160,17 @@ export const promptPayIdTypeSchema = z.enum(promptPayIdTypes);
 export type PromptPayIdType = z.infer<typeof promptPayIdTypeSchema>;
 
 /**
+ * Тип идентификатора словами — так запись узнаётся в списке клиента, в
+ * журнале доступа и в карточке менеджера. Слова здесь, как и у курса
+ * (`sayRate`): три копии в трёх приложениях разошлись бы первой правкой.
+ */
+export const PROMPTPAY_ID_LABELS: Record<PromptPayIdType, string> = {
+  phone: 'телефон',
+  national_id: 'ID-карта',
+  ewallet: 'кошелёк',
+};
+
+/**
  * Какими родами записи валюта приходит клиенту.
  *
  * Таблица, а не правило по природе валюты: тайский счёт — фиатный, но

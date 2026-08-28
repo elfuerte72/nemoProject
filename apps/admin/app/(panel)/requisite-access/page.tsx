@@ -68,8 +68,9 @@ export default async function RequisiteAccessPage({
           <div>
             <h1 className="page__title">Журнал доступа</h1>
             <p className="page__sub">
-              Кто и когда открывал чужие номера карт, адреса кошельков и присланные
-              клиентами изображения. Только чтение: записи не правятся и не удаляются.
+              Кто и когда открывал чужие номера карт и счетов, адреса кошельков, QR и
+              присланные клиентами изображения. Только чтение: записи не правятся и не
+              удаляются.
             </p>
           </div>
           <span className="section__count">{entries.length}</span>
@@ -110,7 +111,7 @@ export default async function RequisiteAccessPage({
 
         {entries.length === 0 ? (
           <p className="empty">
-            Номеров карт и адресов кошельков клиентов ещё никто не открывал. Каждое такое
+            Реквизитов клиентов ещё никто не открывал. Каждое такое
             открытие встанет сюда — с именем сотрудника и временем.
           </p>
         ) : (
@@ -127,7 +128,7 @@ export default async function RequisiteAccessPage({
                       кошелёк, — а вопрос к журналу ровно об этом.
                     */}
                     {entry.requisiteKind
-                      ? ` · ${REQUISITE_KIND_LABELS[entry.requisiteKind].toLowerCase()}: ${entry.requisiteHint ?? ''}`
+                      ? ` · ${REQUISITE_KIND_LABELS[entry.requisiteKind]}: ${entry.requisiteHint ?? ''}`
                       : ''}
                     {entry.exchangeRequestId
                       ? ` · по заявке на обмен ${entry.exchangeRequestId.slice(0, 8)}`
