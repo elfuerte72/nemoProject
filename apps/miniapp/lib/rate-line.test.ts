@@ -58,12 +58,14 @@ describe('черта курса', () => {
   });
 
   it('до набора суммы называет курс на минимуме направления', () => {
-    // 500 $ это 43 811 ₽; после 3,3 % и десяти евро остаётся 405,81 € —
-    // 108 рублей за евро. Не пустая черта и не ноль.
+    // 500 $ это 43 810,9 ₽; после 3,3 % и десяти евро остаётся 405,81 € —
+    // 107,9599 рубля за евро, и вверх до сотых это 107,96: клиент
+    // отдаёт за евро не меньше, чем стоит сделка. Не пустая черта и не
+    // ноль.
     const line = rateLine(RUB_TO_EUR, null, SERVICE_MIN);
 
     expect(line.kind).toBe('rate');
-    expect(formatRate((line as { rate: string }).rate, 'RUB', 'EUR')).toBe('108 RUB за 1 EUR');
+    expect(formatRate((line as { rate: string }).rate, 'RUB', 'EUR')).toBe('107,96 RUB за 1 EUR');
   });
 
   it('ниже минимума направления зовёт к порогу в валюте отдачи', () => {
@@ -77,20 +79,22 @@ describe('черта курса', () => {
   });
 
   it('от минимума и выше называет курс от набранного', () => {
-    // 50 000 ₽ это 570,65 $: минус 3,3 % и десять евро — 464,02 €.
+    // 50 000 ₽ это 570,65 $: минус 3,3 % и десять евро — 464,56 €, то
+    // есть 107,6287 рубля за евро, вверх — 107,63.
     const line = rateLine(RUB_TO_EUR, Money.toAmount('50000'), SERVICE_MIN);
 
     expect(line.kind).toBe('rate');
-    expect(formatRate((line as { rate: string }).rate, 'RUB', 'EUR')).toBe('108 RUB за 1 EUR');
+    expect(formatRate((line as { rate: string }).rate, 'RUB', 'EUR')).toBe('107,63 RUB за 1 EUR');
   });
 
   it('без минимума направления опирается на минимум сервиса', () => {
     // У бата своего порога нет; ориентир до набора суммы — 35 USDT:
-    // (35 − 5) × 32,82 = 984,6 бата, то есть 28 за монету.
+    // (35 − 5) × 32,82 = 984,6 бата, то есть 28,131 за монету — вниз до
+    // сотых, 28,13.
     const line = rateLine(USDT_TO_THB, null, SERVICE_MIN);
 
     expect(line.kind).toBe('rate');
-    expect(formatRate((line as { rate: string }).rate, 'USDT', 'THB')).toBe('28 THB за 1 USDT');
+    expect(formatRate((line as { rate: string }).rate, 'USDT', 'THB')).toBe('28,13 THB за 1 USDT');
   });
 
   it('сумму, съеденную фиксом целиком, не называет нулём', () => {

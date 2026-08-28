@@ -1,4 +1,4 @@
-import { type Amount, Money } from '@nemo/types';
+import { type Amount, Money, RATE_DIGITS } from '@nemo/types';
 import { currencyFlag, currencyPlace, sortCurrencies } from '../currencies';
 import { formatAmount, formatRate, formatRateValue, MAX_FRACTION_DIGITS } from '../format';
 
@@ -70,12 +70,13 @@ function escapeHtml(value: string): string {
  * он показывает крупную сторону пары, и у валют, которых за монету дают
  * меньше одной — доллара, евро, — строка перевернулась бы.
  *
- * Двух знаков довольно, и отброшены они вниз: посчитанное клиентом по
- * этому числу не больше того, что он получит, — сумму к выдаче ядро
- * округляет в ту же сторону.
+ * Знаков столько же, до скольких курс округляет ядро и читает экран
+ * (`RATE_DIGITS`), и отброшены они вниз: у бата число в столбце
+ * совпадает с числом на черте курса, а у евро посчитанное клиентом по
+ * этому числу не больше того, что он получит.
  */
 function payoutValue(rate: Amount): string {
-  const shown = formatAmount(Money.format(rate, 2));
+  const shown = formatAmount(Money.format(rate, RATE_DIGITS));
   // Валюты, которой за монету дают меньше сотой доли единицы, в
   // справочнике нет, но показать её нулём нельзя: ноль читается как
   // «не дадут ничего».

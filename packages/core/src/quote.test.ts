@@ -85,20 +85,25 @@ describe('электронный перевод', () => {
 
     const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB' });
 
-    expect(quote).toMatchObject({ rate: '95', toAmount: null });
+    expect(quote).toMatchObject({ rate: '95.5', toAmount: null });
   });
 });
 
 /**
- * Курс называется целым числом — и им же считается.
+ * Курс называется до сотых — и до сотых же считается.
  *
- * Округлить только показ нельзя: клиент увидел бы «95 ₽ за 1 USDT», а
- * получил бы по 95,48, и сумма к выдаче перестала бы сходиться с
+ * Округлить только показ нельзя: клиент увидел бы «95,98 ₽ за 1 USDT»,
+ * а получил бы по 95,987, и сумма к выдаче перестала бы сходиться с
  * курсом, по которому он согласился. Проверяется поэтому не вид, а сам
  * курс и посчитанная по нему выдача.
+ *
+ * До 28 августа 2026 курс округлялся до целого, пока сдвиг не больше
+ * наценки, и владелец прочёл это как ошибку: «Rapira минус два процента
+ * это 83,79, а в приложении 83» — рубль на монете сверх названной
+ * наценки. Теперь шаг — сотая, и правило одно на все пары.
  */
-describe('целый курс', () => {
-  it('отбрасывает дробную часть, когда платит сервис', async () => {
+describe('курс до сотых', () => {
+  it('отбрасывает лишнее вниз, когда платит сервис', async () => {
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
     await givenServiceSettings({ markupBps: 0 });
     const core = createCore({ db, rateSource: givenRateSource('95.987') });
@@ -106,10 +111,10 @@ describe('целый курс', () => {
     const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB', fromAmount: '10' });
 
     // Клиент получает рубли: округление вниз оставляет наценку целой.
-    expect(quote).toMatchObject({ rate: '95', toAmount: '950' });
+    expect(quote).toMatchObject({ rate: '95.98', toAmount: '959.8' });
   });
 
-  it('поднимает мелкую сторону вверх: там платит клиент', async () => {
+  it('поднимает крупную сторону вверх, когда платит клиент', async () => {
     await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USDT', kind: 'electronic' });
     await givenServiceSettings({ markupBps: 0 });
     // 1/95,987 — столько USDT дают за рубль.
@@ -117,37 +122,66 @@ describe('целый курс', () => {
 
     const quote = await core.getQuote({ fromCode: 'RUB', toCode: 'USDT' });
 
-    // Крупная сторона — 95,98 рубля за монету; вверх это 96, и обратный
-    // курс выводится из неё, а не округляется сам: целое из 0,0104 было
-    // бы нулём.
-    expect(quote?.rate).toBe('0.010416666666666666');
+    // Крупная сторона — 95,9877 рубля за монету; вверх до сотых это
+    // 95,99, и обратный курс выводится из неё, а не округляется сам:
+    // сотые от 0,0104 были бы нулём.
+    expect(quote?.rate).toBe('0.010417751849150953');
   });
 
   /*
-   * Округление до целого имеет смысл, пока единица — малая часть курса.
-   * У пары с курсом около единицы целое отнимает почти половину: 1,9
-   * превратилось бы в 1. Сервис торгует одной парой, где курс за
-   * восемьдесят, но справочник направлений открыт, и следующая пара
-   * пришла бы сюда молча.
+   * Письмо владельца от 20 августа 2026, оба направления с одной
+   * котировки Rapira 85,5. Продажа: 85,5 − 2 % = 83,79 — ровно то, что
+   * он посчитал. Покупка: два процента берутся с отдаваемой суммы, то
+   * есть 85,5 / 0,98 = 87,245 → 87,25, а не 85,5 × 1,02 = 87,21, — и об
+   * этом ему написано прямо.
    */
-  it('не трогает курс, у которого единица — заметная часть', async () => {
+  it('продажу монеты называет 83,79, как на калькуляторе владельца', async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 200 });
+    const core = createCore({ db, rateSource: givenRateSource('85.5') });
+
+    const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB', fromAmount: '100' });
+
+    expect(quote).toMatchObject({ rate: '83.79', toAmount: '8379' });
+  });
+
+  it('покупку монеты хранит частным от 87,25', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'USDT', kind: 'electronic' });
+    await givenServiceSettings({ markupBps: 200 });
+    // 1/85,5 — столько USDT дают за рубль на Rapira.
+    const core = createCore({ db, rateSource: givenRateSource('0.011695906432748538') });
+
+    const quote = await core.getQuote({ fromCode: 'RUB', toCode: 'USDT', fromAmount: '8725' });
+
+    // 1/87,25: за 8 725 рублей ровно сто монет, и число на черте — 87,25.
+    expect(quote?.rate).toBe('0.011461318051575931');
+    expect(quote?.toAmount).toBe('100');
+  });
+
+  /*
+   * Шаг один на любой курс. До этой правки курс около единицы оставался
+   * нетронутым, потому что целое отняло бы от него половину; теперь
+   * сотая не отнимает ничего заметного и там.
+   */
+  it('около единицы — та же сотая', async () => {
     await givenCurrencyPair({ fromCode: 'AAA', toCode: 'BBB', kind: 'electronic' });
     await givenServiceSettings({ markupBps: 0 });
-    const core = createCore({ db, rateSource: givenRateSource('1.9') });
+    const core = createCore({ db, rateSource: givenRateSource('1.906') });
 
     const quote = await core.getQuote({ fromCode: 'AAA', toCode: 'BBB' });
 
     expect(quote?.rate).toBe('1.9');
   });
 
-  it('то же с мелкой стороны: 0,9 не должно стать половиной', async () => {
+  it('и с мелкой стороны: 0,9 читается как 1,12 за единицу', async () => {
     await givenCurrencyPair({ fromCode: 'AAA', toCode: 'BBB', kind: 'electronic' });
     await givenServiceSettings({ markupBps: 0 });
     const core = createCore({ db, rateSource: givenRateSource('0.9') });
 
     const quote = await core.getQuote({ fromCode: 'AAA', toCode: 'BBB' });
 
-    expect(quote?.rate).toBe('0.9');
+    // 1/0,9 = 1,111…, вверх до сотых — 1,12, и хранится 1/1,12.
+    expect(quote?.rate).toBe('0.892857142857142857');
   });
 
   /*
@@ -193,16 +227,16 @@ describe('целый курс', () => {
     expect(quote?.rate).toBe('0');
   });
 
-  it('сумма к выдаче сходится с показанным курсом устно', async () => {
+  it('сумма к выдаче сходится с показанным курсом на калькуляторе', async () => {
     await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'electronic' });
     await givenServiceSettings({ markupBps: 200 });
     const core = createCore({ db, rateSource: givenRateSource('83.17') });
 
     const quote = await core.getQuote({ fromCode: 'USDT', toCode: 'RUB', fromAmount: '1000' });
 
-    // 83,17 минус 2% — 81,5066, вниз — 81. Тысяча по 81 это 81 000, и
-    // это ровно то, что человек посчитает в уме, увидев курс 81.
-    expect(quote).toMatchObject({ rate: '81', toAmount: '81000' });
+    // 83,17 минус 2% — 81,5066, вниз до сотых — 81,50. Тысяча по 81,50
+    // это 81 500, и это ровно то, что человек посчитает, увидев курс.
+    expect(quote).toMatchObject({ rate: '81.5', toAmount: '81500' });
   });
 });
 
