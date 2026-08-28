@@ -531,11 +531,11 @@ export function ExchangeScreen({
      * этой валютой, и деление на курс живёт внутри перебора ступеней.
      */
     if (rate.fee) {
-      const { toBaseRate, fromBaseRate, tiers } = rate.fee;
+      const { toBaseRate, fromBaseRate, tiers, thresholdInclusive } = rate.fee;
       if (Money.isZero(fromBaseRate) || Money.isZero(toBaseRate)) {
         return { give: null, get: value };
       }
-      const neededUsd = usdForPayout(value, fromBaseRate, tiers);
+      const neededUsd = usdForPayout(value, fromBaseRate, tiers, { thresholdInclusive });
       return {
         give:
           neededUsd === null
@@ -1547,11 +1547,15 @@ function payoutFor(give: Amount, quote: QuoteView): Amount {
   // свой список точностей здесь разошёлся бы со справочником валют.
   const decimals = quote.payoutDecimals;
   if (!quote.fee) return Money.roundTo(Money.multiply(give, quote.rate), decimals);
-  const { toBaseRate, fromBaseRate, tiers } = quote.fee;
+  const { toBaseRate, fromBaseRate, tiers, thresholdInclusive } = quote.fee;
   const usd = Money.multiply(give, toBaseRate);
   // Путь целиком, а не «остаток на курс»: фикс ступени бывает задан в
-  // валюте выдачи и вычитается уже после умножения.
-  return Money.roundTo(payoutAfterFee(usd, fromBaseRate, tiers), decimals);
+  // валюте выдачи и вычитается уже после умножения. Знак границы
+  // ступени — тот же, каким её читает ядро.
+  return Money.roundTo(
+    payoutAfterFee(usd, fromBaseRate, tiers, { thresholdInclusive }),
+    decimals,
+  );
 }
 
 /**

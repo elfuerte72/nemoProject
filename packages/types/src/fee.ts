@@ -101,13 +101,41 @@ export const feeScheduleSchema = z
 export type FeeSchedule = z.infer<typeof feeScheduleSchema>;
 
 /**
- * Ступень, под которую попадает сумма. Порог включительный: ровно
- * пятьсот долларов — это ещё нижняя ступень, а 500,01 уже следующая.
+ * Как читать порог ступени: «до 2 000 включительно» или «до 2 000, не
+ * включая».
+ *
+ * Владелец пишет сетки по-разному: у бата и юаня «≤ 2 000 — 2 %», у
+ * доллара (ТЗ от 29 августа 2026) «< 2 000 — 4,5 %, иначе 3,5 %». Ровно
+ * две тысячи в первом случае — ещё нижняя ступень, во втором — уже
+ * верхняя. Одно правило на все сетки здесь не выбрать, не переписав
+ * одно из ТЗ, поэтому знак границы — свойство сетки. По умолчанию
+ * включительно: так считались все сетки до этого свойства, и ни одна
+ * из них не должна была измениться от его появления.
  */
-function tierFor(usdAmount: Amount, schedule: readonly FeeTier[]): FeeTier | undefined {
-  return schedule.find(
-    (tier) => tier.upToUsd === null || Money.compare(usdAmount, tier.upToUsd) <= 0,
-  );
+export interface FeeOptions {
+  readonly thresholdInclusive?: boolean;
+}
+
+function inclusiveOf(options: FeeOptions | undefined): boolean {
+  return options?.thresholdInclusive ?? true;
+}
+
+/**
+ * Ступень, под которую попадает сумма. С включительным порогом ровно
+ * пятьсот долларов — это ещё нижняя ступень, а 500,01 уже следующая;
+ * с порогом «не включая» ровно пятьсот — уже следующая.
+ */
+function tierFor(
+  usdAmount: Amount,
+  schedule: readonly FeeTier[],
+  options?: FeeOptions,
+): FeeTier | undefined {
+  const inclusive = inclusiveOf(options);
+  return schedule.find((tier) => {
+    if (tier.upToUsd === null) return true;
+    const order = Money.compare(usdAmount, tier.upToUsd);
+    return inclusive ? order <= 0 : order < 0;
+  });
 }
 
 /**
@@ -115,8 +143,12 @@ function tierFor(usdAmount: Amount, schedule: readonly FeeTier[]): FeeTier | und
  * Фикс в валюте выдачи сюда не входит — он вычитается после перевода по
  * курсу, и в долларах его не выразить (`payoutAfterFee`).
  */
-export function feeFor(usdAmount: Amount, schedule: readonly FeeTier[]): Amount {
-  const tier = tierFor(usdAmount, schedule);
+export function feeFor(
+  usdAmount: Amount,
+  schedule: readonly FeeTier[],
+  options?: FeeOptions,
+): Amount {
+  const tier = tierFor(usdAmount, schedule, options);
   if (!tier) return Money.ZERO;
   return Money.add(tier.fixedUsd ?? Money.ZERO, Money.percentOf(usdAmount, tier.rateBps ?? 0));
 }
@@ -130,8 +162,12 @@ export function feeFor(usdAmount: Amount, schedule: readonly FeeTier[]): Amount 
  * остаток ядро приняло бы за испорченный курс и промолчало бы вместо
  * внятного отказа.
  */
-export function netAfterFee(usdAmount: Amount, schedule: readonly FeeTier[]): Amount {
-  const net = Money.subtract(usdAmount, feeFor(usdAmount, schedule));
+export function netAfterFee(
+  usdAmount: Amount,
+  schedule: readonly FeeTier[],
+  options?: FeeOptions,
+): Amount {
+  const net = Money.subtract(usdAmount, feeFor(usdAmount, schedule, options));
   return Money.isNegative(net) ? Money.ZERO : net;
 }
 
@@ -149,9 +185,10 @@ export function payoutAfterFee(
   usdAmount: Amount,
   fromBaseRate: Amount,
   schedule: readonly FeeTier[],
+  options?: FeeOptions,
 ): Amount {
-  const gross = Money.multiply(netAfterFee(usdAmount, schedule), fromBaseRate);
-  const fixed = tierFor(usdAmount, schedule)?.fixedPayout ?? Money.ZERO;
+  const gross = Money.multiply(netAfterFee(usdAmount, schedule, options), fromBaseRate);
+  const fixed = tierFor(usdAmount, schedule, options)?.fixedPayout ?? Money.ZERO;
   const payout = Money.subtract(gross, fixed);
   return Money.isNegative(payout) ? Money.ZERO : payout;
 }
@@ -192,16 +229,34 @@ export function usdForPayout(
   target: Amount,
   fromBaseRate: Amount,
   schedule: readonly FeeTier[],
+  options?: FeeOptions,
 ): Amount | null {
   if (Money.isZero(target) || Money.isNegative(target)) return null;
   // Нулевым курсом не делят, отрицательный — испорченные данные: сумму
   // отдачи по ним не выдумать.
   if (Money.isZero(fromBaseRate) || Money.isNegative(fromBaseRate)) return null;
 
+  const inclusive = inclusiveOf(options);
+  const step = Money.toAmount(`0.${'0'.repeat(REVERSE_SCALE - 1)}1`);
   const candidates: Amount[] = [];
 
   for (const [index, tier] of schedule.entries()) {
     const floorUsd = index === 0 ? null : (schedule[index - 1]?.upToUsd ?? null);
+    /*
+     * Края ступени в тех суммах, которые ей принадлежат. С включительной
+     * границей верх — сам порог, а низ на шаг выше порога предыдущей
+     * ступени: тот принадлежит ей. С границей «не включая» наоборот:
+     * низ — порог предыдущей ступени, он первым считается по новой
+     * ставке, а верх на шаг ниже своего порога.
+     */
+    const lowest =
+      floorUsd === null ? null : inclusive ? Money.add(floorUsd, step) : floorUsd;
+    const highest =
+      tier.upToUsd === null
+        ? null
+        : inclusive
+          ? tier.upToUsd
+          : Money.subtract(tier.upToUsd, step);
 
     /*
      * Решение уравнения этой ступени:
@@ -237,31 +292,26 @@ export function usdForPayout(
      * Решение засчитывается, только если попало в свою ступень: иначе
      * ставка при такой сумме будет другой, и равенство развалится.
      *
-     * Выпавшее на нижнюю границу — особый случай: сама граница
-     * принадлежит предыдущей ступени, где ставка выше, и решение там
-     * неверно. Но верный ответ лежит на волосок выше — первой суммой,
-     * которая уже считается по этой ставке.
+     * Выпавшее ниже нижнего края — особый случай: там ставка выше, и
+     * решение там неверно. Но верный ответ лежит на самом краю — первой
+     * суммой, которая уже считается по этой ставке.
      */
-    const step = Money.toAmount(`0.${'0'.repeat(REVERSE_SCALE - 1)}1`);
-    const shifted =
-      floorUsd !== null && Money.compare(solved, floorUsd) <= 0
-        ? Money.add(floorUsd, step)
-        : solved;
-    const withinTop = tier.upToUsd === null || Money.compare(shifted, tier.upToUsd) <= 0;
+    const shifted = lowest !== null && Money.compare(solved, lowest) < 0 ? lowest : solved;
+    const withinTop = highest === null || Money.compare(shifted, highest) <= 0;
     if (
       withinTop &&
-      Money.compare(payoutAfterFee(shifted, fromBaseRate, schedule), target) >= 0
+      Money.compare(payoutAfterFee(shifted, fromBaseRate, schedule, options), target) >= 0
     ) {
       candidates.push(shifted);
     }
 
-    // И сама граница: за ней ставка меняется, и сумма, недостижимая
-    // внутри ступени, оказывается достижимой ровно на её краю.
+    // И верхний край ступени: за ним ставка меняется, и сумма,
+    // недостижимая внутри ступени, оказывается достижимой ровно на нём.
     if (
-      tier.upToUsd !== null &&
-      Money.compare(payoutAfterFee(tier.upToUsd, fromBaseRate, schedule), target) >= 0
+      highest !== null &&
+      Money.compare(payoutAfterFee(highest, fromBaseRate, schedule, options), target) >= 0
     ) {
-      candidates.push(tier.upToUsd);
+      candidates.push(highest);
     }
   }
 
@@ -279,6 +329,10 @@ export function usdForPayout(
  * осталась ради прежних тестов долларовой арифметики; новый вызов ей
  * не нужен.
  */
-export function usdForNet(target: Amount, schedule: readonly FeeTier[]): Amount | null {
-  return usdForPayout(target, Money.toAmount('1'), schedule);
+export function usdForNet(
+  target: Amount,
+  schedule: readonly FeeTier[],
+  options?: FeeOptions,
+): Amount | null {
+  return usdForPayout(target, Money.toAmount('1'), schedule, options);
 }

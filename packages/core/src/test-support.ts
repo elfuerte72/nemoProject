@@ -214,6 +214,8 @@ export async function givenFeeSchedule(options: {
     fixedPayout?: string;
   }[];
   minUsd?: string;
+  /** Порог ступени включительно (по умолчанию) или «не включая». */
+  thresholdInclusive?: boolean;
   isActive?: boolean;
 }): Promise<void> {
   await givenCurrency(options.toCode);
@@ -223,6 +225,9 @@ export async function givenFeeSchedule(options: {
       toCode: options.toCode,
       payoutMethod: options.payoutMethod,
       ...(options.minUsd === undefined ? {} : { minUsd: options.minUsd }),
+      ...(options.thresholdInclusive === undefined
+        ? {}
+        : { thresholdInclusive: options.thresholdInclusive }),
       isActive: options.isActive ?? true,
     })
     .returning({ id: feeSchedules.id });

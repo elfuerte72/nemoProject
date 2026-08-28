@@ -261,6 +261,36 @@ describe('сетки комиссии в панели', () => {
     expect(cleared.minUsd).toBeNull();
   });
 
+  it('сохраняет и читает знак границы ступени', async () => {
+    await givenCurrency('USD');
+
+    // Доллар по ТЗ от 29 августа 2026: «меньше 2 000 — 4,5 %, иначе
+    // 3,5 %» — граница не включая.
+    const strict = await core.saveFeeSchedule(admin, {
+      toCode: 'USD',
+      payoutMethod: 'bank',
+      thresholdInclusive: false,
+      tiers: [
+        { upToUsd: '2000', rateBps: 450 },
+        { upToUsd: null, rateBps: 350 },
+      ],
+    });
+    expect(strict.thresholdInclusive).toBe(false);
+    expect((await core.listFeeSchedules(admin))[0]?.thresholdInclusive).toBe(false);
+
+    // Не присланный признак — включительно: так считались все сетки до
+    // него, и форма шлёт сетку целиком.
+    const inclusive = await core.saveFeeSchedule(admin, {
+      toCode: 'USD',
+      payoutMethod: 'bank',
+      tiers: [
+        { upToUsd: '2000', rateBps: 450 },
+        { upToUsd: null, rateBps: 350 },
+      ],
+    });
+    expect(inclusive.thresholdInclusive).toBe(true);
+  });
+
   it('отвергает минимум сетки, который не положительное число', async () => {
     await givenCurrency('EUR');
 

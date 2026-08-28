@@ -23,6 +23,8 @@ import { recordSettingsChange } from './settings-audit.js';
 export interface ActiveFeeSchedule {
   readonly tiers: readonly FeeTier[];
   readonly minUsd: Amount | null;
+  /** Порог ступени включительно («≤ 2 000») или нет («< 2 000»). */
+  readonly thresholdInclusive: boolean;
 }
 
 /**
@@ -50,6 +52,7 @@ export async function readFeeSchedule(
       rateBps: feeScheduleTiers.rateBps,
       fixedPayout: feeScheduleTiers.fixedPayout,
       minUsd: feeSchedules.minUsd,
+      thresholdInclusive: feeSchedules.thresholdInclusive,
     })
     .from(feeScheduleTiers)
     .innerJoin(feeSchedules, eq(feeScheduleTiers.scheduleId, feeSchedules.id))
@@ -72,6 +75,7 @@ export async function readFeeSchedule(
   return {
     tiers: rows.map(toTier),
     minUsd: first.minUsd === null ? null : Money.toAmount(first.minUsd),
+    thresholdInclusive: first.thresholdInclusive,
   };
 }
 
@@ -102,6 +106,7 @@ export interface FeeScheduleView {
   readonly payoutMethod: PayoutMethod;
   readonly isActive: boolean;
   readonly minUsd: Amount | null;
+  readonly thresholdInclusive: boolean;
   readonly tiers: readonly FeeTier[];
   readonly updatedAt: Date;
 }
@@ -112,6 +117,12 @@ export interface SaveFeeScheduleInput {
   readonly payoutMethod: PayoutMethod;
   /** Минимум направления в долларах; не задан — порога нет. */
   readonly minUsd?: string | undefined;
+  /**
+   * Как читать порог ступени: включительно («≤ 2 000», как у бата и
+   * юаня) или нет («< 2 000», как у доллара). Не задан — включительно:
+   * так считались все сетки до появления этого признака.
+   */
+  readonly thresholdInclusive?: boolean | undefined;
   readonly tiers: readonly {
     readonly upToUsd: string | null;
     readonly fixedUsd?: string | undefined;
@@ -160,6 +171,7 @@ async function readSchedules(
     payoutMethod: schedule.payoutMethod,
     isActive: schedule.isActive,
     minUsd: schedule.minUsd === null ? null : Money.toAmount(schedule.minUsd),
+    thresholdInclusive: schedule.thresholdInclusive,
     updatedAt: schedule.updatedAt,
     tiers: tiers.filter((tier) => tier.scheduleId === schedule.id).map(toTier),
   }));
@@ -237,6 +249,7 @@ export async function saveFeeSchedule(
   const toCode = input.toCode.trim().toUpperCase();
   const tiers = requireValidTiers(input.tiers);
   const minUsd = requireValidMin(input.minUsd);
+  const thresholdInclusive = input.thresholdInclusive ?? true;
 
   return ctx.db.transaction(async (tx) => {
     const [currency] = await tx
@@ -259,10 +272,10 @@ export async function saveFeeSchedule(
      */
     const [row] = await tx
       .insert(feeSchedules)
-      .values({ toCode, payoutMethod, minUsd, isActive: false })
+      .values({ toCode, payoutMethod, minUsd, thresholdInclusive, isActive: false })
       .onConflictDoUpdate({
         target: [feeSchedules.toCode, feeSchedules.payoutMethod],
-        set: { minUsd, updatedAt: new Date() },
+        set: { minUsd, thresholdInclusive, updatedAt: new Date() },
       })
       .returning({ id: feeSchedules.id });
 

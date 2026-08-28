@@ -183,6 +183,13 @@
       "when": 1787900565072,
       "tag": "0025_thai_and_alipay_requisites",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787940712514,
+      "tag": "0026_fee_schedule_threshold",
+      "breakpoints": true
     }
   ]
 }
