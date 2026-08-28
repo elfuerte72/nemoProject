@@ -182,6 +182,11 @@ export function requisiteKindsFor(currencyCode: string): readonly RequisiteKind[
   return REQUISITE_KINDS_BY_CURRENCY[currencyCode.toUpperCase()] ?? [];
 }
 
+/** Валюты, у которых есть роды записи: их и предлагает форма в профиле. */
+export function requisiteCurrencyCodes(): readonly string[] {
+  return Object.keys(REQUISITE_KINDS_BY_CURRENCY);
+}
+
 export function requisiteKindSuitsCurrency(kind: RequisiteKind, currencyCode: string): boolean {
   return requisiteKindsFor(currencyCode).includes(kind);
 }
@@ -372,7 +377,7 @@ export function looksLikeThaiAccountNumber(value: string): boolean {
  * набравший его по-русски, сверить менеджеру ничего не даст. Тайское
  * и китайское письмо не запрещены: у местного получателя имя своё.
  */
-const MAX_HOLDER_NAME = 100;
+export const MAX_HOLDER_NAME = 100;
 const CYRILLIC = /[\u0400-\u04ff]/;
 
 export function looksLikeHolderName(value: string): boolean {
@@ -402,6 +407,44 @@ const ALIPAY_QR_FORM = /^https?:\/\/(?:[a-z0-9-]+\.)*alipay\.com\/\S+$/i;
 
 export function looksLikeAlipayQr(value: string): boolean {
   return ALIPAY_QR_FORM.test(value.trim());
+}
+
+/**
+ * Чем запись отвергается — словами, одними на операцию и на форму.
+ *
+ * Форма говорит их до сохранения, операция — отказом; живут они здесь,
+ * потому что форма в браузере ядра не видит, а разойтись двум наборам
+ * слов об одной ошибке нельзя: клиент читал бы два разных объяснения
+ * одной опечатки.
+ */
+export const REQUISITE_COMPLAINTS = {
+  phone: 'Телефон не похож на номер: в нём должно быть от 10 до 15 цифр',
+  card: 'Номер карты не сходится по контрольной цифре — проверьте, не переставлены ли цифры',
+  walletAddress: (network: string) =>
+    `Адрес не похож на адрес сети ${network} — проверьте, целиком ли он скопирован`,
+  thaiAccount: 'Номер счёта не похож на тайский: в нём от 10 до 12 цифр',
+  holderName: 'Имя получателя — как в приложении получателя, латиницей и не длиннее ста знаков',
+  alipayAccount: 'Аккаунт Alipay — это телефон или e-mail',
+  alipayQr: 'Это не QR приёма Alipay: внутри должна быть ссылка на alipay.com',
+  noQr: 'На картинке не нашлось QR. Выберите скриншот, где QR виден целиком и крупно',
+} as const;
+
+/**
+ * Хвост идентификатора из QR — всё, что о нём видно без расшифровки.
+ *
+ * Три знака у PromptPay — столько же показывает сам кошелёк
+ * («140-*********-614»); четыре — у кода в ссылке Alipay, без параметров
+ * и закрывающей косой черты: они одну ссылку от другой не отличают.
+ * Считается здесь, чтобы форма показала клиенту ровно тот хвост, под
+ * которым запись потом встанет в список.
+ */
+export function promptPayHint(id: string): string {
+  return `…${id.slice(-3)}`;
+}
+
+export function alipayQrHint(url: string): string {
+  const code = url.trim().replace(/[?#].*$/, '').replace(/\/+$/, '');
+  return `…${code.slice(-4)}`;
 }
 
 /**

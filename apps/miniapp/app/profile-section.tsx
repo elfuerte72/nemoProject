@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { BonusAccountView, ClientView, RequisitesView, WithdrawalRequestView } from '@nemo/core';
-import { Money, requisiteKinds } from '@nemo/types';
+import { isServiceCurrencyRequisiteKind, Money } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { referralLink } from '@/lib/referral';
 import {
@@ -352,9 +352,8 @@ export function ProfileSection({
         <Sheet title="Мои реквизиты" onClose={() => setSheet(undefined)}>
           <RequisitesSheet
             requisites={requisites}
-            // Все три способа, а не подходящие одной валюте: здесь запись
-            // заводят заранее, ещё не выбрав, что менять.
-            kinds={requisiteKinds}
+            // Валюты здесь нет: запись заводят заранее, ещё не выбрав, что
+            // менять, — и форма спросит валюту первой.
             networks={networks}
             onSaved={(saved) => setRequisites((current) => [saved, ...current])}
             onRemoved={(id) => setRequisites((current) => current.filter((one) => one.id !== id))}
@@ -403,8 +402,12 @@ function WithdrawSheet({
   const [busy, setBusy] = useState(false);
 
   // Погашенная сеть выбирается не больше, чем при обмене: заявку в неё
-  // некому исполнить.
-  const offered = requisites.filter((one) => one.isAvailable);
+  // некому исполнить. Тайский счёт, PromptPay и Alipay не предлагаются
+  // вовсе: баллы выплачиваются в рублях и USDT — на телефон, карту и
+  // криптокошелёк, — и операция такую запись отвергнет.
+  const offered = requisites.filter(
+    (one) => one.isAvailable && isServiceCurrencyRequisiteKind(one.kind),
+  );
   const picked = selected ?? offered[0]?.id;
 
   /**

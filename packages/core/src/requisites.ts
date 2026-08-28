@@ -2,6 +2,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import { addressEdges, lastFour, seal } from '@nemo/crypto';
 import { clientRequisites, currencies, transferNetworks } from '@nemo/db';
 import {
+  alipayQrHint,
   looksLikeAlipayAccount,
   looksLikeAlipayQr,
   looksLikeCardNumber,
@@ -10,6 +11,8 @@ import {
   looksLikeThaiAccountNumber,
   looksLikeWalletAddress,
   parsePromptPay,
+  promptPayHint,
+  REQUISITE_COMPLAINTS,
   requisiteKindSuitsCurrency,
   type PromptPayIdType,
   type RequisiteKind,
@@ -179,15 +182,6 @@ const PROMPTPAY_ID_LABELS: Record<PromptPayIdType, string> = {
   ewallet: 'кошелёк',
 };
 
-/**
- * Хвост идентификатора из QR — всё, что о нём видно без расшифровки.
- * Три знака у PromptPay — столько же показывает сам кошелёк
- * («140-*********-614»), четыре у ссылки Alipay.
- */
-function tail(value: string, length: number): string {
-  return `…${value.slice(-length)}`;
-}
-
 /** Обязательное поле записи: пустое означало бы реквизит, по которому не отправить. */
 function required(value: string, subject: string): string {
   const trimmed = value.trim();
@@ -233,7 +227,7 @@ function holderName(value: string): string {
   return plausible(
     required(value, 'Имя получателя'),
     looksLikeHolderName,
-    'Имя получателя — как в приложении получателя, не длиннее ста знаков',
+    REQUISITE_COMPLAINTS.holderName,
   );
 }
 
@@ -260,7 +254,7 @@ function rowFor(
         phone: plausible(
           required(input.phone, 'Телефон для перевода'),
           looksLikePhone,
-          'Телефон не похож на номер: в нём должно быть от 10 до 15 цифр',
+          REQUISITE_COMPLAINTS.phone,
         ),
       };
     case 'card': {
@@ -269,7 +263,7 @@ function rowFor(
         plausible(
           required(input.cardNumber, 'Номер карты'),
           looksLikeCardNumber,
-          'Номер карты не сходится по контрольной цифре — проверьте, не переставлены ли цифры',
+          REQUISITE_COMPLAINTS.card,
         ),
       );
       return {
@@ -285,7 +279,7 @@ function rowFor(
       const address = plausible(
         required(input.address, 'Адрес кошелька'),
         (value) => looksLikeWalletAddress(network, value),
-        `Адрес не похож на адрес сети ${network} — проверьте, целиком ли он скопирован`,
+        REQUISITE_COMPLAINTS.walletAddress(network),
       );
       return {
         clientId,
@@ -301,7 +295,7 @@ function rowFor(
       const number = plausible(
         required(input.accountNumber, 'Номер счёта'),
         looksLikeThaiAccountNumber,
-        'Номер счёта не похож на тайский: в нём от 10 до 12 цифр',
+        REQUISITE_COMPLAINTS.thaiAccount,
       ).replace(/\D/g, '');
       return {
         clientId,
@@ -323,7 +317,7 @@ function rowFor(
         kind: 'promptpay',
         holderName: holderName(input.holderName),
         qrSealed: seal(requirePublicKey(ctx), qr),
-        qrHint: tail(parsed.id, 3),
+        qrHint: promptPayHint(parsed.id),
         promptpayIdType: parsed.idType,
       };
     }
@@ -337,23 +331,21 @@ function rowFor(
         alipayAccount: plausible(
           required(input.account, 'Аккаунт Alipay'),
           looksLikeAlipayAccount,
-          'Аккаунт Alipay — это телефон или e-mail',
+          REQUISITE_COMPLAINTS.alipayAccount,
         ),
       };
     case 'alipay_qr': {
       const qr = plausible(
         required(input.qr, 'QR'),
         looksLikeAlipayQr,
-        'Это не QR приёма Alipay: внутри должна быть ссылка на alipay.com',
+        REQUISITE_COMPLAINTS.alipayQr,
       );
       return {
         clientId,
         kind: 'alipay_qr',
         holderName: holderName(input.holderName),
         qrSealed: seal(requirePublicKey(ctx), qr),
-        // Хвост — от кода в ссылке, а не от неё целиком: параметры и
-        // закрывающая косая черта не различают одну ссылку от другой.
-        qrHint: tail(qr.replace(/[?#].*$/, '').replace(/\/+$/, ''), 4),
+        qrHint: alipayQrHint(qr),
       };
     }
   }

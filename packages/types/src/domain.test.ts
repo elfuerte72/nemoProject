@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  alipayQrHint,
   looksLikeAlipayAccount,
   looksLikeAlipayQr,
   looksLikeCardNumber,
@@ -9,8 +10,10 @@ import {
   looksLikeWalletAddress,
   parsePromptPay,
   payoutMethodOf,
+  promptPayHint,
   serviceAccountKindSuits,
   requisiteKindSuitsCurrency,
+  requisiteCurrencyCodes,
   requisiteKindsFor,
 } from './domain.js';
 
@@ -148,6 +151,10 @@ describe('requisiteKindsFor', () => {
 
   it('не зависит от регистра кода', () => {
     expect(requisiteKindsFor('thb')).toEqual(['account', 'promptpay']);
+  });
+
+  it('называет валюты, у которых роды есть, — для формы в профиле', () => {
+    expect([...requisiteCurrencyCodes()].sort()).toEqual(['CNY', 'RUB', 'THB', 'USDT']);
   });
 
   it('подходит ли род валюте — по той же таблице', () => {
@@ -357,5 +364,17 @@ describe('looksLikeHolderName', () => {
   it('не мешает тайскому и китайскому письму: у местного имя своё', () => {
     expect(looksLikeHolderName('สมชาย')).toBe(true);
     expect(looksLikeHolderName('王伟')).toBe(true);
+  });
+});
+
+describe('хвосты QR', () => {
+  it('у PromptPay — три знака, как маска в самом кошельке', () => {
+    expect(promptPayHint('140000000000614')).toBe('…614');
+  });
+
+  it('у Alipay — четыре знака кода ссылки, без параметров и косой черты', () => {
+    expect(alipayQrHint('https://qr.alipay.com/fkx12345abcd')).toBe('…abcd');
+    expect(alipayQrHint('https://qr.alipay.com/fkx12345abcd/?t=1')).toBe('…abcd');
+    expect(alipayQrHint('HTTPS://QR.ALIPAY.COM/FKX12345ABCD')).toBe('…ABCD');
   });
 });

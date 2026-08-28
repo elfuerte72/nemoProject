@@ -1455,7 +1455,7 @@ export function ExchangeScreen({
           <RequisitesSheet
             requisites={suitable}
             selectedId={selected}
-            kinds={suitableKinds}
+            currency={toCode}
             networks={networks}
             onPick={(picked) => {
               setSelected(picked.id);
