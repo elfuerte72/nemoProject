@@ -243,3 +243,80 @@ describe('журнал', () => {
     expect(await core.listRequisiteAccessLog(admin, { to: future })).toHaveLength(1);
   });
 });
+
+/*
+ * Новые роды раскрываются так же: номер счёта и содержимое QR
+ * расшифровываются только здесь, обращение уходит в журнал, а
+ * подписью в журнале запись называется без полного номера.
+ */
+describe('чтение тайских и китайских реквизитов', () => {
+  const PROMPTPAY_EWALLET =
+    '00020101021129390016A000000677010111031514000000000061453037645802TH63042D0B';
+
+  async function givenThaiRequest(input: Parameters<typeof core.saveRequisites>[1]): Promise<string> {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'THB', kind: 'electronic' });
+    const requisites = await core.saveRequisites(asClient(100n), input);
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'THB',
+      fromAmount: '1000',
+      requisitesId: requisites.id,
+    });
+    await core.claimExchangeRequest(manager, request.id);
+    return request.id;
+  }
+
+  it('открывает полный номер тайского счёта с банком и именем', async () => {
+    const requestId = await givenThaiRequest({
+      kind: 'account',
+      bankName: 'Kasikornbank',
+      accountNumber: '766-0-246658',
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    const revealed = await core.revealRequisites(manager, requestId);
+
+    expect(revealed).toMatchObject({
+      kind: 'account',
+      bankName: 'Kasikornbank',
+      accountNumber: '7660246658',
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+  });
+
+  it('открывает PromptPay: содержимое QR, тип и сам идентификатор текстом', async () => {
+    const requestId = await givenThaiRequest({
+      kind: 'promptpay',
+      qr: PROMPTPAY_EWALLET,
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    const revealed = await core.revealRequisites(manager, requestId);
+
+    expect(revealed).toMatchObject({
+      kind: 'promptpay',
+      qr: PROMPTPAY_EWALLET,
+      promptpayIdType: 'ewallet',
+      promptpayId: '140000000000614',
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+  });
+
+  it('называет запись в журнале хвостом, а не номером', async () => {
+    const requestId = await givenThaiRequest({
+      kind: 'promptpay',
+      qr: PROMPTPAY_EWALLET,
+      holderName: 'ALEKSEI PLOTNIKOV',
+    });
+
+    await core.revealRequisites(manager, requestId);
+
+    const [entry] = await core.listRequisiteAccessLog(admin);
+    expect(entry).toMatchObject({
+      requisiteKind: 'promptpay',
+      requisiteHint: 'PromptPay · кошелёк …614',
+    });
+    expect(entry?.requisiteHint).not.toContain('140000000000614');
+  });
+});

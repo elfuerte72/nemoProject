@@ -7,8 +7,9 @@ import {
   looksLikeCardNumber,
   looksLikePhone,
   looksLikeWalletAddress,
-  requisiteKindSuits,
+  serviceAccountKindSuits,
   type CurrencyKind,
+  type ServiceCurrencyRequisiteKind,
   type RequisiteKind,
 } from '@nemo/types';
 import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
@@ -26,11 +27,12 @@ import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/
  * нельзя заполнить, только сбивает.
  */
 
-const KIND_ORDER: readonly RequisiteKind[] = ['phone', 'card', 'wallet'];
+/** Только роды рублей и USDT: в батах и юанях сервис не принимает. */
+const KIND_ORDER: readonly ServiceCurrencyRequisiteKind[] = ['phone', 'card', 'wallet'];
 
 /** Что набрано в форме. Одно поле на все способы: показывается нужное. */
 interface Draft {
-  kind: RequisiteKind;
+  kind: ServiceCurrencyRequisiteKind;
   currencyCode: string;
   bankName: string;
   holderName: string;
@@ -51,7 +53,7 @@ function suitableCurrencies(
   currencies: readonly { readonly code: string; readonly kind: CurrencyKind }[],
   kind: RequisiteKind,
 ): readonly string[] {
-  return currencies.filter((one) => requisiteKindSuits(kind, one.kind)).map((one) => one.code);
+  return currencies.filter((one) => serviceAccountKindSuits(kind, one.kind)).map((one) => one.code);
 }
 
 function firstSuitable(
@@ -242,7 +244,7 @@ export function ServiceAccountForms({
                 className="input"
                 value={draft.kind}
                 onChange={(event) => {
-                  const kind = event.target.value as RequisiteKind;
+                  const kind = event.target.value as ServiceCurrencyRequisiteKind;
                   // Валюта переставляется вместе со способом: рубли на
                   // кошелёк не приходят, и оставленная от карты валюта
                   // вернулась бы отказом операции.

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describeRequisites as coreDescribeRequisites } from '@nemo/core';
 import {
+  describeRequisites,
   formatAmount,
   formatDay,
   formatMonth,
@@ -187,5 +189,52 @@ describe('formatMonth', () => {
 
   it('переживает то, что датой не является', () => {
     expect(formatMonth('не дата')).toBe('');
+  });
+});
+
+/*
+ * Подпись записи — копия той, что в ядре: ядро тянет драйвер базы и в
+ * браузер не идёт. Копии обязаны совпадать — один реквизит в приложении
+ * и в панели должен называться одинаково, — и совпадение здесь
+ * закреплено на всех семи родах, а не проверяется глазами.
+ */
+describe('describeRequisites', () => {
+  const empty = {
+    bankName: null,
+    phone: null,
+    cardLast4: null,
+    network: null,
+    addressHint: null,
+    accountLast4: null,
+    qrHint: null,
+    promptpayIdType: null,
+    alipayAccount: null,
+  };
+  const records = [
+    { ...empty, kind: 'phone' as const, bankName: 'Сбербанк', phone: '+79990000000' },
+    { ...empty, kind: 'card' as const, bankName: 'Тинькофф', cardLast4: '5679' },
+    { ...empty, kind: 'wallet' as const, network: 'TRC20', addressHint: 'TQmX…aU6e' },
+    { ...empty, kind: 'account' as const, bankName: 'Kasikornbank', accountLast4: '6658' },
+    { ...empty, kind: 'promptpay' as const, qrHint: '…614', promptpayIdType: 'ewallet' as const },
+    { ...empty, kind: 'alipay' as const, alipayAccount: '7-9536656387' },
+    { ...empty, kind: 'alipay_qr' as const, qrHint: '…abcd' },
+  ];
+
+  it('называет запись так, как её узнаёт клиент', () => {
+    expect(records.map(describeRequisites)).toEqual([
+      'Сбербанк · +79990000000',
+      'Тинькофф · карта •••• 5679',
+      'TRC20 · TQmX…aU6e',
+      'Kasikornbank · счёт •••• 6658',
+      'PromptPay · кошелёк …614',
+      'Alipay · 7-9536656387',
+      'Alipay · QR …abcd',
+    ]);
+  });
+
+  it('совпадает с подписью ядра на каждом роде', () => {
+    for (const record of records) {
+      expect(describeRequisites(record)).toBe(coreDescribeRequisites(record));
+    }
   });
 });

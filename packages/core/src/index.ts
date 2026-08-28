@@ -416,6 +416,11 @@ export type {
 export { inquiryTopics, isInquiryTopic } from './inquiries.js';
 export type { InquiryTopic, SubmitInquiryInput } from './inquiries.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
+/*
+ * Подпись записи — наружу, чтобы тест клиентского приложения сверил с
+ * ней свою копию: в браузер ядро не идёт, а расходиться копии не должны.
+ */
+export { describeRequisites } from './requisites.js';
 export type {
   SaveServiceAccountInput,
   ServiceAccountFields,

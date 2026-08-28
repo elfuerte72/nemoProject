@@ -5,7 +5,9 @@ import {
   looksLikeCardNumber,
   looksLikePhone,
   looksLikeWalletAddress,
-  requisiteKindSuits,
+  isServiceCurrencyRequisiteKind,
+  serviceAccountKindSuits,
+  type ServiceCurrencyRequisiteKind,
   type RequisiteKind,
 } from '@nemo/types';
 import { requireAdmin, requireStaff, type Actor } from './actor.js';
@@ -45,7 +47,8 @@ import { recordSettingsChange } from './settings-audit.js';
 
 export interface ServiceAccountView {
   readonly id: string;
-  readonly kind: RequisiteKind;
+  /** Только роды рублей и USDT: в батах и юанях сервис не принимает. */
+  readonly kind: ServiceCurrencyRequisiteKind;
   /** Валюта, которой на этот счёт платят. */
   readonly currencyCode: string;
   readonly bankName: string | null;
@@ -92,6 +95,11 @@ type ServiceAccountRow = typeof serviceAccounts.$inferSelect;
 type ServiceAccountInsert = typeof serviceAccounts.$inferInsert;
 
 function toView(row: ServiceAccountRow): ServiceAccountView {
+  // Колонка делит перечисление с записями клиента, а ограничение базы
+  // не пускает сюда чужие роды; проверка здесь — для типов, не для данных.
+  if (!isServiceCurrencyRequisiteKind(row.kind)) {
+    throw new Error(`Счёт сервиса незнакомого рода: ${row.kind}`);
+  }
   return {
     id: row.id,
     kind: row.kind,
@@ -206,7 +214,7 @@ function rowFor(ctx: CoreConfig, input: SaveServiceAccountInput): ServiceAccount
 async function requireCurrencySuits(
   executor: Executor,
   code: string,
-  kind: RequisiteKind,
+  kind: ServiceCurrencyRequisiteKind,
 ): Promise<void> {
   const [row] = await executor
     .select({ code: currencies.code, kind: currencies.kind })
@@ -217,7 +225,7 @@ async function requireCurrencySuits(
   if (!row) {
     throw new InvalidInputError(`Валюта ${code} не заведена в справочнике`);
   }
-  if (!requisiteKindSuits(kind, row.kind)) {
+  if (!serviceAccountKindSuits(kind, row.kind)) {
     throw new InvalidInputError(
       `На такой счёт ${code} не приходит: выберите другой способ приёма`,
     );
@@ -233,7 +241,7 @@ export async function addServiceAccount(
   const values = rowFor(ctx, input);
 
   return ctx.db.transaction(async (tx) => {
-    await requireCurrencySuits(tx, values.currencyCode, values.kind);
+    await requireCurrencySuits(tx, values.currencyCode, input.kind);
     if (values.network) {
       await requireActiveNetwork(tx, values.network);
     }
@@ -264,7 +272,7 @@ export async function updateServiceAccount(
   const values = rowFor(ctx, input);
 
   return ctx.db.transaction(async (tx) => {
-    await requireCurrencySuits(tx, values.currencyCode, values.kind);
+    await requireCurrencySuits(tx, values.currencyCode, input.kind);
     if (values.network) {
       await requireActiveNetwork(tx, values.network);
     }

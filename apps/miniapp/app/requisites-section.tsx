@@ -236,6 +236,15 @@ function RequisitesForm({
         return { kind, bankName: bankName.trim(), cardNumber: cardNumber.trim() };
       case 'wallet':
         return { kind, network, address: address.trim() };
+      case 'account':
+      case 'promptpay':
+      case 'alipay':
+      case 'alipay_qr':
+        // Поля новых родов форма ещё не спрашивает — это следующий
+        // коммит той же ветки (`.scratch/rate-and-requisites/issues/03`);
+        // до него кнопка на этих родах не загорается: пустой набор не
+        // проходит проверку заполненности ниже.
+        return { kind, pending: '' };
     }
   }
 

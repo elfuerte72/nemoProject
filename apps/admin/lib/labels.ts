@@ -43,6 +43,10 @@ export const REQUISITE_KIND_LABELS: Record<RequisiteKind, string> = {
   phone: 'Перевод по номеру телефона',
   card: 'Перевод на карту',
   wallet: 'Перевод на криптокошелёк',
+  account: 'Перевод на тайский банковский счёт',
+  promptpay: 'Thai QR (PromptPay)',
+  alipay: 'Alipay по телефону или e-mail',
+  alipay_qr: 'Alipay по QR приёма',
 };
 
 export const ROLE_LABELS: Record<StaffRole, string> = {

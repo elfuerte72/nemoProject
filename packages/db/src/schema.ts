@@ -86,7 +86,22 @@ export const staffRoleEnum = pgEnum('staff_role', ['manager', 'admin']);
 export const currencyKindEnum = pgEnum('currency_kind', ['fiat', 'crypto']);
 
 /** Способ, которым клиент получает деньги. Русские названия — в `CONTEXT.md`. */
-export const requisiteKindEnum = pgEnum('requisite_kind', ['phone', 'card', 'wallet']);
+export const requisiteKindEnum = pgEnum('requisite_kind', [
+  'phone',
+  'card',
+  'wallet',
+  'account',
+  'promptpay',
+  'alipay',
+  'alipay_qr',
+]);
+
+/** К чему привязан получатель внутри PromptPay-QR: от этого зависит сетка. */
+export const promptpayIdTypeEnum = pgEnum('promptpay_id_type', [
+  'phone',
+  'national_id',
+  'ewallet',
+]);
 
 export const bonusTransactionKindEnum = pgEnum('bonus_transaction_kind', [
   'accrual', // начисление за исполненную заявку реферала
@@ -376,7 +391,10 @@ export const textTemplates = pgTable('text_templates', {
  *
  * Полный номер карты и адрес кошелька лежат только в зашифрованном виде
  * (docs/adr/0002); открыты `card_last4` и `address_hint` — по ним клиент
- * узнаёт свою запись в списке, не видя её целиком.
+ * узнаёт свою запись в списке, не видя её целиком. Тем же способом
+ * хранятся номер тайского счёта и содержимое QR (PromptPay и Alipay):
+ * шифротекст и открытый хвост. Аккаунт Alipay открыт, как телефон, — по
+ * нему менеджер и переводит.
  */
 export const clientRequisites = pgTable(
   'client_requisites',
@@ -395,6 +413,21 @@ export const clientRequisites = pgTable(
     addressSealed: bytea('address_sealed'),
     /** Начало и конец адреса: всё, что видно о кошельке без расшифровки. */
     addressHint: text('address_hint'),
+    /**
+     * Имя получателя — у тайского счёта, PromptPay и обоих Alipay:
+     * менеджер сверяет его с тем, что покажет приложение перед отправкой.
+     * Внутри QR имени нет, поэтому оно спрашивается отдельно.
+     */
+    holderName: text('holder_name'),
+    accountLast4: text('account_last4'),
+    accountSealed: bytea('account_sealed'),
+    /** Содержимое QR строкой — общее для PromptPay и Alipay-QR. */
+    qrSealed: bytea('qr_sealed'),
+    /** Хвост идентификатора из QR: всё, что видно о нём без расшифровки. */
+    qrHint: text('qr_hint'),
+    promptpayIdType: promptpayIdTypeEnum('promptpay_id_type'),
+    /** Телефон или e-mail аккаунта Alipay — открытым, как телефон. */
+    alipayAccount: text('alipay_account'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
   },
@@ -412,21 +445,68 @@ export const clientRequisites = pgTable(
      * которой ещё можно отправить деньги, архив не содержит по
      * определению.
      */
+    /*
+     * Род сравнивается как текст, а не как значение перечисления:
+     * миграции идут одной транзакцией, и значение, только что добавленное
+     * в перечисление, в той же транзакции использовать нельзя — Postgres
+     * отказывает «unsafe use of new value». Текст этого не касается.
+     *
+     * Незнакомому роду — явный отказ: `CASE` без ветки даёт `NULL`, а
+     * `NULL` в `CHECK` проходит.
+     */
     check(
       'client_requisites_fields_by_kind',
-      sql`${table.archivedAt} is not null or case ${table.kind}
+      sql`${table.archivedAt} is not null or case ${table.kind}::text
         when 'phone' then ${table.bankName} is not null and ${table.phone} is not null
           and ${table.cardLast4} is null and ${table.cardSealed} is null
           and ${table.network} is null and ${table.addressSealed} is null
-          and ${table.addressHint} is null
+          and ${table.addressHint} is null and ${table.holderName} is null
+          and ${table.accountLast4} is null and ${table.accountSealed} is null
+          and ${table.qrSealed} is null and ${table.qrHint} is null
+          and ${table.promptpayIdType} is null and ${table.alipayAccount} is null
         when 'card' then ${table.bankName} is not null and ${table.cardLast4} is not null
           and ${table.cardSealed} is not null and ${table.phone} is null
           and ${table.network} is null and ${table.addressSealed} is null
-          and ${table.addressHint} is null
+          and ${table.addressHint} is null and ${table.holderName} is null
+          and ${table.accountLast4} is null and ${table.accountSealed} is null
+          and ${table.qrSealed} is null and ${table.qrHint} is null
+          and ${table.promptpayIdType} is null and ${table.alipayAccount} is null
         when 'wallet' then ${table.network} is not null and ${table.addressSealed} is not null
           and ${table.addressHint} is not null and ${table.bankName} is null
           and ${table.phone} is null and ${table.cardLast4} is null
-          and ${table.cardSealed} is null
+          and ${table.cardSealed} is null and ${table.holderName} is null
+          and ${table.accountLast4} is null and ${table.accountSealed} is null
+          and ${table.qrSealed} is null and ${table.qrHint} is null
+          and ${table.promptpayIdType} is null and ${table.alipayAccount} is null
+        when 'account' then ${table.bankName} is not null and ${table.holderName} is not null
+          and ${table.accountLast4} is not null and ${table.accountSealed} is not null
+          and ${table.phone} is null and ${table.cardLast4} is null
+          and ${table.cardSealed} is null and ${table.network} is null
+          and ${table.addressSealed} is null and ${table.addressHint} is null
+          and ${table.qrSealed} is null and ${table.qrHint} is null
+          and ${table.promptpayIdType} is null and ${table.alipayAccount} is null
+        when 'promptpay' then ${table.holderName} is not null and ${table.qrSealed} is not null
+          and ${table.qrHint} is not null and ${table.promptpayIdType} is not null
+          and ${table.bankName} is null and ${table.phone} is null
+          and ${table.cardLast4} is null and ${table.cardSealed} is null
+          and ${table.network} is null and ${table.addressSealed} is null
+          and ${table.addressHint} is null and ${table.accountLast4} is null
+          and ${table.accountSealed} is null and ${table.alipayAccount} is null
+        when 'alipay' then ${table.holderName} is not null and ${table.alipayAccount} is not null
+          and ${table.bankName} is null and ${table.phone} is null
+          and ${table.cardLast4} is null and ${table.cardSealed} is null
+          and ${table.network} is null and ${table.addressSealed} is null
+          and ${table.addressHint} is null and ${table.accountLast4} is null
+          and ${table.accountSealed} is null and ${table.qrSealed} is null
+          and ${table.qrHint} is null and ${table.promptpayIdType} is null
+        when 'alipay_qr' then ${table.holderName} is not null and ${table.qrSealed} is not null
+          and ${table.qrHint} is not null and ${table.bankName} is null
+          and ${table.phone} is null and ${table.cardLast4} is null
+          and ${table.cardSealed} is null and ${table.network} is null
+          and ${table.addressSealed} is null and ${table.addressHint} is null
+          and ${table.accountLast4} is null and ${table.accountSealed} is null
+          and ${table.promptpayIdType} is null and ${table.alipayAccount} is null
+        else false
       end`,
     ),
   ],
@@ -481,10 +561,14 @@ export const serviceAccounts = pgTable(
      * исключаются — в отличие от архивных клиентских записей: счёт
      * гасят и включают обратно, и неполный он к тому времени останется
      * неполным.
+     *
+     * Роды здесь только те, что у рублей и USDT: в батах и юанях сервис
+     * не принимает, и незнакомому роду — явный отказ, а не `NULL` из
+     * `CASE` без ветки, который `CHECK` пропустил бы.
      */
     check(
       'service_accounts_fields_by_kind',
-      sql`case ${table.kind}
+      sql`case ${table.kind}::text
         when 'phone' then ${table.bankName} is not null and ${table.holderName} is not null
           and ${table.phone} is not null
           and ${table.cardLast4} is null and ${table.cardSealed} is null
@@ -500,6 +584,7 @@ export const serviceAccounts = pgTable(
           and ${table.holderName} is null
           and ${table.phone} is null and ${table.cardLast4} is null
           and ${table.cardSealed} is null
+        else false
       end`,
     ),
   ],

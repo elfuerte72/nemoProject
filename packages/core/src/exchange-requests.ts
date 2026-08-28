@@ -250,7 +250,8 @@ function thresholdSideOf(
  * Читается до транзакции вместе с котировкой: сетку выбирают по нему, а
  * котировка это обращение к чужому API, и держать ради него открытую
  * транзакцию нельзя. Пригодность записи проверяется всё равно внутри —
- * здесь важно только, банк это или кошелёк.
+ * здесь важно только, банк это или кошелёк. Решает запись целиком, а не
+ * род: у PromptPay ответ зависит от того, что внутри QR.
  *
  * Чужая или удалённая запись отвечает пустотой, а не отказом: отказать
  * должна проверка внутри транзакции, и своё сообщение у неё уже есть.
@@ -261,13 +262,13 @@ async function readPayoutMethod(
   requisitesId: string,
 ): Promise<PayoutMethod | undefined> {
   const [row] = await executor
-    .select({ kind: clientRequisites.kind })
+    .select({ kind: clientRequisites.kind, promptpayIdType: clientRequisites.promptpayIdType })
     .from(clientRequisites)
     .where(
       and(eq(clientRequisites.id, requisitesId), eq(clientRequisites.clientId, clientId)),
     )
     .limit(1);
-  return row === undefined ? undefined : payoutMethodOf(row.kind);
+  return row === undefined ? undefined : payoutMethodOf(row);
 }
 
 export async function submitExchangeRequest(

@@ -8,6 +8,7 @@ import {
   feeScheduleTiers,
   feeSchedules,
   referrals,
+  serviceAccounts,
   serviceSettings,
   transferNetworks,
 } from './schema.js';
@@ -211,6 +212,159 @@ describe('реквизиты клиента', () => {
         addressHint: 'TQmX…aU6e',
       }),
     ).rejects.toThrow(/transfer_networks/);
+  });
+});
+
+/*
+ * Четыре рода, заведённых 28 августа 2026: тайский счёт, PromptPay,
+ * Alipay по аккаунту и по QR. У каждого своё обязательное, и у всех —
+ * имя получателя: менеджер сверяет его с тем, что покажет приложение
+ * перед отправкой. Незнакомому роду ограничение отказывает явно: `CASE`
+ * без ветки даёт `NULL`, а `NULL` в `CHECK` проходит.
+ */
+describe('реквизиты клиента: Таиланд и Китай', () => {
+  const SEALED = Buffer.from('конверт');
+
+  beforeEach(async () => {
+    await insertClient(1n);
+  });
+
+  it('тайский счёт — с банком, номером и именем', async () => {
+    const [row] = await db
+      .insert(clientRequisites)
+      .values({
+        clientId: 1n,
+        kind: 'account',
+        bankName: 'Kasikornbank',
+        holderName: 'ALEKSEI PLOTNIKOV',
+        accountLast4: '6658',
+        accountSealed: SEALED,
+      })
+      .returning();
+
+    expect(row!.kind).toBe('account');
+  });
+
+  it('тайский счёт — не без имени получателя', async () => {
+    await expect(
+      db.insert(clientRequisites).values({
+        clientId: 1n,
+        kind: 'account',
+        bankName: 'Kasikornbank',
+        accountLast4: '6658',
+        accountSealed: SEALED,
+      }),
+    ).rejects.toThrow(/client_requisites_fields_by_kind/);
+  });
+
+  it('PromptPay — с QR, его хвостом, типом идентификатора и именем', async () => {
+    const [row] = await db
+      .insert(clientRequisites)
+      .values({
+        clientId: 1n,
+        kind: 'promptpay',
+        holderName: 'ALEKSEI PLOTNIKOV',
+        qrSealed: SEALED,
+        qrHint: '…614',
+        promptpayIdType: 'ewallet',
+      })
+      .returning();
+
+    expect(row!.promptpayIdType).toBe('ewallet');
+  });
+
+  it('PromptPay — не без типа идентификатора: по нему выбирается сетка', async () => {
+    await expect(
+      db.insert(clientRequisites).values({
+        clientId: 1n,
+        kind: 'promptpay',
+        holderName: 'ALEKSEI PLOTNIKOV',
+        qrSealed: SEALED,
+        qrHint: '…614',
+      }),
+    ).rejects.toThrow(/client_requisites_fields_by_kind/);
+  });
+
+  it('Alipay — с аккаунтом и именем, без банка', async () => {
+    const [row] = await db
+      .insert(clientRequisites)
+      .values({
+        clientId: 1n,
+        kind: 'alipay',
+        holderName: 'IAKHIN RADMIR',
+        alipayAccount: '7-9536656387',
+      })
+      .returning();
+
+    expect(row!.alipayAccount).toBe('7-9536656387');
+
+    await expect(
+      db.insert(clientRequisites).values({
+        clientId: 1n,
+        kind: 'alipay',
+        holderName: 'IAKHIN RADMIR',
+        alipayAccount: '7-9536656387',
+        bankName: 'Сбербанк',
+      }),
+    ).rejects.toThrow(/client_requisites_fields_by_kind/);
+  });
+
+  it('Alipay-QR — с QR и именем, без типа идентификатора PromptPay', async () => {
+    const [row] = await db
+      .insert(clientRequisites)
+      .values({
+        clientId: 1n,
+        kind: 'alipay_qr',
+        holderName: 'IAKHIN RADMIR',
+        qrSealed: SEALED,
+        qrHint: '…abcd',
+      })
+      .returning();
+
+    expect(row!.qrHint).toBe('…abcd');
+
+    await expect(
+      db.insert(clientRequisites).values({
+        clientId: 1n,
+        kind: 'alipay_qr',
+        holderName: 'IAKHIN RADMIR',
+        qrSealed: SEALED,
+        qrHint: '…abcd',
+        promptpayIdType: 'phone',
+      }),
+    ).rejects.toThrow(/client_requisites_fields_by_kind/);
+  });
+
+  it('у телефона имени получателя нет: оно — свойство новых родов', async () => {
+    await expect(
+      db.insert(clientRequisites).values({
+        clientId: 1n,
+        kind: 'phone',
+        bankName: 'Сбербанк',
+        phone: '+79990000000',
+        holderName: 'Иван',
+      }),
+    ).rejects.toThrow(/client_requisites_fields_by_kind/);
+  });
+});
+
+/*
+ * Счета сервиса новыми родами не пополняются: в батах и юанях сервис не
+ * принимает. Ограничение отказывает явно, а не молчит: `CASE` без ветки
+ * дал бы `NULL`, и счёт сервиса на тайский счёт прошёл бы.
+ */
+describe('счета сервиса', () => {
+  it('не заводятся незнакомым для них родом', async () => {
+    await db.insert(currencies).values({ code: 'THB', decimals: 2, kind: 'fiat' });
+
+    await expect(
+      db.insert(serviceAccounts).values({
+        kind: 'account',
+        currencyCode: 'THB',
+        bankName: 'Kasikornbank',
+        holderName: 'Сервис',
+      }),
+    ).rejects.toThrow(/service_accounts_fields_by_kind/);
   });
 });
 
