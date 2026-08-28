@@ -405,7 +405,7 @@ function RequisitesForm({
       }
     } catch {
       if (token === attempt.current) {
-        setQrComplaint('Картинку не удалось открыть. Попробуйте другой файл.');
+        setQrComplaint('QR не удалось открыть. Попробуйте другой файл.');
       }
     } finally {
       if (token === attempt.current) setReading(false);
@@ -619,7 +619,7 @@ function RequisitesForm({
                 на телефоне и на сервер не уходит.
               */}
               <label className="btn btn--soft">
-                {reading ? 'Читаем картинку…' : qr ? 'Выбрать другую картинку' : 'Выбрать картинку из галереи'}
+                {reading ? 'Читаем QR…' : qr ? 'Выбрать другой QR' : 'Выбрать QR из галереи'}
                 <input
                   type="file"
                   accept="image/*"
@@ -652,7 +652,7 @@ function RequisitesForm({
                 </div>
               ) : undefined}
               {qr ? (
-                <p className="hint">Если это не ваш QR, выберите другую картинку.</p>
+                <p className="hint">Если это не ваш QR, выберите другой.</p>
               ) : undefined}
               {qrComplaint ? <p className="error">{qrComplaint}</p> : undefined}
             </div>
