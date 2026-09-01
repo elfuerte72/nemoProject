@@ -46,8 +46,14 @@ import { InquirySheet, type InquiryTopic } from './inquiry-sheet';
 import { RequisitesSheet } from './requisites-section';
 import { SubscriptionsSheet } from './subscriptions-sheet';
 import { CurrencyPicker } from './ui/currency-picker';
-import { CardIcon, ChevronRight, SwapIcon } from './ui/icons';
-import { HoneyCellShape } from './ui/honeycomb';
+import {
+  CardIcon,
+  CartIcon,
+  ChevronRight,
+  HotelIcon,
+  SubscriptionIcon,
+  SwapIcon,
+} from './ui/icons';
 import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';
 import { ConfirmSheet, NoticeSheet, Sheet } from './ui/sheet';
@@ -1292,52 +1298,39 @@ export function ExchangeScreen({
         он местом, а не порядком: «Дополнительно» говорило о положении
         блока в списке, а не о том, зачем сюда заходят.
 
-        Сотами, а не сеткой плиток: улей — это и есть знак сервиса, и
-        четыре ячейки, сложенные со сдвигом ряда, узнаются как его
-        геометрия, а не как ряд карточек с пиктограммой в квадрате.
-        Стоит это тридцать пикселей высоты сверх прежней сетки.
-
-        Иконок внутри нет намеренно: в соте помещается либо рисунок,
-        либо подпись, а подпись здесь обязательна — по картинке
-        «оплатить покупку» от «оплатить подписку» не отличить.
-
-        Первая ячейка светлее и подписана медью: иерархия здесь
-        назначена, а не досталась от геометрии — карта единственная из
-        четырёх заводит заявку со своими состояниями, остальные уходят
-        сообщением в переписку.
+        Сеткой, а не строками: строк было бы три по семьдесят пикселей,
+        и блок уезжал бы за нижний край под карточкой заявки. В плитке
+        только название и состояние там, где оно есть, — подписи вроде
+        «оформит менеджер» повторяют то, что и так верно про всё здесь.
       */}
       <div className="section-title">За границей</div>
       <div className="abroad">
-        <button
-          type="button"
-          onClick={() => setSheet({ kind: 'card' })}
-          className="abroad__cell abroad__cell--lead"
-        >
-          <HoneyCellShape />
-          <span className="abroad__text">
-            <span className="abroad__label">Иностранная карта</span>
-            {cardLine ? <span className="abroad__state">{cardLine}</span> : undefined}
+        <button type="button" onClick={() => setSheet({ kind: 'card' })} className="abroad__item">
+          <span className="abroad__icon">
+            <CardIcon />
           </span>
+          <span className="abroad__label">Иностранная карта</span>
+          {cardLine ? <span className="abroad__state">{cardLine}</span> : undefined}
         </button>
         <button
           type="button"
           onClick={() => setSheet({ kind: 'inquiry', topic: 'hotel' })}
-          className="abroad__cell"
+          className="abroad__item"
         >
-          <HoneyCellShape />
-          <span className="abroad__text">
-            <span className="abroad__label">Оплатить отель</span>
+          <span className="abroad__icon">
+            <HotelIcon />
           </span>
+          <span className="abroad__label">Оплатить отель</span>
         </button>
         <button
           type="button"
           onClick={() => setSheet({ kind: 'inquiry', topic: 'purchase' })}
-          className="abroad__cell"
+          className="abroad__item"
         >
-          <HoneyCellShape />
-          <span className="abroad__text">
-            <span className="abroad__label">Оплатить покупку</span>
+          <span className="abroad__icon">
+            <CartIcon />
           </span>
+          <span className="abroad__label">Оплатить покупку</span>
         </button>
         {/*
           Подписки стоят в том же ряду, хотя ведут к партнёру, а не к
@@ -1348,12 +1341,12 @@ export function ExchangeScreen({
         <button
           type="button"
           onClick={() => setSheet({ kind: 'subscriptions' })}
-          className="abroad__cell"
+          className="abroad__item"
         >
-          <HoneyCellShape />
-          <span className="abroad__text">
-            <span className="abroad__label">Оплатить подписку</span>
+          <span className="abroad__icon">
+            <SubscriptionIcon />
           </span>
+          <span className="abroad__label">Оплатить подписку</span>
         </button>
       </div>
 
