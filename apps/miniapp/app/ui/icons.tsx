@@ -139,55 +139,6 @@ export function CardIcon({ size = 20 }: IconProps) {
   );
 }
 
-/** Кровать под навесом: отель узнаётся по ней, а не по зданию. */
-export function HotelIcon({ size = 20 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 18V7M4 12h16v6M4 15h16M8.5 11.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Zm4-3.2H20"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/**
- * Круг из двух стрелок — подписка: то, что списывается снова каждый
- * месяц. Не карта и не корзина: платит здесь не сервис и не клиент
- * разово, а подписка продлевается сама.
- */
-export function SubscriptionIcon({ size = 20 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M20 12a8 8 0 0 1-13.7 5.6M4 12a8 8 0 0 1 13.7-5.6M17.5 3.2v3.4h-3.4M6.5 20.8v-3.4h3.4"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** Корзина: покупка в чужом магазине узнаётся по ней везде. */
-export function CartIcon({ size = 20 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M3.5 5h2.2l2 9.5h9.6l2-6.8H7.1M9.5 19.2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm7 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 /**
  * Ведро с крышкой — знак удаления записи.
  *
