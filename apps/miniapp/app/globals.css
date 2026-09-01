@@ -1715,152 +1715,64 @@ button.tile:hover {
  * дефект сетки: пунктов здесь ровно столько, сколько сервис умеет, и
  * четвёртый ради симметрии был бы обещанием.
  */
-/*
- * «За границей» — сотами.
- *
- * Улей — это и есть знак сервиса, и раскладка здесь его же геометрия:
- * четыре ячейки 132×152, второй ряд сдвинут на полшага и заходит на
- * первый на четверть высоты, как соты в настоящем улье.
- *
- * Пропорцию держит контейнер, а ячейки расставлены долями от него:
- * посчитанные в пикселях, они разъезжались бы на каждой ширине экрана,
- * а Mini App открывают и на 320 px, и на 430.
- */
 .abroad {
-  position: relative;
-  aspect-ratio: 346 / 274;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
   margin-top: 10px;
 }
 
-.abroad__cell {
-  position: absolute;
-  width: 38.15%;
-  height: 55.48%;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--text);
-  cursor: pointer;
-  /*
-   * Цель нажатия обрезана по соте, а не по прямоугольнику кнопки: в
-   * улье углы соседних ячеек заходят друг за друга, и по прямоугольнику
-   * нижний ряд перехватывал бы нажатия у верхнего — палец в углу
-   * «Иностранной карты» открывал бы покупку.
-   */
-  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  --cell: var(--surface-soft);
-}
-
-.abroad__cell:nth-child(2) {
-  left: 41.04%;
-}
-
-.abroad__cell:nth-child(3) {
-  left: 20.52%;
-  top: 44.53%;
-}
-
-.abroad__cell:nth-child(4) {
-  left: 61.56%;
-  top: 44.53%;
-}
-
-/*
- * Ведущая ячейка светлее и подписана медью. Иерархия здесь назначена, а
- * не досталась от геометрии: из четырёх дел карта единственная заводит
- * заявку со своими состояниями.
- */
-.abroad__cell--lead {
-  --cell: var(--surface-soft-hover);
-}
-
-.abroad__cell:hover {
-  --cell: var(--surface-soft-strong);
-}
-
-.abroad__cell:active {
-  --cell: var(--surface-soft-hover);
-}
-
-.abroad__cell--lead:hover {
-  --cell: rgba(158, 146, 214, 0.22);
-}
-
-.abroad__cell--lead:active {
-  --cell: rgba(158, 146, 214, 0.25);
-}
-
-.honey__shape {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.honey__face {
-  fill: var(--cell);
-  transition: fill 0.15s ease;
-}
-
-.honey__ring {
-  fill: none;
-  stroke: var(--gold-light);
-  stroke-width: 3;
-  opacity: 0;
-}
-
-.abroad__cell:focus-visible {
-  outline: none;
-}
-
-.abroad__cell:focus-visible .honey__ring {
-  opacity: 1;
-}
-
-/*
- * Подпись живёт в прямоугольнике внутри соты: CSS не умеет обтекать
- * текст внутри фигуры — `shape-outside` работает только снаружи
- * плавающего элемента, — и отступ до наклонных сторон приходится
- * задавать прямоугольным ящиком.
- */
-.abroad__text {
-  position: absolute;
-  left: 15.15%;
-  right: 15.15%;
-  top: 25%;
-  bottom: 25%;
+.abroad__item {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 104px;
+  padding: 14px;
+  border: none;
+  border-radius: var(--radius-tile);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.abroad__item:hover {
+  background: var(--surface-soft-hover);
+}
+
+.abroad__item:active {
+  background: var(--surface-soft-strong);
+}
+
+.abroad__icon {
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  text-align: center;
-}
-
-/*
- * Кегль привязан к ширине экрана: в соту помещается меньше, чем в
- * плитку, и на 320 px «Иностранная карта» набором в 13,5 не влезает
- * между наклонными сторонами.
- */
-.abroad__label {
-  font-size: clamp(11px, 3.4vw, 13.5px);
-  font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: -0.2px;
-  text-wrap: balance;
-}
-
-.abroad__cell--lead .abroad__label {
-  font-weight: 700;
+  width: 36px;
+  height: 36px;
+  /* 12 + 12 отступа плитки: внешний радиус плитки на два больше суммы,
+     и на глаз угол внутри её угла лежит ровно. */
+  border-radius: var(--radius-inner);
+  background: rgba(249, 160, 60, 0.12);
   color: var(--gold-light);
+}
+
+.abroad__label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: pretty;
 }
 
 /* Состояние есть только там, где оно есть: у поданной заявки на карту. */
 .abroad__state {
-  font-size: clamp(10px, 2.8vw, 11.5px);
+  margin-top: -4px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1.2;
-  color: var(--text-dim);
+  color: var(--gold-light);
 }
 
 /* ── Ряды списков ────────────────────────────────────────────────── */
