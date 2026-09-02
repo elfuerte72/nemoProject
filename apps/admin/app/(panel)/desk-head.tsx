@@ -20,6 +20,7 @@ export function DeskHead({
   status,
   heading,
   overview,
+  tools,
 }: {
   readonly fetchedAt: string;
   readonly query: string;
@@ -29,6 +30,8 @@ export function DeskHead({
   readonly heading: ReactNode;
   /** Плитки и быстрые переходы — между шапкой и фильтрами. */
   readonly overview: ReactNode;
+  /** Кнопки рядом с отметкой времени: «Поля». */
+  readonly tools?: ReactNode;
 }) {
   const [typing, setTyping] = useState(false);
 
@@ -36,7 +39,10 @@ export function DeskHead({
     <>
       <header className="page__head">
         {heading}
-        <LiveQueue fetchedAt={fetchedAt} typing={typing} />
+        <div className="page__actions">
+          {tools}
+          <LiveQueue fetchedAt={fetchedAt} typing={typing} />
+        </div>
       </header>
       {overview}
       <QueueFilters query={query} kind={kind} status={status} onTyping={setTyping} />

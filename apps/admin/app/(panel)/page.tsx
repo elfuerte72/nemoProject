@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { exchangeKinds, inProgressExchangeStatuses } from '@nemo/types';
 import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
@@ -9,8 +10,10 @@ import { HowToRunRequest } from '@/app/ui/how-to';
 import { Greeting } from '@/app/ui/greeting';
 import { Icon } from '@/app/ui/icons';
 import { Stat, Stats } from '@/app/ui/stat';
+import { TABLE_PREFS_COOKIE, readTablePrefs } from '@/lib/table-prefs';
 import { DeskHead } from './desk-head';
 import { ExchangeTable } from './exchange-table';
+import { TablePrefsSheet } from './table-prefs-sheet';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +41,8 @@ export default async function DeskPage({
   const { actor, displayName } = viewer;
 
   const params = await searchParams;
+  // Личные настройки таблицы — из куки этого сотрудника; чужая или испорченная — по умолчанию.
+  const prefs = readTablePrefs((await cookies()).get(TABLE_PREFS_COOKIE)?.value, actor.staffId);
   const query = single(params.q);
   const kind = pick(single(params.kind), exchangeKinds);
   /*
@@ -55,8 +60,12 @@ export default async function DeskPage({
    * `coreFilterFor` — та же функция, что у маршрута дочитывания.
    */
   const filter: DeskFilter = { q: query, kind: kind ?? '', status: status ?? '' };
-  const common = coreFilterFor('queue', filter);
-  const working = { mine: coreFilterFor('mine', filter), others: coreFilterFor('others', filter) };
+  const limit = prefs.pageSize;
+  const common = { ...coreFilterFor('queue', filter), limit };
+  const working = {
+    mine: { ...coreFilterFor('mine', filter), limit },
+    others: { ...coreFilterFor('others', filter), limit },
+  };
 
   const core = getCore();
   /*
@@ -70,9 +79,9 @@ export default async function DeskPage({
       core.listExchangeRequestsInProgress(actor, working.mine),
       core.listExchangeRequestQueue(actor, common),
       core.listExchangeRequestsInProgress(actor, working.others),
-      core.countExchangeRequestsInProgress(actor, working.mine),
-      core.countExchangeRequestQueue(actor, common),
-      core.countExchangeRequestsInProgress(actor, working.others),
+      core.countExchangeRequestsInProgress(actor, coreFilterFor('mine', filter)),
+      core.countExchangeRequestQueue(actor, coreFilterFor('queue', filter)),
+      core.countExchangeRequestsInProgress(actor, coreFilterFor('others', filter)),
       // Те же четыре числа, что в меню, — из памяти запроса, не заново.
       panelCounts(actor),
       // Плитки — про весь сервис, а не про фильтр: сузив стол до одного
@@ -91,6 +100,7 @@ export default async function DeskPage({
         query={query}
         kind={kind ?? ''}
         status={status ?? ''}
+        tools={<TablePrefsSheet prefs={prefs} staffId={actor.staffId} />}
         heading={
           <div>
             <Greeting name={displayName} />
@@ -189,6 +199,7 @@ export default async function DeskPage({
           total={mineTotal}
           scope="mine"
           filter={filter}
+          prefs={prefs}
           empty="За вами ничего не закреплено. Возьмите заявку из очереди — она встанет сюда."
         />
       </section>
@@ -205,6 +216,7 @@ export default async function DeskPage({
           total={queueTotal}
           scope="queue"
           filter={filter}
+          prefs={prefs}
           empty="Новых заявок нет. Появится — встанет здесь; экран перечитывает очередь сам."
         />
         {/*
@@ -227,6 +239,7 @@ export default async function DeskPage({
           total={othersTotal}
           scope="others"
           filter={filter}
+          prefs={prefs}
           empty="Коллеги ничего не ведут — вся работа либо у вас, либо ещё в очереди."
           showManager
         />

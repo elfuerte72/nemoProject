@@ -350,6 +350,109 @@ a {
   white-space: nowrap;
 }
 
+/* ── Лист с настройками ──────────────────────────────────────────── */
+
+/*
+ * Лист поверх страницы: настройки таблицы, подтверждения. Та же
+ * подложка, что у палитры, — один слой на все всплывающие окна.
+ */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 10vh 16px 16px;
+  background: rgba(6, 6, 8, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  overflow: auto;
+}
+
+.sheet__box {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 24px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  animation: nm-fade-up 0.18s var(--ease) both;
+}
+
+.sheet__head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sheet__group {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sheet__group > legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.sheet__checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.sheet__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* Флажок с подписью: цель нажатия — вся строка. */
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--gold);
+}
+
+/* Плотная таблица: те же колонки, меньше воздуха. */
+.table--dense {
+  gap: 3px;
+}
+
+.table--dense .table__row {
+  min-height: 40px;
+  padding: 4px 14px;
+}
+
+.table--dense .cell__value {
+  font-size: 13px;
+}
+
+.table--dense .cell__note {
+  font-size: 11.5px;
+}
+
 /* ── Палитра быстрого перехода ───────────────────────────────────── */
 
 .palette {

@@ -4,6 +4,7 @@ import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { coreFilterFor, deskScopes, toExchangeRow, type DeskScope } from '@/lib/exchange-rows';
 import { cursorFromParams } from '@/lib/paging';
+import { pageSizes } from '@/lib/table-prefs';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,9 +31,12 @@ export async function GET(request: Request): Promise<Response> {
       status: pick(params.get('status') ?? '', inProgressExchangeStatuses) ?? '',
     });
     const cursor = cursorFromParams(params);
-    const paged = cursor
-      ? { ...filter, after: { createdAt: new Date(cursor.createdAt), id: cursor.id } }
-      : filter;
+    const limit = pick(params.get('limit') ?? '', pageSizes.map(String));
+    const paged = {
+      ...filter,
+      ...(limit ? { limit: Number(limit) } : {}),
+      ...(cursor ? { after: { createdAt: new Date(cursor.createdAt), id: cursor.id } } : {}),
+    };
 
     const core = getCore();
     const rows =

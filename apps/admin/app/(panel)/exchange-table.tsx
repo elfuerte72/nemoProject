@@ -7,6 +7,7 @@ import type { DeskFilter, DeskScope, ExchangeRow } from '@/lib/exchange-rows';
 import { formatAmount } from '@/lib/format';
 import { pillClass } from '@/lib/labels';
 import { cursorOf, cursorToParams, mergePages } from '@/lib/paging';
+import { gridColumns, type TablePrefs } from '@/lib/table-prefs';
 import { Moment } from '@/app/ui/moment';
 
 /**
@@ -24,6 +25,7 @@ export function ExchangeTable({
   scope,
   filter,
   empty,
+  prefs,
   showManager = false,
 }: {
   rows: readonly ExchangeRow[];
@@ -32,6 +34,8 @@ export function ExchangeTable({
   scope: DeskScope;
   filter: DeskFilter;
   empty: string;
+  /** Личные настройки: колонки, плотность, строк на странице. */
+  prefs: TablePrefs;
   /** Колонка «ведёт» — только там, где заявки чужие. */
   showManager?: boolean;
 }) {
@@ -60,6 +64,7 @@ export function ExchangeTable({
         q: filter.q,
         kind: filter.kind,
         status: filter.status,
+        limit: String(prefs.pageSize),
         ...cursorToParams(cursor),
       });
       const response = await fetch(`/api/exchange-requests?${params.toString()}`);
@@ -73,20 +78,28 @@ export function ExchangeTable({
     }
   };
 
-  const columns = showManager ? 'table--exchange-taken' : 'table--exchange';
+  const show = (column: 'kind' | 'client' | 'manager' | 'submitted') =>
+    !prefs.hidden.includes(column);
+  const manager = showManager && show('manager');
+  /*
+   * Сетка задаётся здесь, а не классом очереди: набор колонок теперь
+   * личный, и шапка со строками берут его из одной переменной.
+   */
+  const columns = prefs.dense ? 'table table--dense' : 'table';
+  const style = { '--cols': gridColumns(prefs, showManager) } as React.CSSProperties;
   const remaining = Math.max(total - shown.length, 0);
 
   return (
     <>
-      <div aria-hidden className={`table__head ${columns}`}>
+      <div aria-hidden className="table__head" style={style}>
         <span>Обмен</span>
-        <span>Вид</span>
-        <span>Клиент</span>
+        {show('kind') ? <span>Вид</span> : undefined}
+        {show('client') ? <span>Клиент</span> : undefined}
         <span>Состояние</span>
-        {showManager ? <span>Ведёт</span> : undefined}
-        <span>Подана</span>
+        {manager ? <span>Ведёт</span> : undefined}
+        {show('submitted') ? <span>Подана</span> : undefined}
       </div>
-      <ul className={`table ${columns}`}>
+      <ul className={columns} style={style}>
         {shown.map((request) => (
           <li
             key={request.id}
@@ -115,40 +128,46 @@ export function ExchangeTable({
                   {request.toCode}
                 </span>
               </span>
-              <span className="cell">
-                <span className="cell__label">Вид</span>
-                <span className="cell__note">{KIND_LABELS[request.kind]}</span>
-              </span>
+              {show('kind') ? (
+                <span className="cell">
+                  <span className="cell__label">Вид</span>
+                  <span className="cell__note">{KIND_LABELS[request.kind]}</span>
+                </span>
+              ) : undefined}
               {/*
                 Ник сверху, номер под ним: в очереди из десятка строк
                 номера отличаются друг от друга только цифрами в
                 середине, а ник читается сразу.
               */}
-              <span className="cell">
-                <span className="cell__label">Клиент</span>
-                <span className="cell__value">
-                  {request.clientUsername ? `@${request.clientUsername}` : 'Без ника'}
+              {show('client') ? (
+                <span className="cell">
+                  <span className="cell__label">Клиент</span>
+                  <span className="cell__value">
+                    {request.clientUsername ? `@${request.clientUsername}` : 'Без ника'}
+                  </span>
+                  <span className="cell__note">{request.clientId}</span>
                 </span>
-                <span className="cell__note">{request.clientId}</span>
-              </span>
+              ) : undefined}
               <span className="cell">
                 <span className="cell__label">Состояние</span>
                 <span className={pillClass(STATUS_TONES[request.status])}>
                   {STATUS_LABELS[request.status]}
                 </span>
               </span>
-              {showManager ? (
+              {manager ? (
                 <span className="cell">
                   <span className="cell__label">Ведёт</span>
                   <span className="cell__note">{request.assignedManagerName ?? '—'}</span>
                 </span>
               ) : undefined}
-              <span className="cell cell--num">
-                <span className="cell__label">Подана</span>
-                <span className="cell__note">
-                  <Moment at={request.createdAt} />
+              {show('submitted') ? (
+                <span className="cell cell--num">
+                  <span className="cell__label">Подана</span>
+                  <span className="cell__note">
+                    <Moment at={request.createdAt} />
+                  </span>
                 </span>
-              </span>
+              ) : undefined}
             </Link>
           </li>
         ))}
@@ -171,7 +190,7 @@ export function ExchangeTable({
               onClick={() => void more()}
               aria-busy={loading}
             >
-              {loading ? 'Дочитываю…' : `Показать ещё ${Math.min(remaining, 50)}`}
+              {loading ? 'Дочитываю…' : `Показать ещё ${Math.min(remaining, prefs.pageSize)}`}
             </button>
           </div>
         </div>
