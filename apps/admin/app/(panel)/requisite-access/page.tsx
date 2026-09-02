@@ -3,6 +3,7 @@ import { CoreError } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
+import { HowToAccessLog } from '@/app/ui/how-to';
 import { Moment } from '@/app/ui/moment';
 
 export const dynamic = 'force-dynamic';
@@ -68,19 +69,25 @@ export default async function RequisiteAccessPage({
           <div>
             <h1 className="page__title">Журнал доступа</h1>
             <p className="page__sub">
-              Кто и когда открывал чужие номера карт и счетов, адреса кошельков, QR и
-              присланные клиентами изображения. Только чтение: записи не правятся и не
-              удаляются.
+              Кто и когда открывал чужие номера карт и счетов, адреса кошельков, QR и присланные
+              клиентами изображения. Только чтение: записи не правятся и не удаляются.
             </p>
           </div>
           <span className="section__count">{entries.length}</span>
         </header>
 
+        <HowToAccessLog />
+
         <form method="get" className="card">
           <div className="form-row">
             <label className="field field--narrow">
               <span className="label">Клиент</span>
-              <input className="input" name="clientId" defaultValue={clientId ?? ''} inputMode="numeric" />
+              <input
+                className="input"
+                name="clientId"
+                defaultValue={clientId ?? ''}
+                inputMode="numeric"
+              />
             </label>
             {/* Списком, а не полем: идентификатор сотрудника администратор
                 наизусть не помнит, а вписывать его руками — не отбор. */}
@@ -111,8 +118,8 @@ export default async function RequisiteAccessPage({
 
         {entries.length === 0 ? (
           <p className="empty">
-            Реквизитов клиентов ещё никто не открывал. Каждое такое
-            открытие встанет сюда — с именем сотрудника и временем.
+            Реквизитов клиентов ещё никто не открывал. Каждое такое открытие встанет сюда — с именем
+            сотрудника и временем.
           </p>
         ) : (
           <ul className="rows">

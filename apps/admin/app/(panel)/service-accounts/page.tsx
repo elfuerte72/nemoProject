@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
+import { HowToServiceAccounts } from '@/app/ui/how-to';
 import { ServiceAccountForms } from './service-account-forms';
 
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,8 @@ export default async function ServiceAccountsPage() {
           </p>
         </div>
       </header>
+
+      <HowToServiceAccounts />
 
       <ServiceAccountForms
         accounts={accounts}
