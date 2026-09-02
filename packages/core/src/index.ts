@@ -146,6 +146,8 @@ import {
   type ExchangeQueueFilter,
 } from './exchange-workflow.js';
 import { listColleagues, reassignExchangeRequest } from './exchange-reassign.js';
+import { summarizeReferrals } from './referral-summary.js';
+export type { ReferralLineTotal, ReferralSummary, ReferralTopClient } from './referral-summary.js';
 import {
   countClients,
   listClientExchangeRequests,
@@ -293,6 +295,8 @@ export function createCore(ctx: CoreConfig) {
       input: ReassignExchangeRequestInput,
     ) => reassignExchangeRequest(ctx, actor, requestId, input),
     listColleagues: (actor: Actor) => listColleagues(ctx, actor),
+    summarizeReferrals: (actor: Actor, period: AnalyticsPeriod) =>
+      summarizeReferrals(ctx, actor, period),
     listClients: (actor: Actor, filter?: ClientFilter) => listClients(ctx, actor, filter),
     countClients: (actor: Actor, filter?: ClientFilter) => countClients(ctx, actor, filter),
     summarizeClients: (actor: Actor) => summarizeClients(ctx, actor),

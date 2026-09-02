@@ -15,8 +15,11 @@ export function PeriodChips({
   current,
   from,
   to,
+  basePath = '/analytics',
 }: {
   current: PeriodKey;
+  /** Раздел, в адрес которого уходит период. */
+  basePath?: string;
   /** Границы своего периода днями «2026-09-02» — для полей. */
   from: string;
   to: string;
@@ -32,7 +35,7 @@ export function PeriodChips({
         {quick.map((key) => (
           <Link
             key={key}
-            href={`/analytics?period=${key}`}
+            href={`${basePath}?period=${key}`}
             className={current === key ? 'chip chip--on' : 'chip'}
             scroll={false}
           >
@@ -44,7 +47,7 @@ export function PeriodChips({
         className="period__custom"
         onSubmit={(event) => {
           event.preventDefault();
-          router.push(`/analytics?period=custom&from=${draftFrom}&to=${draftTo}`);
+          router.push(`${basePath}?period=custom&from=${draftFrom}&to=${draftTo}`);
         }}
       >
         <label className="field field--narrow">
