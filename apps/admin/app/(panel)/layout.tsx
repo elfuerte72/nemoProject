@@ -3,11 +3,12 @@ import type { ReactNode } from 'react';
 import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { Sidebar } from '@/app/ui/sidebar';
+import { Topbar } from '@/app/ui/topbar';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Каркас рабочих разделов: меню слева, раздел справа.
+ * Каркас рабочих разделов: меню слева, шапка сверху, раздел под ней.
  *
  * Экран входа сюда не попадает — он лежит вне этой группы: меню, из
  * которого некуда идти, и имя сотрудника, которого ещё не опознали, там
@@ -48,8 +49,6 @@ export default async function PanelLayout({ children }: { children: ReactNode })
   return (
     <div className="shell">
       <Sidebar
-        displayName={displayName}
-        role={actor.role}
         counts={{
           exchange,
           withdrawals: withdrawals.length,
@@ -57,7 +56,10 @@ export default async function PanelLayout({ children }: { children: ReactNode })
           conversations,
         }}
       />
-      <div>{children}</div>
+      <div className="shell__main">
+        <Topbar displayName={displayName} role={actor.role} />
+        {children}
+      </div>
     </div>
   );
 }

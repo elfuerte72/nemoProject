@@ -2,121 +2,142 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { StaffRole } from '@nemo/types';
-import { ROLE_LABELS } from '@/lib/labels';
+import { useEffect, useState } from 'react';
+import {
+  NAV_COLLAPSED_KEY,
+  NAV_GROUPS,
+  isCurrentSection,
+  parseCollapsed,
+  serializeCollapsed,
+  toggleCollapsed,
+  type NavCounts,
+  type NavGroup,
+  type NavItem,
+} from '@/lib/nav';
+import { Icon } from '@/app/ui/icons';
 
 /**
  * Постоянное меню панели.
  *
- * Клиентский компонент ради одного: текущий раздел определяется по
- * адресу, а адрес меняется без перезагрузки. Всё остальное — счётчики,
- * имя, роль — приходит с сервера готовым.
- *
- * Разделы администратора видны всем. Скрывать их значило бы полагаться
- * на то, что менеджер не наберёт адрес руками, — это не разграничение
- * доступа, а его видимость; отказывают сами операции.
+ * Клиентский компонент ради двух вещей: текущий раздел определяется по
+ * адресу, а адрес меняется без перезагрузки; свёртка группы — личная и
+ * живёт в браузере. Всё остальное — счётчики, состав разделов —
+ * приходит готовым.
  */
 
-export interface SidebarCounts {
-  readonly exchange: number;
-  readonly withdrawals: number;
-  readonly cards: number;
-  /** Клиенты, ждущие ответа: столько же работы, сколько в очередях. */
-  readonly conversations: number;
-}
+export type SidebarCounts = NavCounts;
 
-interface Item {
-  readonly href: string;
-  readonly label: string;
-  readonly icon:
-    | 'exchange'
-    | 'withdrawal'
-    | 'card'
-    | 'chat'
-    | 'settings'
-    | 'log'
-    | 'account';
-  readonly count?: number | undefined;
-}
-
-export function Sidebar({
-  displayName,
-  role,
-  counts,
-}: {
-  displayName: string;
-  role: StaffRole;
-  counts: SidebarCounts;
-}) {
+export function Sidebar({ counts }: { counts: SidebarCounts }) {
   const pathname = usePathname();
-
-  const work: readonly Item[] = [
-    { href: '/', label: 'Обмен', icon: 'exchange', count: counts.exchange },
-    { href: '/withdrawals', label: 'Вывод', icon: 'withdrawal', count: counts.withdrawals },
-    { href: '/card-applications', label: 'Карты', icon: 'card', count: counts.cards },
-    {
-      href: '/conversations',
-      label: 'Обращения',
-      icon: 'chat',
-      count: counts.conversations,
-    },
-  ];
-  const admin: readonly Item[] = [
-    { href: '/service-accounts', label: 'Счета сервиса', icon: 'account' },
-    { href: '/settings', label: 'Настройки', icon: 'settings' },
-    { href: '/requisite-access', label: 'Журнал доступа', icon: 'log' },
-  ];
-
   /*
-   * Корень отмечается только на самом корне: иначе он подсвечен всегда,
-   * потому что с него начинается любой адрес. Остальные разделы — с
-   * вложенными страницами: карточка заявки принадлежит своему разделу.
+   * Свёрнутое читается после первого показа, а не при нём: сервер о
+   * браузере не знает, и разметка, собранная с оглядкой на хранилище,
+   * разошлась бы с серверной. Мгновение с развёрнутыми группами —
+   * плата за это, и она меньше мигания всего меню.
    */
-  const isCurrent = (href: string) =>
-    href === '/' ? pathname === '/' : pathname.startsWith(href);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    try {
+      setCollapsed(parseCollapsed(window.localStorage.getItem(NAV_COLLAPSED_KEY)));
+    } catch {
+      // Хранилище закрыто — меню просто не запомнит свёртку.
+    }
+  }, []);
+
+  const toggle = (key: string) => {
+    const next = toggleCollapsed(collapsed, key);
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(NAV_COLLAPSED_KEY, serializeCollapsed(next));
+    } catch {
+      // То же: без памяти, но работает.
+    }
+  };
 
   return (
     <aside className="sidebar">
-      <div className="sidebar__brand">
+      <Link href="/" className="sidebar__brand">
+        <span className="sidebar__mark" aria-hidden>
+          n
+        </span>
         nemo <span>панель</span>
-      </div>
+      </Link>
 
       <nav className="sidebar__nav">
-        {work.map((item) => (
-          <NavLink key={item.href} item={item} current={isCurrent(item.href)} />
-        ))}
-
-        <div className="sidebar__group">Администратор</div>
-        {admin.map((item) => (
-          <NavLink key={item.href} item={item} current={isCurrent(item.href)} />
+        {NAV_GROUPS.map((group) => (
+          <Group
+            key={group.key}
+            group={group}
+            counts={counts}
+            pathname={pathname}
+            open={!collapsed.has(group.key)}
+            onToggle={() => toggle(group.key)}
+          />
         ))}
       </nav>
-
-      <div className="sidebar__foot">
-        <div className="sidebar__who">
-          <span className="sidebar__name">{displayName}</span>
-          <span className="sidebar__role">{ROLE_LABELS[role]}</span>
-        </div>
-        {/*
-          Кнопка, а не ссылка: выход меняет состояние, и срабатывать он
-          должен по нажатию — а не от предзагрузки соседней вкладки.
-          Переход адресом, а не router: после снятия куки нужен свежий
-          запрос, иначе разделы приедут из кэша уже закрытой сессии.
-        */}
-        <button type="button" className="btn btn--ghost btn--wide" onClick={signOut}>
-          Выйти
-        </button>
-      </div>
     </aside>
   );
 }
 
-async function signOut(): Promise<void> {
-  await fetch('/api/auth/logout', { method: 'POST' });
-  window.location.href = '/login';
+function Group({
+  group,
+  counts,
+  pathname,
+  open,
+  onToggle,
+}: {
+  group: NavGroup;
+  counts: NavCounts;
+  pathname: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const id = `nav-${group.key}`;
+  /*
+   * Группа с текущим разделом не сворачивается: свёрнутая, она прятала
+   * бы подсветку того места, где человек находится.
+   */
+  const holdsCurrent = group.items.some((item) => isCurrentSection(item.href, pathname));
+  const shown = open || holdsCurrent;
+
+  return (
+    <div className="sidebar__section">
+      <button
+        type="button"
+        className="sidebar__group"
+        aria-expanded={shown}
+        aria-controls={id}
+        onClick={onToggle}
+      >
+        {group.title}
+        <span className="sidebar__group-chevron" aria-hidden>
+          <Icon name="chevron" size={13} />
+        </span>
+      </button>
+      {/* Скрытием, а не снятием: разметка посчитана, и возвращается она за кадр. */}
+      <div id={id} className="sidebar__items" hidden={!shown}>
+        {group.items.map((item) => (
+          <NavLink
+            key={item.href}
+            item={item}
+            count={item.count ? counts[item.count] : undefined}
+            current={isCurrentSection(item.href, pathname)}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
-function NavLink({ item, current }: { item: Item; current: boolean }) {
+function NavLink({
+  item,
+  count,
+  current,
+}: {
+  item: NavItem;
+  count: number | undefined;
+  current: boolean;
+}) {
   return (
     <Link
       href={item.href}
@@ -124,83 +145,13 @@ function NavLink({ item, current }: { item: Item; current: boolean }) {
       {...(current ? { 'aria-current': 'page' as const } : {})}
       // Голосом счётчик читается как число после названия раздела и
       // ничего не значит: вслух он должен называть, чего это число.
-      {...(item.count ? { 'aria-label': `${item.label}, в очереди: ${item.count}` } : {})}
+      {...(count ? { 'aria-label': `${item.label}, в очереди: ${count}` } : {})}
     >
       <span className="sidebar__icon">
         <Icon name={item.icon} />
       </span>
       {item.label}
-      {item.count ? <span className="sidebar__count">{item.count}</span> : undefined}
+      {count ? <span className="sidebar__count">{count}</span> : undefined}
     </Link>
   );
-}
-
-/**
- * Значки рисуются здесь, а не тянутся пакетом: их пять, и каждый — две
- * строки разметки. Зависимость с сотней значков стоила бы дороже.
- */
-function Icon({ name }: { name: Item['icon'] }) {
-  const common = {
-    width: 17,
-    height: 17,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.7,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    'aria-hidden': true,
-  };
-
-  switch (name) {
-    case 'exchange':
-      return (
-        <svg {...common}>
-          <path d="M4 8h15l-3.5-3.5M20 16H5l3.5 3.5" />
-        </svg>
-      );
-    case 'withdrawal':
-      return (
-        <svg {...common}>
-          <path d="M12 4v11m0 0 4-4m-4 4-4-4" />
-          <path d="M4 19h16" />
-        </svg>
-      );
-    case 'card':
-      return (
-        <svg {...common}>
-          <rect x="3" y="5" width="18" height="14" rx="3" />
-          <path d="M3 10h18M7 15h3" />
-        </svg>
-      );
-    case 'chat':
-      return (
-        <svg {...common}>
-          <path d="M4 5h16v11H9l-5 4z" />
-          <path d="M8 10h8" />
-        </svg>
-      );
-    case 'settings':
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4m0-12.8-1.4 1.4m-10 10-1.4 1.4" />
-        </svg>
-      );
-    case 'account':
-      return (
-        <svg {...common}>
-          <path d="M4 10 12 4l8 6" />
-          <path d="M6 10v8m4-8v8m4-8v8m4-8v8" />
-          <path d="M4 20h16" />
-        </svg>
-      );
-    case 'log':
-      return (
-        <svg {...common}>
-          <path d="M6 3h9l4 4v14H6z" />
-          <path d="M9 12h7M9 16h7M9 8h3" />
-        </svg>
-      );
-  }
 }

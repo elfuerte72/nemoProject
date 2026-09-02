@@ -1,3 +1,5 @@
+import { HowTo, type HowToItem } from '@/app/ui/howto';
+
 /**
  * Памятка «как вести заявку».
  *
@@ -5,17 +7,9 @@
  * панель договаривает сама. Пять шагов от «взять» до «исполнена»
  * закрывают всё, что в этом разговоре сказали бы; остальное объясняют
  * подписи там, где нажимают.
- *
- * Текст живёт в коде панели, рядом с экраном, а не в отдельной вики:
- * вики расходится с интерфейсом через месяц, и первым это замечает тот,
- * кто по ней работает.
- *
- * Свёрнута по умолчанию и не требует закрытия: обучающий тур,
- * встающий поперёк работы, закрывают не читая — и второй раз уже не
- * открывают.
  */
 
-const STEPS: readonly { readonly title: string; readonly detail: string }[] = [
+const STEPS: readonly HowToItem[] = [
   {
     title: 'Взять в работу',
     detail:
@@ -52,16 +46,11 @@ const STEPS: readonly { readonly title: string; readonly detail: string }[] = [
 
 export function HowToRunRequest() {
   return (
-    <details className="howto">
-      <summary className="howto__head">Как вести заявку — пять шагов</summary>
-      <ol className="howto__steps">
-        {STEPS.map((step) => (
-          <li key={step.title} className="howto__step">
-            <span className="howto__title">{step.title}</span>
-            <span className="howto__detail">{step.detail}</span>
-          </li>
-        ))}
-      </ol>
-    </details>
+    <HowTo
+      title="Как вести заявку"
+      sub="Пять шагов от «взять» до «исполнена»"
+      items={STEPS}
+      ordered
+    />
   );
 }

@@ -123,7 +123,7 @@ export function KnowledgeForm({ articles }: { articles: readonly KnowledgeArticl
           {busy ? 'Сохраняю…' : editing ? 'Сохранить статью' : 'Добавить статью'}
         </button>
         {editing ? (
-          <button type="button" className="button button--ghost" onClick={startNew}>
+          <button type="button" className="btn btn--ghost" onClick={startNew}>
             Отменить правку
           </button>
         ) : undefined}
@@ -148,14 +148,14 @@ export function KnowledgeForm({ articles }: { articles: readonly KnowledgeArticl
               <div className="row__actions">
                 <button
                   type="button"
-                  className="button button--ghost"
+                  className="btn btn--ghost"
                   onClick={() => startEditing(article)}
                 >
                   Править
                 </button>
                 <button
                   type="button"
-                  className="button button--ghost"
+                  className="btn btn--ghost"
                   disabled={busy}
                   onClick={() =>
                     void send('PATCH', { id: article.id, isActive: !article.isActive })
