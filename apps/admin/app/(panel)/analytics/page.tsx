@@ -74,7 +74,16 @@ export default async function AnalyticsPage({
   );
 
   try {
-    const { current, previous } = await getCore().summarizeExchangeRequests(actor, period);
+    const core = getCore();
+    const [{ current, previous }, { byDay, byManager }] = await Promise.all([
+      core.summarizeExchangeRequests(actor, period),
+      core.breakdownExchangeRequests(actor, period, { offsetMinutes: offset }),
+    ]);
+    const csvQuery = new URLSearchParams({
+      period: period.key,
+      from: dayOf(period.from, offset),
+      to: dayOf(new Date(period.to.getTime() - 1), offset),
+    }).toString();
     const lastDay = new Date(period.to.getTime() - 1);
 
     return (
@@ -192,6 +201,99 @@ export default async function AnalyticsPage({
                       : 'wait',
             }))}
           />
+        </section>
+
+        <section className="card">
+          <div className="card__head">
+            <div>
+              <h2 className="card__title">По дням</h2>
+              <p className="card__note">
+                Подано и отменено — по своим датам, оборот — по исполнению
+              </p>
+            </div>
+            <a
+              className="btn btn--ghost btn--tiny"
+              href={`/api/analytics/csv?kind=day&${csvQuery}`}
+            >
+              CSV
+            </a>
+          </div>
+          <div className="scroll-x">
+            <table className="datatable">
+              <thead>
+                <tr>
+                  <th>День</th>
+                  <th className="num">Подано</th>
+                  <th className="num">Исполнено</th>
+                  <th className="num">Отменено</th>
+                  <th className="num">Оборот</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byDay.map((row) => (
+                  <tr
+                    key={row.day}
+                    className={
+                      row.submitted + row.completed + row.cancelled === 0
+                        ? 'datatable__row--empty'
+                        : ''
+                    }
+                  >
+                    <td>{row.day}</td>
+                    <td className="num">{row.submitted}</td>
+                    <td className="num">{row.completed}</td>
+                    <td className="num">{row.cancelled}</td>
+                    <td className="num">{formatByCurrency(row.turnover)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card__head">
+            <div>
+              <h2 className="card__title">По сотрудникам</h2>
+              <p className="card__note">
+                Исполнено и отменено за период; переданная заявка считается исполнившему
+              </p>
+            </div>
+            <a
+              className="btn btn--ghost btn--tiny"
+              href={`/api/analytics/csv?kind=manager&${csvQuery}`}
+            >
+              CSV
+            </a>
+          </div>
+          {byManager.length ? (
+            <div className="scroll-x">
+              <table className="datatable">
+                <thead>
+                  <tr>
+                    <th>Сотрудник</th>
+                    <th className="num">Исполнил</th>
+                    <th className="num">Отменил</th>
+                    <th className="num">Ведёт сейчас</th>
+                    <th className="num">Доход</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byManager.map((row) => (
+                    <tr key={row.staffId}>
+                      <td>{row.displayName}</td>
+                      <td className="num">{row.completed}</td>
+                      <td className="num">{row.cancelled}</td>
+                      <td className="num">{row.open}</td>
+                      <td className="num">{formatByCurrency(row.income)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="empty">За период никто не исполнял и не отменял заявок.</p>
+          )}
         </section>
       </main>
     );

@@ -1,5 +1,6 @@
-import { and, count, eq, gte, lt, sql, sum } from 'drizzle-orm';
-import { exchangeRequests } from '@nemo/db';
+import { and, count, eq, gte, inArray, lt, sql, sum } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
+import { exchangeRequests, staff } from '@nemo/db';
 import {
   Money,
   exchangeRequestStatuses,
@@ -232,4 +233,200 @@ export async function summarizeExchangeRequests(
     summaryFor(ctx, previousPeriod(current)),
   ]);
   return { period: current, current: now, previous: before };
+}
+
+/* ── Разрезы ─────────────────────────────────────────────────────── */
+
+export interface DayBreakdown {
+  /** День «2026-09-02» по местному времени администратора. */
+  readonly day: string;
+  readonly submitted: number;
+  readonly completed: number;
+  readonly cancelled: number;
+  readonly turnover: readonly MoneyByCurrency[];
+}
+
+export interface ManagerBreakdown {
+  readonly staffId: string;
+  readonly displayName: string;
+  /** Исполнено в период — по дате исполнения; передана — считается исполнившему. */
+  readonly completed: number;
+  /** Отменено в период — по дате отмены. */
+  readonly cancelled: number;
+  /** Ведёт сейчас, независимо от периода. */
+  readonly open: number;
+  readonly income: readonly MoneyByCurrency[];
+}
+
+export interface ExchangeBreakdowns {
+  readonly byDay: readonly DayBreakdown[];
+  readonly byManager: readonly ManagerBreakdown[];
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** День по местному времени: смещение в минутах к востоку от UTC. */
+function dayKey(date: Date, offsetMinutes: number): string {
+  return new Date(date.getTime() + offsetMinutes * 60_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Разрезы по дням и по менеджерам — администратору.
+ *
+ * День без заявок — строка с нулями, а не пропуск: таблица, в которой
+ * пропали дни, читается как таблица без провалов. Границы дня — по
+ * местному времени того, кто смотрит: сервер живёт в UTC, а сутки
+ * администратора в Бангкоке начинаются на семь часов раньше.
+ */
+export async function breakdownExchangeRequests(
+  ctx: CoreConfig,
+  actor: Actor,
+  period: AnalyticsPeriod,
+  options: { readonly offsetMinutes?: number | undefined } = {},
+): Promise<ExchangeBreakdowns> {
+  requireAdmin(actor);
+  const { from, to } = requirePeriod(period);
+  /*
+   * Смещение подставляется в запрос литералом, а не параметром: одно и
+   * то же выражение стоит в `select` и в `group by`, и с двумя разными
+   * параметрами Postgres не признаёт их одинаковыми. Целое число из
+   * своего кода — не ввод снаружи.
+   */
+  const offset = Math.trunc(options.offsetMinutes ?? 0);
+  if (!Number.isFinite(offset) || Math.abs(offset) > 14 * 60) {
+    throw new InvalidInputError('Смещение часового пояса неправдоподобно');
+  }
+  const localDay = (column: AnyPgColumn) =>
+    sql<string>`to_char(${column} + make_interval(mins => ${sql.raw(String(offset))}), 'YYYY-MM-DD')`;
+
+  const submittedIn = and(
+    gte(exchangeRequests.createdAt, from),
+    lt(exchangeRequests.createdAt, to),
+  );
+  const completedIn = and(
+    eq(exchangeRequests.status, 'completed'),
+    gte(exchangeRequests.completedAt, from),
+    lt(exchangeRequests.completedAt, to),
+  );
+  const cancelledIn = and(
+    eq(exchangeRequests.status, 'cancelled'),
+    gte(exchangeRequests.updatedAt, from),
+    lt(exchangeRequests.updatedAt, to),
+  );
+
+  const submittedDay = localDay(exchangeRequests.createdAt);
+  const completedDay = localDay(exchangeRequests.completedAt);
+  const cancelledDay = localDay(exchangeRequests.updatedAt);
+
+  const [submitted, completed, cancelled, managersDone, managersCancelled, managersOpen, income] =
+    await Promise.all([
+      ctx.db
+        .select({ day: submittedDay, n: count() })
+        .from(exchangeRequests)
+        .where(submittedIn)
+        .groupBy(submittedDay),
+      ctx.db
+        .select({
+          day: completedDay,
+          code: exchangeRequests.fromCode,
+          amount: sum(exchangeRequests.fromAmount),
+          n: count(),
+        })
+        .from(exchangeRequests)
+        .where(completedIn)
+        .groupBy(completedDay, exchangeRequests.fromCode),
+      ctx.db
+        .select({ day: cancelledDay, n: count() })
+        .from(exchangeRequests)
+        .where(cancelledIn)
+        .groupBy(cancelledDay),
+      ctx.db
+        .select({ staffId: exchangeRequests.assignedManagerId, n: count() })
+        .from(exchangeRequests)
+        .where(completedIn)
+        .groupBy(exchangeRequests.assignedManagerId),
+      ctx.db
+        .select({ staffId: exchangeRequests.assignedManagerId, n: count() })
+        .from(exchangeRequests)
+        .where(cancelledIn)
+        .groupBy(exchangeRequests.assignedManagerId),
+      ctx.db
+        .select({ staffId: exchangeRequests.assignedManagerId, n: count() })
+        .from(exchangeRequests)
+        .where(sql`${exchangeRequests.status} not in ('new', 'completed', 'cancelled')`)
+        .groupBy(exchangeRequests.assignedManagerId),
+      ctx.db
+        .select({
+          staffId: exchangeRequests.assignedManagerId,
+          code: exchangeRequests.serviceIncomeCode,
+          amount: sum(exchangeRequests.serviceIncome),
+          n: count(),
+        })
+        .from(exchangeRequests)
+        .where(completedIn)
+        .groupBy(exchangeRequests.assignedManagerId, exchangeRequests.serviceIncomeCode),
+    ]);
+
+  // Дни периода по местному времени — все, включая пустые.
+  const days: string[] = [];
+  for (let at = from.getTime(); at < to.getTime(); at += DAY_MS) {
+    const key = dayKey(new Date(at), offset);
+    if (days[days.length - 1] !== key) days.push(key);
+  }
+  const lastKey = dayKey(new Date(to.getTime() - 1), offset);
+  if (days[days.length - 1] !== lastKey) days.push(lastKey);
+
+  const submittedBy = new Map(submitted.map((row) => [row.day, row.n]));
+  const cancelledBy = new Map(cancelled.map((row) => [row.day, row.n]));
+  const completedBy = new Map<string, { n: number; turnover: MoneyByCurrency[] }>();
+  for (const row of completed) {
+    const entry = completedBy.get(row.day) ?? { n: 0, turnover: [] };
+    entry.n += row.n;
+    entry.turnover.push({
+      code: row.code,
+      amount: Money.toAmount(row.amount ?? '0'),
+      count: row.n,
+    });
+    completedBy.set(row.day, entry);
+  }
+
+  const byDay: DayBreakdown[] = days.map((day) => ({
+    day,
+    submitted: submittedBy.get(day) ?? 0,
+    completed: completedBy.get(day)?.n ?? 0,
+    cancelled: cancelledBy.get(day) ?? 0,
+    turnover: (completedBy.get(day)?.turnover ?? []).sort((a, b) => a.code.localeCompare(b.code)),
+  }));
+
+  const ids = new Set<string>();
+  for (const rows of [managersDone, managersCancelled, managersOpen, income]) {
+    for (const row of rows) if (row.staffId) ids.add(row.staffId);
+  }
+  const names = ids.size
+    ? await ctx.db
+        .select({ id: staff.id, displayName: staff.displayName })
+        .from(staff)
+        .where(inArray(staff.id, [...ids]))
+    : [];
+  const nameOf = new Map(names.map((row) => [row.id, row.displayName]));
+  const countOf = (rows: readonly { staffId: string | null; n: number }[], id: string) =>
+    rows.find((row) => row.staffId === id)?.n ?? 0;
+
+  const byManager: ManagerBreakdown[] = [...ids]
+    .map((id) => ({
+      staffId: id,
+      displayName: nameOf.get(id) ?? 'Бывший сотрудник',
+      completed: countOf(managersDone, id),
+      cancelled: countOf(managersCancelled, id),
+      open: countOf(managersOpen, id),
+      income: income
+        .filter(
+          (row): row is typeof row & { code: string } => row.staffId === id && row.code !== null,
+        )
+        .map((row) => ({ code: row.code, amount: Money.toAmount(row.amount ?? '0'), count: row.n }))
+        .sort((a, b) => a.code.localeCompare(b.code)),
+    }))
+    .sort((a, b) => b.completed - a.completed || a.displayName.localeCompare(b.displayName));
+
+  return { byDay, byManager };
 }

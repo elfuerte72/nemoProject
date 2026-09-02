@@ -200,3 +200,73 @@ describe('сводка за период', () => {
     ).rejects.toThrow(/раньше конца/);
   });
 });
+
+describe('разрезы', () => {
+  it('день без заявок остаётся строкой с нулями, дни — по местному времени', async () => {
+    const period = { from: at(3, 0), to: at(0, 0) };
+    await givenRequest({
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      income: { amount: '2', code: 'USDT' },
+      submittedAt: at(2),
+      finishedAt: at(2, 13),
+    });
+
+    const { byDay } = await core.breakdownExchangeRequests(admin, period, { offsetMinutes: 0 });
+
+    expect(byDay).toHaveLength(3);
+    expect(byDay[0]).toEqual({
+      day: at(3).toISOString().slice(0, 10),
+      submitted: 0,
+      completed: 0,
+      cancelled: 0,
+      turnover: [],
+    });
+    expect(byDay[1]).toEqual({
+      day: at(2).toISOString().slice(0, 10),
+      submitted: 1,
+      completed: 1,
+      cancelled: 0,
+      turnover: [{ code: 'USDT', amount: '100', count: 1 }],
+    });
+  });
+
+  it('переданная заявка считается тому, кто исполнил', async () => {
+    // Исполнение происходит «сейчас» — период должен дотянуться до завтра.
+    const period = { from: at(3, 0), to: at(-1, 0) };
+    const anna = await givenStaff({ displayName: 'Анна' });
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'cash',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+    });
+    await core.claimExchangeRequest(manager, request.id);
+    await core.reassignExchangeRequest(manager, request.id, { toStaffId: anna.staffId });
+    await core.confirmExchangeRate(anna, request.id, {
+      finalRate: '80',
+      toAmount: '8000',
+      paymentInstructions: 'У кассы',
+    });
+    await core.markPaymentReceived(anna, request.id);
+    await core.completeExchangeRequest(anna, request.id, {
+      serviceIncome: '3',
+      serviceIncomeCode: 'USDT',
+    });
+
+    const { byManager } = await core.breakdownExchangeRequests(admin, period);
+
+    expect(byManager).toEqual([
+      {
+        staffId: anna.staffId,
+        displayName: 'Анна',
+        completed: 1,
+        cancelled: 0,
+        open: 0,
+        income: [{ code: 'USDT', amount: '3', count: 1 }],
+      },
+    ]);
+  });
+});

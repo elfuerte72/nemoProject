@@ -955,6 +955,61 @@ a.stat:hover {
   color: var(--text-faint);
 }
 
+/* ── Таблица данных ──────────────────────────────────────────────── */
+
+/*
+ * Настоящая `<table>` — для разрезов аналитики: раскрытых строк тут
+ * нет, а колонка под колонкой у таблицы бесплатна. Широкая таблица
+ * прокручивается внутри своей рамки: страница вбок не едет никогда.
+ */
+.card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scroll-x {
+  overflow-x: auto;
+  margin: 0 -22px;
+  padding: 0 22px;
+}
+
+.datatable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.datatable th,
+.datatable td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--hairline-soft);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.datatable th {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.datatable .num {
+  text-align: right;
+}
+
+.datatable tbody tr:hover {
+  background: var(--surface-soft);
+}
+
+.datatable__row--empty td {
+  color: var(--text-faint);
+}
+
 /* ── Период и воронка ────────────────────────────────────────────── */
 
 .period {

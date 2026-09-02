@@ -147,12 +147,16 @@ import {
 } from './exchange-workflow.js';
 import { listColleagues, reassignExchangeRequest } from './exchange-reassign.js';
 import {
+  breakdownExchangeRequests,
   countExchangeRequestsFor,
   summarizeExchangeRequests,
   type AnalyticsPeriod,
 } from './analytics.js';
 export type {
   AnalyticsPeriod,
+  DayBreakdown,
+  ExchangeBreakdowns,
+  ManagerBreakdown,
   ExchangeAnalytics,
   ExchangeCounts,
   ExchangeSummary,
@@ -279,6 +283,11 @@ export function createCore(ctx: CoreConfig) {
       countExchangeRequestsFor(ctx, actor, period),
     summarizeExchangeRequests: (actor: Actor, period: AnalyticsPeriod) =>
       summarizeExchangeRequests(ctx, actor, period),
+    breakdownExchangeRequests: (
+      actor: Actor,
+      period: AnalyticsPeriod,
+      options?: { offsetMinutes?: number | undefined },
+    ) => breakdownExchangeRequests(ctx, actor, period, options),
     confirmExchangeRate: (actor: Actor, requestId: string, input: ConfirmExchangeRateInput) =>
       confirmExchangeRate(ctx, actor, requestId, input),
     /*
