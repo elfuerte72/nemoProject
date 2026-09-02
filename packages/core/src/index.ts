@@ -145,6 +145,41 @@ import {
   type ConfirmExchangeRateInput,
   type ExchangeQueueFilter,
 } from './exchange-workflow.js';
+import { listColleagues, reassignExchangeRequest } from './exchange-reassign.js';
+import { summarizeReferrals } from './referral-summary.js';
+export type { ReferralLineTotal, ReferralSummary, ReferralTopClient } from './referral-summary.js';
+import {
+  countClients,
+  listClientExchangeRequests,
+  listClients,
+  summarizeClients,
+  type ClientFilter,
+} from './clients-directory.js';
+export type {
+  ClientFilter,
+  ClientRow,
+  ClientTab,
+  ClientsSummary,
+} from './clients-directory.js';
+export { REGULAR_CLIENT_COMPLETED } from './clients-directory.js';
+import {
+  breakdownExchangeRequests,
+  countExchangeRequestsFor,
+  summarizeExchangeRequests,
+  type AnalyticsPeriod,
+} from './analytics.js';
+export type {
+  AnalyticsPeriod,
+  DayBreakdown,
+  ExchangeBreakdowns,
+  ManagerBreakdown,
+  ExchangeAnalytics,
+  ExchangeCounts,
+  ExchangeSummary,
+  MoneyByCurrency,
+} from './analytics.js';
+export type { ColleagueView, ReassignExchangeRequestInput } from './exchange-reassign.js';
+import type { ReassignExchangeRequestInput } from './exchange-reassign.js';
 
 /**
  * Прикладные операции сервиса — единственное место, где меняется его
@@ -254,6 +289,34 @@ export function createCore(ctx: CoreConfig) {
       listExchangeRequestEvents(ctx, actor, requestId),
     claimExchangeRequest: (actor: Actor, requestId: string) =>
       claimExchangeRequest(ctx, actor, requestId),
+    reassignExchangeRequest: (
+      actor: Actor,
+      requestId: string,
+      input: ReassignExchangeRequestInput,
+    ) => reassignExchangeRequest(ctx, actor, requestId, input),
+    listColleagues: (actor: Actor) => listColleagues(ctx, actor),
+    summarizeReferrals: (actor: Actor, period: AnalyticsPeriod) =>
+      summarizeReferrals(ctx, actor, period),
+    listClients: (actor: Actor, filter?: ClientFilter) => listClients(ctx, actor, filter),
+    countClients: (actor: Actor, filter?: ClientFilter) => countClients(ctx, actor, filter),
+    summarizeClients: (actor: Actor) => summarizeClients(ctx, actor),
+    listClientExchangeRequests: (
+      actor: Actor,
+      clientId: bigint,
+      options?: {
+        limit?: number | undefined;
+        after?: { createdAt: Date; id: string } | undefined;
+      },
+    ) => listClientExchangeRequests(ctx, actor, clientId, options),
+    countExchangeRequestsFor: (actor: Actor, period: AnalyticsPeriod) =>
+      countExchangeRequestsFor(ctx, actor, period),
+    summarizeExchangeRequests: (actor: Actor, period: AnalyticsPeriod) =>
+      summarizeExchangeRequests(ctx, actor, period),
+    breakdownExchangeRequests: (
+      actor: Actor,
+      period: AnalyticsPeriod,
+      options?: { offsetMinutes?: number | undefined },
+    ) => breakdownExchangeRequests(ctx, actor, period, options),
     confirmExchangeRate: (actor: Actor, requestId: string, input: ConfirmExchangeRateInput) =>
       confirmExchangeRate(ctx, actor, requestId, input),
     /*

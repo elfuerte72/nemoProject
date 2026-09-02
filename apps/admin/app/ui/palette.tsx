@@ -8,7 +8,7 @@ import { formatAmount } from '@/lib/format';
 import { pillClass } from '@/lib/labels';
 import { classifyQuery, directHref, type PaletteQuery } from '@/lib/palette';
 import { Icon } from '@/app/ui/icons';
-import type { SearchHit } from '@/app/api/search/route';
+import type { ClientHit, SearchHit } from '@/app/api/search/route';
 
 /**
  * Палитра быстрого перехода: ⌘K, два символа, Enter.
@@ -26,6 +26,7 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
   const router = useRouter();
   const [typed, setTyped] = useState('');
   const [hits, setHits] = useState<readonly SearchHit[]>([]);
+  const [clients, setClients] = useState<readonly ClientHit[]>([]);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -35,6 +36,7 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
     if (!open) return;
     setTyped('');
     setHits([]);
+    setClients([]);
     setSelected(0);
     // Фокус после того, как слой оказался в дереве.
     const timer = setTimeout(() => input.current?.focus(), 0);
@@ -44,6 +46,7 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
   useEffect(() => {
     if (!open || query.kind !== 'search') {
       setHits([]);
+      setClients([]);
       return;
     }
     const controller = new AbortController();
@@ -54,8 +57,9 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
           signal: controller.signal,
         });
         if (response.ok) {
-          const body = (await response.json()) as { hits: SearchHit[] };
+          const body = (await response.json()) as { hits: SearchHit[]; clients: ClientHit[] };
           setHits(body.hits);
+          setClients(body.clients);
           setSelected(0);
         }
       } catch {
@@ -83,6 +87,10 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
   if (!open) return null;
 
   const direct = directHref(query);
+  const options = [
+    ...hits.map((hit) => `/exchange-requests/${hit.id}`),
+    ...clients.map((client) => `/clients/${client.id}`),
+  ];
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Escape') {
@@ -90,7 +98,7 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
       onClose();
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setSelected((one) => Math.min(one + 1, Math.max(hits.length - 1, 0)));
+      setSelected((one) => Math.min(one + 1, Math.max(options.length - 1, 0)));
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       setSelected((one) => Math.max(one - 1, 0));
@@ -98,8 +106,8 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
       event.preventDefault();
       if (direct) {
         go(direct);
-      } else if (hits[selected]) {
-        go(`/exchange-requests/${hits[selected].id}`);
+      } else if (options[selected]) {
+        go(options[selected]);
       }
     }
   };
@@ -139,14 +147,14 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
               onClick={() => go(direct)}
             >
               <span className="palette__main">
-                {query.kind === 'request' ? 'Открыть заявку' : 'Открыть переписку с клиентом'}
+                {query.kind === 'request' ? 'Открыть заявку' : 'Открыть карточку клиента'}
               </span>
               <span className="palette__note mono">
                 {query.kind === 'request' ? query.id : query.kind === 'client' ? query.id : ''}
               </span>
             </button>
           ) : query.kind === 'search' ? (
-            hits.length ? (
+            hits.length || clients.length ? (
               <ul className="palette__list" role="listbox">
                 {hits.map((hit, index) => (
                   <li key={hit.id} role="option" aria-selected={index === selected}>
@@ -173,12 +181,34 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
                     </button>
                   </li>
                 ))}
+                {clients.map((client, index) => {
+                  const at = hits.length + index;
+                  return (
+                    <li key={`c-${client.id}`} role="option" aria-selected={at === selected}>
+                      <button
+                        type="button"
+                        className={
+                          at === selected ? 'palette__item palette__item--on' : 'palette__item'
+                        }
+                        onMouseEnter={() => setSelected(at)}
+                        onClick={() => go(`/clients/${client.id}`)}
+                      >
+                        <span className="palette__main">
+                          {client.username ? `@${client.username}` : `Клиент ${client.id}`}
+                          {client.regular ? ' · постоянный' : ''}
+                        </span>
+                        <span className="palette__note">
+                          Клиент · {client.completed} исполнено · {client.id}
+                        </span>
+                        <span className="pill">Клиент</span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <p className="palette__hint">
-                {busy
-                  ? 'Ищу…'
-                  : 'Среди открытых заявок ничего нет. Исполненные и отменённые здесь пока не ищутся.'}
+                {busy ? 'Ищу…' : 'Ни открытых заявок, ни клиентов с таким ником или ID.'}
               </p>
             )
           ) : (

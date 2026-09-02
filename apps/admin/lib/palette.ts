@@ -37,7 +37,7 @@ export function directHref(query: PaletteQuery): string | null {
     case 'request':
       return `/exchange-requests/${query.id}`;
     case 'client':
-      return `/conversations/${query.id}`;
+      return `/clients/${query.id}`;
     default:
       return null;
   }

@@ -164,7 +164,7 @@ function notificationFor(
  * Без блокировки два менеджера, нажавшие «взять» одновременно, оба
  * прочитали бы «новая» и оба записали бы себя исполнителем.
  */
-async function lockRequest(
+export async function lockRequest(
   executor: Executor,
   requestId: string,
 ): Promise<ExchangeRequestRow> {

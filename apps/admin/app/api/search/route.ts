@@ -32,18 +32,28 @@ export interface SearchHit {
   readonly assignedManagerName: string | null;
 }
 
+export interface ClientHit {
+  readonly id: string;
+  readonly username: string | null;
+  readonly completed: number;
+  readonly regular: boolean;
+}
+
 export async function GET(request: Request): Promise<Response> {
   try {
     const actor = await requireStaffActor();
     const parsed = classifyQuery(new URL(request.url).searchParams.get('q') ?? '');
     if (parsed.kind !== 'search') {
-      return json({ hits: [] });
+      return json({ hits: [], clients: [] });
     }
 
     const core = getCore();
-    const [queue, working] = await Promise.all([
+    const [queue, working, clients] = await Promise.all([
       core.listExchangeRequestQueue(actor, { query: parsed.query, limit: LIMIT }),
       core.listExchangeRequestsInProgress(actor, { query: parsed.query, limit: LIMIT }),
+      // Клиенты — по нику или ID, из раздела «Клиенты»: с ними палитра
+      // находит и тех, у кого сейчас нет открытой заявки.
+      core.listClients(actor, { query: parsed.query, limit: LIMIT }),
     ]);
 
     const hits: SearchHit[] = [...queue, ...working].map((one) => ({
@@ -57,7 +67,13 @@ export async function GET(request: Request): Promise<Response> {
       clientId: one.clientId.toString(),
       assignedManagerName: one.assignedManagerName,
     }));
-    return json({ hits });
+    const found: ClientHit[] = clients.map((one) => ({
+      id: one.telegramUserId.toString(),
+      username: one.username,
+      completed: one.completed,
+      regular: one.regular,
+    }));
+    return json({ hits, clients: found });
   } catch (error) {
     return errorResponse(error);
   }

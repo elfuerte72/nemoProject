@@ -17,7 +17,10 @@ export type NavIcon =
   | 'chat'
   | 'settings'
   | 'log'
-  | 'account';
+  | 'account'
+  | 'chart'
+  | 'user'
+  | 'spark';
 
 export interface NavItem {
   readonly href: string;
@@ -51,12 +54,15 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/withdrawals', label: 'Вывод', icon: 'withdrawal', count: 'withdrawals' },
       { href: '/card-applications', label: 'Карты', icon: 'card', count: 'cards' },
       { href: '/conversations', label: 'Обращения', icon: 'chat', count: 'conversations' },
+      { href: '/clients', label: 'Клиенты', icon: 'user' },
     ],
   },
   {
     key: 'admin',
     title: 'Администратор',
     items: [
+      { href: '/analytics', label: 'Аналитика', icon: 'chart' },
+      { href: '/referral', label: 'Рефералка', icon: 'spark' },
       { href: '/service-accounts', label: 'Счета сервиса', icon: 'account' },
       { href: '/settings', label: 'Настройки', icon: 'settings' },
       { href: '/requisite-access', label: 'Журнал доступа', icon: 'log' },

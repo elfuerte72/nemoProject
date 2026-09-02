@@ -39,6 +39,8 @@ const actionSchema = z.discriminatedUnion('action', [
     serviceIncomeCode: z.string(),
   }),
   z.object({ action: z.literal('cancel'), reason: z.string() }),
+  // Передача другому менеджеру: кому можно, решает операция.
+  z.object({ action: z.literal('reassign'), toStaffId: z.string().uuid() }),
 ]);
 
 export async function POST(
@@ -76,6 +78,8 @@ export async function POST(
           });
         case 'cancel':
           return core.cancelExchangeRequest(actor, id, { reason: input.reason });
+        case 'reassign':
+          return core.reassignExchangeRequest(actor, id, { toStaffId: input.toStaffId });
       }
     })();
 

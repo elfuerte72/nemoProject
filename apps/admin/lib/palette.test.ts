@@ -8,10 +8,10 @@ describe('разбор ввода палитры', () => {
     expect(directHref(query)).toBe('/exchange-requests/3d7c7b7e-f750-49a9-830c-f2cc1684b29d');
   });
 
-  it('число — клиент, и ведёт в переписку', () => {
+  it('число — клиент, и ведёт в его карточку', () => {
     const query = classifyQuery('8421518682');
     expect(query).toEqual({ kind: 'client', id: '8421518682' });
-    expect(directHref(query)).toBe('/conversations/8421518682');
+    expect(directHref(query)).toBe('/clients/8421518682');
   });
 
   it('слово — поиск, собака у ника отбрасывается', () => {
