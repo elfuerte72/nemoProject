@@ -32,14 +32,21 @@ export interface ClientFilter {
   readonly query?: string | undefined;
   readonly tab?: ClientTab | undefined;
   readonly limit?: number | undefined;
-  /** Курсор по паре «время регистрации и идентификатор». */
-  readonly after?: { readonly createdAt: Date; readonly id: bigint } | undefined;
+  /**
+   * Курсор по паре «время регистрации и идентификатор». Время — строкой
+   * из самой базы (`ClientRow.cursor`), а не `Date`: у Postgres
+   * микросекунды, у `Date` миллисекунды, и округлённая граница
+   * пропускала бы строки, зарегистрированные в ту же миллисекунду.
+   */
+  readonly after?: { readonly createdAt: string; readonly id: bigint } | undefined;
 }
 
 export interface ClientRow {
   readonly telegramUserId: bigint;
   readonly username: string | null;
   readonly createdAt: Date;
+  /** Точное время регистрации строкой — для курсора дочитывания. */
+  readonly cursor: string;
   readonly completed: number;
   readonly cancelled: number;
   readonly open: number;
@@ -105,13 +112,11 @@ function whereFor(filter: ClientFilter): SQL | undefined {
     parts.push(sql`${clients.telegramUserId} in ${waitingIds()}`);
   }
   if (filter.after) {
+    const at = sql`${filter.after.createdAt}::timestamptz`;
     parts.push(
       or(
-        lt(clients.createdAt, filter.after.createdAt),
-        and(
-          eq(clients.createdAt, filter.after.createdAt),
-          lt(clients.telegramUserId, filter.after.id),
-        ),
+        sql`${clients.createdAt} < ${at}`,
+        and(sql`${clients.createdAt} = ${at}`, lt(clients.telegramUserId, filter.after.id)),
       )!,
     );
   }
@@ -137,14 +142,14 @@ export async function listClients(
   requireStaff(actor);
 
   const base = await ctx.db
-    .select()
+    .select({ client: clients, cursor: sql<string>`${clients.createdAt}::text` })
     .from(clients)
     .where(whereFor(filter))
     .orderBy(desc(clients.createdAt), desc(clients.telegramUserId))
     .limit(clientsLimit(filter.limit));
   if (base.length === 0) return [];
 
-  const ids = base.map((row) => row.telegramUserId);
+  const ids = base.map((row) => row.client.telegramUserId);
   const [counts, turnover, waiting] = await Promise.all([
     ctx.db
       .select({
@@ -188,7 +193,7 @@ export async function listClients(
   }
   const waitingSet = new Set(waiting.map((row) => row.clientId.toString()));
 
-  return base.map((row) => {
+  return base.map(({ client: row, cursor }) => {
     const key = row.telegramUserId.toString();
     const stat = countsBy.get(key);
     const completed = stat?.completed ?? 0;
@@ -196,6 +201,7 @@ export async function listClients(
       telegramUserId: row.telegramUserId,
       username: row.username,
       createdAt: row.createdAt,
+      cursor,
       completed,
       cancelled: stat?.cancelled ?? 0,
       open: stat?.open ?? 0,

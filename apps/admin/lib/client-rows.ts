@@ -10,6 +10,8 @@ export interface ClientRowDto {
   readonly id: string;
   readonly username: string | null;
   readonly createdAt: string;
+  /** Точное время регистрации из базы — курсор дочитывания. */
+  readonly cursor: string;
   readonly completed: number;
   readonly cancelled: number;
   readonly open: number;
@@ -24,6 +26,7 @@ export function toClientRowDto(row: ClientRow): ClientRowDto {
     id: row.telegramUserId.toString(),
     username: row.username,
     createdAt: row.createdAt.toISOString(),
+    cursor: row.cursor,
     completed: row.completed,
     cancelled: row.cancelled,
     open: row.open,

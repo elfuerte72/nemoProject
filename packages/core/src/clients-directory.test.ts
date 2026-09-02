@@ -116,12 +116,16 @@ describe('список клиентов', () => {
     expect((await core.summarizeClients(manager)).waiting).toBe(1);
   });
 
-  it('курсор дочитывает без дублей', async () => {
+  /*
+   * Три клиента заведены в одну миллисекунду: у Postgres микросекунды,
+   * и курсор из `Date` терял бы тех, кто зарегистрирован «между».
+   */
+  it('курсор дочитывает без дублей и пропусков', async () => {
     const first = await core.listClients(manager, { limit: 2 });
     const last = first[first.length - 1]!;
     const second = await core.listClients(manager, {
       limit: 2,
-      after: { createdAt: last.createdAt, id: last.telegramUserId },
+      after: { createdAt: last.cursor, id: last.telegramUserId },
     });
     const ids = [...first, ...second].map((one) => one.telegramUserId);
     expect(new Set(ids).size).toBe(3);

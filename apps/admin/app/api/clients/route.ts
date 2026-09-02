@@ -17,9 +17,10 @@ export async function GET(request: Request): Promise<Response> {
     const params = new URL(request.url).searchParams;
     const after = params.get('after');
     const afterId = params.get('afterId');
+    // Время курсора — строкой из базы, как есть: точность до микросекунд.
     const cursor =
       after && afterId && /^\d+$/.test(afterId) && !Number.isNaN(Date.parse(after))
-        ? { createdAt: new Date(after), id: BigInt(afterId) }
+        ? { createdAt: after, id: BigInt(afterId) }
         : undefined;
 
     const rows = await getCore().listClients(actor, {

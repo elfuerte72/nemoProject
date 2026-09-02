@@ -50,7 +50,7 @@ export function ClientsTable({
       const params = new URLSearchParams({
         q: query,
         tab,
-        after: last.createdAt,
+        after: last.cursor,
         afterId: last.id,
       });
       const response = await fetch(`/api/clients?${params.toString()}`);
