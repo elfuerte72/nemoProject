@@ -10,11 +10,7 @@ export const dynamic = 'force-dynamic';
  * Карточка заявки: всё, что менеджеру нужно знать и сделать, на одном
  * экране — состояние, история переходов и доступные действия.
  */
-export default async function RequestPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function RequestPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requireStaffActorOrNull();
   if (!actor) {
     redirect('/login');
@@ -64,7 +60,7 @@ export default async function RequestPage({
    * панель, а не операция: число уходит в реферальные начисления, и
    * подтверждать его должен человек.
    */
-  const [accounts, markupBps, pricedBySchedule] = await Promise.all([
+  const [accounts, markupBps, pricedBySchedule, colleagues] = await Promise.all([
     request.kind === 'electronic'
       ? core.listServiceAccounts(actor, {
           currencyCode: request.fromCode,
@@ -78,6 +74,8 @@ export default async function RequestPage({
      * число было бы выдумкой, поданной как расчёт.
      */
     core.isRequestPricedBySchedule(actor, id),
+    // Кому можно передать заявку: активные сотрудники, одни имена.
+    core.listColleagues(actor),
   ]);
 
   return (
@@ -98,6 +96,8 @@ export default async function RequestPage({
           : null
       }
       viewerStaffId={actor.staffId}
+      viewerRole={actor.role}
+      colleagues={colleagues}
     />
   );
 }

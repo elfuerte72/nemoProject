@@ -145,6 +145,9 @@ import {
   type ConfirmExchangeRateInput,
   type ExchangeQueueFilter,
 } from './exchange-workflow.js';
+import { listColleagues, reassignExchangeRequest } from './exchange-reassign.js';
+export type { ColleagueView, ReassignExchangeRequestInput } from './exchange-reassign.js';
+import type { ReassignExchangeRequestInput } from './exchange-reassign.js';
 
 /**
  * Прикладные операции сервиса — единственное место, где меняется его
@@ -254,6 +257,12 @@ export function createCore(ctx: CoreConfig) {
       listExchangeRequestEvents(ctx, actor, requestId),
     claimExchangeRequest: (actor: Actor, requestId: string) =>
       claimExchangeRequest(ctx, actor, requestId),
+    reassignExchangeRequest: (
+      actor: Actor,
+      requestId: string,
+      input: ReassignExchangeRequestInput,
+    ) => reassignExchangeRequest(ctx, actor, requestId, input),
+    listColleagues: (actor: Actor) => listColleagues(ctx, actor),
     confirmExchangeRate: (actor: Actor, requestId: string, input: ConfirmExchangeRateInput) =>
       confirmExchangeRate(ctx, actor, requestId, input),
     /*
