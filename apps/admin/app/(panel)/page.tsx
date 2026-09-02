@@ -2,13 +2,17 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { ExchangeQueueFilter, ManagerExchangeRequestView } from '@nemo/core';
 import { exchangeKinds, inProgressExchangeStatuses } from '@nemo/types';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
+import { panelCounts } from '@/lib/counts';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
 import { formatAmount } from '@/lib/format';
 import { pillClass } from '@/lib/labels';
 import { Moment } from '@/app/ui/moment';
 import { HowToRunRequest } from '@/app/ui/how-to';
+import { Greeting } from '@/app/ui/greeting';
+import { Icon } from '@/app/ui/icons';
+import { Stat, Stats } from '@/app/ui/stat';
 import { DeskHead } from './desk-head';
 
 export const dynamic = 'force-dynamic';
@@ -30,10 +34,11 @@ export default async function DeskPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
+  const viewer = await requireStaffViewerOrNull();
+  if (!viewer) {
     redirect('/login');
   }
+  const { actor, displayName } = viewer;
 
   const params = await searchParams;
   const query = single(params.q);
@@ -56,7 +61,10 @@ export default async function DeskPage({
     ...(query ? { query } : {}),
     ...(kind ? { kind } : {}),
   };
-  const working: ExchangeQueueFilter = { ...common, ...(status ? { status } : {}) };
+  const working: ExchangeQueueFilter = {
+    ...common,
+    ...(status ? { status } : {}),
+  };
 
   const core = getCore();
   /*
@@ -65,31 +73,116 @@ export default async function DeskPage({
    * пятидесяти заявках, и на пятистах. По этому числу решают, за что
    * браться, — врать оно не должно.
    */
-  const [mine, queue, others, mineTotal, queueTotal, othersTotal] = await Promise.all([
-    core.listExchangeRequestsInProgress(actor, { ...working, mine: true }),
-    core.listExchangeRequestQueue(actor, common),
-    core.listExchangeRequestsInProgress(actor, { ...working, mine: false }),
-    core.countExchangeRequestsInProgress(actor, { ...working, mine: true }),
-    core.countExchangeRequestQueue(actor, common),
-    core.countExchangeRequestsInProgress(actor, { ...working, mine: false }),
-  ]);
+  const [mine, queue, others, mineTotal, queueTotal, othersTotal, counts, mineAll, othersAll] =
+    await Promise.all([
+      core.listExchangeRequestsInProgress(actor, { ...working, mine: true }),
+      core.listExchangeRequestQueue(actor, common),
+      core.listExchangeRequestsInProgress(actor, { ...working, mine: false }),
+      core.countExchangeRequestsInProgress(actor, { ...working, mine: true }),
+      core.countExchangeRequestQueue(actor, common),
+      core.countExchangeRequestsInProgress(actor, { ...working, mine: false }),
+      // Те же четыре числа, что в меню, — из памяти запроса, не заново.
+      panelCounts(actor),
+      // Плитки — про весь сервис, а не про фильтр: сузив стол до одного
+      // клиента, менеджер не должен прочитать «у меня в работе: 1».
+      core.countExchangeRequestsInProgress(actor, { mine: true }),
+      core.countExchangeRequestsInProgress(actor, { mine: false }),
+    ]);
 
   return (
     <main className="page page--wide">
-      <header className="page__head">
-        <div>
-          <h1 className="page__title">Заявки на обмен</h1>
-          <p className="page__sub">Очередь общая: заявку ведёт тот, кто взял её первым.</p>
-        </div>
-        <DeskHead
-          fetchedAt={new Date().toISOString()}
-          query={query}
-          kind={kind ?? ''}
-          status={status ?? ''}
-        />
-      </header>
+      <DeskHead
+        fetchedAt={new Date().toISOString()}
+        query={query}
+        kind={kind ?? ''}
+        status={status ?? ''}
+        heading={
+          <div>
+            <Greeting name={displayName} />
+            <p className="page__sub">Очередь общая: заявку ведёт тот, кто взял её первым.</p>
+          </div>
+        }
+        overview={
+          <>
+            {/*
+        Обзор над столом, а не вместо него: плитки отвечают на «как дела»,
+        а стол — на «за что браться», и второй вопрос важнее. Числа те
+        же, что в меню; отфильтрованный стол их не меняет — они про весь
+        сервис, и подпись под ними говорит об этом прямо.
+      */}
+            <Stats>
+              <Stat
+                label="Ждут в очереди"
+                value={counts.exchange}
+                note={counts.exchange ? 'ничьи — возьмите первым' : 'новых заявок нет'}
+                tone={counts.exchange ? 'wait' : 'plain'}
+                href="/#queue"
+              />
+              <Stat
+                label="У меня в работе"
+                value={mineAll}
+                note={mineAll ? 'ждут вашего шага' : 'ничего не закреплено'}
+                tone={mineAll ? 'up' : 'plain'}
+                href="/#mine"
+              />
+              <Stat
+                label="У коллег"
+                value={othersAll}
+                note={othersAll ? 'в работе у других' : 'коллеги ничего не ведут'}
+                href="/#others"
+              />
+              <Stat
+                label="Без ответа"
+                value={counts.conversations}
+                note={
+                  counts.conversations ? 'обращений, клиент ждёт в чате' : 'все обращения отвечены'
+                }
+                tone={counts.conversations ? 'wait' : 'plain'}
+                href="/conversations"
+              />
+              <Stat
+                label="Выводов ждут"
+                value={counts.withdrawals}
+                note={counts.withdrawals ? 'баллы к выплате' : 'открытых заявок нет'}
+                tone={counts.withdrawals ? 'wait' : 'plain'}
+                href="/withdrawals"
+              />
+              <Stat
+                label="Карт ждут"
+                value={counts.cards}
+                note={counts.cards ? 'заявки на карту' : 'открытых заявок нет'}
+                tone={counts.cards ? 'wait' : 'plain'}
+                href="/card-applications"
+              />
+            </Stats>
 
-      <section className="section">
+            <nav className="quick" aria-label="Быстрые переходы">
+              <Link href="/conversations" className="quick__link">
+                <Icon name="chat" size={15} />
+                Обращения
+              </Link>
+              <Link href="/withdrawals" className="quick__link">
+                <Icon name="withdrawal" size={15} />
+                Вывод баллов
+              </Link>
+              <Link href="/card-applications" className="quick__link">
+                <Icon name="card" size={15} />
+                Карты
+              </Link>
+              <Link href="/service-accounts" className="quick__link">
+                <Icon name="account" size={15} />
+                Счета сервиса <span className="quick__note">администратор</span>
+              </Link>
+              <Link href="/settings" className="quick__link">
+                <Icon name="settings" size={15} />
+                Настройки <span className="quick__note">администратор</span>
+              </Link>
+            </nav>
+          </>
+        }
+      />
+
+      <section className="section" id="mine">
         <div className="section__head">
           <h2 className="section__title">Мои</h2>
           <span className="section__count">{mineTotal}</span>
@@ -102,7 +195,7 @@ export default async function DeskPage({
         />
       </section>
 
-      <section className="section">
+      <section className="section" id="queue">
         <div className="section__head">
           <h2 className="section__title">Очередь</h2>
           <span className="section__count">{queueTotal}</span>
@@ -121,7 +214,7 @@ export default async function DeskPage({
         <HowToRunRequest />
       </section>
 
-      <section className="section">
+      <section className="section" id="others">
         <div className="section__head">
           <h2 className="section__title">У коллег</h2>
           <span className="section__count">{othersTotal}</span>

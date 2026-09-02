@@ -7,24 +7,33 @@ import { createCore, createDatabase, type Core } from '@nemo/core';
  * клиента можно исключительно в этом деплое (docs/adr/0002). Отдельное
  * приложение существует ровно ради этого — иначе ключ ехал бы туда же,
  * куда и клиентская часть.
+ *
+ * Экземпляр держится на `globalThis`, а не в переменной модуля: в
+ * разработке Next пересобирает модуль на каждую правку, и переменная
+ * обнулялась бы вместе с ним — с новым пулом соединений на каждую
+ * сборку. За час правок так набралось девяносто соединений к базе, и
+ * она перестала принимать новые. То же правило у Mini App.
  */
 
-let instance: Core | undefined;
+const KEY = Symbol.for('nemo.admin.core');
+
+type Holder = typeof globalThis & { [KEY]?: Core };
 
 export function getCore(): Core {
-  if (instance) return instance;
+  const holder = globalThis as Holder;
+  if (holder[KEY]) return holder[KEY];
 
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error('Не задан DATABASE_URL');
   }
 
-  instance = createCore({
+  holder[KEY] = createCore({
     db: createDatabase(url),
     requisites: {
       publicKey: process.env.REQUISITES_PUBLIC_KEY,
       privateKey: process.env.REQUISITES_PRIVATE_KEY,
     },
   });
-  return instance;
+  return holder[KEY];
 }

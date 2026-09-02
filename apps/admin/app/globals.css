@@ -516,6 +516,57 @@ a {
   letter-spacing: -0.4px;
 }
 
+/* Строка над заголовком: дата словами — и ничего важнее. */
+.page__eyebrow {
+  margin: 0 0 4px;
+  min-height: 1.4em;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/*
+ * Быстрые переходы под плитками: те же разделы, что в меню, но здесь
+ * они под рукой у того, кто держит стол открытым весь день и в меню
+ * не смотрит.
+ */
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.quick__link:hover {
+  background: var(--surface-soft-hover);
+  border-color: rgba(217, 190, 134, 0.35);
+  color: var(--text);
+}
+
+.quick__note {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
 .page__sub {
   margin: 6px 0 0;
   font-size: 13px;

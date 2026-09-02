@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
-import { getCore } from '@/lib/core';
+import { panelCounts } from '@/lib/counts';
 import { Sidebar } from '@/app/ui/sidebar';
 import { Topbar } from '@/app/ui/topbar';
 
@@ -26,36 +26,18 @@ export default async function PanelLayout({ children }: { children: ReactNode })
   }
   const { actor, displayName } = viewer;
 
-  const core = getCore();
   /*
    * Счётчики очередей в меню: сколько ждёт, видно не открывая раздел —
-   * ради этого они и нужны. Три запроса на каждый переход между
+   * ради этого они и нужны. Четыре запроса на каждый переход между
    * разделами — плата за это; очереди рассчитаны на десятки строк, и
-   * отдельный запрос за одним числом стоил бы столько же.
+   * отдельный запрос за одним числом стоил бы столько же. Стол читает
+   * те же числа — из той же памяти запроса, а не заново.
    */
-  const [exchange, withdrawals, cards, conversations] = await Promise.all([
-    // Счётом, а не длиной выборки: у очереди есть предел страницы, и
-    // счётчик по ней застыл бы на нём ровно тогда, когда очередь
-    // выросла и число стало нужно.
-    core.countExchangeRequestQueue(actor),
-    core.listWithdrawalQueue(actor),
-    core.listCardApplicationQueue(actor),
-    // Обращения считаются запросом за числом, а не выборкой ленты: у
-    // очередей строк десятки, а сообщений в переписке накапливаются
-    // тысячи, и тянуть их ради счётчика нельзя.
-    core.countUnansweredConversations(actor),
-  ]);
+  const counts = await panelCounts(actor);
 
   return (
     <div className="shell">
-      <Sidebar
-        counts={{
-          exchange,
-          withdrawals: withdrawals.length,
-          cards: cards.length,
-          conversations,
-        }}
-      />
+      <Sidebar counts={counts} />
       <div className="shell__main">
         <Topbar displayName={displayName} role={actor.role} />
         {children}
