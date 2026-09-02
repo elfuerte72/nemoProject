@@ -17,7 +17,8 @@ export type NavIcon =
   | 'chat'
   | 'settings'
   | 'log'
-  | 'account';
+  | 'account'
+  | 'chart';
 
 export interface NavItem {
   readonly href: string;
@@ -57,6 +58,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     key: 'admin',
     title: 'Администратор',
     items: [
+      { href: '/analytics', label: 'Аналитика', icon: 'chart' },
       { href: '/service-accounts', label: 'Счета сервиса', icon: 'account' },
       { href: '/settings', label: 'Настройки', icon: 'settings' },
       { href: '/requisite-access', label: 'Журнал доступа', icon: 'log' },

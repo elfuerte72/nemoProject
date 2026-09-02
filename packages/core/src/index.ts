@@ -146,6 +146,18 @@ import {
   type ExchangeQueueFilter,
 } from './exchange-workflow.js';
 import { listColleagues, reassignExchangeRequest } from './exchange-reassign.js';
+import {
+  countExchangeRequestsFor,
+  summarizeExchangeRequests,
+  type AnalyticsPeriod,
+} from './analytics.js';
+export type {
+  AnalyticsPeriod,
+  ExchangeAnalytics,
+  ExchangeCounts,
+  ExchangeSummary,
+  MoneyByCurrency,
+} from './analytics.js';
 export type { ColleagueView, ReassignExchangeRequestInput } from './exchange-reassign.js';
 import type { ReassignExchangeRequestInput } from './exchange-reassign.js';
 
@@ -263,6 +275,10 @@ export function createCore(ctx: CoreConfig) {
       input: ReassignExchangeRequestInput,
     ) => reassignExchangeRequest(ctx, actor, requestId, input),
     listColleagues: (actor: Actor) => listColleagues(ctx, actor),
+    countExchangeRequestsFor: (actor: Actor, period: AnalyticsPeriod) =>
+      countExchangeRequestsFor(ctx, actor, period),
+    summarizeExchangeRequests: (actor: Actor, period: AnalyticsPeriod) =>
+      summarizeExchangeRequests(ctx, actor, period),
     confirmExchangeRate: (actor: Actor, requestId: string, input: ConfirmExchangeRateInput) =>
       confirmExchangeRate(ctx, actor, requestId, input),
     /*

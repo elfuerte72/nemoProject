@@ -11,6 +11,7 @@ import { Greeting } from '@/app/ui/greeting';
 import { Icon } from '@/app/ui/icons';
 import { Stat, Stats } from '@/app/ui/stat';
 import { TABLE_PREFS_COOKIE, readTablePrefs } from '@/lib/table-prefs';
+import { TZ_COOKIE, readTzOffset, resolvePeriod } from '@/lib/period';
 import { DeskHead } from './desk-head';
 import { ExchangeTable } from './exchange-table';
 import { TablePrefsSheet } from './table-prefs-sheet';
@@ -42,7 +43,14 @@ export default async function DeskPage({
 
   const params = await searchParams;
   // Личные настройки таблицы — из куки этого сотрудника; чужая или испорченная — по умолчанию.
-  const prefs = readTablePrefs((await cookies()).get(TABLE_PREFS_COOKIE)?.value, actor.staffId);
+  const jar = await cookies();
+  const prefs = readTablePrefs(jar.get(TABLE_PREFS_COOKIE)?.value, actor.staffId);
+  // «Сегодня» — по часам того, кто смотрит: смещение кладёт приветствие.
+  const today = resolvePeriod(
+    { period: 'today' },
+    new Date(),
+    readTzOffset(jar.get(TZ_COOKIE)?.value),
+  );
   const query = single(params.q);
   const kind = pick(single(params.kind), exchangeKinds);
   /*
@@ -74,21 +82,33 @@ export default async function DeskPage({
    * пятидесяти заявках, и на пятистах. По этому числу решают, за что
    * браться, — врать оно не должно.
    */
-  const [mine, queue, others, mineTotal, queueTotal, othersTotal, counts, mineAll, othersAll] =
-    await Promise.all([
-      core.listExchangeRequestsInProgress(actor, working.mine),
-      core.listExchangeRequestQueue(actor, common),
-      core.listExchangeRequestsInProgress(actor, working.others),
-      core.countExchangeRequestsInProgress(actor, coreFilterFor('mine', filter)),
-      core.countExchangeRequestQueue(actor, coreFilterFor('queue', filter)),
-      core.countExchangeRequestsInProgress(actor, coreFilterFor('others', filter)),
-      // Те же четыре числа, что в меню, — из памяти запроса, не заново.
-      panelCounts(actor),
-      // Плитки — про весь сервис, а не про фильтр: сузив стол до одного
-      // клиента, менеджер не должен прочитать «у меня в работе: 1».
-      core.countExchangeRequestsInProgress(actor, { mine: true }),
-      core.countExchangeRequestsInProgress(actor, { mine: false }),
-    ]);
+  const [
+    mine,
+    queue,
+    others,
+    mineTotal,
+    queueTotal,
+    othersTotal,
+    counts,
+    mineAll,
+    othersAll,
+    todayCounts,
+  ] = await Promise.all([
+    core.listExchangeRequestsInProgress(actor, working.mine),
+    core.listExchangeRequestQueue(actor, common),
+    core.listExchangeRequestsInProgress(actor, working.others),
+    core.countExchangeRequestsInProgress(actor, coreFilterFor('mine', filter)),
+    core.countExchangeRequestQueue(actor, coreFilterFor('queue', filter)),
+    core.countExchangeRequestsInProgress(actor, coreFilterFor('others', filter)),
+    // Те же четыре числа, что в меню, — из памяти запроса, не заново.
+    panelCounts(actor),
+    // Плитки — про весь сервис, а не про фильтр: сузив стол до одного
+    // клиента, менеджер не должен прочитать «у меня в работе: 1».
+    core.countExchangeRequestsInProgress(actor, { mine: true }),
+    core.countExchangeRequestsInProgress(actor, { mine: false }),
+    // За сегодня — счётчики без денег: они есть у любого сотрудника.
+    core.countExchangeRequestsFor(actor, today),
+  ]);
 
   // Ключ списка: сменился фильтр — дочитанный хвост сбрасывается.
   const signature = `${filter.q}|${filter.kind}|${filter.status}`;
@@ -160,6 +180,20 @@ export default async function DeskPage({
                 href="/card-applications"
               />
             </Stats>
+
+            <p className="today">
+              <span className="today__label">Сегодня</span>
+              <span>
+                подано <b>{todayCounts.submitted}</b>
+              </span>
+              <span>
+                исполнено <b>{todayCounts.completed}</b>
+              </span>
+              <span>
+                отменено <b>{todayCounts.cancelled}</b>
+              </span>
+              <span className="today__note">по вашим часам</span>
+            </p>
 
             <nav className="quick" aria-label="Быстрые переходы">
               <Link href="/conversations" className="quick__link">

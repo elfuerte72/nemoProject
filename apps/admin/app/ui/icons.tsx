@@ -122,6 +122,12 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
           <path d="M4 13h4l2 3h4l2-3h4v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
         </svg>
       );
+    case 'chart':
+      return (
+        <svg {...common}>
+          <path d="M4 20V10m6 10V4m6 16v-7m4 7H2" />
+        </svg>
+      );
     case 'spark':
       return (
         <svg {...common}>

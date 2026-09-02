@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { StaffRole } from '@nemo/types';
 import { ROLE_LABELS } from '@/lib/labels';
+import { TZ_COOKIE } from '@/lib/period';
 import { Icon } from '@/app/ui/icons';
 import { Palette, usePaletteHotkey } from '@/app/ui/palette';
 
@@ -20,6 +21,16 @@ export function Topbar({ displayName, role }: { displayName: string; role: Staff
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
   usePaletteHotkey(openPalette);
+
+  /*
+   * Смещение часового пояса — в куку: «сегодня» на сервере считается по
+   * нему, а сервер живёт в UTC. Шапка есть на каждой странице, поэтому
+   * кука появляется с первого же экрана, какой бы он ни был.
+   */
+  useEffect(() => {
+    const year = 60 * 60 * 24 * 365;
+    document.cookie = `${TZ_COOKIE}=${-new Date().getTimezoneOffset()}; path=/; max-age=${year}; samesite=lax`;
+  }, []);
 
   return (
     <header className="topbar">
