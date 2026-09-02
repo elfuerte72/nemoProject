@@ -44,6 +44,7 @@
   --drop: 0 18px 40px -28px rgba(0, 0, 0, 1);
 
   --sidebar: 248px;
+  --topbar: 62px;
   --gutter: 32px;
   --radius-card: 18px;
   --radius-control: 12px;
@@ -135,15 +136,15 @@ a {
 
 .sidebar__brand {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   padding: 0 10px;
   font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.4px;
 }
 
-.sidebar__brand span {
+.sidebar__brand > span:last-child {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 1.2px;
@@ -151,20 +152,78 @@ a {
   color: var(--text-faint);
 }
 
+/* Знак у имени: квадрат с буквой, той же меди, что и главная кнопка. */
+.sidebar__mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--gold-face);
+  color: var(--gold-ink);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sidebar__section {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
+.sidebar__items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Своё `display` перебивает браузерное `hidden`; возвращаем его явно. */
+.sidebar__items[hidden] {
+  display: none;
+}
+
+/*
+ * Заголовок группы — кнопка свёртки. Стрелка справа поворачивается, а
+ * сама группа с текущим разделом не сворачивается: свёрнутая, она
+ * прятала бы подсветку того места, где человек находится.
+ */
 .sidebar__group {
-  margin: 18px 0 6px;
-  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-inner);
+  background: none;
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 1.4px;
   text-transform: uppercase;
   color: var(--text-faint);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.sidebar__group:hover {
+  color: var(--text-muted);
+}
+
+.sidebar__group-chevron {
+  display: flex;
+  transition: transform 0.15s var(--ease);
+}
+
+.sidebar__group[aria-expanded='false'] .sidebar__group-chevron {
+  transform: rotate(-90deg);
 }
 
 .sidebar__link {
@@ -222,33 +281,416 @@ a {
   color: var(--gold-light);
 }
 
-.sidebar__foot {
-  margin-top: auto;
+/* ── Шапка ───────────────────────────────────────────────────────── */
+
+.shell__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/*
+ * Шапка над содержимым: поиск слева, тот, кто вошёл, — справа. Липкая
+ * и полупрозрачная: за ней едет страница, и место под ней читается
+ * как продолжение экрана, а не как второе меню.
+ */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: var(--topbar);
+  padding: 10px var(--gutter);
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(10, 10, 12, 0.86);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.topbar__search {
+  flex: 0 1 440px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: rgba(245, 242, 234, 0.03);
+  color: var(--text-muted);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.topbar__search:focus-within {
+  border-color: rgba(217, 190, 134, 0.55);
+  background: var(--surface-soft);
+}
+
+.topbar__search:hover {
+  border-color: rgba(217, 190, 134, 0.35);
+}
+
+.topbar__search {
+  cursor: text;
+  font: inherit;
+  text-align: left;
+}
+
+.topbar__placeholder {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Лист с настройками ──────────────────────────────────────────── */
+
+/*
+ * Лист поверх страницы: настройки таблицы, подтверждения. Та же
+ * подложка, что у палитры, — один слой на все всплывающие окна.
+ */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 10vh 16px 16px;
+  background: rgba(6, 6, 8, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  overflow: auto;
+}
+
+.sheet__box {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 24px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  animation: nm-fade-up 0.18s var(--ease) both;
+}
+
+.sheet__head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sheet__group {
+  margin: 0;
+  padding: 0;
+  border: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-top: 18px;
+}
+
+.sheet__group > legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.sheet__checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.sheet__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 6px;
   border-top: 1px solid var(--hairline);
 }
 
-.sidebar__who {
-  padding: 0 10px;
+/* Флажок с подписью: цель нажатия — вся строка. */
+.check {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--gold);
+}
+
+/* Плотная таблица: те же колонки, меньше воздуха. */
+.table--dense {
   gap: 3px;
 }
 
-.sidebar__name {
-  font-size: 13.5px;
+.table--dense .table__row {
+  min-height: 40px;
+  padding: 4px 14px;
+}
+
+.table--dense .cell__value {
+  font-size: 13px;
+}
+
+.table--dense .cell__note {
+  font-size: 11.5px;
+}
+
+/* ── Палитра быстрого перехода ───────────────────────────────────── */
+
+.palette {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+  background: rgba(6, 6, 8, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.palette__box {
+  width: min(640px, 100%);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  overflow: hidden;
+  animation: nm-fade-up 0.18s var(--ease) both;
+}
+
+.palette__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--text-muted);
+}
+
+.palette__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+}
+
+.palette__input::placeholder {
+  color: var(--text-faint);
+}
+
+.palette__body {
+  max-height: 60vh;
+  overflow: auto;
+  padding: 6px;
+}
+
+.palette__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.palette__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-inner);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.palette__item--on {
+  background: var(--surface-soft-strong);
+}
+
+.palette__main {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.palette__note {
+  grid-column: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.palette__item .pill {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.palette__hint {
+  margin: 0;
+  padding: 18px 12px 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: center;
+  text-wrap: pretty;
+}
+
+.topbar__kbd {
+  padding: 2px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.topbar__spacer {
+  flex: 1;
+}
+
+/* Меню сотрудника: имя и роль, под ними — настройки и выход. */
+.menu {
+  position: relative;
+}
+
+.menu__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 4px 4px;
+  border-radius: var(--radius-control);
+  list-style: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.menu__summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu__summary:hover,
+.menu[open] .menu__summary {
+  background: var(--surface-soft);
+}
+
+.menu__avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(217, 190, 134, 0.18);
+  color: var(--gold-light);
+  font-size: 13px;
   font-weight: 700;
 }
 
-.sidebar__role {
-  font-size: 11px;
+.menu__who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.menu__name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.menu__role {
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 1.2px;
+  letter-spacing: 1.1px;
   text-transform: uppercase;
   color: var(--text-faint);
+}
+
+.menu__chevron {
+  display: flex;
+  color: var(--text-faint);
+  transition: transform 0.15s var(--ease);
+}
+
+.menu[open] .menu__chevron {
+  transform: rotate(180deg);
+}
+
+.menu__list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 6;
+  min-width: 200px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  animation: nm-fade-up 0.18s var(--ease) both;
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: var(--radius-inner);
+  background: none;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.menu__item:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.menu__item--danger {
+  color: #f0857e;
 }
 
 /* ── Страница ────────────────────────────────────────────────────── */
@@ -293,12 +735,71 @@ a {
   letter-spacing: -0.4px;
 }
 
+/* Строка над заголовком: дата словами — и ничего важнее. */
+.page__eyebrow {
+  margin: 0 0 4px;
+  min-height: 1.4em;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/*
+ * Быстрые переходы под плитками: те же разделы, что в меню, но здесь
+ * они под рукой у того, кто держит стол открытым весь день и в меню
+ * не смотрит.
+ */
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.quick__link:hover {
+  background: var(--surface-soft-hover);
+  border-color: rgba(217, 190, 134, 0.35);
+  color: var(--text);
+}
+
+.quick__note {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
 .page__sub {
   margin: 6px 0 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-muted);
   text-wrap: pretty;
+}
+
+/* Действия раздела: справа от заголовка, главное — золотом, последним. */
+.page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .page__back {
@@ -312,6 +813,140 @@ a {
 }
 
 .page__back:hover {
+  color: var(--gold-light);
+}
+
+/* ── Плитки показателей ──────────────────────────────────────────── */
+
+/*
+ * Ряд плиток: число крупно, подпись капителью, под числом строка,
+ * которая делает его честным. Сетка сама решает, сколько плиток в ряд:
+ * шесть на широком, две на телефоне.
+ */
+.stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  color: inherit;
+  transition: background 0.15s ease;
+}
+
+a.stat:hover {
+  background: #1a1a20;
+}
+
+.stat__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Точка тона — то же правило, что у пилюль: золото ждёт, зелёное готово. */
+.stat__dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-faint);
+}
+
+.stat--wait .stat__dot {
+  background: var(--gold);
+}
+
+.stat--up .stat__dot {
+  background: var(--up);
+}
+
+.stat--down .stat__dot {
+  background: var(--down);
+}
+
+.stat__value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat--wait .stat__value {
+  color: var(--gold-light);
+}
+
+.stat__note {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* ── Табы состояния ──────────────────────────────────────────────── */
+
+/*
+ * Табы — ссылки в общей обойме: выбранный залит, у каждого счётчик.
+ * Ряд читается как один выбор, а не как ряд кнопок.
+ */
+.tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: rgba(245, 242, 234, 0.02);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-inner);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.tab:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.tab--on {
+  background: var(--surface-soft-strong);
+  color: var(--text);
+}
+
+.tab__count {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.tab--on .tab__count {
   color: var(--gold-light);
 }
 
@@ -487,60 +1122,104 @@ a.row:hover {
  */
 
 /*
- * Памятка «как вести заявку».
+ * Подсказка «как устроено».
  *
  * Свёрнута и не требует закрытия: тур, встающий поперёк работы,
- * закрывают не читая. Развёрнутая — набрана мелко: это справка, а не
- * содержимое экрана.
+ * закрывают не читая. Развёрнутая — сетка коротких абзацев с
+ * подзаголовками, набрана мелко: это справка, а не содержимое экрана.
  */
 .howto {
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-card);
   background: var(--surface-soft);
 }
 
 .howto__head {
-  padding: 10px 14px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
   cursor: pointer;
   list-style: none;
+  border-radius: var(--radius-card);
+  transition: background 0.15s ease;
+}
+
+.howto__head:hover {
+  background: var(--surface-soft);
 }
 
 .howto__head::-webkit-details-marker {
   display: none;
 }
 
-.howto__head::before {
-  content: '▸ ';
-  color: var(--text-faint);
+.howto__mark {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(217, 190, 134, 0.12);
+  color: var(--gold-light);
 }
 
-.howto[open] .howto__head::before {
-  content: '▾ ';
-}
-
-.howto__steps {
-  margin: 0;
-  padding: 0 14px 14px 34px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.howto__step {
+.howto__heading {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .howto__title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.howto__sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.howto__chevron {
+  margin-left: auto;
+  display: flex;
+  color: var(--text-faint);
+  transition: transform 0.15s var(--ease);
+}
+
+.howto[open] .howto__chevron {
+  transform: rotate(180deg);
+}
+
+.howto__body {
+  display: grid;
+  gap: 14px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  padding: 6px 16px 18px;
+  counter-reset: step;
+}
+
+.howto__item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.howto__item-title {
   font-size: 13px;
   font-weight: 700;
 }
 
-.howto__detail {
+/* Шаги нумеруются: у них есть порядок, и его читают по номеру. */
+.howto__body--ordered .howto__item-title::before {
+  counter-increment: step;
+  content: counter(step) '. ';
+  color: var(--text-faint);
+}
+
+.howto__item-detail {
   font-size: 12.5px;
   line-height: 1.55;
   color: var(--text-muted);
@@ -609,6 +1288,14 @@ a.row:hover {
     flex: 1 1 0;
     min-width: 0;
   }
+
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stat__value {
+    font-size: 22px;
+  }
 }
 
 /*
@@ -673,7 +1360,7 @@ a.row:hover {
    * Непрозрачный фон обязателен — сквозь неё едут строки.
    */
   position: sticky;
-  top: 0;
+  top: var(--topbar);
   z-index: 1;
   background: var(--bg);
 }
@@ -725,6 +1412,29 @@ a.table__row:hover,
   flex-direction: column;
   gap: 10px;
   padding: 0 18px 14px;
+}
+
+/*
+ * Подвал таблицы: сколько показано из скольких и чем дочитать.
+ * Об усечении сказано прямо: список, молча обрезанный на полсотне,
+ * читается как весь — и по нему делают выводы о работе.
+ */
+.table__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.table__foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .cell {
@@ -1101,6 +1811,50 @@ select.input {
   text-align: center;
 }
 
+/*
+ * Пустое состояние, которое учит: значок, заголовок, строка о том, что
+ * здесь будет, и действие, если оно есть.
+ */
+.empty--rich {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 22px;
+  border-style: solid;
+  border-radius: var(--radius-card);
+  background: var(--surface-soft);
+}
+
+.empty__icon {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-soft-strong);
+  color: var(--text-dim);
+}
+
+.empty__title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.empty__text {
+  margin: 0;
+  max-width: 440px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.empty--rich .btn {
+  margin-top: 10px;
+}
+
 .muted {
   margin: 0;
   font-size: 12.5px;
@@ -1316,22 +2070,54 @@ select.input {
     gap: 6px;
   }
 
+  /* Группы в строке не сворачиваются: заголовок ушёл, всё видно разом. */
+  .sidebar__section {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
   .sidebar__group {
     display: none;
+  }
+
+  .sidebar__items {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .sidebar__items[hidden] {
+    display: flex;
+  }
+
+  .sidebar__link {
+    min-height: 36px;
+    font-size: 13px;
   }
 
   .sidebar__link[aria-current='page'] {
     box-shadow: none;
   }
 
-  .sidebar__foot {
-    margin: 0 0 0 auto;
-    padding: 0;
-    border: none;
+  /* Шапка на телефоне: поиск во всю строку, имя прячется за аватар. */
+  .topbar {
+    position: static;
+    gap: 10px;
   }
 
-  .sidebar__who {
-    padding: 0;
+  .topbar__search {
+    flex: 1 1 auto;
+  }
+
+  .topbar__kbd,
+  .topbar__spacer,
+  .menu__who {
+    display: none;
+  }
+
+  .table__head {
+    top: 0;
   }
 
   .page {
@@ -1369,7 +2155,7 @@ select.input {
    на любом его месте. */
 .who {
   position: sticky;
-  top: 24px;
+  top: calc(var(--topbar) + 24px);
 }
 
 .who__link {

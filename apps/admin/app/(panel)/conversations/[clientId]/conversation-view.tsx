@@ -94,7 +94,7 @@ export function ConversationView({
         </p>
         <button
           type="button"
-          className="button button--ghost"
+          className="btn btn--ghost"
           onClick={() => void setHandover(!handedToHuman)}
         >
           {switching

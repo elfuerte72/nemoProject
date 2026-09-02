@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
+import { HowToWithdrawals } from '@/app/ui/how-to';
 import { WithdrawalList } from './withdrawal-list';
 
 export const dynamic = 'force-dynamic';
@@ -30,6 +31,8 @@ export default async function WithdrawalsPage() {
           </p>
         </div>
       </header>
+
+      <HowToWithdrawals />
 
       {/*
         `clientId` — bigint, и в клиентский компонент он не переезжает:

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
+import { HowToCards } from '@/app/ui/how-to';
 import { CardList } from './card-list';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,8 @@ export default async function CardApplicationsPage() {
           </p>
         </div>
       </header>
+
+      <HowToCards />
 
       <CardList
         fetchedAt={new Date().toISOString()}
