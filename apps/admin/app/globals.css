@@ -1759,6 +1759,20 @@ a.table__row:hover,
   --cols: 7px minmax(0, 1fr) minmax(0, 2fr) 180px 110px;
 }
 
+.table--clients {
+  --cols: minmax(0, 1.4fr) 120px minmax(0, 1fr) 120px minmax(0, 1.2fr);
+}
+
+/* Заявки в карточке клиента: клиента в строке нет, есть доход. */
+.table--client-requests {
+  --cols: minmax(0, 1.4fr) 100px 150px 110px 110px minmax(0, 0.8fr);
+}
+
+/* Отметка золотом в строке: «постоянный». */
+.tag--gold {
+  color: var(--gold-light);
+}
+
 /*
  * Узкое окно: колонки складываются в строки, и подпись переезжает к
  * значению. Без неё столбец, потерявший шапку, превращается в число

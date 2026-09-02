@@ -18,7 +18,8 @@ export type NavIcon =
   | 'settings'
   | 'log'
   | 'account'
-  | 'chart';
+  | 'chart'
+  | 'user';
 
 export interface NavItem {
   readonly href: string;
@@ -52,6 +53,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/withdrawals', label: 'Вывод', icon: 'withdrawal', count: 'withdrawals' },
       { href: '/card-applications', label: 'Карты', icon: 'card', count: 'cards' },
       { href: '/conversations', label: 'Обращения', icon: 'chat', count: 'conversations' },
+      { href: '/clients', label: 'Клиенты', icon: 'user' },
     ],
   },
   {

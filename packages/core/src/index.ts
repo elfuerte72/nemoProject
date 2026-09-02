@@ -147,6 +147,20 @@ import {
 } from './exchange-workflow.js';
 import { listColleagues, reassignExchangeRequest } from './exchange-reassign.js';
 import {
+  countClients,
+  listClientExchangeRequests,
+  listClients,
+  summarizeClients,
+  type ClientFilter,
+} from './clients-directory.js';
+export type {
+  ClientFilter,
+  ClientRow,
+  ClientTab,
+  ClientsSummary,
+} from './clients-directory.js';
+export { REGULAR_CLIENT_COMPLETED } from './clients-directory.js';
+import {
   breakdownExchangeRequests,
   countExchangeRequestsFor,
   summarizeExchangeRequests,
@@ -279,6 +293,17 @@ export function createCore(ctx: CoreConfig) {
       input: ReassignExchangeRequestInput,
     ) => reassignExchangeRequest(ctx, actor, requestId, input),
     listColleagues: (actor: Actor) => listColleagues(ctx, actor),
+    listClients: (actor: Actor, filter?: ClientFilter) => listClients(ctx, actor, filter),
+    countClients: (actor: Actor, filter?: ClientFilter) => countClients(ctx, actor, filter),
+    summarizeClients: (actor: Actor) => summarizeClients(ctx, actor),
+    listClientExchangeRequests: (
+      actor: Actor,
+      clientId: bigint,
+      options?: {
+        limit?: number | undefined;
+        after?: { createdAt: Date; id: string } | undefined;
+      },
+    ) => listClientExchangeRequests(ctx, actor, clientId, options),
     countExchangeRequestsFor: (actor: Actor, period: AnalyticsPeriod) =>
       countExchangeRequestsFor(ctx, actor, period),
     summarizeExchangeRequests: (actor: Actor, period: AnalyticsPeriod) =>
