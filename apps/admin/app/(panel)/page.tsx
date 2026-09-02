@@ -1,19 +1,16 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import type { ExchangeQueueFilter, ManagerExchangeRequestView } from '@nemo/core';
 import { exchangeKinds, inProgressExchangeStatuses } from '@nemo/types';
 import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { panelCounts } from '@/lib/counts';
-import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
-import { formatAmount } from '@/lib/format';
-import { pillClass } from '@/lib/labels';
-import { Moment } from '@/app/ui/moment';
+import { coreFilterFor, toExchangeRow, type DeskFilter } from '@/lib/exchange-rows';
 import { HowToRunRequest } from '@/app/ui/how-to';
 import { Greeting } from '@/app/ui/greeting';
 import { Icon } from '@/app/ui/icons';
 import { Stat, Stats } from '@/app/ui/stat';
 import { DeskHead } from './desk-head';
+import { ExchangeTable } from './exchange-table';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,18 +50,13 @@ export default async function DeskPage({
 
   /*
    * Одно сужение на все три списка: менеджер, набравший ник клиента,
-   * ищет его заявку — и она может оказаться в любом из них.
-   * Состояние касается только заявок в работе: у очереди оно одно на
-   * все строки, и «новая» там не фильтр, а определение.
+   * ищет его заявку — и она может оказаться в любом из них. Как оно
+   * превращается в фильтр ядра для каждого раздела, знает
+   * `coreFilterFor` — та же функция, что у маршрута дочитывания.
    */
-  const common: ExchangeQueueFilter = {
-    ...(query ? { query } : {}),
-    ...(kind ? { kind } : {}),
-  };
-  const working: ExchangeQueueFilter = {
-    ...common,
-    ...(status ? { status } : {}),
-  };
+  const filter: DeskFilter = { q: query, kind: kind ?? '', status: status ?? '' };
+  const common = coreFilterFor('queue', filter);
+  const working = { mine: coreFilterFor('mine', filter), others: coreFilterFor('others', filter) };
 
   const core = getCore();
   /*
@@ -75,12 +67,12 @@ export default async function DeskPage({
    */
   const [mine, queue, others, mineTotal, queueTotal, othersTotal, counts, mineAll, othersAll] =
     await Promise.all([
-      core.listExchangeRequestsInProgress(actor, { ...working, mine: true }),
+      core.listExchangeRequestsInProgress(actor, working.mine),
       core.listExchangeRequestQueue(actor, common),
-      core.listExchangeRequestsInProgress(actor, { ...working, mine: false }),
-      core.countExchangeRequestsInProgress(actor, { ...working, mine: true }),
+      core.listExchangeRequestsInProgress(actor, working.others),
+      core.countExchangeRequestsInProgress(actor, working.mine),
       core.countExchangeRequestQueue(actor, common),
-      core.countExchangeRequestsInProgress(actor, { ...working, mine: false }),
+      core.countExchangeRequestsInProgress(actor, working.others),
       // Те же четыре числа, что в меню, — из памяти запроса, не заново.
       panelCounts(actor),
       // Плитки — про весь сервис, а не про фильтр: сузив стол до одного
@@ -88,6 +80,9 @@ export default async function DeskPage({
       core.countExchangeRequestsInProgress(actor, { mine: true }),
       core.countExchangeRequestsInProgress(actor, { mine: false }),
     ]);
+
+  // Ключ списка: сменился фильтр — дочитанный хвост сбрасывается.
+  const signature = `${filter.q}|${filter.kind}|${filter.status}`;
 
   return (
     <main className="page page--wide">
@@ -188,9 +183,12 @@ export default async function DeskPage({
           <span className="section__count">{mineTotal}</span>
           <span className="section__rule" />
         </div>
-        <ExchangeRequestList
-          requests={mine}
+        <ExchangeTable
+          key={`mine:${signature}`}
+          rows={mine.map(toExchangeRow)}
           total={mineTotal}
+          scope="mine"
+          filter={filter}
           empty="За вами ничего не закреплено. Возьмите заявку из очереди — она встанет сюда."
         />
       </section>
@@ -201,9 +199,12 @@ export default async function DeskPage({
           <span className="section__count">{queueTotal}</span>
           <span className="section__rule" />
         </div>
-        <ExchangeRequestList
-          requests={queue}
+        <ExchangeTable
+          key={`queue:${signature}`}
+          rows={queue.map(toExchangeRow)}
           total={queueTotal}
+          scope="queue"
+          filter={filter}
           empty="Новых заявок нет. Появится — встанет здесь; экран перечитывает очередь сам."
         />
         {/*
@@ -220,9 +221,12 @@ export default async function DeskPage({
           <span className="section__count">{othersTotal}</span>
           <span className="section__rule" />
         </div>
-        <ExchangeRequestList
-          requests={others}
+        <ExchangeTable
+          key={`others:${signature}`}
+          rows={others.map(toExchangeRow)}
           total={othersTotal}
+          scope="others"
+          filter={filter}
           empty="Коллеги ничего не ведут — вся работа либо у вас, либо ещё в очереди."
           showManager
         />
@@ -243,119 +247,4 @@ function single(value: string | string[] | undefined): string {
  */
 function pick<T extends string>(value: string, allowed: readonly T[]): T | undefined {
   return (allowed as readonly string[]).includes(value) ? (value as T) : undefined;
-}
-
-function ExchangeRequestList({
-  requests,
-  total,
-  empty,
-  showManager = false,
-}: {
-  requests: readonly ManagerExchangeRequestView[];
-  /** Сколько строк всего: у выборки есть предел, и список бывает короче. */
-  total: number;
-  empty: string;
-  /** Колонка «ведёт» — только там, где заявки чужие. */
-  showManager?: boolean;
-}) {
-  if (requests.length === 0) {
-    return <p className="empty">{empty}</p>;
-  }
-
-  const columns = showManager ? 'table--exchange-taken' : 'table--exchange';
-
-  return (
-    <>
-      <div aria-hidden className={`table__head ${columns}`}>
-        <span>Обмен</span>
-        <span>Вид</span>
-        <span>Клиент</span>
-        <span>Состояние</span>
-        {showManager ? <span>Ведёт</span> : undefined}
-        <span>Подана</span>
-      </div>
-      <ul className={`table ${columns}`}>
-        {requests.map((request) => (
-          <li
-            key={request.id}
-            className={
-              STATUS_TONES[request.status] === 'wait'
-                ? 'table__item table__item--fresh'
-                : 'table__item table__item--settled'
-            }
-          >
-            {/*
-              Ссылка — вся строка, а не сумма в ней: попадать курсором в
-              четыре слова текста тридцать раз подряд менеджеру незачем.
-            */}
-            <Link href={`/exchange-requests/${request.id}`} className="table__row">
-              {/*
-                Обе стороны сделки: сумма к выдаче посчитана при подаче
-                по курсу заявки — это то самое число, которое увидел
-                клиент. У наличной заявки его нет: курс называет
-                менеджер.
-              */}
-              <span className="cell cell--num">
-                <span className="cell__label">Обмен</span>
-                <span className="cell__value">
-                  {formatAmount(request.fromAmount)} {request.fromCode} →{' '}
-                  {request.toAmount ? `${formatAmount(request.toAmount)} ` : ''}
-                  {request.toCode}
-                </span>
-              </span>
-              <span className="cell">
-                <span className="cell__label">Вид</span>
-                <span className="cell__note">{KIND_LABELS[request.kind]}</span>
-              </span>
-              {/*
-                Ник сверху, номер под ним: в очереди из десятка строк
-                номера отличаются друг от друга только цифрами в
-                середине, а ник читается сразу.
-              */}
-              <span className="cell">
-                <span className="cell__label">Клиент</span>
-                <span className="cell__value">
-                  {request.clientUsername ? `@${request.clientUsername}` : 'Без ника'}
-                </span>
-                <span className="cell__note">{request.clientId.toString()}</span>
-              </span>
-              <span className="cell">
-                <span className="cell__label">Состояние</span>
-                <span className={pillClass(STATUS_TONES[request.status])}>
-                  {STATUS_LABELS[request.status]}
-                </span>
-              </span>
-              {/*
-                Кто ведёт — не первой строкой карточки на узком экране:
-                там сверху стоит сама сделка, а имя коллеги отвечает на
-                второй вопрос, а не на первый.
-              */}
-              {showManager ? (
-                <span className="cell">
-                  <span className="cell__label">Ведёт</span>
-                  <span className="cell__note">{request.assignedManagerName ?? '—'}</span>
-                </span>
-              ) : undefined}
-              <span className="cell cell--num">
-                <span className="cell__label">Подана</span>
-                <span className="cell__note">
-                  <Moment at={request.createdAt.toISOString()} />
-                </span>
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-      {/*
-        Об усечении сказано прямо: список, молча обрезанный на полсотне,
-        читается как весь — и по нему делают выводы о работе. Сузить его
-        поиском или фильтром пока быстрее, чем листать.
-      */}
-      {requests.length < total ? (
-        <p className="table__more">
-          Показаны первые {requests.length} из {total}. Сузьте поиском или фильтром.
-        </p>
-      ) : undefined}
-    </>
-  );
 }
