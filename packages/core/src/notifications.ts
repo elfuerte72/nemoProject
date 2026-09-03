@@ -221,13 +221,46 @@ type AssertNone<T extends never> = T;
 export type EveryKindListed = AssertNone<UnlistedKind>;
 
 /**
- * Текст сообщения для клиента.
+ * Сообщение, готовое к отправке: текст и разметка, в которой он набран.
+ *
+ * Клиенту текст уходит голым: выделять в нём нечего, а слова
+ * менеджера со знаком «меньше» под разметкой Telegram не принял бы
+ * вовсе. Сотруднику — размеченным: заголовок, ссылка на клиента, его
+ * слова цитатой, и всё чужое в нём экранировано здесь же. Разметка
+ * объявлена рядом с текстом, а не выбирается отправителем по виду:
+ * два места, решающие одно и то же, разошлись бы на первом же новом
+ * виде, и он ушёл бы с тегами в голом тексте.
+ */
+export interface RenderedNotification {
+  readonly text: string;
+  readonly parseMode?: 'HTML';
+}
+
+type StaffNotification = Extract<Notification, { kind: `staff-${string}` }>;
+
+/**
+ * Текст сообщения.
  *
  * Живёт в модуле операций, а не в боте, потому что уведомления
  * отправляют оба приложения: клиентское — о регистрации реферала,
  * админка — о переходах заявки. Два набора формулировок разошлись бы.
  */
-export function renderNotification(notification: Notification): string {
+export function renderNotification(notification: Notification): RenderedNotification {
+  switch (notification.kind) {
+    case 'staff-client-message':
+    case 'staff-escalation':
+    case 'staff-new-request':
+    case 'staff-stale-request':
+    case 'staff-waiting-client':
+      return { text: renderStaffNotification(notification), parseMode: 'HTML' };
+    default:
+      return { text: renderClientNotification(notification) };
+  }
+}
+
+function renderClientNotification(
+  notification: Exclude<Notification, StaffNotification>,
+): string {
   switch (notification.kind) {
     case 'referral-joined':
       return notification.line === 1
@@ -260,40 +293,90 @@ export function renderNotification(notification: Notification): string {
       // Текст менеджера уходит как есть: обрамление вроде «менеджер
       // пишет» превратило бы разговор в переписку с автоответчиком.
       return notification.body;
-    case 'staff-client-message':
-      return (
-        `Новое обращение от клиента ${notification.clientUsername ?? notification.clientId}:\n` +
-        notification.preview
-      );
     case 'concierge-message':
       // Как и текст менеджера, уходит как есть: обрамление вроде
       // «помощник пишет» превратило бы разговор в автоответчик. Кто
       // отвечает, консьерж говорит сам — один раз, в начале разговора.
       return notification.body;
-    case 'staff-new-request':
-      return (
-        `Новая ${renderNewRequestSubject(notification.request)}\n` +
-        `Клиент: ${notification.clientUsername ?? notification.clientId}`
-      );
+  }
+}
+
+/**
+ * Сотруднику — три вопроса по порядку: что случилось, с кем, что
+ * написано.
+ *
+ * Заголовок жирным: читается с телефона между двумя делами, и решение
+ * «бросать ли то, чем занят» принимается по одной строке. Клиент —
+ * ссылкой по нику: аккаунт по числу Telegram не открывает; число рядом,
+ * потому что ник меняется, а панель ищет клиента по числу. Слова
+ * клиента — цитатой, чтобы не читались как слова сервиса. До 3 сентября
+ * 2026 всё это уходило тремя одинаковыми строками голого текста, и
+ * менеджер не понял ни кто пишет, ни куда идти.
+ */
+function renderStaffNotification(notification: StaffNotification): string {
+  switch (notification.kind) {
+    case 'staff-client-message':
+      return lines(bold('Новое обращение'), clientLine(notification), quote(notification.preview));
     case 'staff-escalation':
-      return (
-        `Помощник передал разговор: ${notification.reason}.\n` +
-        `Клиент ${notification.clientUsername ?? notification.clientId} пишет:\n` +
-        notification.preview
+      // Причина в заголовке: «клиент говорит, что деньги не дошли»
+      // отвечает на вопрос «что случилось» раньше самих слов клиента.
+      return lines(
+        bold(capitalize(escapeHtml(notification.reason))),
+        clientLine(notification),
+        quote(notification.preview),
+      );
+    case 'staff-new-request':
+      return lines(
+        bold(`Новая ${requestTitle(notification.request)}`),
+        requestDetails(notification.request),
+        clientLine(notification),
       );
     case 'staff-stale-request':
-      return (
-        `Заявку никто не взял ${renderWaiting(notification.waitingMinutes)}.\n` +
-        `${capitalize(renderNewRequestSubject(notification.request))}\n` +
-        `Клиент: ${notification.clientUsername ?? notification.clientId}`
+      return lines(
+        bold(`Заявку никто не взял ${renderWaiting(notification.waitingMinutes)}`),
+        requestLine(notification.request),
+        clientLine(notification),
       );
     case 'staff-waiting-client':
-      return (
-        `Клиент ${notification.clientUsername ?? notification.clientId} ждёт ответа ` +
-        `${renderWaiting(notification.waitingMinutes)}:\n` +
-        notification.preview
+      return lines(
+        bold(`Клиент ждёт ответа ${renderWaiting(notification.waitingMinutes)}`),
+        clientLine(notification),
+        quote(notification.preview),
       );
   }
+}
+
+/** Строки сообщения; `null` — строки нет, и пустой она не остаётся. */
+function lines(...parts: readonly (string | null)[]): string {
+  return parts.filter((part): part is string => part !== null).join('\n');
+}
+
+function bold(text: string): string {
+  return `<b>${text}</b>`;
+}
+
+function quote(text: string): string {
+  return `<blockquote>${escapeHtml(text)}</blockquote>`;
+}
+
+function clientLine(client: {
+  readonly clientId: bigint;
+  readonly clientUsername: string | null;
+}): string {
+  const id = `ID ${client.clientId}`;
+  if (client.clientUsername === null) return id;
+  const username = escapeHtml(client.clientUsername);
+  return `<a href="https://t.me/${username}">@${username}</a> · ${id}`;
+}
+
+/**
+ * Разметку сообщения сервис ставит свою, а ник, слова клиента, коды
+ * валют и причина эскалации приходят извне: знак «меньше» в любом из
+ * них Telegram прочитал бы как начало тега и отверг бы сообщение
+ * целиком.
+ */
+export function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -319,18 +402,37 @@ function capitalize(text: string): string {
  * строке, бросать ли то, чем занят, и «заявка 8f3c…» на этот вопрос не
  * отвечает.
  */
-function renderNewRequestSubject(request: NewRequestSubject): string {
+function requestTitle(request: NewRequestSubject): string {
   switch (request.kind) {
     case 'exchange':
-      return (
-        `заявка на обмен: ${request.fromAmount} ${request.fromCode} → ${request.toCode}` +
-        (request.isCash ? ', наличными' : '')
-      );
+      return 'заявка на обмен';
     case 'withdrawal':
-      return `заявка на вывод ${request.amount} баллов`;
+      return 'заявка на вывод';
     case 'card':
       return 'заявка на карту';
   }
+}
+
+/** Чем заявка отличается от других таких же; у карты — ничем. */
+function requestDetails(request: NewRequestSubject): string | null {
+  switch (request.kind) {
+    case 'exchange':
+      return (
+        `${request.fromAmount} ${escapeHtml(request.fromCode)} → ${escapeHtml(request.toCode)}` +
+        (request.isCash ? ', наличными' : '')
+      );
+    case 'withdrawal':
+      return `${request.amount} баллов`;
+    case 'card':
+      return null;
+  }
+}
+
+/** Заявка одной строкой — там, где заголовок занят другим. */
+function requestLine(request: NewRequestSubject): string {
+  const details = requestDetails(request);
+  const title = capitalize(requestTitle(request));
+  return details === null ? title : `${title}: ${details}`;
 }
 
 function renderExchangeRequestStatus(

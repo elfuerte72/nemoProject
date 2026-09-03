@@ -59,7 +59,7 @@ async function send(notification: Notification, options: DeliveryOptions): Promi
   try {
     const photo = hintPhotoUrl(notification, options.miniappUrl);
     const method = photo ? 'sendPhoto' : 'sendMessage';
-    const text = renderNotification(notification);
+    const { text, parseMode } = renderNotification(notification);
 
     const response = await fetch(
       `https://api.telegram.org/bot${options.botToken}/${method}`,
@@ -71,6 +71,9 @@ async function send(notification: Notification, options: DeliveryOptions): Promi
           // приведении к `number` он однажды потеряет точность.
           chat_id: notification.to.toString(),
           ...(photo ? { photo, caption: text } : { text }),
+          // Разметку объявляет текст, а не выбирает доставка по виду:
+          // так новый вид не уйдёт с тегами в голом тексте.
+          ...(parseMode ? { parse_mode: parseMode } : {}),
           ...panelButton(notification, options.panelUrl),
         }),
       },
@@ -94,21 +97,44 @@ function hintPhotoUrl(
 }
 
 /**
- * Кнопка под уведомлением — только у того, что зовёт сотрудника:
- * клиенту в панель нельзя, а по остальным поводам идти туда незачем.
+ * Кнопка под уведомлением — у всего, что зовёт сотрудника, и ни у
+ * чего, что уходит клиенту: ему в панель нельзя.
  */
 function panelButton(notification: Notification, panelUrl: string | undefined) {
   if (!panelUrl) return {};
-  const path = panelPath(notification);
-  if (path === null) return {};
+  const link = panelLink(notification);
+  if (link === null) return {};
 
   return {
     reply_markup: {
       inline_keyboard: [
-        [{ text: 'Открыть в панели', url: `${panelUrl.replace(/\/+$/, '')}${path}` }],
+        [{ text: link.label, url: `${panelUrl.replace(/\/+$/, '')}${link.path}` }],
       ],
     },
   };
+}
+
+/**
+ * Куда ведёт кнопка и как называется.
+ *
+ * Ведёт туда, где повод разбирают: обращение, эскалация и ждущий
+ * клиент — в переписку, новая и забытая заявка — в заявку. Кнопка есть
+ * у каждого повода позвать сотрудника: до 3 сентября 2026 эскалация
+ * уходила без неё — «помощник передал разговор», и ни слова о том, где
+ * отвечать.
+ */
+function panelLink(notification: Notification): { label: string; path: string } | null {
+  switch (notification.kind) {
+    case 'staff-client-message':
+    case 'staff-escalation':
+    case 'staff-waiting-client':
+      return { label: 'Открыть переписку', path: `/conversations/${notification.clientId}` };
+    case 'staff-new-request':
+    case 'staff-stale-request':
+      return { label: 'Открыть заявку', path: newRequestPath(notification.request) };
+    default:
+      return null;
+  }
 }
 
 /**
@@ -119,16 +145,6 @@ function panelButton(notification: Notification, panelUrl: string | undefined) {
  * карты карточки нет, экран у них списком — туда и ведём: адрес,
  * притворяющийся карточкой, привёл бы в никуда.
  */
-function panelPath(notification: Notification): string | null {
-  switch (notification.kind) {
-    case 'staff-client-message':
-      return `/conversations/${notification.clientId}`;
-    case 'staff-new-request':
-      return newRequestPath(notification.request);
-    default:
-      return null;
-  }
-}
 
 function newRequestPath(request: NewRequestSubject): string {
   switch (request.kind) {
