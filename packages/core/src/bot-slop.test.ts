@@ -309,7 +309,7 @@ describe('тексты бота', () => {
   it.each(EVERY_NOTIFICATION.map((one) => [`${one.kind}`, one] as const))(
     'уведомление %s набрано человеком',
     (_name, notification) => {
-      expect(slopComplaints(renderNotification(notification))).toEqual([]);
+      expect(slopComplaints(renderNotification(notification).text)).toEqual([]);
     },
   );
 

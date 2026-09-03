@@ -1,6 +1,6 @@
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { Money } from '@nemo/types';
-import { CONCIERGE_QUIET_MS, renderNotification } from '@nemo/core';
+import { CONCIERGE_QUIET_MS, renderNotification, type RenderedNotification } from '@nemo/core';
 import { getCore } from '@/lib/core';
 import { referralLink } from '@/lib/referral';
 import { nudgeStaffAlerts } from '@/lib/staff-alert';
@@ -83,6 +83,11 @@ const ACTION = {
  * запуска. Тому, у кого клавиатуры нет, это ничего не делает.
  */
 const WITHOUT_OLD_KEYBOARD = { reply_markup: { remove_keyboard: true } } as const;
+
+/** Разметка, в которой набран текст, — параметром Bot API. */
+function markupOf(rendered: RenderedNotification): { parse_mode?: 'HTML' } {
+  return rendered.parseMode ? { parse_mode: rendered.parseMode } : {};
+}
 
 let instance: Bot | undefined;
 
@@ -244,7 +249,8 @@ async function receive(
     (one) => one.kind === 'client-message-received',
   );
   if (acknowledgement) {
-    await ctx.reply(renderNotification(acknowledgement), WITHOUT_OLD_KEYBOARD);
+    const rendered = renderNotification(acknowledgement);
+    await ctx.reply(rendered.text, { ...WITHOUT_OLD_KEYBOARD, ...markupOf(rendered) });
     // Толчок ровно там же, где подтверждение: право на него занимает то
     // же условное изменение, которым обращение становится видимым
     // сотрудникам. Второе сообщение той же череды нового повода не
@@ -323,13 +329,17 @@ async function deliverConciergeReply(
   ctx: Context,
   notification: Parameters<typeof renderNotification>[0],
 ): Promise<void> {
-  const text = renderNotification(notification);
+  const rendered = renderNotification(notification);
+  const markup = markupOf(rendered);
 
   if (notification.kind === 'concierge-message' && notification.photoPath) {
     const base = (process.env.MINIAPP_URL ?? '').replace(/\/+$/, '');
     if (base !== '') {
       try {
-        await ctx.replyWithPhoto(`${base}${notification.photoPath}`, { caption: text });
+        await ctx.replyWithPhoto(`${base}${notification.photoPath}`, {
+          caption: rendered.text,
+          ...markup,
+        });
         return;
       } catch (error) {
         console.error('Картинка-подсказка не ушла, отправляю текстом:', error);
@@ -337,7 +347,7 @@ async function deliverConciergeReply(
     }
   }
 
-  await ctx.reply(text, WITHOUT_OLD_KEYBOARD);
+  await ctx.reply(rendered.text, { ...WITHOUT_OLD_KEYBOARD, ...markup });
 }
 
 /**

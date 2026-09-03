@@ -562,6 +562,7 @@ export {
   renderNotification,
   type NewRequestSubject,
   type Notification,
+  type RenderedNotification,
 } from './notifications.js';
 export type {
   ConciergeAnswer,
