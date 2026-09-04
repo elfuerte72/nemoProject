@@ -238,7 +238,11 @@ Next: драйвер базы объявлен внешним пакетом и 
 2. `pnpm generate-keys` — публичный ключ в оба приложения, приватный
    **только** в админ-панель ([ADR-0002](docs/adr/0002-shifrovanie-rekvizitov-klienta.md)).
 3. Задать в клиентском приложении: `TELEGRAM_BOT_TOKEN`,
-   `TELEGRAM_WEBHOOK_SECRET`, `MINIAPP_URL`.
+   `TELEGRAM_WEBHOOK_SECRET`, `MINIAPP_URL` — и `ADMIN_URL`: по нему
+   оно стучится в панель сразу после новой заявки или обращения, и
+   менеджер узнаёт о поводе через секунду, а не следующим прогоном
+   планировщика. До 4 сентября 2026 на проде эта переменная не была
+   задана, и уведомления шли с задержкой до пяти минут.
 4. Задать в админ-панели: тот же `TELEGRAM_BOT_TOKEN` (уведомления
    уходят от бота, которого клиент запускал), `ADMIN_LOGIN_BOT_TOKEN`,
    `ADMIN_BOT_WEBHOOK_SECRET`, `ADMIN_URL`, `ADMIN_SESSION_SECRET`.
