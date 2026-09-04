@@ -1752,6 +1752,15 @@ a.table__row:hover,
   color: var(--text);
 }
 
+/* Ждёт дольше порога напоминания: то же золото, что у уведомления. */
+.cell__value--late {
+  color: var(--gold-light);
+}
+
+.table__item--fresh .cell__value--late {
+  color: var(--gold-light);
+}
+
 .table__item--settled .cell__value {
   font-weight: 600;
   color: var(--text-dim);

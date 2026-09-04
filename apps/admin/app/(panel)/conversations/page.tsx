@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { CoreError, type ConversationTopicFilter, type ConversationView } from '@nemo/core';
+import {
+  CoreError,
+  WAITING_CLIENT_MINUTES,
+  type ConversationTopicFilter,
+  type ConversationView,
+} from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { INQUIRY_TOPIC_LABELS, pillClass } from '@/lib/labels';
@@ -171,7 +176,22 @@ function ConversationTable({
               <span className="cell">
                 <span className="cell__label">Состояние</span>
                 {one.isUnanswered ? (
-                  <span className="cell__value">Ждёт ответа</span>
+                  /*
+                    Сколько ждёт — рядом с состоянием, и тем же порогом,
+                    по которому сотрудникам уходит напоминание в
+                    Telegram: просроченное горит золотом и в панели.
+                    Минуты считает сервер на каждой перерисовке — экран
+                    перечитывается сам раз в полминуты.
+                  */
+                  <span
+                    className={
+                      waitedMinutes(one.lastMessageAt) >= WAITING_CLIENT_MINUTES
+                        ? 'cell__value cell__value--late'
+                        : 'cell__value'
+                    }
+                  >
+                    Ждёт ответа · {waitedMinutes(one.lastMessageAt)} мин
+                  </span>
                 ) : (
                   <span className="cell__note">
                     {one.lastAuthorName ? `Ответил ${one.lastAuthorName}` : 'Отвечено'}
@@ -198,4 +218,9 @@ function ConversationTable({
       </ul>
     </>
   );
+}
+
+/** Сколько минут прошло с сообщения: разница времён, пояс не нужен. */
+function waitedMinutes(since: Date): number {
+  return Math.max(0, Math.floor((Date.now() - since.getTime()) / 60_000));
 }
