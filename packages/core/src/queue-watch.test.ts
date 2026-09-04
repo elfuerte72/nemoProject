@@ -130,6 +130,28 @@ describe('клиент, который ждёт ответа', () => {
     expect(await core.takeStaffAlerts(new Date())).toEqual([]);
   });
 
+  /*
+   * Клиент, не дождавшись ответа, пишет ещё — «не работает», «?», «не
+   * работает приложение». Новых уведомлений это не порождает (череда
+   * одна, пока сервис не ответил), и напоминание оставалось единственным
+   * шансом сотрудника узнать, что клиент всё ещё ждёт. До 4 сентября
+   * 2026 оно смотрело только на последнее сообщение ленты — и клиент,
+   * дописавший ещё, сбрасывал его сам себе: 4 сентября так пропали три
+   * сообщения владельца подряд.
+   */
+  it('напоминает и тогда, когда клиент дописал ещё, не дождавшись ответа', async () => {
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Не работает приложение' });
+    await core.takeStaffAlerts(new Date());
+    await aged(60);
+    await core.receiveClientMessage({ telegramUserId: 100n, body: '?' });
+
+    const alerts = await core.takeStaffAlerts(new Date());
+
+    expect(alerts).toEqual([
+      expect.objectContaining({ kind: 'staff-waiting-client', clientId: 100n }),
+    ]);
+  });
+
   it('напоминает снова, если клиент написал после ответа и снова ждёт', async () => {
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'Первый' });
     await core.takeStaffAlerts(new Date());

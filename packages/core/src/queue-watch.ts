@@ -145,11 +145,18 @@ async function remindAboutWaitingClients(
         isNotNull(clientMessages.staffNotifiedAt),
         isNull(clientMessages.staffRemindedAt),
         lt(clientMessages.createdAt, olderThan(at, WAITING_CLIENT_MINUTES)),
-        // Последнее в ленте: ответивший менеджер снимает повод, а
-        // прежние сообщения клиента — это не «он всё ещё ждёт».
-        sql`${clientMessages.seq} = (
-          select max(seq) from ${clientMessages} feed
-          where feed.client_id = ${clientMessages.clientId}
+        // Ответа после него не было: ответивший менеджер снимает повод.
+        // Именно «нет ответа после», а не «последнее в ленте»: клиент,
+        // не дождавшись ответа, дописывает ещё — «?», «не работает», — и
+        // до 4 сентября 2026 этим сбрасывал напоминание сам себе, а
+        // новых уведомлений его дописки не порождают (череда одна до
+        // ответа сервиса). Сообщённое сотрудникам сообщение одно на
+        // череду, поэтому и напоминание одно.
+        sql`not exists (
+          select 1 from ${clientMessages} reply
+          where reply.client_id = ${clientMessages.clientId}
+            and reply.direction = 'outgoing'
+            and reply.seq > ${clientMessages.seq}
         )`,
       ),
     )
