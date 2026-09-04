@@ -52,11 +52,14 @@ export async function GET(
     const described = await fetch(
       `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(attachment.fileId)}`,
     );
-    const payload = (await described.json()) as {
-      ok: boolean;
-      result?: { file_path?: string };
-    };
-    const path = payload.ok ? payload.result?.file_path : undefined;
+    // Ответ разбирается осторожно: под нагрузкой Telegram отвечает
+    // страницей своего шлюза, а не JSON, и отказ разбора читался бы
+    // менеджером как поломка панели, а не как «файла сейчас нет».
+    const payload = await described
+      .json()
+      .then((body) => body as { ok?: boolean; result?: { file_path?: string } })
+      .catch(() => undefined);
+    const path = payload?.ok === true ? payload.result?.file_path : undefined;
     if (!path) {
       // Telegram хранит файлы не вечно, и недоступное вложение — не
       // авария панели: менеджер должен увидеть, что файла больше нет, а
@@ -78,6 +81,9 @@ export async function GET(
       file = await fetch(fileUrl);
     }
     if (!file.ok) {
+      // Тело закрывается и здесь: непрочитанное держит соединение до
+      // уборки мусора, а плеер бьётся в пропавший файл десятки раз.
+      await file.body?.cancel();
       return new Response('Вложение недоступно у Telegram', { status: 404 });
     }
 

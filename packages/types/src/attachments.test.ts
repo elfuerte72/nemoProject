@@ -36,6 +36,16 @@ describe('looksLikeImage', () => {
     expect(looksLikeImage(null, 'снимок экрана.jpeg')).toBe(true);
   });
 
+  it('читает тип, как бы клиент его ни написал', () => {
+    // «IMAGE/JPEG» и «image/jpeg; charset=binary» приходят от переславших
+    // ботов и самописных клиентов; маршрут узнаёт такой файл по байтам, и
+    // пузырь не должен спорить с ним о том же файле.
+    expect(looksLikeImage('IMAGE/JPEG', null)).toBe(true);
+    expect(looksLikeImage('image/png; charset=binary', null)).toBe(true);
+    expect(looksLikeImage(' image/webp ', null)).toBe(true);
+    expect(looksLikeImage('APPLICATION/OCTET-STREAM', 'скрин.PNG')).toBe(true);
+  });
+
   it('не принимает за картинку то, что браузер не нарисует', () => {
     expect(looksLikeImage('image/heic', 'IMG_0042.HEIC')).toBe(false);
     expect(looksLikeImage('image/svg+xml', 'схема.svg')).toBe(false);

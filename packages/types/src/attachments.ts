@@ -84,7 +84,18 @@ export const browserImageTypes: ReadonlySet<string> = new Set([
 ]);
 
 export function isBrowserImage(mime: string | null): boolean {
-  return mime !== null && browserImageTypes.has(mime);
+  const named = plainType(mime);
+  return named !== null && browserImageTypes.has(named);
+}
+
+/**
+ * Тип без оговорок и в нижнем регистре: «IMAGE/JPEG» и
+ * «image/png; charset=binary» приходят от переславших ботов и
+ * самописных клиентов, и спорить о таком файле с маршрутом, который
+ * узнаёт его по байтам, панели незачем.
+ */
+function plainType(mime: string | null): string | null {
+  return mime === null ? null : (mime.split(';')[0] ?? '').trim().toLowerCase();
 }
 
 /** Картиночные расширения — по ним узнаётся снимок, отправленный файлом. */
@@ -100,7 +111,8 @@ const IMAGE_EXTENSION = /\.(jpe?g|png|gif|webp)$/i;
  * исполняется — оба уходят ссылкой, а не битым рисунком.
  */
 export function looksLikeImage(mime: string | null, name: string | null): boolean {
-  if (mime === 'image/jpg' || isBrowserImage(mime)) return true;
-  if (mime !== null && mime !== 'application/octet-stream') return false;
+  const named = plainType(mime);
+  if (named === 'image/jpg' || isBrowserImage(named)) return true;
+  if (named !== null && named !== 'application/octet-stream') return false;
   return name !== null && IMAGE_EXTENSION.test(name);
 }

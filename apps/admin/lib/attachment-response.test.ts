@@ -25,7 +25,18 @@ describe('attachmentHeaders', () => {
       'content-disposition': "inline; filename=\"photo.jpg\"; filename*=UTF-8''photo.jpg",
       'x-content-type-options': 'nosniff',
       'cache-control': 'no-store, private',
+      'content-security-policy': "sandbox; frame-ancestors 'none'",
     });
+  });
+
+  it('показанное в строке — в песочнице: PDF в своём домене исполняет скрипты', () => {
+    // Просмотрщик PDF у Firefox — это код на странице, и подложенный
+    // клиентом файл дотянулся бы до сессии менеджера в домене панели.
+    expect(
+      attachmentHeaders({ kind: 'document', mime: 'application/pdf', name: 'чек.pdf' }, PDF)[
+        'content-security-policy'
+      ],
+    ).toBe("sandbox; frame-ancestors 'none'");
   });
 
   it('PDF открывается в браузере под своим именем, кириллица не теряется', () => {
@@ -74,6 +85,16 @@ describe('attachmentHeaders', () => {
     expect(
       attachmentHeaders({ kind: 'document', mime: 'text/html', name: 'page.html' }, HTML),
     ).toMatchObject({ 'content-type': 'application/octet-stream' });
+  });
+
+  it('длинное имя обрезается с начала, а расширение остаётся', () => {
+    // Обрезанный «договор.docx» без расширения не откроется двойным
+    // щелчком — ровно то, ради чего расширение и дописывается.
+    const name = `${'д'.repeat(140)}договор.docx`;
+
+    const headers = attachmentHeaders({ kind: 'document', mime: null, name }, OGG);
+
+    expect(decodeURIComponent(headers['content-disposition']!)).toContain('.docx"');
   });
 
   it('перевёрнутое имя не выдаёт исполняемый файл за картинку', () => {
@@ -316,12 +337,15 @@ describe('rangeHeadersOf', () => {
  * в заголовок — маршрут отвечал отказом на исправный файл.
  */
 describe('attachmentHeaders: длинное имя', () => {
-  it('обрезается по знакам, а не по их половинкам', () => {
+  it('обрезается по знакам, а не по их половинкам, и хвост остаётся', () => {
     const name = `${'ф'.repeat(119)}😀хвост.pdf`;
 
     const headers = attachmentHeaders({ kind: 'document', mime: 'application/pdf', name }, PDF);
 
-    expect(decodeURIComponent(headers['content-disposition']!)).toContain('ф'.repeat(119));
+    const readable = decodeURIComponent(headers['content-disposition']!);
+    // Сто двадцать знаков: сто шестнадцать своих и «.pdf».
+    expect(readable).toContain(`${'ф'.repeat(116)}.pdf`);
+    // Половинка суррогатной пары в заголовок не попала.
     expect(headers['content-disposition']).not.toContain('%ED%A0');
   });
 });
