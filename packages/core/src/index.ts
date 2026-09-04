@@ -94,7 +94,6 @@ import {
   describeMessageAttachment,
   listRequisiteAccessLog,
   logMessageAttachmentView,
-  revealMessageAttachment,
   revealRequisites,
   type RequisiteAccessFilter,
 } from './requisite-access.js';
@@ -353,8 +352,6 @@ export function createCore(ctx: CoreConfig) {
 
     revealRequisites: (actor: Actor, exchangeRequestId: string) =>
       revealRequisites(ctx, actor, exchangeRequestId),
-    revealMessageAttachment: (actor: Actor, messageId: string) =>
-      revealMessageAttachment(ctx, actor, messageId),
     describeMessageAttachment: (actor: Actor, messageId: string) =>
       describeMessageAttachment(ctx, actor, messageId),
     logMessageAttachmentView: (actor: Actor, messageId: string) =>

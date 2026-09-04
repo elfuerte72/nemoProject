@@ -239,7 +239,9 @@ describe('вложение', () => {
     });
     const [message] = await core.listConversation(manager, 100n);
 
-    const revealed = await core.revealMessageAttachment(manager, message!.id);
+    // Тем же путём, каким идёт маршрут: описание, затем запись о просмотре.
+    const revealed = await core.describeMessageAttachment(manager, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
 
     expect(revealed).toMatchObject({ fileId: 'AgACAgIAAxkBAAI', kind: 'photo' });
     const log = await core.listRequisiteAccessLog(admin);
@@ -274,9 +276,9 @@ describe('вложение', () => {
     });
     const [message] = await core.listConversation(manager, 100n);
 
-    await core.revealMessageAttachment(manager, message!.id);
-    await core.revealMessageAttachment(manager, message!.id);
-    await core.revealMessageAttachment(manager, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
 
     expect(await core.listRequisiteAccessLog(admin)).toHaveLength(1);
   });
@@ -288,10 +290,10 @@ describe('вложение', () => {
       attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
     });
     const [message] = await core.listConversation(manager, 100n);
-    await core.revealMessageAttachment(manager, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
     await agedAccessLog(ATTACHMENT_VIEW_WINDOW_MS + 60_000);
 
-    await core.revealMessageAttachment(manager, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
 
     expect(await core.listRequisiteAccessLog(admin)).toHaveLength(2);
   });
@@ -304,8 +306,8 @@ describe('вложение', () => {
     });
     const [message] = await core.listConversation(manager, 100n);
 
-    await core.revealMessageAttachment(manager, message!.id);
-    await core.revealMessageAttachment(admin, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
+    await core.logMessageAttachmentView(admin, message!.id);
 
     expect(await core.listRequisiteAccessLog(admin)).toHaveLength(2);
   });
@@ -324,7 +326,7 @@ describe('вложение', () => {
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'Просто текст' });
     const [message] = await core.listConversation(manager, 100n);
 
-    await expect(core.revealMessageAttachment(manager, message!.id)).rejects.toThrow(
+    await expect(core.describeMessageAttachment(manager, message!.id)).rejects.toThrow(
       /не приложен/i,
     );
   });
@@ -357,7 +359,7 @@ describe('файл клиента', () => {
       size: 245_760,
       downloadable: true,
     });
-    expect(await core.revealMessageAttachment(manager, message!.id)).toEqual(receipt);
+    expect(await core.describeMessageAttachment(manager, message!.id)).toEqual(receipt);
   });
 
   it('больше предела Telegram: клиенту говорится сразу, менеджеру недоступен', async () => {
@@ -374,7 +376,7 @@ describe('файл клиента', () => {
     ]);
     const [message] = await core.listConversation(manager, 100n);
     expect(message!.attachment).toMatchObject({ kind: 'video', downloadable: false });
-    await expect(core.revealMessageAttachment(manager, message!.id)).rejects.toThrow(/предел/i);
+    await expect(core.describeMessageAttachment(manager, message!.id)).rejects.toThrow(/предел/i);
     // Открытия не было — и следа в журнале нет.
     expect(await core.listRequisiteAccessLog(admin)).toEqual([]);
   });

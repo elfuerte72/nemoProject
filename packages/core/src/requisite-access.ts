@@ -222,20 +222,6 @@ export async function logMessageAttachmentView(
 }
 
 /**
- * Описание файла вместе с записью о просмотре — там, где файл уходит
- * менеджеру целиком и сразу.
- */
-export async function revealMessageAttachment(
-  ctx: CoreConfig,
-  actor: Actor,
-  messageId: string,
-): Promise<RevealedAttachment> {
-  const attachment = await describeMessageAttachment(ctx, actor, messageId);
-  await logMessageAttachmentView(ctx, actor, messageId);
-  return attachment;
-}
-
-/**
  * Реквизиты клиента по заявке на обмен, которую ведёт менеджер.
  *
  * Заявка обязательна, и она должна быть взята именно этим менеджером:
