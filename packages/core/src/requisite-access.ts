@@ -9,6 +9,7 @@ import {
 } from '@nemo/db';
 import { parsePromptPay, type PromptPayIdType, type RequisiteKind } from '@nemo/types';
 import { requireAdmin, requireStaff, type Actor } from './actor.js';
+import { isDownloadable, type AttachmentKind } from './attachments.js';
 import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
 import { ForbiddenError, NotFoundError } from './errors.js';
 import { describeRequisites } from './requisites.js';
@@ -102,20 +103,30 @@ export async function logRequisiteAccess(
 /**
  * Вложение, присланное клиентом, — менеджеру, который его открывает.
  *
- * Возвращается идентификатор файла у Telegram: сам файл сервис не
- * хранит, панель подтягивает изображение по нему клиентским токеном.
+ * Возвращается идентификатор файла у Telegram и его описание: сам файл
+ * сервис не хранит, панель подтягивает его по идентификатору клиентским
+ * токеном, а по описанию решает, под каким именем и типом отдать.
  * Обращение попадает в тот же журнал, что и чтение номера карты, и в
- * той же транзакции: на скриншоте перевода видно и счёт, и имя, и след
- * от просмотра нужен по той же причине.
+ * той же транзакции: на скриншоте перевода и в чеке видно и счёт, и
+ * имя, и след от просмотра нужен по той же причине.
  *
- * Без открытия изображения записи не появляется: операцию зовёт ровно
- * тот маршрут, который отдаёт файл.
+ * Без открытия файла записи не появляется: операцию зовёт ровно тот
+ * маршрут, который отдаёт файл. Файл сверх предела Telegram не
+ * открывается и в журнал не пишется — просмотра не было.
  */
+export interface RevealedAttachment {
+  readonly fileId: string;
+  readonly kind: AttachmentKind;
+  readonly mime: string | null;
+  readonly name: string | null;
+  readonly size: number | null;
+}
+
 export async function revealMessageAttachment(
   ctx: CoreConfig,
   actor: Actor,
   messageId: string,
-): Promise<string> {
+): Promise<RevealedAttachment> {
   const staffActor = requireStaff(actor);
 
   return ctx.db.transaction(async (tx) => {
@@ -123,6 +134,10 @@ export async function revealMessageAttachment(
       .select({
         clientId: clientMessages.clientId,
         attachmentFileId: clientMessages.attachmentFileId,
+        attachmentKind: clientMessages.attachmentKind,
+        attachmentMime: clientMessages.attachmentMime,
+        attachmentName: clientMessages.attachmentName,
+        attachmentSize: clientMessages.attachmentSize,
       })
       .from(clientMessages)
       .where(eq(clientMessages.id, messageId))
@@ -131,8 +146,11 @@ export async function revealMessageAttachment(
     if (!row) {
       throw new NotFoundError('Сообщение не найдено');
     }
-    if (!row.attachmentFileId) {
-      throw new NotFoundError('К сообщению не приложено изображение');
+    if (!row.attachmentFileId || !row.attachmentKind) {
+      throw new NotFoundError('К сообщению не приложен файл');
+    }
+    if (!isDownloadable(row.attachmentSize)) {
+      throw new NotFoundError('Файл больше предела Telegram, и скачать его нельзя');
     }
 
     await logRequisiteAccess(tx, {
@@ -141,7 +159,13 @@ export async function revealMessageAttachment(
       messageId,
     });
 
-    return row.attachmentFileId;
+    return {
+      fileId: row.attachmentFileId,
+      kind: row.attachmentKind,
+      mime: row.attachmentMime,
+      name: row.attachmentName,
+      size: row.attachmentSize,
+    };
   });
 }
 

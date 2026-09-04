@@ -171,7 +171,7 @@ function ConversationTable({
                 {one.topic ? (
                   <span className={pillClass('wait')}>{INQUIRY_TOPIC_LABELS[one.topic]}</span>
                 ) : undefined}
-                <span className="cell__note">{one.lastMessageBody ?? 'Изображение'}</span>
+                <span className="cell__note">{one.lastMessageBody ?? one.lastAttachment}</span>
               </span>
               <span className="cell">
                 <span className="cell__label">Состояние</span>

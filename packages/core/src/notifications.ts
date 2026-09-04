@@ -10,6 +10,7 @@ import {
   type WithdrawalRequestStatus,
 } from '@nemo/types';
 import type { InquiryTopic } from './inquiries.js';
+import { ATTACHMENT_DOWNLOAD_LIMIT_BYTES, formatFileSize } from './attachments.js';
 
 /**
  * Что нужно сообщить клиенту — следствие операции, а не отдельное
@@ -81,6 +82,14 @@ export type Notification =
       readonly to: bigint;
     }
   | {
+      /**
+       * Файл сверх предела Telegram: боту такой не скачать, и клиенту это
+       * говорится сразу — не менеджером через час, когда чек уже нужен.
+       */
+      readonly kind: 'client-attachment-too-large';
+      readonly to: bigint;
+    }
+  | {
       /** Ответ менеджера. Доставляет его бот, которого клиент запускал. */
       readonly kind: 'manager-message';
       readonly to: bigint;
@@ -99,6 +108,8 @@ export type Notification =
       /** Просьба из раздела «За границей» — про деньги, и заголовок говорит это первым. */
       readonly topic: InquiryTopic | null;
       readonly preview: string;
+      /** Вложение словами, своей строкой, когда у него есть подпись: «вот чек» без имени файла не говорит, что чек пришёл. */
+      readonly attachment?: string | undefined;
     }
   | {
       /**
@@ -131,6 +142,8 @@ export type Notification =
       readonly clientUsername: string | null;
       readonly reason: string;
       readonly preview: string;
+      /** Вложение словами, своей строкой, когда у него есть подпись: «вот чек» без имени файла не говорит, что чек пришёл. */
+      readonly attachment?: string | undefined;
     }
   | {
       /**
@@ -156,6 +169,8 @@ export type Notification =
       readonly clientId: bigint;
       readonly clientUsername: string | null;
       readonly preview: string;
+      /** Вложение словами, своей строкой, когда у него есть подпись: «вот чек» без имени файла не говорит, что чек пришёл. */
+      readonly attachment?: string | undefined;
       readonly waitingMinutes: number;
     }
   | {
@@ -235,6 +250,7 @@ export const notificationKinds = [
   'withdrawal-request-status',
   'card-application-status',
   'client-message-received',
+  'client-attachment-too-large',
   'manager-message',
   'concierge-message',
   'staff-client-message',
@@ -325,6 +341,11 @@ function renderClientNotification(
         'Вопрос принят, менеджер ответит здесь же. ' +
         'Можно закрыть приложение: ответ придёт в этот чат.'
       );
+    case 'client-attachment-too-large':
+      return (
+        `Файл больше ${formatFileSize(ATTACHMENT_DOWNLOAD_LIMIT_BYTES)}, и Telegram не даёт боту его скачать. ` +
+        'Пришлите его сжатым или снимком экрана.'
+      );
     case 'manager-message':
       // Текст менеджера уходит как есть, но за подписью: в одном чате
       // с клиентом говорят бот, помощник и человек, и ответ человека
@@ -365,6 +386,7 @@ function renderStaffNotification(notification: StaffNotification): string {
         ),
         clientLine(notification),
         quote(notification.preview),
+        attachmentLine(notification.attachment),
         tags(notification.topic === null ? 'поддержка' : 'оплата'),
       );
     case 'staff-escalation':
@@ -374,6 +396,7 @@ function renderStaffNotification(notification: StaffNotification): string {
         bold(capitalize(escapeHtml(notification.reason))),
         clientLine(notification),
         quote(notification.preview),
+        attachmentLine(notification.attachment),
         tags('поддержка'),
       );
     case 'staff-new-request':
@@ -395,6 +418,7 @@ function renderStaffNotification(notification: StaffNotification): string {
         bold(`Клиент ждёт ответа ${renderWaiting(notification.waitingMinutes)}`),
         clientLine(notification),
         quote(notification.preview),
+        attachmentLine(notification.attachment),
         tags('поддержка', 'напоминание'),
       );
   }
@@ -411,6 +435,11 @@ function bold(text: string): string {
 
 function quote(text: string): string {
   return `<blockquote>${escapeHtml(text)}</blockquote>`;
+}
+
+/** Вложение — после слов клиента и вне цитаты: это описание, а не его слова. */
+function attachmentLine(attachment: string | undefined): string | null {
+  return attachment === undefined ? null : `Вложение: ${escapeHtml(attachment)}`;
 }
 
 /** Тема хэштегами — Telegram делает их ссылками, и по ним ищут. */

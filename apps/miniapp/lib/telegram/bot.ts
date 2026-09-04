@@ -1,6 +1,11 @@
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { Money } from '@nemo/types';
-import { CONCIERGE_QUIET_MS, renderNotification, type RenderedNotification } from '@nemo/core';
+import {
+  CONCIERGE_QUIET_MS,
+  renderNotification,
+  type MessageAttachmentInput,
+  type RenderedNotification,
+} from '@nemo/core';
 import { getCore } from '@/lib/core';
 import { referralLink } from '@/lib/referral';
 import { nudgeStaffAlerts } from '@/lib/staff-alert';
@@ -9,6 +14,7 @@ import {
   renderRatesMessage,
   type QuotedPair,
 } from './rates-message';
+import { attachmentOf } from './attachments';
 
 /**
  * Бот — точка входа, главное меню и канал уведомлений.
@@ -183,13 +189,18 @@ export function getBot(): Bot {
    */
   bot.on('message:text', (ctx) => receive(ctx, { body: ctx.message.text }));
 
-  bot.on('message:photo', (ctx) => {
-    // Берётся самый крупный размер: Telegram присылает лесенку, и
-    // менеджеру нужен тот, на котором видно сумму перевода.
-    const largest = ctx.message.photo.at(-1);
+  /*
+   * Файл любого рода — PDF-чек, скриншот «как файл», голосовое. До
+   * 4 сентября 2026 бот слушал только фото, и документ терялся молча:
+   * без записи, без подтверждения, без уведомления сотрудникам.
+   * Наклейку файлом не считаем — ответа на неё не ждут.
+   */
+  bot.on('message:file', (ctx) => {
+    const attachment = attachmentOf(ctx.message);
+    if (!attachment) return;
     return receive(ctx, {
       ...(ctx.message.caption === undefined ? {} : { body: ctx.message.caption }),
-      ...(largest === undefined ? {} : { attachmentFileId: largest.file_id }),
+      attachment,
     });
   });
 
@@ -228,7 +239,7 @@ export function getBot(): Bot {
  */
 async function receive(
   ctx: Context,
-  content: { body?: string; attachmentFileId?: string },
+  content: { body?: string; attachment?: MessageAttachmentInput },
 ): Promise<void> {
   const telegramUserId = ctx.from?.id;
   if (telegramUserId === undefined) return;
@@ -239,6 +250,14 @@ async function receive(
     ...content,
     ...(ctx.from?.username === undefined ? {} : { username: ctx.from.username }),
   });
+
+  // О файле сверх предела Telegram — первым и всегда: это факт о файле,
+  // а не ответ на вопрос, и он не зависит от того, кто ответит дальше.
+  const tooLarge = notifications.find((one) => one.kind === 'client-attachment-too-large');
+  if (tooLarge) {
+    const rendered = renderNotification(tooLarge);
+    await ctx.reply(rendered.text, { ...WITHOUT_OLD_KEYBOARD, ...markupOf(rendered) });
+  }
 
   // Подтверждение отвечается прямо здесь, а не уходит доставкой: так оно
   // приходит тем же ответом на сообщение клиента. Пустой ответ операции

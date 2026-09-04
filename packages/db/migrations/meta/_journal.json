@@ -190,6 +190,13 @@
       "when": 1787940712514,
       "tag": "0026_fee_schedule_threshold",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788521788754,
+      "tag": "0027_message_attachments",
+      "breakpoints": true
     }
   ]
 }
