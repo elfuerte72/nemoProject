@@ -1,7 +1,13 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { clientMessages } from '@nemo/db';
+import { clientMessages, requisiteAccessLog } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
-import { createCore, ForbiddenError, InvalidInputError, type Actor } from './index.js';
+import {
+  ATTACHMENT_VIEW_WINDOW_MS,
+  createCore,
+  ForbiddenError,
+  InvalidInputError,
+  type Actor,
+} from './index.js';
 import { asClient, givenStaff } from './test-support.js';
 
 /**
@@ -25,6 +31,13 @@ beforeEach(async () => {
 });
 
 afterAll(() => closeTestDatabase());
+
+/** Состарить журнал: столько прошло с последнего просмотра. */
+async function agedAccessLog(ms: number): Promise<void> {
+  await db
+    .update(requisiteAccessLog)
+    .set({ accessedAt: new Date(Date.now() - ms) });
+}
 
 describe('сообщение клиента', () => {
   it('сохраняется входящим и появляется в переписке', async () => {
@@ -232,6 +245,53 @@ describe('вложение', () => {
     const log = await core.listRequisiteAccessLog(admin);
     expect(log).toHaveLength(1);
     expect(log[0]).toMatchObject({ clientId: 100n, messageId: message!.id });
+  });
+
+  it('плеер, дочитывающий файл кусками, не плодит записей в журнале', async () => {
+    // Safari просит голосовое по частям заголовком Range, и каждая
+    // часть проходит через операцию. Журнал отвечает на вопрос «кто и
+    // что смотрел», а не «сколько кусков забрал».
+    const admin = await givenStaff({ role: 'admin' });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'AwACAgIAAxkBAAID', kind: 'voice', mime: 'audio/ogg', size: 61_000 },
+    });
+    const [message] = await core.listConversation(manager, 100n);
+
+    await core.revealMessageAttachment(manager, message!.id);
+    await core.revealMessageAttachment(manager, message!.id);
+    await core.revealMessageAttachment(manager, message!.id);
+
+    expect(await core.listRequisiteAccessLog(admin)).toHaveLength(1);
+  });
+
+  it('открытое заново спустя время — новый просмотр', async () => {
+    const admin = await givenStaff({ role: 'admin' });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
+    });
+    const [message] = await core.listConversation(manager, 100n);
+    await core.revealMessageAttachment(manager, message!.id);
+    await agedAccessLog(ATTACHMENT_VIEW_WINDOW_MS + 60_000);
+
+    await core.revealMessageAttachment(manager, message!.id);
+
+    expect(await core.listRequisiteAccessLog(admin)).toHaveLength(2);
+  });
+
+  it('второй сотрудник записывается своим просмотром', async () => {
+    const admin = await givenStaff({ role: 'admin', telegramUserId: 907n });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
+    });
+    const [message] = await core.listConversation(manager, 100n);
+
+    await core.revealMessageAttachment(manager, message!.id);
+    await core.revealMessageAttachment(admin, message!.id);
+
+    expect(await core.listRequisiteAccessLog(admin)).toHaveLength(2);
   });
 
   it('не оставляет следа, пока его не открыли', async () => {

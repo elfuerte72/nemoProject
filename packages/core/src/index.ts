@@ -518,6 +518,7 @@ export type {
   ManagerCardApplicationView,
   UpdateCardApplicationInput,
 } from './card-applications.js';
+export { ATTACHMENT_VIEW_WINDOW_MS } from './requisite-access.js';
 export type {
   RequisiteAccessEntry,
   RequisiteAccessFilter,

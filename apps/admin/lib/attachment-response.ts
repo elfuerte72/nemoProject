@@ -46,18 +46,37 @@ const SIGNATURES: readonly Signature[] = [
   { type: 'application/pdf', extension: 'pdf', matches: (head) => asciiAt(head, 0, '%PDF') },
 ];
 
-/** Типы звука и видео, которые отдаются как названы: исполнить их нельзя, а декодер по ним выбирается. */
-const MEDIA_TYPES: ReadonlySet<string> = new Set([
-  'audio/ogg',
-  'audio/mpeg',
-  'audio/mp4',
-  'audio/aac',
-  'audio/x-m4a',
-  'audio/wav',
-  'video/mp4',
-  'video/quicktime',
-  'video/webm',
-]);
+/**
+ * Типы звука и видео, которые отдаются как названы: исполнить их нельзя,
+ * а декодер по ним выбирается. Рядом расширение: сигнатуры у этих
+ * форматов панель не читает, и сохранённое «audio» без «.mp3» не
+ * открывается двойным щелчком.
+ */
+const MEDIA_TYPES: Readonly<Record<string, string>> = {
+  'audio/ogg': '.ogg',
+  'audio/mpeg': '.mp3',
+  'audio/mp4': '.m4a',
+  'audio/aac': '.aac',
+  'audio/x-m4a': '.m4a',
+  'audio/wav': '.wav',
+  'video/mp4': '.mp4',
+  'video/quicktime': '.mov',
+  'video/webm': '.webm',
+};
+
+/**
+ * Тип по роду, когда Telegram его не назвал. У видеосообщения —
+ * «кружка» — поля типа в Bot API нет вовсе, и без умолчания оно уходило
+ * бы `octet-stream` с запретом угадывания, то есть не игралось бы
+ * никогда. У документа умолчания нет и быть не может: документом
+ * присылают что угодно.
+ */
+const KIND_TYPES: Readonly<Partial<Record<AttachmentKind, string>>> = {
+  video_note: 'video/mp4',
+  video: 'video/mp4',
+  voice: 'audio/ogg',
+  audio: 'audio/mpeg',
+};
 
 /** Имя для сохранения, когда Telegram его не дал: у фото и голосового имени нет. */
 const FALLBACK_NAMES: Readonly<Record<AttachmentKind, string>> = {
@@ -74,19 +93,23 @@ export function attachmentHeaders(
   head: Uint8Array,
 ): Record<string, string> {
   const known = SIGNATURES.find((one) => one.matches(head));
-  const name = withExtension(
-    safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind],
-    known === undefined ? '' : `.${known.extension}`,
-  );
-
   if (known) {
-    return headersFor('inline', known.type, name, `.${known.extension}`);
+    const named = withExtension(
+      safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind],
+      `.${known.extension}`,
+    );
+    return headersFor('inline', known.type, named, `.${known.extension}`);
   }
-  const mime =
-    attachment.mime !== null && MEDIA_TYPES.has(attachment.mime)
-      ? attachment.mime
-      : 'application/octet-stream';
-  return headersFor('attachment', mime, name, '');
+
+  const declared =
+    attachment.mime !== null && attachment.mime in MEDIA_TYPES ? attachment.mime : undefined;
+  const mime = declared ?? KIND_TYPES[attachment.kind] ?? 'application/octet-stream';
+  const extension = MEDIA_TYPES[mime] ?? '';
+  const named = withExtension(
+    safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind],
+    extension,
+  );
+  return headersFor('attachment', mime, named, extension);
 }
 
 function headersFor(

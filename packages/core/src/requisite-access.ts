@@ -113,7 +113,17 @@ export async function logRequisiteAccess(
  * Без открытия файла записи не появляется: операцию зовёт ровно тот
  * маршрут, который отдаёт файл. Файл сверх предела Telegram не
  * открывается и в журнал не пишется — просмотра не было.
+ *
+ * Один просмотр — одна запись, даже когда файл забирают кусками: плеер
+ * просит голосовое заголовком Range и приходит за ним по три-пять раз, а
+ * журнал отвечает на вопрос «кто и что смотрел», и пятикратная запись
+ * одного прослушивания этот ответ портит. Поэтому повтор того же
+ * сотрудника по тому же сообщению в пределах окна следа не оставляет.
+ * Проверка идёт до вставки, а не вместо неё: первое обращение
+ * записывается всегда, и обойти журнал, попросив файл кусками, нельзя.
  */
+export const ATTACHMENT_VIEW_WINDOW_MS = 5 * 60 * 1000;
+
 export interface RevealedAttachment {
   readonly fileId: string;
   readonly kind: AttachmentKind;
@@ -153,11 +163,31 @@ export async function revealMessageAttachment(
       throw new NotFoundError('Файл больше предела Telegram, и скачать его нельзя');
     }
 
-    await logRequisiteAccess(tx, {
-      staffId: staffActor.staffId,
-      clientId: row.clientId,
-      messageId,
-    });
+    /*
+     * Два куска, пришедших одновременно, оба могут не найти записи и оба
+     * её вставить: блокировки тут нет намеренно — цена ошибки лишняя
+     * строка в журнале, а цена блокировки — очередь из плееров на каждом
+     * куске файла.
+     */
+    const [recent] = await tx
+      .select({ id: requisiteAccessLog.id })
+      .from(requisiteAccessLog)
+      .where(
+        and(
+          eq(requisiteAccessLog.staffId, staffActor.staffId),
+          eq(requisiteAccessLog.messageId, messageId),
+          gte(requisiteAccessLog.accessedAt, new Date(Date.now() - ATTACHMENT_VIEW_WINDOW_MS)),
+        ),
+      )
+      .limit(1);
+
+    if (!recent) {
+      await logRequisiteAccess(tx, {
+        staffId: staffActor.staffId,
+        clientId: row.clientId,
+        messageId,
+      });
+    }
 
     return {
       fileId: row.attachmentFileId,

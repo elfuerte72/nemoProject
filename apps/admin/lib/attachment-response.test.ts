@@ -159,3 +159,45 @@ describe('sliceRange', () => {
     expect(sliceRange(bytes, 'bytes=0-1,4-5').status).toBe(200);
   });
 });
+
+/*
+ * Тип есть не у всякого файла: у видеосообщения — «кружка» — поля типа
+ * в Bot API нет вовсе, и без своего умолчания оно уходило бы
+ * `octet-stream` с запретом угадывания, то есть не игралось бы никогда.
+ * Расширение таким файлам даёт тип: сохранённое «audio» без «.mp3» не
+ * открывается двойным щелчком.
+ */
+const MP4 = Uint8Array.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32]);
+
+describe('attachmentHeaders: тип по роду', () => {
+  it('видеосообщение — video/mp4, хотя типа у него нет', () => {
+    expect(attachmentHeaders({ kind: 'video_note', mime: null, name: null }, MP4)).toMatchObject({
+      'content-type': 'video/mp4',
+      'content-disposition':
+        "attachment; filename=\"video-note.mp4\"; filename*=UTF-8''video-note.mp4",
+    });
+  });
+
+  it('видео и голосовое без типа — своим умолчанием', () => {
+    expect(attachmentHeaders({ kind: 'video', mime: null, name: null }, MP4)).toMatchObject({
+      'content-type': 'video/mp4',
+    });
+    expect(attachmentHeaders({ kind: 'voice', mime: null, name: null }, OGG)).toMatchObject({
+      'content-type': 'audio/ogg',
+    });
+  });
+
+  it('документу без типа и без сигнатуры умолчания нет', () => {
+    expect(
+      attachmentHeaders({ kind: 'document', mime: null, name: 'что-то' }, OGG),
+    ).toMatchObject({ 'content-type': 'application/octet-stream' });
+  });
+
+  it('расширение берётся у типа, когда сигнатура молчит', () => {
+    expect(
+      attachmentHeaders({ kind: 'audio', mime: 'audio/mpeg', name: null }, OGG),
+    ).toMatchObject({
+      'content-disposition': "attachment; filename=\"audio.mp3\"; filename*=UTF-8''audio.mp3",
+    });
+  });
+});

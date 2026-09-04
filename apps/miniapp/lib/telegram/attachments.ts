@@ -11,12 +11,17 @@ import type { AttachmentKind, MessageAttachmentInput } from '@nemo/core';
  * не ждут.
  *
  * Фото приходит лесенкой размеров; берётся самый крупный — тот, на
- * котором видно сумму перевода.
+ * котором видно сумму перевода. Живое фото с iPhone — тот же случай:
+ * `photo` верхнего уровня у него нет, а статичные размеры лежат внутри
+ * него самого, и менеджеру нужен именно статичный кадр. Нет и их —
+ * берётся само живое фото видео: потерять сообщение хуже, чем показать
+ * его роликом.
  */
 export function attachmentOf(message: Message): MessageAttachmentInput | undefined {
   if (message.document) return described('document', message.document);
-  const photo = message.photo?.at(-1);
+  const photo = message.photo?.at(-1) ?? message.live_photo?.photo?.at(-1);
   if (photo) return described('photo', photo);
+  if (message.live_photo) return described('video', message.live_photo);
   if (message.video) return described('video', message.video);
   if (message.voice) return described('voice', message.voice);
   if (message.audio) return described('audio', message.audio);

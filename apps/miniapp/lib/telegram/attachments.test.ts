@@ -120,6 +120,59 @@ describe('attachmentOf', () => {
     ).toMatchObject({ fileId: 'g', kind: 'document', name: 'funny.gif' });
   });
 
+  it('живое фото — статичным кадром: на нём и видно сумму перевода', () => {
+    // Live Photo с iPhone: `photo` верхнего уровня у такого сообщения
+    // нет вовсе, а статичные размеры лежат внутри самого `live_photo`.
+    expect(
+      attachmentOf(
+        message({
+          live_photo: {
+            file_id: 'lp-video',
+            file_unique_id: 'u11',
+            width: 1440,
+            height: 1920,
+            duration: 3,
+            mime_type: 'video/mp4',
+            file_size: 2_400_000,
+            photo: [
+              { file_id: 'lp-small', file_unique_id: 'u12', width: 90, height: 120, file_size: 900 },
+              {
+                file_id: 'lp-large',
+                file_unique_id: 'u13',
+                width: 1080,
+                height: 1440,
+                file_size: 140_000,
+              },
+            ],
+          },
+        }),
+      ),
+    ).toEqual({ fileId: 'lp-large', kind: 'photo', size: 140_000 });
+  });
+
+  it('живое фото без статичных размеров — видео, а не потеря', () => {
+    expect(
+      attachmentOf(
+        message({
+          live_photo: {
+            file_id: 'lp-video',
+            file_unique_id: 'u14',
+            width: 1440,
+            height: 1920,
+            duration: 3,
+            mime_type: 'video/mp4',
+            file_size: 2_400_000,
+          },
+        }),
+      ),
+    ).toEqual({
+      fileId: 'lp-video',
+      kind: 'video',
+      mime: 'video/mp4',
+      size: 2_400_000,
+    });
+  });
+
   it('наклейка и текст — не файл', () => {
     expect(
       attachmentOf(
