@@ -145,6 +145,28 @@ export function getBot(): Bot {
     await ctx.reply(getCore().getBotText('support'), WITHOUT_OLD_KEYBOARD);
   }
 
+  /*
+   * Файл любого рода — PDF-чек, скриншот «как файл», голосовое. До
+   * 4 сентября 2026 бот слушал только фото, и документ терялся молча:
+   * без записи, без подтверждения, без уведомления сотрудникам.
+   * Наклейку файлом не считаем — ответа на неё не ждут, и она уходит
+   * дальше по цепочке.
+   *
+   * Стоит раньше меню намеренно: grammY ищет слова кнопок и в подписи
+   * тоже (`hears` смотрит `message.caption`), и чек, подписанный словом
+   * «Поддержка», уходил бы в меню — то есть терялся ровно так, как
+   * терялся документ. Порядок закреплён тестом: перестановка строк
+   * ломает это молча.
+   */
+  bot.on('message:file', (ctx, next) => {
+    const attachment = attachmentOf(ctx.message);
+    if (!attachment) return next();
+    return receive(ctx, {
+      ...(ctx.message.caption === undefined ? {} : { body: ctx.message.caption }),
+      attachment,
+    });
+  });
+
   bot.command('start', greet);
   // Меню отдельной командой: сообщение с кнопками уходит вверх
   // переписки, и звать его перезапуском бота — не то, чего клиент ждёт
@@ -188,21 +210,6 @@ export function getBot(): Bot {
    * автоответчиком.
    */
   bot.on('message:text', (ctx) => receive(ctx, { body: ctx.message.text }));
-
-  /*
-   * Файл любого рода — PDF-чек, скриншот «как файл», голосовое. До
-   * 4 сентября 2026 бот слушал только фото, и документ терялся молча:
-   * без записи, без подтверждения, без уведомления сотрудникам.
-   * Наклейку файлом не считаем — ответа на неё не ждут.
-   */
-  bot.on('message:file', (ctx) => {
-    const attachment = attachmentOf(ctx.message);
-    if (!attachment) return;
-    return receive(ctx, {
-      ...(ctx.message.caption === undefined ? {} : { body: ctx.message.caption }),
-      attachment,
-    });
-  });
 
   /*
    * Отказ ядра — не повод оставить клиента без ответа и не повод

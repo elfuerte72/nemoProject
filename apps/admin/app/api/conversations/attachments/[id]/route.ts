@@ -82,7 +82,11 @@ export async function GET(
     const streaming = range !== null && isSingleRange(range) && streamsRange(attachment.kind);
     const fileUrl = `https://api.telegram.org/file/bot${token}/${path}`;
     let file = await fetch(fileUrl, streaming ? { headers: { range } } : {});
-    if (streaming && !file.ok) {
+    // Кусок без границ — не кусок: ответ 206 без `content-range`
+    // плеер прочесть не сможет, и лучше взять файл целиком.
+    const unusablePiece =
+      streaming && file.status === 206 && file.headers.get('content-range') === null;
+    if (streaming && (!file.ok || unusablePiece)) {
       // Отказ в куске — не отказ в файле: просим его целиком и режем
       // сами, иначе менеджер читал бы «недоступно» о живом файле.
       // Тело отказа закрывается: непрочитанное держит соединение до
@@ -103,7 +107,7 @@ export async function GET(
 
     await core.logMessageAttachmentView(actor, id);
 
-    if (streaming && file.status === 206) {
+    if (streaming && file.status === 206 && file.headers.get('content-range') !== null) {
       /*
        * Тип без байтов: у звука и видео его называет Telegram или наше
        * умолчание по роду, и сигнатуре тут решать нечего.
