@@ -89,6 +89,23 @@ describe('отбор разговоров по теме', () => {
     expect(conversation?.topic).toBe('hotel');
   });
 
+  /*
+   * Ответили — просьба разобрана, и разговор больше не про оплату:
+   * пилюля «Отель» у сообщения «привет» месяц спустя читалась как тема
+   * этого сообщения, и менеджер спрашивал, откуда здесь отель.
+   */
+  it('отвеченная просьба разговор больше не помечает', async () => {
+    await givenInquiry(200n, 'hotel');
+    await core.replyToClient(manager, { clientId: 200n, body: 'Оплатили' });
+    await core.receiveClientMessage({ telegramUserId: 200n, body: 'привет' });
+
+    const [conversation] = await core.listConversations(manager);
+
+    expect(conversation?.topic).toBeNull();
+    expect(await core.listConversations(manager, { topic: 'payment' })).toHaveLength(0);
+    expect((await core.listConversations(manager, { topic: 'support' })).map((one) => one.clientId)).toEqual([200n]);
+  });
+
   it('у разговора без просьб темы нет', async () => {
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'А какой курс?' });
 

@@ -1,5 +1,4 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
-import type { PgColumn } from 'drizzle-orm/pg-core';
 import { clientMessages, clients, staff } from '@nemo/db';
 import { requireStaff, type Actor } from './actor.js';
 import { conciergeTakesOver } from './concierge.js';
@@ -71,7 +70,9 @@ export interface ConversationView {
    *
    * Берётся у последней просьбы, а не у последнего сообщения: клиент,
    * попросивший оплатить отель и дописавший «и ещё вопрос», не перестал
-   * спрашивать про оплату. Тема — свойство просьбы, а не ленты.
+   * спрашивать про оплату. Тема — свойство просьбы, а не ленты. Держится
+   * она до ответа сервиса: отвеченная просьба разобрана, и разговор
+   * снова про поддержку.
    */
   readonly topic: InquiryTopic | null;
   /**
@@ -346,17 +347,36 @@ export async function listConversations(
    * Тема последней просьбы в ленте — отдельной выборкой, а не из
    * последнего сообщения: клиент, попросивший оплатить отель и
    * дописавший «и ещё вопрос», спрашивает всё о том же.
+   *
+   * Но только пока просьбе не ответили. До 4 сентября 2026 тема висела
+   * на разговоре навсегда, и «Отель» стоял у «привет» месяц спустя —
+   * читалось как тема этого сообщения. Ответ сервиса после просьбы
+   * снимает её: разобранная просьба — история, а не работа.
    */
   const topics = ctx.db.$with('topics').as(
     ctx.db
       .selectDistinctOn([clientMessages.clientId], {
         clientId: clientMessages.clientId,
         topic: clientMessages.topic,
+        seq: clientMessages.seq,
       })
       .from(clientMessages)
       .where(isNotNull(clientMessages.topic))
       .orderBy(clientMessages.clientId, desc(clientMessages.seq)),
   );
+
+  const answered = ctx.db.$with('answered').as(
+    ctx.db
+      .selectDistinctOn([clientMessages.clientId], {
+        clientId: clientMessages.clientId,
+        seq: clientMessages.seq,
+      })
+      .from(clientMessages)
+      .where(eq(clientMessages.direction, 'outgoing'))
+      .orderBy(clientMessages.clientId, desc(clientMessages.seq)),
+  );
+
+  const openTopic = sql<InquiryTopic | null>`case when ${answered.seq} is null or ${topics.seq} > ${answered.seq} then ${topics.topic} end`;
 
   const last = ctx.db.$with('last').as(
     ctx.db
@@ -373,7 +393,7 @@ export async function listConversations(
   );
 
   const rows = await ctx.db
-    .with(last, topics)
+    .with(last, topics, answered)
     .select({
       clientId: last.clientId,
       username: clients.username,
@@ -384,14 +404,15 @@ export async function listConversations(
       // разговор от того, до которого никто не дошёл: очередь общая, и
       // «отвечено» без имени не говорит, надо ли перечитывать.
       lastAuthorName: staff.displayName,
-      topic: topics.topic,
+      topic: openTopic,
       handedToHumanAt: clients.handedToHumanAt,
     })
     .from(last)
     .innerJoin(clients, eq(clients.telegramUserId, last.clientId))
     .leftJoin(staff, eq(staff.id, last.authorStaffId))
     .leftJoin(topics, eq(topics.clientId, last.clientId))
-    .where(topicCondition(filter.topic, topics.topic))
+    .leftJoin(answered, eq(answered.clientId, last.clientId))
+    .where(topicCondition(filter.topic, openTopic))
     // Ждущие ответа сверху: это работа, а не история. Внутри — по
     // сквозному номеру, тому же, которым определяется последнее
     // сообщение: время двух записей в одну миллисекунду не разводит.
@@ -410,7 +431,7 @@ export async function listConversations(
  */
 function topicCondition(
   filter: ConversationTopicFilter | undefined,
-  column: PgColumn,
+  column: SQL,
 ): SQL | undefined {
   if (filter === 'support') return isNull(column);
   if (filter === 'payment') return isNotNull(column);
