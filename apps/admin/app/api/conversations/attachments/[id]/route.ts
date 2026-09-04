@@ -47,7 +47,14 @@ export async function GET(
   try {
     const actor = await requireStaffActor();
     const { id } = await context.params;
-    const attachment = await getCore().revealMessageAttachment(actor, id);
+    /*
+     * Сперва описание, запись о просмотре — после ответа Telegram и до
+     * того, как тело уйдёт менеджеру: файлы у Telegram живут не вечно, и
+     * запись о просмотре пропавшего файла говорила бы администратору
+     * неправду о том, кто что видел.
+     */
+    const core = getCore();
+    const attachment = await core.describeMessageAttachment(actor, id);
 
     const token = botToken();
     const described = await fetch(
@@ -93,6 +100,8 @@ export async function GET(
       await file.body?.cancel();
       return new Response('Вложение недоступно у Telegram', { status: 404 });
     }
+
+    await core.logMessageAttachmentView(actor, id);
 
     if (streaming && file.status === 206) {
       /*

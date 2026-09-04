@@ -418,3 +418,43 @@ describe('isSingleRange', () => {
     expect(isSingleRange(null)).toBe(false);
   });
 });
+
+/*
+ * Имя сохраняется на диск, а на диске тип файла решает расширение —
+ * никакого `nosniff` там нет. Разметка, названная «отчёт.html» и
+ * начинающаяся как PDF, показывается в панели безопасно, но, сохранённая
+ * под своим именем, откроется браузером как страница со скриптом. Раз
+ * тип объявлен по байтам, расширение обязано отвечать ему же.
+ */
+describe('attachmentHeaders: расширение отвечает содержимому', () => {
+  it('чужое расширение заменяется тем, что говорят байты', () => {
+    const headers = attachmentHeaders(
+      { kind: 'document', mime: 'text/html', name: 'отчёт.html' },
+      PDF,
+    );
+
+    expect(headers['content-type']).toBe('application/pdf');
+    expect(decodeURIComponent(headers['content-disposition']!)).toContain('отчёт.pdf');
+    expect(decodeURIComponent(headers['content-disposition']!)).not.toContain('.html');
+  });
+
+  it('исполняемое расширение не переживает показ картинки', () => {
+    expect(
+      decodeURIComponent(
+        attachmentHeaders({ kind: 'document', mime: null, name: 'счёт.exe' }, PNG)[
+          'content-disposition'
+        ]!,
+      ),
+    ).toContain('счёт.png');
+  });
+
+  it('своё расширение остаётся, когда оно и есть верное', () => {
+    expect(
+      decodeURIComponent(
+        attachmentHeaders({ kind: 'document', mime: 'application/pdf', name: 'чек.PDF' }, PDF)[
+          'content-disposition'
+        ]!,
+      ),
+    ).toContain('чек.PDF');
+  });
+});

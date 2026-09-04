@@ -95,7 +95,11 @@ export function attachmentHeaders(
 ): Record<string, string> {
   const known = SIGNATURES.find((one) => one.matches(head));
   if (known) {
-    const fileName = withExtension(
+    // Расширение — то, что говорят байты, а не то, что написал клиент:
+    // сохранённый на диск файл тип решает расширением, и «отчёт.html» с
+    // начинкой PDF открылся бы страницей со скриптом. Показ в панели
+    // безопасен и без этого, а вот сохранение — нет.
+    const fileName = withRightExtension(
       safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind],
       `.${known.extension}`,
     );
@@ -202,10 +206,24 @@ const LONGEST_NAME = 120;
 /**
  * Имя без расширения получает его от сигнатуры: Telegram отдаёт `receipt`
  * или вовсе ничего, а сохранённый «receipt» без `.pdf` не открывается
- * двойным щелчком. Своё расширение не переписывается.
+ * двойным щелчком. Своё расширение не переписывается: тип у скачиваемого
+ * файла не проверен байтами, и спорить с клиентом об имени не о чем.
  */
 function withExtension(name: string, knownExtension: string): string {
   return knownExtension !== '' && !EXTENSION.test(name) ? `${name}${knownExtension}` : name;
+}
+
+/**
+ * То же для показанного в строке файла, но чужое расширение здесь
+ * заменяется: тип объявлен по байтам, и имя обязано отвечать ему же —
+ * иначе сохранённый «отчёт.html» с начинкой PDF откроется страницей.
+ * Совпавшее расширение остаётся как написано: «чек.PDF» — то же самое.
+ */
+function withRightExtension(name: string, rightExtension: string): string {
+  const own = EXTENSION.exec(name)?.[0];
+  if (own === undefined) return `${name}${rightExtension}`;
+  if (own.toLowerCase() === rightExtension) return name;
+  return `${name.slice(0, name.length - own.length)}${rightExtension}`;
 }
 
 // Хотя бы одна буква: «Отчёт 2026.09.04» кончается не расширением, а датой.

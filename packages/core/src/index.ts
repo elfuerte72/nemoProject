@@ -91,7 +91,9 @@ import {
   type SaveKnowledgeArticleInput,
 } from './concierge-knowledge.js';
 import {
+  describeMessageAttachment,
   listRequisiteAccessLog,
+  logMessageAttachmentView,
   revealMessageAttachment,
   revealRequisites,
   type RequisiteAccessFilter,
@@ -353,6 +355,10 @@ export function createCore(ctx: CoreConfig) {
       revealRequisites(ctx, actor, exchangeRequestId),
     revealMessageAttachment: (actor: Actor, messageId: string) =>
       revealMessageAttachment(ctx, actor, messageId),
+    describeMessageAttachment: (actor: Actor, messageId: string) =>
+      describeMessageAttachment(ctx, actor, messageId),
+    logMessageAttachmentView: (actor: Actor, messageId: string) =>
+      logMessageAttachmentView(ctx, actor, messageId),
 
     // Приём сообщения — без актора: клиента подтверждает подпись
     // вебхука Telegram, и он же им и является.

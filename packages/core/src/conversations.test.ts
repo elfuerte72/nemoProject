@@ -247,6 +247,22 @@ describe('вложение', () => {
     expect(log[0]).toMatchObject({ clientId: 100n, messageId: message!.id });
   });
 
+  it('описание файла само по себе следа не оставляет: файла ещё не видели', async () => {
+    // Между «дай описание» и «отдай файл» стоит поход к Telegram, и
+    // файла у него может уже не быть. Запись о просмотре ставит тот,
+    // кто файл отдал.
+    const admin = await givenStaff({ role: 'admin' });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
+    });
+    const [message] = await core.listConversation(manager, 100n);
+
+    await core.describeMessageAttachment(manager, message!.id);
+
+    expect(await core.listRequisiteAccessLog(admin)).toEqual([]);
+  });
+
   it('плеер, дочитывающий файл кусками, не плодит записей в журнале', async () => {
     // Safari просит голосовое по частям заголовком Range, и каждая
     // часть проходит через операцию. Журнал отвечает на вопрос «кто и

@@ -201,6 +201,11 @@ function authorOf(message: MessageView): string {
  * пишется в журнал доступа, и загрузка «на всякий случай» писала бы
  * туда просмотр, которого не было.
  *
+ * Картинки грузятся, когда доезжают до экрана, а не при открытии
+ * переписки: каждое обращение за файлом пишется в журнал доступа, и
+ * разговор с восемью скриншотами оставлял бы восемь просмотров, ни на
+ * один из которых менеджер не смотрел.
+ *
  * Файл подтягивается по требованию и клиентским токеном: на дисках
  * сервиса чужих чеков нет. Не показалось — ссылкой, а не словом
  * «недоступно»: формат, которого браузер не знает (HEIC с iPhone), и
@@ -234,7 +239,16 @@ function Attachment({
   const fail = () => setFailed(true);
   switch (attachment.kind) {
     case 'photo':
-      return <img className="bubble__image" src={href} alt={title} onError={fail} />;
+      return (
+        <img
+          className="bubble__image"
+          src={href}
+          alt={title}
+          loading="lazy"
+          decoding="async"
+          onError={fail}
+        />
+      );
     case 'voice':
     case 'audio':
       return (
@@ -257,7 +271,14 @@ function Attachment({
       // потому смотрится ещё и имя; ошибка в эту сторону стоит одной
       // ссылки взамен рисунка, а не потерянного чека.
       return looksLikeImage(attachment.mime, attachment.name) ? (
-        <img className="bubble__image" src={href} alt={title} onError={fail} />
+        <img
+          className="bubble__image"
+          src={href}
+          alt={title}
+          loading="lazy"
+          decoding="async"
+          onError={fail}
+        />
       ) : (
         <FileLink href={href}>{title}</FileLink>
       );

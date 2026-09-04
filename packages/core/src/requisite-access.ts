@@ -106,26 +106,18 @@ export const ATTACHMENT_VIEW_WINDOW_MS = 5 * 60 * 1000;
 /**
  * Вложение, присланное клиентом, — менеджеру, который его открывает.
  *
- * Возвращается идентификатор файла у Telegram и его описание: сам файл
- * сервис не хранит, панель подтягивает его по идентификатору клиентским
- * токеном, а по описанию решает, под каким именем и типом отдать.
- * Обращение попадает в тот же журнал, что и чтение номера карты, и в
- * той же транзакции: на скриншоте перевода и в чеке видно и счёт, и
- * имя, и след от просмотра нужен по той же причине.
+ * Отдаётся идентификатор файла у Telegram и его описание: сам файл сервис
+ * не хранит, панель забирает его по идентификатору клиентским токеном, а
+ * по описанию решает, под каким именем и типом отдать. Файл сверх предела
+ * Telegram не открывается вовсе.
  *
- * Без открытия файла записи не появляется: операцию зовёт ровно тот
- * маршрут, который отдаёт файл. Файл сверх предела Telegram не
- * открывается и в журнал не пишется — просмотра не было.
- *
- * Один просмотр — одна запись, даже когда файл забирают кусками: плеер
- * просит голосовое заголовком Range и приходит за ним по три-пять раз, а
- * журнал отвечает на вопрос «кто и что смотрел», и пятикратная запись
- * одного прослушивания этот ответ портит. Поэтому повтор того же
- * сотрудника по тому же сообщению в пределах окна следа не оставляет.
- * Проверка идёт до вставки, а не вместо неё: первое обращение
- * записывается всегда, и обойти журнал, попросив файл кусками, нельзя.
+ * Следа эта операция не оставляет — его ставит `logMessageAttachmentView`
+ * тогда, когда файл действительно уходит менеджеру: между описанием и
+ * выдачей стоит поход к Telegram, а тот хранит файлы не вечно, и запись о
+ * просмотре пропавшего файла говорила бы администратору неправду о том,
+ * кто что видел. Обе операции зовёт ровно один маршрут — тот, который
+ * файл отдаёт, — и порядок у него обратный: сперва запись, потом тело.
  */
-
 export interface RevealedAttachment {
   readonly fileId: string;
   readonly kind: AttachmentKind;
@@ -134,35 +126,72 @@ export interface RevealedAttachment {
   readonly size: number | null;
 }
 
-export async function revealMessageAttachment(
+export async function describeMessageAttachment(
   ctx: CoreConfig,
   actor: Actor,
   messageId: string,
 ): Promise<RevealedAttachment> {
+  requireStaff(actor);
+
+  const [row] = await ctx.db
+    .select({
+      attachmentFileId: clientMessages.attachmentFileId,
+      attachmentKind: clientMessages.attachmentKind,
+      attachmentMime: clientMessages.attachmentMime,
+      attachmentName: clientMessages.attachmentName,
+      attachmentSize: clientMessages.attachmentSize,
+    })
+    .from(clientMessages)
+    .where(eq(clientMessages.id, messageId))
+    .limit(1);
+
+  if (!row) {
+    throw new NotFoundError('Сообщение не найдено');
+  }
+  if (!row.attachmentFileId || !row.attachmentKind) {
+    throw new NotFoundError('К сообщению не приложен файл');
+  }
+  if (!isDownloadable(row.attachmentSize)) {
+    throw new NotFoundError('Файл больше предела Telegram, и скачать его нельзя');
+  }
+
+  return {
+    fileId: row.attachmentFileId,
+    kind: row.attachmentKind,
+    mime: row.attachmentMime,
+    name: row.attachmentName,
+    size: row.attachmentSize,
+  };
+}
+
+/**
+ * Просмотр файла — в тот же журнал, что и чтение номера карты: на
+ * скриншоте перевода и в чеке видно и счёт, и имя, и след от просмотра
+ * нужен по той же причине.
+ *
+ * Один просмотр — одна запись, даже когда файл забирают кусками: плеер
+ * просит голосовое заголовком Range и приходит за ним по три-пять раз, а
+ * журнал отвечает на вопрос «кто и что смотрел», и пятикратная запись
+ * одного прослушивания этот ответ портит. Поэтому повтор того же
+ * сотрудника по тому же сообщению в пределах окна следа не оставляет;
+ * первое обращение записывается всегда, и обойти журнал, попросив файл
+ * кусками, нельзя.
+ */
+export async function logMessageAttachmentView(
+  ctx: CoreConfig,
+  actor: Actor,
+  messageId: string,
+): Promise<void> {
   const staffActor = requireStaff(actor);
 
-  return ctx.db.transaction(async (tx) => {
+  await ctx.db.transaction(async (tx) => {
     const [row] = await tx
-      .select({
-        clientId: clientMessages.clientId,
-        attachmentFileId: clientMessages.attachmentFileId,
-        attachmentKind: clientMessages.attachmentKind,
-        attachmentMime: clientMessages.attachmentMime,
-        attachmentName: clientMessages.attachmentName,
-        attachmentSize: clientMessages.attachmentSize,
-      })
+      .select({ clientId: clientMessages.clientId })
       .from(clientMessages)
       .where(eq(clientMessages.id, messageId))
       .limit(1);
-
     if (!row) {
       throw new NotFoundError('Сообщение не найдено');
-    }
-    if (!row.attachmentFileId || !row.attachmentKind) {
-      throw new NotFoundError('К сообщению не приложен файл');
-    }
-    if (!isDownloadable(row.attachmentSize)) {
-      throw new NotFoundError('Файл больше предела Telegram, и скачать его нельзя');
     }
 
     /*
@@ -182,23 +211,28 @@ export async function revealMessageAttachment(
         ),
       )
       .limit(1);
+    if (recent) return;
 
-    if (!recent) {
-      await logRequisiteAccess(tx, {
-        staffId: staffActor.staffId,
-        clientId: row.clientId,
-        messageId,
-      });
-    }
-
-    return {
-      fileId: row.attachmentFileId,
-      kind: row.attachmentKind,
-      mime: row.attachmentMime,
-      name: row.attachmentName,
-      size: row.attachmentSize,
-    };
+    await logRequisiteAccess(tx, {
+      staffId: staffActor.staffId,
+      clientId: row.clientId,
+      messageId,
+    });
   });
+}
+
+/**
+ * Описание файла вместе с записью о просмотре — там, где файл уходит
+ * менеджеру целиком и сразу.
+ */
+export async function revealMessageAttachment(
+  ctx: CoreConfig,
+  actor: Actor,
+  messageId: string,
+): Promise<RevealedAttachment> {
+  const attachment = await describeMessageAttachment(ctx, actor, messageId);
+  await logMessageAttachmentView(ctx, actor, messageId);
+  return attachment;
 }
 
 /**
