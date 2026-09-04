@@ -111,6 +111,23 @@ describe('клиент, который ждёт ответа', () => {
     ]);
   });
 
+  /*
+   * Пятнадцать минут, а не полчаса: владелец 4 сентября 2026 — «если
+   * клиенту не отвечают, уведомление через 15 минут». Порог один на
+   * ядро и панель, и здесь закреплено само число.
+   */
+  it('напоминает через пятнадцать минут и молчит через десять', async () => {
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Вопрос' });
+    await core.takeStaffAlerts(new Date());
+    await aged(10);
+    expect(await core.takeStaffAlerts(new Date())).toEqual([]);
+
+    await aged(16);
+    expect(await core.takeStaffAlerts(new Date())).toEqual([
+      expect.objectContaining({ kind: 'staff-waiting-client', waitingMinutes: 16 }),
+    ]);
+  });
+
   it('молчит, если менеджер ответил', async () => {
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'Вопрос' });
     await core.takeStaffAlerts(new Date());

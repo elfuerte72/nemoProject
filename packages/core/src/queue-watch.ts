@@ -30,8 +30,14 @@ import { exchangeSubject, payoutHintsOf } from './request-subject.js';
  */
 const STALE_REQUEST_MINUTES = 30;
 
-/** Сколько клиент ждёт ответа, прежде чем о нём напомнить. */
-const WAITING_CLIENT_MINUTES = 30;
+/**
+ * Сколько клиент ждёт ответа, прежде чем о нём напомнить.
+ *
+ * Пятнадцать минут — по слову владельца от 4 сентября 2026; до того
+ * полчаса. Наружу — панели: она тем же числом красит ждущий разговор
+ * в списке обращений, и два порога разошлись бы на первой правке.
+ */
+export const WAITING_CLIENT_MINUTES = 15;
 
 export async function takeQueueWatchAlerts(
   ctx: CoreConfig,
