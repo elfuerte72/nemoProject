@@ -82,15 +82,17 @@ export function attachmentViewOf(
 
 /**
  * Вложение словами, для середины фразы: «клиент прислал файл чек.pdf
- * (240 КБ)». У документа имя и размер — по ним менеджер понимает, чек
- * это или договор, не открывая; у остального имени нет, а размер без
- * имени ничего не говорит.
+ * (240 КБ)». Имя называется у всякого файла, у которого оно есть, —
+ * документ, аудио и видео Telegram отдаёт с именем, — по нему менеджер
+ * понимает, чек это или договор, не открывая. Размер идёт следом за
+ * именем: у безымянного скриншота он ни о чём не говорит.
  */
 export function describeAttachment(facts: AttachmentFacts): string {
-  if (facts.kind !== 'document' || facts.name === null) return attachmentWords[facts.kind];
+  const word = attachmentWords[facts.kind];
+  if (facts.name === null) return word;
   return facts.size === null
-    ? `файл ${facts.name}`
-    : `файл ${facts.name} (${formatFileSize(facts.size)})`;
+    ? `${word} ${facts.name}`
+    : `${word} ${facts.name} (${formatFileSize(facts.size)})`;
 }
 
 /**

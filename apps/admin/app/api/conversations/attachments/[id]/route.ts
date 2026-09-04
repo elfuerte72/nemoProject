@@ -66,10 +66,13 @@ export async function GET(
 
     const range = request.headers.get('range');
     const streaming = range !== null && streamsRange(attachment.kind);
-    const file = await fetch(
-      `https://api.telegram.org/file/bot${token}/${path}`,
-      streaming ? { headers: { range } } : {},
-    );
+    const fileUrl = `https://api.telegram.org/file/bot${token}/${path}`;
+    let file = await fetch(fileUrl, streaming ? { headers: { range } } : {});
+    if (streaming && !file.ok) {
+      // Отказ в куске — не отказ в файле: просим его целиком и режем
+      // сами, иначе менеджер читал бы «недоступно» о живом файле.
+      file = await fetch(fileUrl);
+    }
     if (!file.ok) {
       return new Response('Вложение недоступно у Telegram', { status: 404 });
     }
@@ -87,7 +90,7 @@ export async function GET(
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const piece = sliceRange(bytes, range);
+    const piece = sliceRange(bytes, range, streamsRange(attachment.kind));
     return new Response(piece.body, {
       status: piece.status,
       headers: { ...attachmentHeaders(attachment, bytes.subarray(0, 16)), ...piece.headers },

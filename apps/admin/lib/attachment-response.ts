@@ -137,11 +137,22 @@ function headersFor(
   };
 }
 
-/** Без кавычек, разделителей путей и управляющих знаков; пустое — как отсутствующее. */
+/**
+ * Без кавычек, разделителей путей, управляющих знаков и знаков смены
+ * направления письма; пустое — как отсутствующее.
+ *
+ * Знак `U+202E` переворачивает хвост имени на экране: «чек\u202Egpj.exe»
+ * читается в строке загрузок как «чекexe.jpg», и менеджер, которому
+ * обещали файл под своим именем, сохраняет программу вместо чека.
+ */
 function safeName(name: string | null): string | undefined {
   if (name === null) return undefined;
-  // eslint-disable-next-line no-control-regex -- управляющие знаки и есть то, что вычищается
-  const cleaned = name.replace(/[\u0000-\u001f\u007f"\\/]/g, '').trim().slice(0, 120);
+  const cleaned = name
+    // eslint-disable-next-line no-control-regex -- управляющие знаки и есть то, что вычищается
+    .replace(/[\u0000-\u001f\u007f"\\/]/g, '')
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+    .trim()
+    .slice(0, 120);
   return cleaned === '' ? undefined : cleaned;
 }
 
@@ -154,7 +165,8 @@ function withExtension(name: string, knownExtension: string): string {
   return knownExtension !== '' && !EXTENSION.test(name) ? `${name}${knownExtension}` : name;
 }
 
-const EXTENSION = /\.[a-z0-9]{1,5}$/i;
+// Хотя бы одна буква: «Отчёт 2026.09.04» кончается не расширением, а датой.
+const EXTENSION = /\.(?=[a-z0-9]{1,5}$)[a-z0-9]*[a-z][a-z0-9]*$/i;
 
 /** Имя латиницей для читателей без RFC 5987: своё, если оно и так латиницей, иначе `file` с расширением. */
 function asciiName(name: string, knownExtension: string): string {
@@ -189,6 +201,10 @@ function asciiAt(head: Uint8Array, offset: number, expected: string): boolean {
  * кусок вырезается из него. Понимается один диапазон; список
  * диапазонов и чужие единицы отвечаются целым файлом, как если бы
  * заголовка не было.
+ *
+ * Роду, который кусками не отдаётся, диапазоны не обещаются и не
+ * режутся: обещание просмотрщику PDF означало бы, что он начнёт просить
+ * куски, а каждый кусок — это файл, скачанный у Telegram заново.
  */
 export interface RangeAnswer {
   readonly status: 200 | 206 | 416;
@@ -197,15 +213,24 @@ export interface RangeAnswer {
   readonly headers: Record<string, string>;
 }
 
-export function sliceRange(bytes: Uint8Array<ArrayBuffer>, range: string | null): RangeAnswer {
+export function sliceRange(
+  bytes: Uint8Array<ArrayBuffer>,
+  range: string | null,
+  acceptsRanges = true,
+): RangeAnswer {
   const total = bytes.length;
-  const match = range === null ? null : /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+  const whole = {
+    status: 200,
+    body: bytes,
+    headers: acceptsRanges
+      ? { 'accept-ranges': 'bytes', 'content-length': String(total) }
+      : { 'content-length': String(total) },
+  } as const;
+
+  const match =
+    range === null || !acceptsRanges ? null : /^bytes=(\d*)-(\d*)$/.exec(range.trim());
   if (!match || (match[1] === '' && match[2] === '')) {
-    return {
-      status: 200,
-      body: bytes,
-      headers: { 'accept-ranges': 'bytes', 'content-length': String(total) },
-    };
+    return whole;
   }
 
   // «bytes=-500» — последние пятьсот байт; иначе от начала до конца или до края файла.

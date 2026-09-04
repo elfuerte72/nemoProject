@@ -100,6 +100,9 @@ export async function logRequisiteAccess(
   });
 }
 
+/** Окно, внутри которого повторное обращение к тому же файлу — тот же просмотр. */
+export const ATTACHMENT_VIEW_WINDOW_MS = 5 * 60 * 1000;
+
 /**
  * Вложение, присланное клиентом, — менеджеру, который его открывает.
  *
@@ -122,7 +125,6 @@ export async function logRequisiteAccess(
  * Проверка идёт до вставки, а не вместо неё: первое обращение
  * записывается всегда, и обойти журнал, попросив файл кусками, нельзя.
  */
-export const ATTACHMENT_VIEW_WINDOW_MS = 5 * 60 * 1000;
 
 export interface RevealedAttachment {
   readonly fileId: string;

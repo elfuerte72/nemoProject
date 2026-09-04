@@ -76,6 +76,19 @@ describe('attachmentHeaders', () => {
     ).toMatchObject({ 'content-type': 'application/octet-stream' });
   });
 
+  it('перевёрнутое имя не выдаёт исполняемый файл за картинку', () => {
+    // Знак смены направления письма: «чек\u202Egpj.exe» показывается
+    // браузером как «чекexe.jpg», и менеджер, которому обещали файл
+    // «под своим именем», сохраняет программу вместо чека.
+    const headers = attachmentHeaders(
+      { kind: 'document', mime: null, name: 'чек\u202Egpj.exe' },
+      OGG,
+    );
+
+    expect(headers['content-disposition']).not.toContain('\u202E');
+    expect(decodeURIComponent(headers['content-disposition']!)).toContain('чекgpj.exe');
+  });
+
   it('имя файла не выходит из строки заголовка и из своей папки', () => {
     const crlf = String.fromCharCode(13, 10);
     const headers = attachmentHeaders(
@@ -109,6 +122,21 @@ describe('attachmentHeaders: расширение', () => {
     });
   });
 
+  it('точка в дате расширением не считается', () => {
+    // «Отчёт 2026.09.04» — имя без расширения, и «.04» им не является:
+    // сохранённый без «.pdf» отчёт не открывается двойным щелчком.
+    expect(
+      attachmentHeaders({ kind: 'document', mime: 'application/pdf', name: 'Отчёт 2026.09.04' }, PDF),
+    ).toMatchObject({
+      'content-disposition': expect.stringContaining("filename*=UTF-8''") as unknown as string,
+    });
+    expect(
+      attachmentHeaders({ kind: 'document', mime: 'application/pdf', name: 'Отчёт 2026.09.04' }, PDF)[
+        'content-disposition'
+      ],
+    ).toContain('.pdf');
+  });
+
   it('своё расширение не переписывается', () => {
     expect(
       attachmentHeaders({ kind: 'document', mime: 'image/png', name: 'screen.PNG' }, PNG),
@@ -124,6 +152,17 @@ describe('attachmentHeaders: расширение', () => {
  */
 describe('sliceRange', () => {
   const bytes = Uint8Array.from({ length: 10 }, (_, index) => index);
+
+  it('файлу, который кусками не отдаётся, диапазоны не обещаются', () => {
+    // Обещание Accept-Ranges картинке и документу означало бы, что
+    // просмотрщик PDF начнёт просить куски, а каждый кусок — это файл,
+    // скачанный у Telegram заново.
+    const answer = sliceRange(bytes, 'bytes=2-4', false);
+
+    expect(answer.status).toBe(200);
+    expect(answer.body).toEqual(bytes);
+    expect(answer.headers).toEqual({ 'content-length': '10' });
+  });
 
   it('без Range отдаёт всё целиком и объявляет, что диапазоны понимает', () => {
     const answer = sliceRange(bytes, null);

@@ -38,7 +38,16 @@ describe('describeAttachment', () => {
     expect(describeAttachment({ kind: 'document', name: null, size: null })).toBe('файл');
   });
 
-  it('остальное — словом, без размера', () => {
+  it('аудио и видео тоже приходят с именем — и оно называется', () => {
+    expect(describeAttachment({ kind: 'audio', name: 'song.mp3', size: 3_250_586 })).toBe(
+      'аудио song.mp3 (3,1 МБ)',
+    );
+    expect(describeAttachment({ kind: 'video', name: 'IMG_0042.MOV', size: null })).toBe(
+      'видео IMG_0042.MOV',
+    );
+  });
+
+  it('безымянное — словом, без размера: он о нём ничего не говорит', () => {
     expect(describeAttachment({ kind: 'photo', name: null, size: 90_000 })).toBe('изображение');
     expect(describeAttachment({ kind: 'video', name: null, size: null })).toBe('видео');
     expect(describeAttachment({ kind: 'voice', name: null, size: null })).toBe(
