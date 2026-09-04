@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { MessageView } from '@nemo/core';
 import { dayKey, formatDayHeading } from '@/lib/format';
-import { Moment } from '@/app/ui/moment';
+import { Moment, useBrowserZone } from '@/app/ui/moment';
 
 /**
  * Окно переписки — так, как оно устроено в CRM, где чат и есть работа.
@@ -43,10 +43,7 @@ export function Dialog({
    * показывают без них — секунду, которую никто не замечает, — а не
    * по UTC, где день сменяется посреди рабочей ночи.
    */
-  const [zone, setZone] = useState<string>();
-  useEffect(() => {
-    setZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  }, []);
+  const zone = useBrowserZone();
 
   // Лента открывается на последнем сообщении и возвращается к нему
   // после каждого ответа: читают то, что только что сказали. Пояс — в
@@ -69,8 +66,16 @@ export function Dialog({
     }
   }
 
+  /*
+   * Enter отправляет только с настоящей клавиатуры: у экранной нет
+   * Shift+Enter, и на телефоне перевод строки отправлял бы клиенту
+   * половину фразы. Там Enter переносит строку, отправляет кнопка, а
+   * Ctrl/Cmd+Enter отправляет везде.
+   */
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    if (event.metaKey || event.ctrlKey || (!coarse && !event.shiftKey)) {
       event.preventDefault();
       void send();
     }

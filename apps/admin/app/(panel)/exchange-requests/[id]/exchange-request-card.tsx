@@ -500,13 +500,19 @@ export function ExchangeRequestCard({
                     </span>
                     <p className="callout__text">
                       Клиент переводит {request.fromCode} на счёт сервиса, а его выбирают из
-                      справочника, не набирают руками. Заведите счёт в {request.fromCode} —
-                      он появится здесь списком, и кнопка оживёт.
+                      справочника, не набирают руками.{' '}
+                      {viewerRole === 'admin'
+                        ? `Заведите счёт в ${request.fromCode} — он появится здесь списком, и кнопка оживёт.`
+                        : `Счета заводит администратор — попросите его завести счёт в ${request.fromCode}, и кнопка оживёт.`}
                     </p>
                   </div>
-                  <Link href="/service-accounts" className="btn btn--soft">
-                    Завести счёт
-                  </Link>
+                  {/* Менеджеру ссылки нет: раздел у него только для чтения, и
+                      кнопка вела бы в тупик. */}
+                  {viewerRole === 'admin' ? (
+                    <Link href="/service-accounts" className="btn btn--soft">
+                      Завести счёт
+                    </Link>
+                  ) : undefined}
                 </div>
               ) : undefined}
               <div className="form-row">

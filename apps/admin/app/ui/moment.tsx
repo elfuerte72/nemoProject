@@ -32,15 +32,25 @@ export function Moment({
       : mode === 'time'
         ? (value: Date, _now: Date, zone: string) => formatTime(value, zone)
         : formatMoment;
-  const [zone, setZone] = useState('UTC');
-
-  useEffect(() => {
-    setZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  }, []);
+  const zone = useBrowserZone() ?? 'UTC';
 
   return (
     <time dateTime={at} suppressHydrationWarning>
       {format(new Date(at), new Date(), zone)}
     </time>
   );
+}
+
+/**
+ * Пояс браузера — после появления разметки, до того — неизвестен.
+ *
+ * Один хук на всё, что печатает время: лента переписки считает по нему
+ * разделители дней, `Moment` — сами отметки, и разойтись они не могут.
+ */
+export function useBrowserZone(): string | undefined {
+  const [zone, setZone] = useState<string>();
+  useEffect(() => {
+    setZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }, []);
+  return zone;
 }

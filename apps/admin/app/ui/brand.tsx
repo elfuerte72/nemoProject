@@ -1,4 +1,9 @@
-import { TOBEE_HONEY, TOBEE_MARK_BOX, TOBEE_MARK_BRACE, TOBEE_MARK_CELL } from '@nemo/brand';
+import {
+  TOBEE_HONEY_GRADIENT,
+  TOBEE_MARK_BOX,
+  TOBEE_MARK_BRACE,
+  TOBEE_MARK_CELL,
+} from '@nemo/brand';
 
 /**
  * Знак и имя сервиса — те же, которыми он подписан снаружи и в Mini App.
@@ -30,6 +35,8 @@ export function Brand({ eyebrow }: { readonly eyebrow?: string | undefined }) {
  * оставалось бы восемь. Ширина выводится из высоты — знак выше, чем
  * шире. Идентификатор градиента свой на панель, чтобы не столкнуться с
  * тем же знаком в Mini App, если разметка окажется на одной странице.
+ * Фавикон `app/icon.svg` — тот же знак теми же числами, но статикой:
+ * Next отдаёт файл как есть, и импортировать пакет ему нечем.
  */
 const PAD = 1;
 const VIEW = {
@@ -52,15 +59,15 @@ export function TobeeMark({ height = 20 }: { readonly height?: number }) {
       <defs>
         <linearGradient
           id="tobee-honey-panel"
-          x1="6"
-          y1="3"
-          x2="18"
-          y2="20"
+          x1={TOBEE_HONEY_GRADIENT.x1}
+          y1={TOBEE_HONEY_GRADIENT.y1}
+          x2={TOBEE_HONEY_GRADIENT.x2}
+          y2={TOBEE_HONEY_GRADIENT.y2}
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor={TOBEE_HONEY[0]} />
-          <stop offset="0.55" stopColor={TOBEE_HONEY[1]} />
-          <stop offset="1" stopColor={TOBEE_HONEY[2]} />
+          {TOBEE_HONEY_GRADIENT.stops.map((stop) => (
+            <stop key={stop.offset} offset={stop.offset} stopColor={stop.color} />
+          ))}
         </linearGradient>
       </defs>
       <g fill="url(#tobee-honey-panel)" fillRule="evenodd">

@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type Actor } from './index.js';
+import type { ConciergeSource } from './concierge-source.js';
 import { givenStaff } from './test-support.js';
 
 /**
@@ -16,7 +17,8 @@ import { givenStaff } from './test-support.js';
  * оплате», и ответить на это должна выборка.
  */
 
-const core = createCore({ db: testDatabase() });
+const db = testDatabase();
+const core = createCore({ db });
 
 let manager: Actor & { type: 'staff' };
 
@@ -104,6 +106,30 @@ describe('отбор разговоров по теме', () => {
     expect(conversation?.topic).toBeNull();
     expect(await core.listConversations(manager, { topic: 'payment' })).toHaveLength(0);
     expect((await core.listConversations(manager, { topic: 'support' })).map((one) => one.clientId)).toEqual([200n]);
+  });
+
+  /*
+   * Ответ помощника просьбу не закрывает: оплатить отель он не может и
+   * зовёт человека, а просьба должна дождаться этого человека с пилюлей.
+   * Найдено ревью 4 сентября 2026: исходящее от помощника считалось
+   * ответом сервиса, и тема снималась раньше, чем её увидел менеджер.
+   */
+  it('ответ помощника просьбу не закрывает', async () => {
+    const model: ConciergeSource = {
+      answer: async () => ({ reply: 'Передал менеджеру', needsHuman: true }),
+    };
+    const withConcierge = createCore({ db, concierge: model, conciergeQuietMs: 0 });
+    await withConcierge.submitInquiry({
+      telegramUserId: 200n,
+      topic: 'hotel',
+      details: 'Hilton, Бангкок',
+    });
+    await withConcierge.answerAsConcierge({ telegramUserId: 200n });
+
+    const [conversation] = await withConcierge.listConversations(manager);
+
+    expect(conversation?.topic).toBe('hotel');
+    expect(await withConcierge.listConversations(manager, { topic: 'payment' })).toHaveLength(1);
   });
 
   it('у разговора без просьб темы нет', async () => {

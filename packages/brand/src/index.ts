@@ -26,6 +26,19 @@ export const TOBEE_MARK_BOX = { x: 7.56, y: 4.98, width: 8.88, height: 13.9 } as
 
 /**
  * Медовый переход знака: светлое сверху, тёмное снизу, как у
- * металлической грани. Те же три остановки, что у медовых кнопок.
+ * металлической грани. Направление задано в сетке знака 24×24, а
+ * остановки — долями пути: так его повторяет и `<linearGradient>` в
+ * разметке, и всё, что рисует знак без React. Три цвета — те же, что у
+ * медовых кнопок.
  */
-export const TOBEE_HONEY = ['#FFCF7D', '#FBAA48', '#F79A33'] as const;
+export const TOBEE_HONEY_GRADIENT = {
+  x1: 6,
+  y1: 3,
+  x2: 18,
+  y2: 20,
+  stops: [
+    { offset: 0, color: '#FFCF7D' },
+    { offset: 0.55, color: '#FBAA48' },
+    { offset: 1, color: '#F79A33' },
+  ],
+} as const;

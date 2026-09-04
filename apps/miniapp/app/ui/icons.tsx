@@ -9,7 +9,7 @@
  * не знает.
  */
 
-import { TOBEE_HONEY, TOBEE_MARK_BRACE, TOBEE_MARK_CELL } from '@nemo/brand';
+import { TOBEE_HONEY_GRADIENT, TOBEE_MARK_BRACE, TOBEE_MARK_CELL } from '@nemo/brand';
 
 interface IconProps {
   readonly size?: number;
@@ -42,10 +42,17 @@ export function TobeeMark({ size = 22 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <defs>
-        <linearGradient id="tobee-honey" x1="6" y1="3" x2="18" y2="20" gradientUnits="userSpaceOnUse">
-          <stop stopColor={TOBEE_HONEY[0]} />
-          <stop offset="0.55" stopColor={TOBEE_HONEY[1]} />
-          <stop offset="1" stopColor={TOBEE_HONEY[2]} />
+        <linearGradient
+          id="tobee-honey"
+          x1={TOBEE_HONEY_GRADIENT.x1}
+          y1={TOBEE_HONEY_GRADIENT.y1}
+          x2={TOBEE_HONEY_GRADIENT.x2}
+          y2={TOBEE_HONEY_GRADIENT.y2}
+          gradientUnits="userSpaceOnUse"
+        >
+          {TOBEE_HONEY_GRADIENT.stops.map((stop) => (
+            <stop key={stop.offset} offset={stop.offset} stopColor={stop.color} />
+          ))}
         </linearGradient>
       </defs>
       <g fill="url(#tobee-honey)" fillRule="evenodd">
