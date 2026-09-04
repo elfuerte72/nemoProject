@@ -36,6 +36,21 @@ import type { Notification } from './notifications.js';
  * вопрос «ждёт ли клиент».
  */
 
+/**
+ * Сколько клиент должен молчать, чтобы следующее его сообщение считалось
+ * новым обращением, а не продолжением прошлого.
+ *
+ * Подтверждение приёма одно на череду — чтобы человек, пишущий мысль
+ * тремя сообщениями подряд, не получил три одинаковых ответа. Но череда
+ * без срока тянется столько, сколько менеджер не отвечает: 4 сентября
+ * 2026 клиент написал утром, ответа не дождался, а присланный днём чек
+ * не получил ни ответа, ни уведомления сотруднику — для сервиса он был
+ * продолжением утренней мысли. Полчаса тишины эту связь рвут: столько
+ * не молчат посреди одной мысли, и столько же ждут ответа, прежде чем
+ * решить, что бот сломался.
+ */
+export const NEW_INQUIRY_AFTER_MINUTES = 30;
+
 export interface MessageView {
   readonly id: string;
   readonly direction: 'incoming' | 'outgoing';
@@ -244,9 +259,16 @@ export async function receiveClientMessage(
       return { message: toView(row!), notifications: tooLarge };
     }
 
-    // Право на подтверждение занимается условно: если в текущей череде
-    // подтверждение уже уходило, обновление не найдёт строки, и второго
-    // сообщения клиент не получит.
+    /*
+     * Право на подтверждение занимается условно: если в текущей череде
+     * подтверждение уже уходило, обновление не найдёт строки, и второго
+     * сообщения клиент не получит.
+     *
+     * Череда при этом не вечная: подтверждение, отправленное давнее
+     * получаса, её больше не закрывает — вернувшийся клиент пишет новое
+     * обращение, а не продолжает старое.
+     */
+    const freshSince = new Date(Date.now() - NEW_INQUIRY_AFTER_MINUTES * 60_000);
     const [claimed] = await tx
       .update(clientMessages)
       .set({ acknowledgedAt: new Date() })
@@ -259,6 +281,7 @@ export async function receiveClientMessage(
               and prior.acknowledged_at is not null
               and prior.id <> ${row!.id}
               and prior.seq > ${lastOutgoingSeq(input.telegramUserId)}
+              and prior.created_at > ${freshSince.toISOString()}::timestamptz
           )`,
         ),
       )
@@ -542,9 +565,17 @@ export async function takeStaffNotifications(
            * ещё думает, и звать менеджера к вопросу, на который вот-вот
            * ответят, значит звать его зря.
            */
+          /*
+           * Файл зовёт человека всегда — даже посреди начатой череды, где
+           * подтверждение уже уходило: чек это событие про деньги, и
+           * менеджер, не узнавший о нём, увидит его, только если сам
+           * откроет панель. Пока файл разбирает консьерж, зовут не здесь:
+           * он передаст разговор сам, и передаст с причиной.
+           */
           sql`case
             when ${clientMessages.conciergeOutcome} is null
               then ${clientMessages.acknowledgedAt} is not null
+                or ${clientMessages.attachmentFileId} is not null
             else ${clientMessages.conciergeOutcome} = 'escalated'
           end`,
         ),
