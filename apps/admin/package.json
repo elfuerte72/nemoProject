@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@nemo/brand": "workspace:*",
     "@nemo/core": "workspace:*",
     "@nemo/http": "workspace:*",
     "@nemo/telegram": "workspace:*",

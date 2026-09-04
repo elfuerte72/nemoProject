@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount, formatDay, formatMoment, formatMoney, formatRate } from './format.js';
+import {
+  dayKey,
+  formatAmount,
+  formatDay,
+  formatDayHeading,
+  formatMoment,
+  formatMoney,
+  formatRate,
+  formatTime,
+} from './format.js';
 import { bpsToPercent, percentToBps } from './percent.js';
 
 describe('сумма для человека', () => {
@@ -51,6 +60,25 @@ describe('время для человека', () => {
 
   it('у случившегося однажды показывает дату без часа', () => {
     expect(formatDay(new Date('2026-08-03T00:45:00Z'), now, zone)).toBe('3 авг.');
+  });
+
+  /*
+   * Разделитель дня в ленте переписки: сегодня и вчера — словом, дальше
+   * датой. Слово — с прописной, потому что стоит отдельной строкой, а
+   * не внутри «вчера, 14:00».
+   */
+  it('день в ленте называет словом, пока он сегодня или вчера', () => {
+    expect(formatDayHeading(new Date('2026-08-03T00:45:00Z'), now, zone)).toBe('Сегодня');
+    expect(formatDayHeading(new Date('2026-08-02T09:00:00Z'), now, zone)).toBe('Вчера');
+    expect(formatDayHeading(new Date('2026-07-28T09:00:00Z'), now, zone)).toBe('28 июл.');
+  });
+
+  it('час без даты — под пузырём, где день назван разделителем', () => {
+    expect(formatTime(new Date('2026-07-28T09:00:00Z'), zone)).toBe('14:00');
+  });
+
+  it('сутки для группировки считает в поясе менеджера', () => {
+    expect(dayKey(new Date('2026-08-02T20:10:00Z'), zone)).toBe('2026-08-03');
   });
 });
 

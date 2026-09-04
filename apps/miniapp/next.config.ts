@@ -13,6 +13,7 @@ const config: NextConfig = {
    */
   env: { APP_VERSION: gitSha(root) ?? '' },
   transpilePackages: [
+    '@nemo/brand',
     '@nemo/core',
     '@nemo/http',
     '@nemo/rates',

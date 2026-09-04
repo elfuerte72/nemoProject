@@ -484,6 +484,31 @@ export function ExchangeRequestCard({
                   : 'У этой заявки курса подачи нет — назовите свой. Курс и реквизиты уйдут ' +
                     'клиенту в бот сообщением, и с этого момента пойдёт срок оплаты.'}
               </p>
+              {/*
+                Счетов нет — говорится до формы, а не припиской под ней, и
+                со ссылкой туда, где счёт заводят: до 4 сентября 2026
+                администратор читал серую строку под курсом и спрашивал,
+                почему кнопка не работает. Правило само — docs/adr/0008:
+                реквизиты руками не набираются, опечатка в одной цифре
+                означает перевод, который не возвращается.
+              */}
+              {accounts.length === 0 && request.kind === 'electronic' ? (
+                <div className="callout" role="status">
+                  <div className="callout__body">
+                    <span className="callout__title">
+                      Выдавать нечего: счетов сервиса в {request.fromCode} нет
+                    </span>
+                    <p className="callout__text">
+                      Клиент переводит {request.fromCode} на счёт сервиса, а его выбирают из
+                      справочника, не набирают руками. Заведите счёт в {request.fromCode} —
+                      он появится здесь списком, и кнопка оживёт.
+                    </p>
+                  </div>
+                  <Link href="/service-accounts" className="btn btn--soft">
+                    Завести счёт
+                  </Link>
+                </div>
+              ) : undefined}
               <div className="form-row">
                 {/*
               Поле курса — только там, где курс называет менеджер. У
@@ -559,12 +584,6 @@ export function ExchangeRequestCard({
                     ))}
                   </select>
                 </label>
-              ) : request.kind === 'electronic' ? (
-                <p className="card__note">
-                  Счетов сервиса в {request.fromCode} нет — выдавать нечего, и операция откажет:
-                  реквизиты руками не набираются, опечатка в одной цифре означает перевод, который
-                  не возвращается. Заведите счёт в разделе «Счета сервиса».
-                </p>
               ) : undefined}
 
               <label className="field">

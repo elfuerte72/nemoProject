@@ -10,6 +10,10 @@ import { Dialog } from '@/app/ui/dialog';
  *
  * Клиентский компонент ради одного: ответ уходит запросом и обновляет
  * ленту. Сама лента приходит с сервера готовой.
+ *
+ * Отдаёт наружу один узел, а не несколько подряд: страница кладёт его
+ * в сетку рядом с карточкой клиента, и каждый лишний узел сетка
+ * раскладывала бы по своей колонке.
  */
 export function ConversationView({
   clientId,
@@ -83,27 +87,8 @@ export function ConversationView({
   }
 
   return (
-    <>
+    <div className="split__main">
       {error ? <p className="error">{error}</p> : undefined}
-
-      <div className="handover">
-        <p className="handover__state">
-          {handedToHuman
-            ? 'Разговор ведёте вы: помощник в нём молчит.'
-            : 'На первой линии помощник. Он передаст разговор, если понадобится.'}
-        </p>
-        <button
-          type="button"
-          className="btn btn--ghost"
-          onClick={() => void setHandover(!handedToHuman)}
-        >
-          {switching
-            ? 'Переключаю…'
-            : handedToHuman
-              ? 'Вернуть помощнику'
-              : 'Взять разговор себе'}
-        </button>
-      </div>
 
       <Dialog
         messages={messages}
@@ -113,7 +98,32 @@ export function ConversationView({
         // иначе он ищет в своей истории строку, которой там нет.
         {...(requestId ? { draft: `По заявке № ${requestId.slice(0, 6)}: ` } : {})}
         onReply={reply}
+        head={
+          /*
+           * Кто ведёт разговор — над лентой, а не под ней: решение
+           * «отвечаю сам или оставляю помощнику» принимается до чтения.
+           */
+          <div className="chat__head">
+            <span className={handedToHuman ? 'dot' : 'dot dot--off'} aria-hidden />
+            <p className="chat__state">
+              {handedToHuman
+                ? 'Разговор ведёте вы: помощник в нём молчит.'
+                : 'На первой линии помощник. Он передаст разговор, если понадобится.'}
+            </p>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => void setHandover(!handedToHuman)}
+            >
+              {switching
+                ? 'Переключаю…'
+                : handedToHuman
+                  ? 'Вернуть помощнику'
+                  : 'Взять разговор себе'}
+            </button>
+          </div>
+        }
       />
-    </>
+    </div>
   );
 }

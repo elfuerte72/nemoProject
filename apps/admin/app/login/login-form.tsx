@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Brand } from '@/app/ui/brand';
 
 /**
  * Вход менеджера: кнопка Telegram, затем одноразовый код.
@@ -93,8 +94,10 @@ export function LoginForm({ devLogin = false }: { devLogin?: boolean }) {
     <main className="login">
       <div className="login__card">
         <div>
-          <div className="login__brand">nemo</div>
-          <p className="login__eyebrow">Админ-панель</p>
+          <div className="login__brand">
+            <Brand />
+          </div>
+          <p className="login__eyebrow">Панель менеджера</p>
         </div>
 
         {stage === 'telegram' ? (

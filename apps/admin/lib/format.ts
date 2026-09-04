@@ -92,12 +92,36 @@ export function formatDay(value: Date, now: Date, timeZone: string): string {
   });
 }
 
+/**
+ * Только час: под пузырём в ленте, где день уже назван разделителем.
+ * «2 сент.» под каждым сообщением дня повторял бы разделитель трижды.
+ */
+export function formatTime(value: Date, timeZone: string): string {
+  return time(value, timeZone);
+}
+
 function time(value: Date, timeZone: string): string {
   return value.toLocaleTimeString('ru-RU', { timeZone, hour: '2-digit', minute: '2-digit' });
 }
 
-/** Сутки в нужном поясе — тем же способом, каким считается «сегодня». */
-function dayKey(value: Date, timeZone: string): string {
+/**
+ * Заголовок дня в ленте переписки: сегодня и вчера — словом, дальше
+ * датой. Отдельной строкой, поэтому с прописной.
+ */
+export function formatDayHeading(value: Date, now: Date, timeZone: string): string {
+  const day = dayKey(value, timeZone);
+  const today = dayKey(now, timeZone);
+  if (day === today) return 'Сегодня';
+  if (day === dayBefore(today)) return 'Вчера';
+  return formatDay(value, now, timeZone);
+}
+
+/**
+ * Сутки в нужном поясе — тем же способом, каким считается «сегодня».
+ * Наружу — для группировки ленты по дням: разделитель ставится там, где
+ * ключ сменился.
+ */
+export function dayKey(value: Date, timeZone: string): string {
   return value.toLocaleDateString('en-CA', { timeZone });
 }
 

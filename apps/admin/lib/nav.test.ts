@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   NAV_GROUPS,
+  SETTINGS_SECTIONS,
   isCurrentSection,
   parseCollapsed,
   serializeCollapsed,
@@ -51,5 +52,18 @@ describe('текущий раздел', () => {
   it('ключи групп не повторяются', () => {
     const keys = NAV_GROUPS.map((group) => group.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('подразделы настроек', () => {
+  it('лежат под разделом настроек: меню подсвечивает его на любом из них', () => {
+    for (const section of SETTINGS_SECTIONS) {
+      expect(isCurrentSection('/settings', section.href)).toBe(true);
+    }
+  });
+
+  it('адреса не повторяются', () => {
+    const hrefs = SETTINGS_SECTIONS.map((section) => section.href);
+    expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 });

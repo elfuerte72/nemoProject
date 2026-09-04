@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { formatDay, formatMoment } from '@/lib/format';
+import { formatDay, formatMoment, formatTime } from '@/lib/format';
 
 /**
  * Время события — в часах того, кто на него смотрит.
@@ -17,13 +17,21 @@ import { formatDay, formatMoment } from '@/lib/format';
  */
 export function Moment({
   at,
-  /** `day` — для случившегося однажды: час подачи в очереди только шумит. */
+  /**
+   * `day` — для случившегося однажды: час подачи в очереди только шумит.
+   * `time` — под пузырём в ленте, где день назван разделителем.
+   */
   mode = 'moment',
 }: {
   readonly at: string;
-  readonly mode?: 'moment' | 'day';
+  readonly mode?: 'moment' | 'day' | 'time';
 }) {
-  const format = mode === 'day' ? formatDay : formatMoment;
+  const format =
+    mode === 'day'
+      ? formatDay
+      : mode === 'time'
+        ? (value: Date, _now: Date, zone: string) => formatTime(value, zone)
+        : formatMoment;
   const [zone, setZone] = useState('UTC');
 
   useEffect(() => {

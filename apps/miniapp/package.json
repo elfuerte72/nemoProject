@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@nemo/concierge": "workspace:*",
+    "@nemo/brand": "workspace:*",
     "@nemo/core": "workspace:*",
     "@nemo/http": "workspace:*",
     "@nemo/rates": "workspace:*",
