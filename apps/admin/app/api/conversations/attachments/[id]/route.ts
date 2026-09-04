@@ -1,11 +1,19 @@
 import { botToken } from '@nemo/telegram';
 import { errorResponse } from '@/lib/api';
-import { attachmentHeaders, sliceRange } from '@/lib/attachment-response';
+import {
+  attachmentHeaders,
+  rangeHeadersOf,
+  sliceRange,
+  streamsRange,
+} from '@/lib/attachment-response';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** Байтов нет — сигнатуре решать нечего, тип берётся у Telegram или у рода. */
+const EMPTY_HEAD = new Uint8Array(0);
 
 /**
  * Файл, присланный клиентом: изображение, PDF-чек, голосовое.
@@ -20,11 +28,16 @@ export const dynamic = 'force-dynamic';
  * той же транзакции, в которой отдаёт идентификатор, и пропустить запись
  * нельзя.
  *
- * Тело читается целиком, а не стримится: с какими заголовками отдать
- * файл, решают его первые байты (`attachment-response.ts`), а Telegram
- * отдаёт ботам не больше 20 МБ — в память панели это помещается. Из
- * того же буфера вырезается кусок по заголовку Range: без него плеер
- * Safari от файла отказывается.
+ * Картинка и документ читаются целиком: с какими заголовками их отдать,
+ * решают первые байты (`attachment-response.ts`), а Telegram отдаёт
+ * ботам не больше 20 МБ — в память панели это помещается.
+ *
+ * Звук и видео плеер просит кусками — Safari сперва два байта, потом
+ * остальное, — и эти куски уходят к Telegram, а не режутся из полного
+ * файла: иначе одно прослушивание «кружка» на 15 МБ стоило бы трёх его
+ * скачиваний. Тип у этих родов известен и без байтов. Отказался
+ * отдавать кусок — читаем целиком и режем сами: без ответа 206 плеер
+ * Safari от источника отказывается вовсе.
  */
 export async function GET(
   request: Request,
@@ -51,13 +64,30 @@ export async function GET(
       return new Response('Вложение недоступно у Telegram', { status: 404 });
     }
 
-    const file = await fetch(`https://api.telegram.org/file/bot${token}/${path}`);
+    const range = request.headers.get('range');
+    const streaming = range !== null && streamsRange(attachment.kind);
+    const file = await fetch(
+      `https://api.telegram.org/file/bot${token}/${path}`,
+      streaming ? { headers: { range } } : {},
+    );
     if (!file.ok) {
       return new Response('Вложение недоступно у Telegram', { status: 404 });
     }
 
+    if (streaming && file.status === 206 && file.body) {
+      // Тип без байтов: у звука и видео его называет Telegram или наше
+      // умолчание по роду, и сигнатуре тут решать нечего.
+      return new Response(file.body, {
+        status: 206,
+        headers: {
+          ...attachmentHeaders(attachment, EMPTY_HEAD),
+          ...rangeHeadersOf(file.headers),
+        },
+      });
+    }
+
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const piece = sliceRange(bytes, request.headers.get('range'));
+    const piece = sliceRange(bytes, range);
     return new Response(piece.body, {
       status: piece.status,
       headers: { ...attachmentHeaders(attachment, bytes.subarray(0, 16)), ...piece.headers },

@@ -86,3 +86,21 @@ export const browserImageTypes: ReadonlySet<string> = new Set([
 export function isBrowserImage(mime: string | null): boolean {
   return mime !== null && browserImageTypes.has(mime);
 }
+
+/** Картиночные расширения — по ним узнаётся снимок, отправленный файлом. */
+const IMAGE_EXTENSION = /\.(jpe?g|png|gif|webp)$/i;
+
+/**
+ * Похоже ли на картинку, которую браузер нарисует.
+ *
+ * Тип называет клиент, и называет как придётся: «image/jpg» вместо
+ * «image/jpeg» у Android, «application/octet-stream» у скриншота,
+ * отправленного файлом. Поэтому кроме типа смотрится имя. HEIC и SVG не
+ * картинки в этом смысле: первый браузер не раскодирует, второй
+ * исполняется — оба уходят ссылкой, а не битым рисунком.
+ */
+export function looksLikeImage(mime: string | null, name: string | null): boolean {
+  if (mime === 'image/jpg' || isBrowserImage(mime)) return true;
+  if (mime !== null && mime !== 'application/octet-stream') return false;
+  return name !== null && IMAGE_EXTENSION.test(name);
+}

@@ -7,7 +7,7 @@ import {
   attachmentWords,
   capitalize,
   formatFileSize,
-  isBrowserImage,
+  looksLikeImage,
 } from '@nemo/types';
 import { dayKey, formatDayHeading } from '@/lib/format';
 import { Moment, useBrowserZone } from '@/app/ui/moment';
@@ -253,7 +253,10 @@ function Attachment({
       );
     case 'document':
       // Скриншот «как файл» — тоже картинка, если браузер её нарисует.
-      return isBrowserImage(attachment.mime) ? (
+      // Тип у него бывает любым — «image/jpg», «octet-stream», — и
+      // потому смотрится ещё и имя; ошибка в эту сторону стоит одной
+      // ссылки взамен рисунка, а не потерянного чека.
+      return looksLikeImage(attachment.mime, attachment.name) ? (
         <img className="bubble__image" src={href} alt={title} onError={fail} />
       ) : (
         <FileLink href={href}>{title}</FileLink>

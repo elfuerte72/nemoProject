@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentHeaders, sliceRange } from './attachment-response';
+import {
+  attachmentHeaders,
+  rangeHeadersOf,
+  sliceRange,
+  streamsRange,
+} from './attachment-response';
 
 /*
  * Файл клиента отдаётся из домена панели, и что браузер с ним сделает,
@@ -198,6 +203,70 @@ describe('attachmentHeaders: тип по роду', () => {
       attachmentHeaders({ kind: 'audio', mime: 'audio/mpeg', name: null }, OGG),
     ).toMatchObject({
       'content-disposition': "attachment; filename=\"audio.mp3\"; filename*=UTF-8''audio.mp3",
+    });
+  });
+});
+
+/*
+ * Тип приходит со слов клиента, и словом этим бывает что угодно —
+ * включая имя метода со стороны прототипа. Такой ответ должен остаться
+ * обычным скачиванием, а не сломать маршрут: менеджер иначе не откроет
+ * чек вовсе.
+ */
+describe('attachmentHeaders: тип со стороны', () => {
+  it.each(['toString', 'constructor', '__proto__', 'valueOf', 'hasOwnProperty'])(
+    'тип «%s» — не тип, а строка от клиента',
+    (mime) => {
+      const headers = attachmentHeaders({ kind: 'document', mime, name: 'чек' }, OGG);
+
+      expect(headers['content-type']).toBe('application/octet-stream');
+      expect(headers['content-disposition']).toBe(
+        "attachment; filename=\"file\"; filename*=UTF-8''%D1%87%D0%B5%D0%BA",
+      );
+    },
+  );
+});
+
+/*
+ * Звук и видео плеер забирает кусками, и куски эти уходят к Telegram, а
+ * не читаются из полного файла: иначе одно прослушивание «кружка» на
+ * 15 МБ стоит трёх его скачиваний. Картинка и документ читаются целиком
+ * — их тип решают первые байты.
+ */
+describe('streamsRange', () => {
+  it('звук и видео — кусками, картинка и документ — целиком', () => {
+    expect(streamsRange('voice')).toBe(true);
+    expect(streamsRange('audio')).toBe(true);
+    expect(streamsRange('video')).toBe(true);
+    expect(streamsRange('video_note')).toBe(true);
+    expect(streamsRange('photo')).toBe(false);
+    expect(streamsRange('document')).toBe(false);
+  });
+});
+
+describe('rangeHeadersOf', () => {
+  it('переносит от Telegram то, чем описан кусок', () => {
+    expect(
+      rangeHeadersOf(
+        new Headers({
+          'content-range': 'bytes 0-1/61000',
+          'content-length': '2',
+          'accept-ranges': 'bytes',
+          'content-type': 'application/octet-stream',
+          etag: 'W/"abc"',
+        }),
+      ),
+    ).toEqual({
+      'content-range': 'bytes 0-1/61000',
+      'content-length': '2',
+      'accept-ranges': 'bytes',
+    });
+  });
+
+  it('чего Telegram не назвал, то не выдумывается; диапазоны объявляются всегда', () => {
+    expect(rangeHeadersOf(new Headers({ 'content-length': '61000' }))).toEqual({
+      'content-length': '61000',
+      'accept-ranges': 'bytes',
     });
   });
 });

@@ -101,10 +101,15 @@ export function attachmentHeaders(
     return headersFor('inline', known.type, named, `.${known.extension}`);
   }
 
+  // Через `Object.hasOwn`, а не `in`: тип приходит со слов клиента, и
+  // словом этим бывает «toString» — тогда расширением стала бы функция
+  // с прототипа, а маршрут ответил бы отказом вместо файла.
   const declared =
-    attachment.mime !== null && attachment.mime in MEDIA_TYPES ? attachment.mime : undefined;
+    attachment.mime !== null && Object.hasOwn(MEDIA_TYPES, attachment.mime)
+      ? attachment.mime
+      : undefined;
   const mime = declared ?? KIND_TYPES[attachment.kind] ?? 'application/octet-stream';
-  const extension = MEDIA_TYPES[mime] ?? '';
+  const extension = Object.hasOwn(MEDIA_TYPES, mime) ? MEDIA_TYPES[mime]! : '';
   const named = withExtension(
     safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind],
     extension,
@@ -224,4 +229,32 @@ export function sliceRange(bytes: Uint8Array<ArrayBuffer>, range: string | null)
       'content-range': `bytes ${start}-${end}/${total}`,
     },
   };
+}
+
+/**
+ * Забирается ли файл кусками прямо у Telegram.
+ *
+ * Звук и видео плеер тянет по частям — Safari просит сперва два байта,
+ * потом всё остальное, — и читать ради каждой части целый файл значит
+ * скачать «кружок» на 15 МБ трижды за одно прослушивание. Тип у этих
+ * родов известен и без файла: его называет Telegram или наше умолчание
+ * по роду. Картинка и документ читаются целиком — их тип решают первые
+ * байты, и без них панель показала бы разметку как разметку.
+ */
+export function streamsRange(kind: AttachmentKind): boolean {
+  return kind !== 'photo' && kind !== 'document';
+}
+
+/**
+ * Чем Telegram описал отданный кусок. Переносится только это: тип и имя
+ * файла называет панель, а не он.
+ */
+export function rangeHeadersOf(headers: Headers): Record<string, string> {
+  const carried = ['content-range', 'content-length'] as const;
+  const answer: Record<string, string> = { 'accept-ranges': 'bytes' };
+  for (const name of carried) {
+    const value = headers.get(name);
+    if (value !== null) answer[name] = value;
+  }
+  return answer;
 }
