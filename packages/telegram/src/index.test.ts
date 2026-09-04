@@ -34,6 +34,9 @@ const exchange: Exchange = {
   fromCode: 'USDT',
   toCode: 'RUB',
   isCash: false,
+  toAmount: null,
+  rate: null,
+  payout: null,
 };
 
 /*
@@ -45,7 +48,7 @@ const exchange: Exchange = {
 describe('deliverNotifications: сотруднику', () => {
   it.each<[Notification, string, string]>([
     [
-      { kind: 'staff-client-message', ...client, preview: 'Привет' },
+      { kind: 'staff-client-message', ...client, topic: null, preview: 'Привет' },
       'Открыть переписку',
       '/conversations/2',
     ],
@@ -75,6 +78,9 @@ describe('deliverNotifications: сотруднику', () => {
     expect(body).toMatchObject({
       chat_id: '1',
       parse_mode: 'HTML',
+      // Ссылка на клиента в тексте, а карточка «You can contact … right
+      // away» под ней — шум в два раза выше самого уведомления.
+      link_preview_options: { is_disabled: true },
       reply_markup: {
         inline_keyboard: [[{ text: label, url: `https://panel.example${path}` }]],
       },
@@ -82,7 +88,7 @@ describe('deliverNotifications: сотруднику', () => {
   });
 
   it('без адреса панели кнопки нет, разметка остаётся', async () => {
-    const [body] = await sentBodies([{ kind: 'staff-client-message', ...client, preview: 'Привет' }]);
+    const [body] = await sentBodies([{ kind: 'staff-client-message', ...client, topic: null, preview: 'Привет' }]);
 
     expect(body).toMatchObject({ parse_mode: 'HTML' });
     expect(body).not.toHaveProperty('reply_markup');

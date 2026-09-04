@@ -538,6 +538,7 @@ export async function takeStaffNotifications(
               to: recipient.telegramUserId,
               clientId: message.clientId,
               clientUsername: usernames.get(message.clientId) ?? null,
+              topic: message.topic,
               preview: message.body ?? 'Изображение',
             }
           : {
