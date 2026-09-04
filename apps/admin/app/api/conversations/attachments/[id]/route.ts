@@ -2,6 +2,7 @@ import { botToken } from '@nemo/telegram';
 import { errorResponse } from '@/lib/api';
 import {
   attachmentHeaders,
+  isSingleRange,
   rangeHeadersOf,
   sliceRange,
   streamsRange,
@@ -68,7 +69,10 @@ export async function GET(
     }
 
     const range = request.headers.get('range');
-    const streaming = range !== null && streamsRange(attachment.kind);
+    // Дальше уходит только тот диапазон, который панель понимает сама:
+    // на список диапазонов Telegram ответит многочастным телом, а мы
+    // объявили бы его записью.
+    const streaming = range !== null && isSingleRange(range) && streamsRange(attachment.kind);
     const fileUrl = `https://api.telegram.org/file/bot${token}/${path}`;
     let file = await fetch(fileUrl, streaming ? { headers: { range } } : {});
     if (streaming && !file.ok) {
@@ -80,9 +84,12 @@ export async function GET(
       await file.body?.cancel();
       file = await fetch(fileUrl);
     }
-    if (!file.ok) {
-      // Тело закрывается и здесь: непрочитанное держит соединение до
-      // уборки мусора, а плеер бьётся в пропавший файл десятки раз.
+    if (!file.ok || (file.status !== 206 && !file.body)) {
+      // Ответ без тела — тот же пропавший файл: отдав его пустым, панель
+      // показала бы менеджеру пустую картинку вместо честного «файла
+      // больше нет». Тело закрывается и здесь: непрочитанное держит
+      // соединение до уборки мусора, а плеер бьётся в пропавший файл
+      // десятки раз.
       await file.body?.cancel();
       return new Response('Вложение недоступно у Telegram', { status: 404 });
     }

@@ -1,4 +1,5 @@
 import type { AttachmentKind } from '@nemo/core';
+import { plainType } from '@nemo/types';
 
 /**
  * Заголовки, с которыми файл клиента уходит из домена панели.
@@ -94,11 +95,11 @@ export function attachmentHeaders(
 ): Record<string, string> {
   const known = SIGNATURES.find((one) => one.matches(head));
   if (known) {
-    const named = withExtension(
+    const fileName = withExtension(
       safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind],
       `.${known.extension}`,
     );
-    return headersFor('inline', known.type, named, `.${known.extension}`);
+    return headersFor('inline', known.type, fileName, `.${known.extension}`);
   }
 
   /*
@@ -113,18 +114,19 @@ export function attachmentHeaders(
    * откроется. Умолчание остаётся там, где тип не назван вовсе: у
    * «кружка» его в Bot API нет.
    */
+  const named = plainType(attachment.mime);
   const mime =
-    attachment.mime === null
+    named === null
       ? (KIND_TYPES[attachment.kind] ?? 'application/octet-stream')
-      : Object.hasOwn(MEDIA_TYPES, attachment.mime)
-        ? attachment.mime
+      : Object.hasOwn(MEDIA_TYPES, named)
+        ? named
         : 'application/octet-stream';
   const extension = Object.hasOwn(MEDIA_TYPES, mime) ? MEDIA_TYPES[mime]! : '';
-  const named = withExtension(
+  const fileName = withExtension(
     safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind],
     extension,
   );
-  return headersFor('attachment', mime, named, extension);
+  return headersFor('attachment', mime, fileName, extension);
 }
 
 function headersFor(
@@ -269,8 +271,8 @@ export function sliceRange(
   } as const;
 
   const match =
-    range === null || !acceptsRanges ? null : /^bytes=(\d*)-(\d*)$/.exec(range.trim());
-  if (!match || (match[1] === '' && match[2] === '')) {
+    acceptsRanges && isSingleRange(range) ? /^bytes=(\d*)-(\d*)$/.exec(range!.trim()) : null;
+  if (!match) {
     return whole;
   }
 
@@ -312,15 +314,27 @@ export function streamsRange(kind: AttachmentKind): boolean {
 }
 
 /**
- * Чем Telegram описал отданный кусок. Переносится только это: тип и имя
- * файла называет панель, а не он.
+ * Чем Telegram описал отданный кусок. Переносятся только его границы:
+ * тип и имя файла называет панель, а длину он называет для тела, каким
+ * оно шло к нам, — разжатое по дороге, оно этой длине уже не отвечает, и
+ * запись оборвалась бы на середине. Границы куска браузеру довольно.
  */
 export function rangeHeadersOf(headers: Headers): Record<string, string> {
-  const carried = ['content-range', 'content-length'] as const;
-  const answer: Record<string, string> = { 'accept-ranges': 'bytes' };
-  for (const name of carried) {
-    const value = headers.get(name);
-    if (value !== null) answer[name] = value;
-  }
-  return answer;
+  const range = headers.get('content-range');
+  return range === null
+    ? { 'accept-ranges': 'bytes' }
+    : { 'accept-ranges': 'bytes', 'content-range': range };
 }
+
+/**
+ * Диапазон, который панель понимает сама и потому может передать дальше.
+ *
+ * Список диапазонов Telegram отдаёт многочастным телом, и объявить его
+ * записью значит вручить плееру не то, что он ждал. Чужие единицы и
+ * мусор — то же самое.
+ */
+export function isSingleRange(range: string | null): boolean {
+  return range !== null && SINGLE_RANGE.test(range.trim());
+}
+
+const SINGLE_RANGE = /^bytes=(?:\d+-\d*|-\d+)$/;

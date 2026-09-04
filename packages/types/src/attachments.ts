@@ -89,14 +89,26 @@ export function isBrowserImage(mime: string | null): boolean {
 }
 
 /**
- * Тип без оговорок и в нижнем регистре: «IMAGE/JPEG» и
- * «image/png; charset=binary» приходят от переславших ботов и
- * самописных клиентов, и спорить о таком файле с маршрутом, который
- * узнаёт его по байтам, панели незачем.
+ * Тип, названный клиентом, — в том виде, в каком его можно сравнивать:
+ * без оговорок, в нижнем регистре и под общепринятым именем.
+ * «IMAGE/JPEG», «image/png; charset=binary» и нестандартный «audio/mp3»
+ * приходят от переславших ботов и самописных клиентов, и спорить о
+ * таком файле с маршрутом, который узнаёт его по байтам, панели
+ * незачем.
  */
-function plainType(mime: string | null): string | null {
-  return mime === null ? null : (mime.split(';')[0] ?? '').trim().toLowerCase();
+export function plainType(mime: string | null): string | null {
+  if (mime === null) return null;
+  const named = (mime.split(';')[0] ?? '').trim().toLowerCase();
+  return TYPE_ALIASES[named] ?? named;
 }
+
+/** Имена, под которыми тот же формат приходит от разных клиентов. */
+const TYPE_ALIASES: Readonly<Record<string, string>> = {
+  'audio/mp3': 'audio/mpeg',
+  'audio/x-mpeg': 'audio/mpeg',
+  'image/jpg': 'image/jpeg',
+  'video/mpeg4': 'video/mp4',
+};
 
 /** Картиночные расширения — по ним узнаётся снимок, отправленный файлом. */
 const IMAGE_EXTENSION = /\.(jpe?g|png|gif|webp)$/i;
@@ -112,7 +124,7 @@ const IMAGE_EXTENSION = /\.(jpe?g|png|gif|webp)$/i;
  */
 export function looksLikeImage(mime: string | null, name: string | null): boolean {
   const named = plainType(mime);
-  if (named === 'image/jpg' || isBrowserImage(named)) return true;
+  if (isBrowserImage(named)) return true;
   if (named !== null && named !== 'application/octet-stream') return false;
   return name !== null && IMAGE_EXTENSION.test(name);
 }

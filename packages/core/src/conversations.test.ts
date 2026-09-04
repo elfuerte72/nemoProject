@@ -383,7 +383,7 @@ describe('файл клиента', () => {
     expect(alert).toMatchObject({
       kind: 'staff-client-message',
       preview: 'вот чек',
-      attachment: 'Файл чек.pdf (240 КБ)',
+      attachment: 'файл чек.pdf (240 КБ)',
     });
   });
 });

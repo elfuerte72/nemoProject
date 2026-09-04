@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attachmentHeaders,
+  isSingleRange,
   rangeHeadersOf,
   sliceRange,
   streamsRange,
@@ -305,7 +306,10 @@ describe('streamsRange', () => {
 });
 
 describe('rangeHeadersOf', () => {
-  it('переносит от Telegram то, чем описан кусок', () => {
+  it('переносит то, чем описан кусок, и не переносит его длину', () => {
+    // Длину Telegram называет для сжатого тела, а приходит оно к нам
+    // разжатым: объявленная длина разошлась бы с отданными байтами, и
+    // запись обрывалась бы на середине. Границы куска довольно.
     expect(
       rangeHeadersOf(
         new Headers({
@@ -318,14 +322,12 @@ describe('rangeHeadersOf', () => {
       ),
     ).toEqual({
       'content-range': 'bytes 0-1/61000',
-      'content-length': '2',
       'accept-ranges': 'bytes',
     });
   });
 
   it('чего Telegram не назвал, то не выдумывается; диапазоны объявляются всегда', () => {
-    expect(rangeHeadersOf(new Headers({ 'content-length': '61000' }))).toEqual({
-      'content-length': '61000',
+    expect(rangeHeadersOf(new Headers({ 'content-type': 'audio/ogg' }))).toEqual({
       'accept-ranges': 'bytes',
     });
   });
@@ -373,5 +375,46 @@ describe('attachmentHeaders: незнакомый тип', () => {
     expect(attachmentHeaders({ kind: 'video_note', mime: null, name: null }, OGG)).toMatchObject({
       'content-type': 'video/mp4',
     });
+  });
+});
+
+/*
+ * Тип клиент пишет как придётся, а Telegram передаёт как есть:
+ * «AUDIO/MPEG», «audio/ogg; codecs=opus» и нестандартный «audio/mp3»
+ * приходят от переславших ботов и самописных клиентов. Не узнав их,
+ * панель отдала бы запись без типа — и плеер её не сыграл бы.
+ */
+describe('attachmentHeaders: тип как его написали', () => {
+  it('читается в любом регистре и с оговорками', () => {
+    expect(attachmentHeaders({ kind: 'audio', mime: 'AUDIO/MPEG', name: null }, OGG)).toMatchObject(
+      { 'content-type': 'audio/mpeg', 'content-disposition': expect.stringContaining('audio.mp3') },
+    );
+    expect(
+      attachmentHeaders({ kind: 'voice', mime: 'audio/ogg; codecs=opus', name: null }, OGG),
+    ).toMatchObject({ 'content-type': 'audio/ogg' });
+  });
+
+  it('нестандартный «audio/mp3» — тот же MP3', () => {
+    expect(attachmentHeaders({ kind: 'audio', mime: 'audio/mp3', name: null }, OGG)).toMatchObject({
+      'content-type': 'audio/mpeg',
+      'content-disposition': expect.stringContaining('audio.mp3'),
+    });
+  });
+});
+
+/*
+ * Дальше к Telegram уходит только тот диапазон, который панель понимает
+ * сама: на список диапазонов он ответит многочастным телом, а панель
+ * объявила бы его записью — и плеер получил бы не то, что ждал.
+ */
+describe('isSingleRange', () => {
+  it('один диапазон в байтах — да, остальное — нет', () => {
+    expect(isSingleRange('bytes=0-1')).toBe(true);
+    expect(isSingleRange('bytes=100-')).toBe(true);
+    expect(isSingleRange('bytes=-500')).toBe(true);
+    expect(isSingleRange('bytes=0-1,100-200')).toBe(false);
+    expect(isSingleRange('items=0-1')).toBe(false);
+    expect(isSingleRange('bytes=a-b')).toBe(false);
+    expect(isSingleRange(null)).toBe(false);
   });
 });

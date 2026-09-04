@@ -317,13 +317,13 @@ describe('renderNotification: вложение', () => {
         clientUsername: 'ivan',
         topic: null,
         preview: 'вот чек',
-        attachment: 'Файл чек <март>.pdf (240 КБ)',
+        attachment: 'файл чек <март>.pdf (240 КБ)',
       }).text,
     ).toBe(
       '<b>Новое обращение</b>\n' +
         '<a href="https://t.me/ivan">@ivan</a> · ID 2\n' +
         '<blockquote>вот чек</blockquote>\n' +
-        'Вложение: Файл чек &lt;март&gt;.pdf (240 КБ)\n' +
+        'Вложение: файл чек &lt;март&gt;.pdf (240 КБ)\n' +
         '#поддержка',
     );
   });

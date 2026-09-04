@@ -98,15 +98,19 @@ export function describeAttachment(facts: AttachmentFacts): string {
 /**
  * Что показать сотруднику вместо слов клиента и рядом с ними.
  *
- * Без подписи вложение занимает место слов — иначе цитата пуста. С
- * подписью оно идёт своей строкой: «вот чек» без имени файла не
- * говорит, что чек уже пришёл.
+ * Без подписи вложение занимает место слов — иначе цитата пуста, и там
+ * оно начинает строку с заглавной. С подписью оно идёт своей строкой,
+ * следом за словом «Вложение», и заглавная посреди неё читалась бы как
+ * начало новой фразы: «вот чек» без имени файла не говорит, что чек уже
+ * пришёл.
  */
 export function staffPreview(
   body: string | null,
   attachment: AttachmentFacts | null,
 ): { readonly preview: string; readonly attachment?: string } {
   if (attachment === null) return { preview: body ?? '' };
-  const described = capitalize(describeAttachment(attachment));
-  return body === null ? { preview: described } : { preview: body, attachment: described };
+  const described = describeAttachment(attachment);
+  return body === null
+    ? { preview: capitalize(described) }
+    : { preview: body, attachment: described };
 }
