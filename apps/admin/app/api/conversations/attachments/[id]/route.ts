@@ -71,16 +71,26 @@ export async function GET(
     if (streaming && !file.ok) {
       // Отказ в куске — не отказ в файле: просим его целиком и режем
       // сами, иначе менеджер читал бы «недоступно» о живом файле.
+      // Тело отказа закрывается: непрочитанное держит соединение до
+      // уборки мусора, а плеер, перематывающий запись, шлёт такие
+      // запросы десятками.
+      await file.body?.cancel();
       file = await fetch(fileUrl);
     }
     if (!file.ok) {
       return new Response('Вложение недоступно у Telegram', { status: 404 });
     }
 
-    if (streaming && file.status === 206 && file.body) {
-      // Тип без байтов: у звука и видео его называет Telegram или наше
-      // умолчание по роду, и сигнатуре тут решать нечего.
-      return new Response(file.body, {
+    if (streaming && file.status === 206) {
+      /*
+       * Тип без байтов: у звука и видео его называет Telegram или наше
+       * умолчание по роду, и сигнатуре тут решать нечего.
+       *
+       * Кусок отдаётся как кусок в любом случае — и когда тела в ответе
+       * нет: уйдя отсюда дальше, он был бы посчитан целым файлом, и
+       * плеер получил бы его длину вместо длины записи.
+       */
+      return new Response(file.body ?? (await file.arrayBuffer()), {
         status: 206,
         headers: {
           ...attachmentHeaders(attachment, EMPTY_HEAD),

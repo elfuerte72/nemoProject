@@ -101,14 +101,24 @@ export function attachmentHeaders(
     return headersFor('inline', known.type, named, `.${known.extension}`);
   }
 
-  // Через `Object.hasOwn`, а не `in`: тип приходит со слов клиента, и
-  // словом этим бывает «toString» — тогда расширением стала бы функция
-  // с прототипа, а маршрут ответил бы отказом вместо файла.
-  const declared =
-    attachment.mime !== null && Object.hasOwn(MEDIA_TYPES, attachment.mime)
-      ? attachment.mime
-      : undefined;
-  const mime = declared ?? KIND_TYPES[attachment.kind] ?? 'application/octet-stream';
+  /*
+   * Тип признаётся целиком или не признаётся вовсе. Через
+   * `Object.hasOwn`, а не `in`: тип приходит со слов клиента, и словом
+   * этим бывает «toString» — тогда расширением стала бы функция с
+   * прототипа, а маршрут ответил бы отказом вместо файла.
+   *
+   * Названный, но незнакомый тип — `audio/flac`, `video/x-matroska` —
+   * умолчанием по роду не подменяется: выдать FLAC за MP3 значит
+   * сохранить менеджеру файл под расширением, с которым тот не
+   * откроется. Умолчание остаётся там, где тип не назван вовсе: у
+   * «кружка» его в Bot API нет.
+   */
+  const mime =
+    attachment.mime === null
+      ? (KIND_TYPES[attachment.kind] ?? 'application/octet-stream')
+      : Object.hasOwn(MEDIA_TYPES, attachment.mime)
+        ? attachment.mime
+        : 'application/octet-stream';
   const extension = Object.hasOwn(MEDIA_TYPES, mime) ? MEDIA_TYPES[mime]! : '';
   const named = withExtension(
     safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind],
@@ -151,9 +161,12 @@ function safeName(name: string | null): string | undefined {
     // eslint-disable-next-line no-control-regex -- управляющие знаки и есть то, что вычищается
     .replace(/[\u0000-\u001f\u007f"\\/]/g, '')
     .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
-    .trim()
-    .slice(0, 120);
-  return cleaned === '' ? undefined : cleaned;
+    .trim();
+  // По знакам, а не по их половинкам: обрезка посреди эмодзи оставляет
+  // половину пары, а она не кодируется в заголовок — и файл, с которым
+  // всё в порядке, отвечал бы отказом.
+  const short = [...cleaned].slice(0, 120).join('');
+  return short === '' ? undefined : short;
 }
 
 /**

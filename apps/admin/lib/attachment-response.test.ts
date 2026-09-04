@@ -309,3 +309,45 @@ describe('rangeHeadersOf', () => {
     });
   });
 });
+
+/*
+ * Имя приходит от клиента, и длина его ничем не ограничена. Обрезка по
+ * знакам UTF-16 разрывала эмодзи пополам, а половина знака не кодируется
+ * в заголовок — маршрут отвечал отказом на исправный файл.
+ */
+describe('attachmentHeaders: длинное имя', () => {
+  it('обрезается по знакам, а не по их половинкам', () => {
+    const name = `${'ф'.repeat(119)}😀хвост.pdf`;
+
+    const headers = attachmentHeaders({ kind: 'document', mime: 'application/pdf', name }, PDF);
+
+    expect(decodeURIComponent(headers['content-disposition']!)).toContain('ф'.repeat(119));
+    expect(headers['content-disposition']).not.toContain('%ED%A0');
+  });
+});
+
+/*
+ * Тип, названный клиентом, панель либо признаёт, либо не признаёт вовсе:
+ * выдавать FLAC за MP3 — значит сохранить менеджеру файл под чужим
+ * расширением, который не откроется. Умолчание по роду остаётся там, где
+ * тип не назван вовсе: у «кружка» его в Bot API нет.
+ */
+describe('attachmentHeaders: незнакомый тип', () => {
+  it('не подменяется умолчанием по роду', () => {
+    expect(
+      attachmentHeaders({ kind: 'audio', mime: 'audio/flac', name: null }, OGG),
+    ).toMatchObject({
+      'content-type': 'application/octet-stream',
+      'content-disposition': "attachment; filename=\"audio\"; filename*=UTF-8''audio",
+    });
+    expect(
+      attachmentHeaders({ kind: 'video', mime: 'video/x-matroska', name: 'кино.mkv' }, OGG),
+    ).toMatchObject({ 'content-type': 'application/octet-stream' });
+  });
+
+  it('умолчание по роду остаётся, когда тип не назван', () => {
+    expect(attachmentHeaders({ kind: 'video_note', mime: null, name: null }, OGG)).toMatchObject({
+      'content-type': 'video/mp4',
+    });
+  });
+});
