@@ -91,8 +91,9 @@ import {
   type SaveKnowledgeArticleInput,
 } from './concierge-knowledge.js';
 import {
+  describeMessageAttachment,
   listRequisiteAccessLog,
-  revealMessageAttachment,
+  logMessageAttachmentView,
   revealRequisites,
   type RequisiteAccessFilter,
 } from './requisite-access.js';
@@ -351,8 +352,10 @@ export function createCore(ctx: CoreConfig) {
 
     revealRequisites: (actor: Actor, exchangeRequestId: string) =>
       revealRequisites(ctx, actor, exchangeRequestId),
-    revealMessageAttachment: (actor: Actor, messageId: string) =>
-      revealMessageAttachment(ctx, actor, messageId),
+    describeMessageAttachment: (actor: Actor, messageId: string) =>
+      describeMessageAttachment(ctx, actor, messageId),
+    logMessageAttachmentView: (actor: Actor, messageId: string) =>
+      logMessageAttachmentView(ctx, actor, messageId),
 
     // Приём сообщения — без актора: клиента подтверждает подпись
     // вебхука Telegram, и он же им и является.
@@ -518,9 +521,11 @@ export type {
   ManagerCardApplicationView,
   UpdateCardApplicationInput,
 } from './card-applications.js';
+export { ATTACHMENT_VIEW_WINDOW_MS } from './requisite-access.js';
 export type {
   RequisiteAccessEntry,
   RequisiteAccessFilter,
+  RevealedAttachment,
   RevealedRequisites,
 } from './requisite-access.js';
 export type {
@@ -581,6 +586,16 @@ export {
   isGreetingOnly,
 } from './concierge-voice.js';
 export { CONCIERGE_QUIET_MS } from './concierge.js';
+export {
+  ATTACHMENT_DOWNLOAD_LIMIT_BYTES,
+  attachmentKinds,
+  describeAttachment,
+  formatFileSize,
+  isDownloadable,
+  type AttachmentKind,
+  type MessageAttachmentInput,
+  type MessageAttachmentView,
+} from './attachments.js';
 export { WAITING_CLIENT_MINUTES } from './queue-watch.js';
 export { MAX_REPLY_LENGTH, TIME_UNIT, replyComplaints } from './concierge-guard.js';
 export type {

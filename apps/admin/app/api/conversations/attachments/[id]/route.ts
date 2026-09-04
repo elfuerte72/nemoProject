@@ -1,66 +1,135 @@
 import { botToken } from '@nemo/telegram';
 import { errorResponse } from '@/lib/api';
+import {
+  attachmentHeaders,
+  isSingleRange,
+  rangeHeadersOf,
+  sliceRange,
+  streamsRange,
+} from '@/lib/attachment-response';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/** Байтов нет — сигнатуре решать нечего, тип берётся у Telegram или у рода. */
+const EMPTY_HEAD = new Uint8Array(0);
+
 /**
- * Изображение, присланное клиентом.
+ * Файл, присланный клиентом: изображение, PDF-чек, голосовое.
  *
  * Файл не хранится у сервиса — хранится его идентификатор у Telegram, и
- * панель забирает изображение клиентским токеном, который у неё уже есть
- * для уведомлений. На дисках сервиса чужих чеков при этом не появляется:
+ * панель забирает файл клиентским токеном, который у неё уже есть для
+ * уведомлений. На дисках сервиса чужих чеков при этом не появляется:
  * пока не ответят на блокер A1 о защите персональных данных, это
  * существенно.
  *
- * Каждый просмотр попадает в журнал доступа — операция записывает его в
- * той же транзакции, в которой отдаёт идентификатор, и пропустить запись
- * нельзя.
+ * Каждый просмотр попадает в журнал доступа, и ставит запись этот
+ * маршрут — единственный, кто файл отдаёт. Порядок обратный выдаче:
+ * сперва запись, потом тело.
+ *
+ * Картинка и документ читаются целиком: с какими заголовками их отдать,
+ * решают первые байты (`attachment-response.ts`), а Telegram отдаёт
+ * ботам не больше 20 МБ — в память панели это помещается.
+ *
+ * Звук и видео плеер просит кусками — Safari сперва два байта, потом
+ * остальное, — и эти куски уходят к Telegram, а не режутся из полного
+ * файла: иначе одно прослушивание «кружка» на 15 МБ стоило бы трёх его
+ * скачиваний. Тип у этих родов известен и без байтов. Отказался
+ * отдавать кусок — читаем целиком и режем сами: без ответа 206 плеер
+ * Safari от источника отказывается вовсе.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
     const actor = await requireStaffActor();
     const { id } = await context.params;
-    const fileId = await getCore().revealMessageAttachment(actor, id);
+    /*
+     * Сперва описание, запись о просмотре — после ответа Telegram и до
+     * того, как тело уйдёт менеджеру: файлы у Telegram живут не вечно, и
+     * запись о просмотре пропавшего файла говорила бы администратору
+     * неправду о том, кто что видел.
+     */
+    const core = getCore();
+    const attachment = await core.describeMessageAttachment(actor, id);
 
     const token = botToken();
     const described = await fetch(
-      `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`,
+      `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(attachment.fileId)}`,
     );
-    const payload = (await described.json()) as {
-      ok: boolean;
-      result?: { file_path?: string };
-    };
-    const path = payload.ok ? payload.result?.file_path : undefined;
+    // Ответ разбирается осторожно: под нагрузкой Telegram отвечает
+    // страницей своего шлюза, а не JSON, и отказ разбора читался бы
+    // менеджером как поломка панели, а не как «файла сейчас нет».
+    const payload = await described
+      .json()
+      .then((body) => body as { ok?: boolean; result?: { file_path?: string } })
+      .catch(() => undefined);
+    const path = payload?.ok === true ? payload.result?.file_path : undefined;
     if (!path) {
       // Telegram хранит файлы не вечно, и недоступное вложение — не
-      // авария панели: менеджер должен увидеть, что изображения больше
-      // нет, а не пустой экран.
+      // авария панели: менеджер должен увидеть, что файла больше нет, а
+      // не пустой экран.
       return new Response('Вложение недоступно у Telegram', { status: 404 });
     }
 
-    const file = await fetch(`https://api.telegram.org/file/bot${token}/${path}`);
-    if (!file.ok || !file.body) {
+    const range = request.headers.get('range');
+    // Дальше уходит только тот диапазон, который панель понимает сама:
+    // на список диапазонов Telegram ответит многочастным телом, а мы
+    // объявили бы его записью.
+    const streaming = range !== null && isSingleRange(range) && streamsRange(attachment.kind);
+    const fileUrl = `https://api.telegram.org/file/bot${token}/${path}`;
+    let file = await fetch(fileUrl, streaming ? { headers: { range } } : {});
+    // Кусок без границ — не кусок: ответ 206 без `content-range`
+    // плеер прочесть не сможет, и лучше взять файл целиком.
+    const unusablePiece =
+      streaming && file.status === 206 && file.headers.get('content-range') === null;
+    if (streaming && (!file.ok || unusablePiece)) {
+      // Отказ в куске — не отказ в файле: просим его целиком и режем
+      // сами, иначе менеджер читал бы «недоступно» о живом файле.
+      // Тело отказа закрывается: непрочитанное держит соединение до
+      // уборки мусора, а плеер, перематывающий запись, шлёт такие
+      // запросы десятками.
+      await file.body?.cancel();
+      file = await fetch(fileUrl);
+    }
+    if (!file.ok || (file.status !== 206 && !file.body)) {
+      // Ответ без тела — тот же пропавший файл: отдав его пустым, панель
+      // показала бы менеджеру пустую картинку вместо честного «файла
+      // больше нет». Тело закрывается и здесь: непрочитанное держит
+      // соединение до уборки мусора, а плеер бьётся в пропавший файл
+      // десятки раз.
+      await file.body?.cancel();
       return new Response('Вложение недоступно у Telegram', { status: 404 });
     }
 
-    return new Response(file.body, {
-      headers: {
-        'content-type': file.headers.get('content-type') ?? 'image/jpeg',
-        // Тип приходит от Telegram, а не от нас: без запрета угадывания
-        // браузер решит его сам и однажды прочитает чужой файл как
-        // разметку — прямо в домене панели.
-        'x-content-type-options': 'nosniff',
-        // Чужой чек не должен осесть в кэше браузера или посредника:
-        // доступ к нему проверяется на каждом обращении и пишется в
-        // журнал, а закэшированный ответ прошёл бы мимо обоих.
-        'cache-control': 'no-store, private',
-      },
+    await core.logMessageAttachmentView(actor, id);
+
+    if (streaming && file.status === 206 && file.headers.get('content-range') !== null) {
+      /*
+       * Тип без байтов: у звука и видео его называет Telegram или наше
+       * умолчание по роду, и сигнатуре тут решать нечего.
+       *
+       * Кусок отдаётся как кусок в любом случае — и когда тела в ответе
+       * нет: уйдя отсюда дальше, он был бы посчитан целым файлом, и
+       * плеер получил бы его длину вместо длины записи.
+       */
+      return new Response(file.body ?? (await file.arrayBuffer()), {
+        status: 206,
+        headers: {
+          ...attachmentHeaders(attachment, EMPTY_HEAD),
+          ...rangeHeadersOf(file.headers),
+        },
+      });
+    }
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const piece = sliceRange(bytes, range, streamsRange(attachment.kind));
+    return new Response(piece.body, {
+      status: piece.status,
+      headers: { ...attachmentHeaders(attachment, bytes.subarray(0, 16)), ...piece.headers },
     });
   } catch (error) {
     return errorResponse(error);

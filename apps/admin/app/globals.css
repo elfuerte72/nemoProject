@@ -2685,6 +2685,34 @@ select.input {
   outline-offset: -1px;
 }
 
+/*
+ * Файл, который не картинка: строка с именем и размером. Ссылка —
+ * золотом, как всё, что нажимают; звук и видео играют в пузыре, а
+ * недоступный файл приглушён и не ссылка.
+ */
+.bubble__file {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+.bubble__file--media,
+.bubble__file--off {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+/* Звук и видео — на ширину пузыря, но не шире чека. */
+.bubble__media {
+  width: 100%;
+  max-width: 320px;
+  border-radius: 10px;
+}
+
 .bubble__meta {
   font-size: 11px;
   color: var(--text-muted);

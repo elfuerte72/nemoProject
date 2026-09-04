@@ -301,3 +301,41 @@ describe('renderNotification: клиенту', () => {
     );
   });
 });
+
+/*
+ * Вложение — своей строкой после слов клиента: «вот чек» без имени файла
+ * не говорит, что чек уже пришёл. Клиенту о файле сверх предела
+ * говорится готовым текстом — без чисел, кроме самого предела.
+ */
+describe('renderNotification: вложение', () => {
+  it('сотруднику — отдельной строкой после цитаты', () => {
+    expect(
+      renderNotification({
+        kind: 'staff-client-message',
+        to: 1n,
+        clientId: 2n,
+        clientUsername: 'ivan',
+        topic: null,
+        preview: 'вот чек',
+        attachment: 'файл чек <март>.pdf (240 КБ)',
+      }).text,
+    ).toBe(
+      '<b>Новое обращение</b>\n' +
+        '<a href="https://t.me/ivan">@ivan</a> · ID 2\n' +
+        '<blockquote>вот чек</blockquote>\n' +
+        'Вложение: файл чек &lt;март&gt;.pdf (240 КБ)\n' +
+        '#поддержка',
+    );
+  });
+
+  it('клиенту — что файл больше предела и что сделать вместо', () => {
+    const { text, parseMode } = renderNotification({
+      kind: 'client-attachment-too-large',
+      to: 1n,
+    });
+
+    expect(parseMode).toBeUndefined();
+    expect(text).toContain('20 МБ');
+    expect(text).toMatch(/снимк|скриншот/i);
+  });
+});

@@ -203,7 +203,7 @@ describe('эскалация', () => {
     await core.registerClient({ telegramUserId: 100n });
     await core.receiveClientMessage({
       telegramUserId: 100n,
-      attachmentFileId: 'AgACAgIAAxkBAAI',
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
     });
 
     await core.answerAsConcierge({ telegramUserId: 100n });
@@ -243,7 +243,7 @@ describe('эскалация', () => {
     await core.registerClient({ telegramUserId: 100n });
     await core.receiveClientMessage({
       telegramUserId: 100n,
-      attachmentFileId: 'AgACAgIAAxkBAAI',
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
     });
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'вот, оплатил' });
 
@@ -630,3 +630,51 @@ async function isHandedToHuman(
   const conversations = await core.listConversations(manager);
   return conversations.find((one) => one.clientId === clientId)?.handedToHuman ?? false;
 }
+
+/*
+ * Что именно прислали, менеджер читает в заголовке уведомления: «клиент
+ * прислал файл чек.pdf» отвечает на вопрос «что случилось» раньше, чем
+ * он откроет переписку. Файл сверх предела Telegram клиенту называется
+ * сразу — ждать ответа помощника ради этого незачем, а сам разговор
+ * уходит человеку, как с любым вложением.
+ */
+describe('файл клиента', () => {
+  const receipt = {
+    fileId: 'BQACAgIAAxkBAAIC',
+    kind: 'document' as const,
+    mime: 'application/pdf',
+    name: 'чек.pdf',
+    size: 245_760,
+  };
+
+  it('называет менеджеру, что прислали', async () => {
+    const model = givenModel(SIMPLE);
+    const core = coreWith(model);
+    await core.registerClient({ telegramUserId: 100n });
+    await core.receiveClientMessage({ telegramUserId: 100n, attachment: receipt });
+
+    await core.answerAsConcierge({ telegramUserId: 100n });
+    const [alert] = await core.takeStaffAlerts(new Date());
+
+    expect(model.calls).toEqual([]);
+    expect(alert).toMatchObject({
+      kind: 'staff-escalation',
+      reason: 'клиент прислал файл чек.pdf (240 КБ)',
+      preview: 'Файл чек.pdf (240 КБ)',
+    });
+  });
+
+  it('о файле сверх предела говорит сразу, не дожидаясь помощника', async () => {
+    const core = coreWith(givenModel(SIMPLE));
+    await core.registerClient({ telegramUserId: 100n });
+
+    const { notifications } = await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { ...receipt, size: 30 * 1024 * 1024 },
+    });
+
+    // Подтверждения приёма нет — за сообщение взялся помощник; предел
+    // назван всё равно: он не ответ, а факт о файле.
+    expect(notifications.map((one) => one.kind)).toEqual(['client-attachment-too-large']);
+  });
+});

@@ -9,6 +9,7 @@ import {
 } from '@nemo/db';
 import { parsePromptPay, type PromptPayIdType, type RequisiteKind } from '@nemo/types';
 import { requireAdmin, requireStaff, type Actor } from './actor.js';
+import { isDownloadable, type AttachmentKind } from './attachments.js';
 import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
 import { ForbiddenError, NotFoundError } from './errors.js';
 import { describeRequisites } from './requisites.js';
@@ -21,11 +22,20 @@ import { describeRequisites } from './requisites.js';
  * — сотрудник с доступом к админке видит чужие номера карт, и должно
  * оставаться, кто и когда их видел.
  *
- * Запись в журнал идёт в той же транзакции, что и чтение, и вызывающая
- * сторона не может её пропустить: расшифрованный номер возвращается
- * только после того, как строка журнала записана. Отдельная операция
- * «записать в журнал», которую можно не позвать, держалась бы на памяти
- * того, кто пишет следующий экран.
+ * У реквизитов запись в журнал идёт в той же транзакции, что и чтение, и
+ * вызывающая сторона не может её пропустить: расшифрованный номер
+ * возвращается только после того, как строка журнала записана. Отдельная
+ * операция «записать в журнал», которую можно не позвать, держалась бы на
+ * памяти того, кто пишет следующий экран.
+ *
+ * У файла из переписки иначе, и это стоило отдельного решения: между
+ * описанием файла и его выдачей стоит поход к Telegram, а тот хранит
+ * файлы не вечно — запись, сделанная до похода, говорила бы о просмотре,
+ * которого не было. Поэтому операций две, и порядок держит единственный
+ * зовущий их маршрут: описание, ответ Telegram, запись, тело. Цена
+ * известна и принята: `describeMessageAttachment` отдаёт идентификатор
+ * файла без следа, и не позвать за ней запись — ошибка, которую поймает
+ * только ревью.
  *
  * Журнал только на чтение и только администратору: правки в нём не
  * предусмотрены, а менеджер — тот, за кем он ведётся.
@@ -99,49 +109,124 @@ export async function logRequisiteAccess(
   });
 }
 
+/** Окно, внутри которого повторное обращение к тому же файлу — тот же просмотр. */
+export const ATTACHMENT_VIEW_WINDOW_MS = 5 * 60 * 1000;
+
 /**
  * Вложение, присланное клиентом, — менеджеру, который его открывает.
  *
- * Возвращается идентификатор файла у Telegram: сам файл сервис не
- * хранит, панель подтягивает изображение по нему клиентским токеном.
- * Обращение попадает в тот же журнал, что и чтение номера карты, и в
- * той же транзакции: на скриншоте перевода видно и счёт, и имя, и след
- * от просмотра нужен по той же причине.
+ * Отдаётся идентификатор файла у Telegram и его описание: сам файл сервис
+ * не хранит, панель забирает его по идентификатору клиентским токеном, а
+ * по описанию решает, под каким именем и типом отдать. Файл сверх предела
+ * Telegram не открывается вовсе.
  *
- * Без открытия изображения записи не появляется: операцию зовёт ровно
- * тот маршрут, который отдаёт файл.
+ * Следа эта операция не оставляет — его ставит `logMessageAttachmentView`
+ * тогда, когда файл действительно уходит менеджеру: между описанием и
+ * выдачей стоит поход к Telegram, а тот хранит файлы не вечно, и запись о
+ * просмотре пропавшего файла говорила бы администратору неправду о том,
+ * кто что видел. Обе операции зовёт ровно один маршрут — тот, который
+ * файл отдаёт, — и порядок у него обратный: сперва запись, потом тело.
  */
-export async function revealMessageAttachment(
+export interface RevealedAttachment {
+  readonly fileId: string;
+  readonly kind: AttachmentKind;
+  readonly mime: string | null;
+  readonly name: string | null;
+  readonly size: number | null;
+}
+
+export async function describeMessageAttachment(
   ctx: CoreConfig,
   actor: Actor,
   messageId: string,
-): Promise<string> {
+): Promise<RevealedAttachment> {
+  requireStaff(actor);
+
+  const [row] = await ctx.db
+    .select({
+      attachmentFileId: clientMessages.attachmentFileId,
+      attachmentKind: clientMessages.attachmentKind,
+      attachmentMime: clientMessages.attachmentMime,
+      attachmentName: clientMessages.attachmentName,
+      attachmentSize: clientMessages.attachmentSize,
+    })
+    .from(clientMessages)
+    .where(eq(clientMessages.id, messageId))
+    .limit(1);
+
+  if (!row) {
+    throw new NotFoundError('Сообщение не найдено');
+  }
+  if (!row.attachmentFileId || !row.attachmentKind) {
+    throw new NotFoundError('К сообщению не приложен файл');
+  }
+  if (!isDownloadable(row.attachmentSize)) {
+    throw new NotFoundError('Файл больше предела Telegram, и скачать его нельзя');
+  }
+
+  return {
+    fileId: row.attachmentFileId,
+    kind: row.attachmentKind,
+    mime: row.attachmentMime,
+    name: row.attachmentName,
+    size: row.attachmentSize,
+  };
+}
+
+/**
+ * Просмотр файла — в тот же журнал, что и чтение номера карты: на
+ * скриншоте перевода и в чеке видно и счёт, и имя, и след от просмотра
+ * нужен по той же причине.
+ *
+ * Один просмотр — одна запись, даже когда файл забирают кусками: плеер
+ * просит голосовое заголовком Range и приходит за ним по три-пять раз, а
+ * журнал отвечает на вопрос «кто и что смотрел», и пятикратная запись
+ * одного прослушивания этот ответ портит. Поэтому повтор того же
+ * сотрудника по тому же сообщению в пределах окна следа не оставляет;
+ * первое обращение записывается всегда, и обойти журнал, попросив файл
+ * кусками, нельзя.
+ */
+export async function logMessageAttachmentView(
+  ctx: CoreConfig,
+  actor: Actor,
+  messageId: string,
+): Promise<void> {
   const staffActor = requireStaff(actor);
 
-  return ctx.db.transaction(async (tx) => {
+  await ctx.db.transaction(async (tx) => {
     const [row] = await tx
-      .select({
-        clientId: clientMessages.clientId,
-        attachmentFileId: clientMessages.attachmentFileId,
-      })
+      .select({ clientId: clientMessages.clientId })
       .from(clientMessages)
       .where(eq(clientMessages.id, messageId))
       .limit(1);
-
     if (!row) {
       throw new NotFoundError('Сообщение не найдено');
     }
-    if (!row.attachmentFileId) {
-      throw new NotFoundError('К сообщению не приложено изображение');
-    }
+
+    /*
+     * Два куска, пришедших одновременно, оба могут не найти записи и оба
+     * её вставить: блокировки тут нет намеренно — цена ошибки лишняя
+     * строка в журнале, а цена блокировки — очередь из плееров на каждом
+     * куске файла.
+     */
+    const [recent] = await tx
+      .select({ id: requisiteAccessLog.id })
+      .from(requisiteAccessLog)
+      .where(
+        and(
+          eq(requisiteAccessLog.staffId, staffActor.staffId),
+          eq(requisiteAccessLog.messageId, messageId),
+          gte(requisiteAccessLog.accessedAt, new Date(Date.now() - ATTACHMENT_VIEW_WINDOW_MS)),
+        ),
+      )
+      .limit(1);
+    if (recent) return;
 
     await logRequisiteAccess(tx, {
       staffId: staffActor.staffId,
       clientId: row.clientId,
       messageId,
     });
-
-    return row.attachmentFileId;
   });
 }
 

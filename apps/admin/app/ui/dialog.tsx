@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import type { MessageView } from '@nemo/core';
+import type { MessageAttachmentView, MessageView } from '@nemo/core';
+import {
+  ATTACHMENT_DOWNLOAD_LIMIT_BYTES,
+  attachmentWords,
+  capitalize,
+  formatFileSize,
+  looksLikeImage,
+} from '@nemo/types';
 import { dayKey, formatDayHeading } from '@/lib/format';
 import { Moment, useBrowserZone } from '@/app/ui/moment';
 
@@ -119,7 +126,9 @@ export function Dialog({
                     .join(' ')}
                 >
                   {message.body ? <span className="bubble__text">{message.body}</span> : undefined}
-                  {message.hasAttachment ? <Attachment messageId={message.id} /> : undefined}
+                  {message.attachment ? (
+                    <Attachment messageId={message.id} attachment={message.attachment} />
+                  ) : undefined}
                   <span className="bubble__meta">
                     {message.direction === 'outgoing' ? authorOf(message) : ''}
                     <Moment at={at.toISOString()} mode="time" />
@@ -183,27 +192,109 @@ function authorOf(message: MessageView): string {
 }
 
 /**
- * Изображение из переписки.
+ * Вложение в переписке — по роду.
  *
- * Подтягивается по требованию и клиентским токеном: на дисках сервиса
- * чужих чеков нет, а каждый просмотр попадает в журнал доступа.
+ * Картинка показывается в пузыре: чек читают, а не разглядывают. PDF и
+ * прочие документы — строкой с именем и размером: PDF откроется в
+ * соседней вкладке, остальное скачается под своим именем. Звук и видео
+ * играют в пузыре и не грузятся до нажатия: каждое обращение за файлом
+ * пишется в журнал доступа, и загрузка «на всякий случай» писала бы
+ * туда просмотр, которого не было.
  *
- * Telegram хранит файлы не вечно, и недоступное вложение показывается
- * отсутствующим: битая картинка читалась бы как «оно есть, но панель
- * сломалась».
+ * Картинки грузятся, когда доезжают до экрана, а не при открытии
+ * переписки: каждое обращение за файлом пишется в журнал доступа, и
+ * разговор с восемью скриншотами оставлял бы восемь просмотров, ни на
+ * один из которых менеджер не смотрел.
+ *
+ * Файл подтягивается по требованию и клиентским токеном: на дисках
+ * сервиса чужих чеков нет. Не показалось — ссылкой, а не словом
+ * «недоступно»: формат, которого браузер не знает (HEIC с iPhone), и
+ * файл, которого у Telegram больше нет, с экрана неотличимы, а ссылка
+ * честна в обоих случаях — по ней либо скачается файл, либо придёт
+ * ответ, что его нет. Файл сверх предела Telegram не откроется вовсе,
+ * и это сказано до нажатия.
  */
-function Attachment({ messageId }: { readonly messageId: string }) {
-  const [missing, setMissing] = useState(false);
+function Attachment({
+  messageId,
+  attachment,
+}: {
+  readonly messageId: string;
+  readonly attachment: MessageAttachmentView;
+}) {
+  const [failed, setFailed] = useState(false);
+  const href = `/api/conversations/attachments/${messageId}`;
+  const title = attachmentTitle(attachment);
 
-  if (missing) {
-    return <span className="bubble__meta">Изображение недоступно у Telegram</span>;
+  if (!attachment.downloadable) {
+    return (
+      <span className="bubble__file bubble__file--off">
+        {title} · больше {formatFileSize(ATTACHMENT_DOWNLOAD_LIMIT_BYTES)}, Telegram его не отдаёт
+      </span>
+    );
   }
+  if (failed) {
+    return <FileLink href={href}>{title} · не показалось, открыть файлом</FileLink>;
+  }
+
+  const fail = () => setFailed(true);
+  switch (attachment.kind) {
+    case 'photo':
+      return (
+        <img
+          className="bubble__image"
+          src={href}
+          alt={title}
+          loading="lazy"
+          decoding="async"
+          onError={fail}
+        />
+      );
+    case 'voice':
+    case 'audio':
+      return (
+        <span className="bubble__file bubble__file--media">
+          <audio className="bubble__media" controls preload="none" src={href} onError={fail} />
+          <span>{title}</span>
+        </span>
+      );
+    case 'video':
+    case 'video_note':
+      return (
+        <span className="bubble__file bubble__file--media">
+          <video className="bubble__media" controls preload="none" src={href} onError={fail} />
+          <span>{title}</span>
+        </span>
+      );
+    case 'document':
+      // Скриншот «как файл» — тоже картинка, если браузер её нарисует.
+      // Тип у него бывает любым — «image/jpg», «octet-stream», — и
+      // потому смотрится ещё и имя; ошибка в эту сторону стоит одной
+      // ссылки взамен рисунка, а не потерянного чека.
+      return looksLikeImage(attachment.mime, attachment.name) ? (
+        <img
+          className="bubble__image"
+          src={href}
+          alt={title}
+          loading="lazy"
+          decoding="async"
+          onError={fail}
+        />
+      ) : (
+        <FileLink href={href}>{title}</FileLink>
+      );
+  }
+}
+
+function FileLink({ href, children }: { readonly href: string; readonly children: ReactNode }) {
   return (
-    <img
-      className="bubble__image"
-      src={`/api/conversations/attachments/${messageId}`}
-      alt="Вложение от клиента"
-      onError={() => setMissing(true)}
-    />
+    <a className="bubble__file" href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
   );
+}
+
+/** «чек.pdf · 240 КБ»: имя, если Telegram его дал, иначе род; размер — когда известен. */
+function attachmentTitle(attachment: MessageAttachmentView): string {
+  const name = attachment.name ?? capitalize(attachmentWords[attachment.kind]);
+  return attachment.size === null ? name : `${name} · ${formatFileSize(attachment.size)}`;
 }

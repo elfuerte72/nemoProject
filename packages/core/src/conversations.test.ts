@@ -1,7 +1,13 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { clientMessages } from '@nemo/db';
+import { clientMessages, requisiteAccessLog } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
-import { createCore, ForbiddenError, InvalidInputError, type Actor } from './index.js';
+import {
+  ATTACHMENT_VIEW_WINDOW_MS,
+  createCore,
+  ForbiddenError,
+  InvalidInputError,
+  type Actor,
+} from './index.js';
 import { asClient, givenStaff } from './test-support.js';
 
 /**
@@ -26,6 +32,13 @@ beforeEach(async () => {
 
 afterAll(() => closeTestDatabase());
 
+/** Состарить журнал: столько прошло с последнего просмотра. */
+async function agedAccessLog(ms: number): Promise<void> {
+  await db
+    .update(requisiteAccessLog)
+    .set({ accessedAt: new Date(Date.now() - ms) });
+}
+
 describe('сообщение клиента', () => {
   it('сохраняется входящим и появляется в переписке', async () => {
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'Когда придут деньги?' });
@@ -45,12 +58,12 @@ describe('сообщение клиента', () => {
   it('принимает вложение без текста: скриншот вместо объяснения', async () => {
     await core.receiveClientMessage({
       telegramUserId: 100n,
-      attachmentFileId: 'AgACAgIAAxkBAAI',
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
     });
 
     const [message] = await core.listConversation(manager, 100n);
 
-    expect(message).toMatchObject({ hasAttachment: true, body: null });
+    expect(message).toMatchObject({ attachment: { kind: 'photo', downloadable: true }, body: null });
   });
 
   it('не сохраняет пустое сообщение', async () => {
@@ -222,34 +235,173 @@ describe('вложение', () => {
     const admin = await givenStaff({ role: 'admin' });
     await core.receiveClientMessage({
       telegramUserId: 100n,
-      attachmentFileId: 'AgACAgIAAxkBAAI',
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
     });
     const [message] = await core.listConversation(manager, 100n);
 
-    const fileId = await core.revealMessageAttachment(manager, message!.id);
+    // Тем же путём, каким идёт маршрут: описание, затем запись о просмотре.
+    const revealed = await core.describeMessageAttachment(manager, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
 
-    expect(fileId).toBe('AgACAgIAAxkBAAI');
+    expect(revealed).toMatchObject({ fileId: 'AgACAgIAAxkBAAI', kind: 'photo' });
     const log = await core.listRequisiteAccessLog(admin);
     expect(log).toHaveLength(1);
     expect(log[0]).toMatchObject({ clientId: 100n, messageId: message!.id });
+  });
+
+  it('описание файла само по себе следа не оставляет: файла ещё не видели', async () => {
+    // Между «дай описание» и «отдай файл» стоит поход к Telegram, и
+    // файла у него может уже не быть. Запись о просмотре ставит тот,
+    // кто файл отдал.
+    const admin = await givenStaff({ role: 'admin' });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
+    });
+    const [message] = await core.listConversation(manager, 100n);
+
+    await core.describeMessageAttachment(manager, message!.id);
+
+    expect(await core.listRequisiteAccessLog(admin)).toEqual([]);
+  });
+
+  it('плеер, дочитывающий файл кусками, не плодит записей в журнале', async () => {
+    // Safari просит голосовое по частям заголовком Range, и каждая
+    // часть проходит через операцию. Журнал отвечает на вопрос «кто и
+    // что смотрел», а не «сколько кусков забрал».
+    const admin = await givenStaff({ role: 'admin' });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'AwACAgIAAxkBAAID', kind: 'voice', mime: 'audio/ogg', size: 61_000 },
+    });
+    const [message] = await core.listConversation(manager, 100n);
+
+    await core.logMessageAttachmentView(manager, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
+    await core.logMessageAttachmentView(manager, message!.id);
+
+    expect(await core.listRequisiteAccessLog(admin)).toHaveLength(1);
+  });
+
+  it('открытое заново спустя время — новый просмотр', async () => {
+    const admin = await givenStaff({ role: 'admin' });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
+    });
+    const [message] = await core.listConversation(manager, 100n);
+    await core.logMessageAttachmentView(manager, message!.id);
+    await agedAccessLog(ATTACHMENT_VIEW_WINDOW_MS + 60_000);
+
+    await core.logMessageAttachmentView(manager, message!.id);
+
+    expect(await core.listRequisiteAccessLog(admin)).toHaveLength(2);
+  });
+
+  it('второй сотрудник записывается своим просмотром', async () => {
+    const admin = await givenStaff({ role: 'admin', telegramUserId: 907n });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
+    });
+    const [message] = await core.listConversation(manager, 100n);
+
+    await core.logMessageAttachmentView(manager, message!.id);
+    await core.logMessageAttachmentView(admin, message!.id);
+
+    expect(await core.listRequisiteAccessLog(admin)).toHaveLength(2);
   });
 
   it('не оставляет следа, пока его не открыли', async () => {
     const admin = await givenStaff({ role: 'admin' });
     await core.receiveClientMessage({
       telegramUserId: 100n,
-      attachmentFileId: 'AgACAgIAAxkBAAI',
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
     });
 
     expect(await core.listRequisiteAccessLog(admin)).toEqual([]);
   });
 
-  it('не открывается у сообщения без изображения', async () => {
+  it('не открывается у сообщения без файла', async () => {
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'Просто текст' });
     const [message] = await core.listConversation(manager, 100n);
 
-    await expect(core.revealMessageAttachment(manager, message!.id)).rejects.toThrow(
-      /изображени/i,
+    await expect(core.describeMessageAttachment(manager, message!.id)).rejects.toThrow(
+      /не приложен/i,
     );
+  });
+});
+
+/*
+ * Файл, а не только фото: чек уходит PDF, скриншот — «как файл», и до
+ * 4 сентября 2026 такое сообщение бот терял молча. Менеджеру файл
+ * описан именем, типом и размером; предел скачивания у Telegram —
+ * 20 МБ, и файл сверх него называется недоступным сразу, а не битой
+ * ссылкой при открытии.
+ */
+describe('файл клиента', () => {
+  const receipt = {
+    fileId: 'BQACAgIAAxkBAAIC',
+    kind: 'document' as const,
+    mime: 'application/pdf',
+    name: 'чек.pdf',
+    size: 245_760,
+  };
+
+  it('описан менеджеру именем, типом и размером', async () => {
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'вот чек', attachment: receipt });
+    const [message] = await core.listConversation(manager, 100n);
+
+    expect(message!.attachment).toEqual({
+      kind: 'document',
+      mime: 'application/pdf',
+      name: 'чек.pdf',
+      size: 245_760,
+      downloadable: true,
+    });
+    expect(await core.describeMessageAttachment(manager, message!.id)).toEqual(receipt);
+  });
+
+  it('больше предела Telegram: клиенту говорится сразу, менеджеру недоступен', async () => {
+    const admin = await givenStaff({ role: 'admin' });
+
+    const { notifications } = await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'BAACAgIAAxkBAAID', kind: 'video', mime: 'video/mp4', size: 25 * 1024 * 1024 },
+    });
+
+    expect(notifications.map((one) => one.kind)).toEqual([
+      'client-attachment-too-large',
+      'client-message-received',
+    ]);
+    const [message] = await core.listConversation(manager, 100n);
+    expect(message!.attachment).toMatchObject({ kind: 'video', downloadable: false });
+    await expect(core.describeMessageAttachment(manager, message!.id)).rejects.toThrow(/предел/i);
+    // Открытия не было — и следа в журнале нет.
+    expect(await core.listRequisiteAccessLog(admin)).toEqual([]);
+  });
+
+  it('в списке обращений вложение без подписи названо словом', async () => {
+    await core.receiveClientMessage({ telegramUserId: 100n, attachment: receipt });
+
+    const [conversation] = await core.listConversations(manager);
+
+    expect(conversation).toMatchObject({
+      lastMessageBody: null,
+      lastAttachment: 'Файл чек.pdf (240 КБ)',
+    });
+  });
+
+  it('в уведомлении сотруднику файл назван рядом со словами клиента', async () => {
+    await givenStaff({ displayName: 'Анна', telegramUserId: 905n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'вот чек', attachment: receipt });
+
+    const [alert] = await core.takeStaffAlerts(new Date());
+
+    expect(alert).toMatchObject({
+      kind: 'staff-client-message',
+      preview: 'вот чек',
+      attachment: 'файл чек.pdf (240 КБ)',
+    });
   });
 });

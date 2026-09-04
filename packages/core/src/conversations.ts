@@ -5,6 +5,14 @@ import { conciergeTakesOver } from './concierge.js';
 import type { CoreConfig } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import { generateReferralCode } from './referral-code.js';
+import {
+  attachmentFactsOf,
+  attachmentViewOf,
+  isDownloadable,
+  staffPreview,
+  type MessageAttachmentInput,
+  type MessageAttachmentView,
+} from './attachments.js';
 import type { InquiryTopic } from './inquiries.js';
 import type { Notification } from './notifications.js';
 
@@ -37,8 +45,8 @@ export interface MessageView {
    */
   readonly topic: InquiryTopic | null;
   readonly body: string | null;
-  /** Есть ли вложение. Само изображение панель подтягивает отдельно. */
-  readonly hasAttachment: boolean;
+  /** Вложение описанием — род, имя, размер. Сам файл панель подтягивает отдельно. */
+  readonly attachment: MessageAttachmentView | null;
   /** Кто из сотрудников ответил. Пусто у входящих и у ответов консьержа. */
   readonly authorStaffId: string | null;
   readonly authorName: string | null;
@@ -57,6 +65,8 @@ export interface ConversationView {
   readonly username: string | null;
   readonly lastMessageAt: Date;
   readonly lastMessageBody: string | null;
+  /** Вложение последнего сообщения словами: у файла без подписи иначе пустая строка. */
+  readonly lastAttachment: string | null;
   /** Последнее сообщение — входящее: клиент ждёт ответа. */
   readonly isUnanswered: boolean;
   /**
@@ -86,8 +96,8 @@ export interface ConversationView {
 export interface ReceiveMessageInput {
   readonly telegramUserId: bigint;
   readonly body?: string | undefined;
-  /** Идентификатор файла у Telegram. Сам файл сервис не скачивает. */
-  readonly attachmentFileId?: string | undefined;
+  /** Файл — идентификатором у Telegram и описанием. Сам файл сервис не скачивает. */
+  readonly attachment?: MessageAttachmentInput | undefined;
   readonly username?: string | undefined;
   /** О чём просьба. Ставит её `submitInquiry`; обычное сообщение темы не имеет. */
   readonly topic?: InquiryTopic | undefined;
@@ -113,7 +123,7 @@ function toView(row: MessageRow, authorName: string | null = null): MessageView 
     direction: row.direction,
     topic: row.topic,
     body: row.body,
-    hasAttachment: row.attachmentFileId !== null,
+    attachment: attachmentViewOf(row),
     authorStaffId: row.authorStaffId,
     authorName,
     byConcierge: row.authoredByConcierge,
@@ -149,7 +159,7 @@ export async function receiveClientMessage(
   input: ReceiveMessageInput,
 ): Promise<ReceiveMessageResult> {
   const body = input.body?.trim() || undefined;
-  if (!body && !input.attachmentFileId) {
+  if (!body && !input.attachment) {
     throw new InvalidInputError('Пустое сообщение');
   }
 
@@ -210,13 +220,28 @@ export async function receiveClientMessage(
         direction: 'incoming',
         topic: input.topic ?? null,
         body: body ?? null,
-        attachmentFileId: input.attachmentFileId ?? null,
+        attachmentFileId: input.attachment?.fileId ?? null,
+        attachmentKind: input.attachment?.kind ?? null,
+        attachmentMime: input.attachment?.mime ?? null,
+        attachmentName: input.attachment?.name ?? null,
+        attachmentSize: input.attachment?.size ?? null,
         conciergeOutcome: takenByConcierge ? 'pending' : null,
       })
       .returning();
 
+    /*
+     * Файл сверх предела Telegram называется клиенту сразу и всегда — и
+     * тогда, когда за сообщение берётся консьерж: это не ответ на
+     * вопрос, а факт о файле, и ждать его от менеджера через час
+     * значит ждать чек, который тот всё равно не откроет.
+     */
+    const tooLarge: Notification[] =
+      input.attachment && !isDownloadable(input.attachment.size ?? null)
+        ? [{ kind: 'client-attachment-too-large', to: input.telegramUserId }]
+        : [];
+
     if (takenByConcierge) {
-      return { message: toView(row!), notifications: [] };
+      return { message: toView(row!), notifications: tooLarge };
     }
 
     // Право на подтверждение занимается условно: если в текущей череде
@@ -241,9 +266,12 @@ export async function receiveClientMessage(
 
     return {
       message: toView(row!),
-      notifications: claimed
-        ? [{ kind: 'client-message-received' as const, to: input.telegramUserId }]
-        : [],
+      notifications: [
+        ...tooLarge,
+        ...(claimed
+          ? [{ kind: 'client-message-received' as const, to: input.telegramUserId }]
+          : []),
+      ],
     };
   });
 }
@@ -386,6 +414,9 @@ export async function listConversations(
         clientId: clientMessages.clientId,
         direction: clientMessages.direction,
         body: clientMessages.body,
+        attachmentKind: clientMessages.attachmentKind,
+        attachmentName: clientMessages.attachmentName,
+        attachmentSize: clientMessages.attachmentSize,
         createdAt: clientMessages.createdAt,
         seq: clientMessages.seq,
         authorStaffId: clientMessages.authorStaffId,
@@ -401,6 +432,9 @@ export async function listConversations(
       username: clients.username,
       lastMessageAt: last.createdAt,
       lastMessageBody: last.body,
+      attachmentKind: last.attachmentKind,
+      attachmentName: last.attachmentName,
+      attachmentSize: last.attachmentSize,
       direction: last.direction,
       // Кто ответил последним. В списке это отличает разобранный
       // разговор от того, до которого никто не дошёл: очередь общая, и
@@ -420,11 +454,16 @@ export async function listConversations(
     // сообщение: время двух записей в одну миллисекунду не разводит.
     .orderBy(sql`${last.direction} = 'incoming' desc`, desc(last.seq));
 
-  return rows.map(({ direction, handedToHumanAt, ...row }) => ({
-    ...row,
-    isUnanswered: direction === 'incoming',
-    handedToHuman: handedToHumanAt !== null,
-  }));
+  return rows.map(
+    ({ direction, handedToHumanAt, attachmentKind, attachmentName, attachmentSize, ...row }) => ({
+      ...row,
+      lastAttachment:
+        staffPreview(null, attachmentFactsOf({ attachmentKind, attachmentName, attachmentSize }))
+          .preview || null,
+      isUnanswered: direction === 'incoming',
+      handedToHuman: handedToHumanAt !== null,
+    }),
+  );
 }
 
 /**
@@ -539,7 +578,7 @@ export async function takeStaffNotifications(
               clientId: message.clientId,
               clientUsername: usernames.get(message.clientId) ?? null,
               topic: message.topic,
-              preview: message.body ?? 'Изображение',
+              ...staffPreview(message.body, attachmentFactsOf(message)),
             }
           : {
               kind: 'staff-escalation',
@@ -547,7 +586,7 @@ export async function takeStaffNotifications(
               clientId: message.clientId,
               clientUsername: usernames.get(message.clientId) ?? null,
               reason: message.escalationReason,
-              preview: message.body ?? 'Изображение',
+              ...staffPreview(message.body, attachmentFactsOf(message)),
             },
       ),
     );

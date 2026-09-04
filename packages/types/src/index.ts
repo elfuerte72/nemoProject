@@ -1,3 +1,4 @@
+export * from './attachments.js';
 export * from './domain.js';
 export * from './fee.js';
 export * as Money from './money.js';

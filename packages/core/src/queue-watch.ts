@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { attachmentFactsOf, staffPreview } from './attachments.js';
 import { clientMessages, clients, exchangeRequests, staff } from '@nemo/db';
 import type { CoreConfig } from './context.js';
 import type { Notification } from './notifications.js';
@@ -179,7 +180,7 @@ async function remindAboutWaitingClients(
         to: recipient.telegramUserId,
         clientId: row.clientId,
         clientUsername: usernames.get(row.clientId) ?? null,
-        preview: row.body ?? 'Изображение',
+        ...staffPreview(row.body, attachmentFactsOf(row)),
         waitingMinutes: waitedMinutes(row.createdAt, at),
       }),
     ),

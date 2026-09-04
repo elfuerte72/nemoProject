@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import {
+  clientMessages,
   clientRequisites,
   clients,
   currencies,
@@ -509,5 +510,53 @@ describe('сетка комиссии', () => {
     await db.delete(feeSchedules).where(eq(feeSchedules.id, scheduleId));
 
     expect(await db.select().from(feeScheduleTiers)).toHaveLength(0);
+  });
+});
+
+/*
+ * Вложение описано целиком или отсутствует целиком: имя и размер без
+ * файла — мусор, файл без рода — панель не знает, как его показать.
+ * Ограничение здесь, а не в операции: строку в ленту пишет не она одна.
+ */
+describe('сообщение клиента', () => {
+  it('не держит файл без рода', async () => {
+    await insertClient(1n);
+
+    await expect(
+      db.insert(clientMessages).values({
+        clientId: 1n,
+        direction: 'incoming',
+        attachmentFileId: 'BQACAgIAAxkBAAIC',
+      }),
+    ).rejects.toThrow(/client_messages_attachment_described/);
+  });
+
+  it('не держит описание без файла', async () => {
+    await insertClient(1n);
+
+    await expect(
+      db.insert(clientMessages).values({
+        clientId: 1n,
+        direction: 'incoming',
+        body: 'вот чек',
+        attachmentName: 'чек.pdf',
+      }),
+    ).rejects.toThrow(/client_messages_attachment_described/);
+  });
+
+  it('держит файл с родом и описанием', async () => {
+    await insertClient(1n);
+
+    await expect(
+      db.insert(clientMessages).values({
+        clientId: 1n,
+        direction: 'incoming',
+        attachmentFileId: 'BQACAgIAAxkBAAIC',
+        attachmentKind: 'document',
+        attachmentMime: 'application/pdf',
+        attachmentName: 'чек.pdf',
+        attachmentSize: 245_760,
+      }),
+    ).resolves.toBeDefined();
   });
 });

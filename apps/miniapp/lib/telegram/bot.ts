@@ -1,6 +1,11 @@
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { Money } from '@nemo/types';
-import { CONCIERGE_QUIET_MS, renderNotification, type RenderedNotification } from '@nemo/core';
+import {
+  CONCIERGE_QUIET_MS,
+  renderNotification,
+  type MessageAttachmentInput,
+  type RenderedNotification,
+} from '@nemo/core';
 import { getCore } from '@/lib/core';
 import { referralLink } from '@/lib/referral';
 import { nudgeStaffAlerts } from '@/lib/staff-alert';
@@ -9,6 +14,7 @@ import {
   renderRatesMessage,
   type QuotedPair,
 } from './rates-message';
+import { attachmentOf } from './attachments';
 
 /**
  * Бот — точка входа, главное меню и канал уведомлений.
@@ -139,6 +145,28 @@ export function getBot(): Bot {
     await ctx.reply(getCore().getBotText('support'), WITHOUT_OLD_KEYBOARD);
   }
 
+  /*
+   * Файл любого рода — PDF-чек, скриншот «как файл», голосовое. До
+   * 4 сентября 2026 бот слушал только фото, и документ терялся молча:
+   * без записи, без подтверждения, без уведомления сотрудникам.
+   * Наклейку файлом не считаем — ответа на неё не ждут, и она уходит
+   * дальше по цепочке.
+   *
+   * Стоит раньше меню намеренно: grammY ищет слова кнопок и в подписи
+   * тоже (`hears` смотрит `message.caption`), и чек, подписанный словом
+   * «Поддержка», уходил бы в меню — то есть терялся ровно так, как
+   * терялся документ. Порядок закреплён тестом: перестановка строк
+   * ломает это молча.
+   */
+  bot.on('message:file', (ctx, next) => {
+    const attachment = attachmentOf(ctx.message);
+    if (!attachment) return next();
+    return receive(ctx, {
+      ...(ctx.message.caption === undefined ? {} : { body: ctx.message.caption }),
+      attachment,
+    });
+  });
+
   bot.command('start', greet);
   // Меню отдельной командой: сообщение с кнопками уходит вверх
   // переписки, и звать его перезапуском бота — не то, чего клиент ждёт
@@ -183,16 +211,6 @@ export function getBot(): Bot {
    */
   bot.on('message:text', (ctx) => receive(ctx, { body: ctx.message.text }));
 
-  bot.on('message:photo', (ctx) => {
-    // Берётся самый крупный размер: Telegram присылает лесенку, и
-    // менеджеру нужен тот, на котором видно сумму перевода.
-    const largest = ctx.message.photo.at(-1);
-    return receive(ctx, {
-      ...(ctx.message.caption === undefined ? {} : { body: ctx.message.caption }),
-      ...(largest === undefined ? {} : { attachmentFileId: largest.file_id }),
-    });
-  });
-
   /*
    * Отказ ядра — не повод оставить клиента без ответа и не повод
    * отвечать Telegram ошибкой: он повторит обновление, и клиент получит
@@ -228,7 +246,7 @@ export function getBot(): Bot {
  */
 async function receive(
   ctx: Context,
-  content: { body?: string; attachmentFileId?: string },
+  content: { body?: string; attachment?: MessageAttachmentInput },
 ): Promise<void> {
   const telegramUserId = ctx.from?.id;
   if (telegramUserId === undefined) return;
@@ -240,17 +258,23 @@ async function receive(
     ...(ctx.from?.username === undefined ? {} : { username: ctx.from.username }),
   });
 
-  // Подтверждение отвечается прямо здесь, а не уходит доставкой: так оно
-  // приходит тем же ответом на сообщение клиента. Пустой ответ операции
-  // означает одно из двух: подтверждение уже уходило в этой череде, либо
-  // за сообщение взялся консьерж — и тогда клиент получит не
-  // подтверждение, а живой ответ.
-  const acknowledgement = notifications.find(
-    (one) => one.kind === 'client-message-received',
-  );
-  if (acknowledgement) {
-    const rendered = renderNotification(acknowledgement);
+  /*
+   * Ответы клиенту — все, что вернула операция, и в её порядке: она
+   * знает, что сказать первым (файл сверх предела), а что следом
+   * (подтверждение приёма). Выбирать здесь по виду значило бы молча
+   * терять каждый вид, заведённый после. Отвечается прямо здесь, а не
+   * уходит доставкой: так ответ приходит тем же ответом на сообщение
+   * клиента.
+   */
+  for (const notification of notifications) {
+    const rendered = renderNotification(notification);
     await ctx.reply(rendered.text, { ...WITHOUT_OLD_KEYBOARD, ...markupOf(rendered) });
+  }
+
+  // Подтверждение приёма означает, что консьерж за сообщение не взялся.
+  // Его отсутствие — одно из двух: подтверждение уже уходило в этой
+  // череде, либо клиент получит не подтверждение, а живой ответ.
+  if (notifications.some((one) => one.kind === 'client-message-received')) {
     // Толчок ровно там же, где подтверждение: право на него занимает то
     // же условное изменение, которым обращение становится видимым
     // сотрудникам. Второе сообщение той же череды нового повода не

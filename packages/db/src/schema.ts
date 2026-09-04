@@ -116,6 +116,21 @@ export const actorTypeEnum = pgEnum('actor_type', ['system', 'client', 'manager'
 export const messageDirectionEnum = pgEnum('message_direction', ['incoming', 'outgoing']);
 
 /**
+ * Род вложения — так, как его прислал Telegram: фото лесенкой размеров
+ * без имени, документ с именем и типом, голосовое без имени. По роду
+ * панель решает, чем файл показать, а описание нужно, чтобы не ходить
+ * за ним к Telegram ради одной строки в ленте.
+ */
+export const attachmentKindEnum = pgEnum('attachment_kind', [
+  'photo',
+  'document',
+  'video',
+  'voice',
+  'audio',
+  'video_note',
+]);
+
+/**
  * О чём просьба, пришедшая из раздела «За границей».
  *
  * Перечислением, а не свободным текстом: тем ровно столько, сколько
@@ -1190,6 +1205,17 @@ export const clientMessages = pgTable(
      * подтягивает изображение по требованию.
      */
     attachmentFileId: text('attachment_file_id'),
+    /**
+     * Описание вложения — род, тип, имя и размер. Известно из самого
+     * обновления, до скачивания: по нему панель показывает строку
+     * «чек.pdf · 240 КБ» и решает, картинка это или ссылка, а бот
+     * говорит клиенту о файле сверх предела Telegram сразу.
+     */
+    attachmentKind: attachmentKindEnum('attachment_kind'),
+    attachmentMime: text('attachment_mime'),
+    attachmentName: text('attachment_name'),
+    /** В байтах. Файлы Telegram бывают больше 2^31, отсюда не `integer`. */
+    attachmentSize: bigint('attachment_size', { mode: 'number' }),
     /** Кто из сотрудников ответил. Только у исходящих и не у всех. */
     authorStaffId: uuid('author_staff_id').references(() => staff.id),
     /**
@@ -1271,6 +1297,16 @@ export const clientMessages = pgTable(
     check(
       'client_messages_not_empty',
       sql`${table.body} is not null or ${table.attachmentFileId} is not null`,
+    ),
+    // Вложение описано целиком или отсутствует целиком: файл без рода
+    // панель не знает, чем показать, а имя без файла — мусор в ленте.
+    check(
+      'client_messages_attachment_described',
+      sql`case when ${table.attachmentFileId} is null
+        then ${table.attachmentKind} is null and ${table.attachmentMime} is null
+          and ${table.attachmentName} is null and ${table.attachmentSize} is null
+        else ${table.attachmentKind} is not null
+      end`,
     ),
   ],
 );

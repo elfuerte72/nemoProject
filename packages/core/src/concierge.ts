@@ -11,6 +11,7 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
+import { attachmentFactsOf, describeAttachment, type AttachmentFacts } from './attachments.js';
 import { clientMessages, clients } from '@nemo/db';
 import { requireStaff, type Actor } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
@@ -184,8 +185,12 @@ interface Pending {
    * закрытая молча она не дошла бы до человека.
    */
   readonly bodies: readonly string[];
-  /** Вложение в любом сообщении череды: скриншот и подпись к нему клиент шлёт врозь. */
-  readonly hasAttachment: boolean;
+  /**
+   * Вложение в любом сообщении череды, старшее из них: скриншот и
+   * подпись к нему клиент шлёт врозь, а менеджеру называется то, с чего
+   * началось.
+   */
+  readonly attachment: AttachmentFacts | null;
   /** Первый ответ в разговоре: только в нём консьерж представляется. */
   readonly isFirstAnswer: boolean;
   readonly conversation: readonly ConciergeTurn[];
@@ -234,6 +239,9 @@ async function claimPending(ctx: CoreConfig, clientId: bigint): Promise<Pending 
         body: clientMessages.body,
         createdAt: clientMessages.createdAt,
         attachmentFileId: clientMessages.attachmentFileId,
+        attachmentKind: clientMessages.attachmentKind,
+        attachmentName: clientMessages.attachmentName,
+        attachmentSize: clientMessages.attachmentSize,
       })
       .from(clientMessages)
       .where(and(eq(clientMessages.clientId, clientId), claimable(new Date())))
@@ -314,7 +322,8 @@ async function claimPending(ctx: CoreConfig, clientId: bigint): Promise<Pending 
         .map((one) => one.body)
         .filter((one): one is string => one !== null)
         .reverse(),
-      hasAttachment: batch.some((one) => one.attachmentFileId !== null),
+      attachment:
+        [...batch].reverse().map(attachmentFactsOf).find((one) => one !== null) ?? null,
       isFirstAnswer: greeted === undefined,
       conversation: feed
         .reverse()
@@ -341,12 +350,13 @@ async function decide(
   pending: Pending,
 ): Promise<Outcome> {
   /*
-   * Изображение — безусловная передача. Скриншот перевода это всегда
-   * событие про деньги, а видеть его консьерж не умеет: отвечать по
-   * подписи значило бы отвечать на «вот, оплатил», не зная суммы.
+   * Файл — безусловная передача. Скриншот перевода или PDF-чек это
+   * всегда событие про деньги, а видеть их консьерж не умеет: отвечать
+   * по подписи значило бы отвечать на «вот, оплатил», не зная суммы.
+   * Что именно прислали, менеджер читает в заголовке уведомления.
    */
-  if (pending.hasAttachment) {
-    return { escalateBecause: 'клиент прислал изображение' };
+  if (pending.attachment !== null) {
+    return { escalateBecause: `клиент прислал ${describeAttachment(pending.attachment)}` };
   }
 
   // По каждому сообщению череды, от старшего: причина для менеджера —

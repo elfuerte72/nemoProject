@@ -187,6 +187,7 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
   { kind: 'card-application-status', to: 1n, status: 'active' },
   { kind: 'card-application-status', to: 1n, status: 'rejected' },
   { kind: 'client-message-received', to: 1n },
+  { kind: 'client-attachment-too-large', to: 1n },
   {
     kind: 'staff-new-request',
     to: 1n,
