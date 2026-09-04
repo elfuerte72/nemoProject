@@ -1,8 +1,10 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { clientMessages, requisiteAccessLog } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import {
   ATTACHMENT_VIEW_WINDOW_MS,
+  NEW_INQUIRY_AFTER_MINUTES,
   createCore,
   ForbiddenError,
   InvalidInputError,
@@ -31,6 +33,18 @@ beforeEach(async () => {
 });
 
 afterAll(() => closeTestDatabase());
+
+/** Состарить ленту: столько прошло с последнего сообщения клиента. */
+async function agedFeed(minutes: number): Promise<void> {
+  const shift = minutes * 60 * 1000;
+  const rows = await db.select({ id: clientMessages.id, at: clientMessages.createdAt }).from(clientMessages);
+  for (const row of rows) {
+    await db
+      .update(clientMessages)
+      .set({ createdAt: new Date(row.at.getTime() - shift) })
+      .where(eq(clientMessages.id, row.id));
+  }
+}
 
 /** Состарить журнал: столько прошло с последнего просмотра. */
 async function agedAccessLog(ms: number): Promise<void> {
@@ -403,5 +417,96 @@ describe('файл клиента', () => {
       preview: 'вот чек',
       attachment: 'файл чек.pdf (240 КБ)',
     });
+  });
+});
+
+/*
+ * Подтверждение приёма одно на череду сообщений — чтобы человек,
+ * пишущий мысль тремя сообщениями подряд, не получил три одинаковых
+ * ответа. Но у череды есть срок: клиент, вернувшийся через восемь
+ * часов, пишет не продолжение, а новое обращение, и молчание в ответ
+ * читается им как сломанный бот. 4 сентября 2026 так и вышло: утреннее
+ * сообщение осталось без ответа менеджера, и присланный днём чек не
+ * получил ни ответа клиенту, ни уведомления сотруднику.
+ */
+describe('новое обращение после паузы', () => {
+  it('дописка следом подтверждения не повторяет', async () => {
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Здравствуйте' });
+
+    const { notifications } = await core.receiveClientMessage({
+      telegramUserId: 100n,
+      body: 'Точнее, вопрос такой',
+    });
+
+    expect(notifications).toEqual([]);
+  });
+
+  it('после долгого молчания клиента подтверждение приходит снова', async () => {
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Здравствуйте' });
+    await agedFeed(NEW_INQUIRY_AFTER_MINUTES + 5);
+
+    const { notifications } = await core.receiveClientMessage({
+      telegramUserId: 100n,
+      body: 'Я вернулся, вот чек',
+    });
+
+    expect(notifications).toEqual([
+      { kind: 'client-message-received', to: 100n },
+    ]);
+  });
+
+  it('и сотрудникам о нём сообщают заново', async () => {
+    await givenStaff({ displayName: 'Анна', telegramUserId: 908n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Здравствуйте' });
+    await core.takeStaffAlerts(new Date());
+    await agedFeed(NEW_INQUIRY_AFTER_MINUTES + 5);
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Я вернулся' });
+
+    // Среди прочего в этот прогон уходит и напоминание о забытом утреннем
+    // сообщении: состарив ленту, тест состарил и его.
+    const alerts = (await core.takeStaffAlerts(new Date())).filter(
+      (one) => one.kind === 'staff-client-message',
+    );
+
+    expect(alerts).toHaveLength(2);
+    expect(alerts[0]).toMatchObject({ kind: 'staff-client-message', preview: 'Я вернулся' });
+  });
+});
+
+/*
+ * Файл — всегда повод позвать человека, даже посреди начатого
+ * разговора: чек это событие про деньги, и менеджер, не узнавший о нём,
+ * увидит его, только если сам откроет панель.
+ */
+describe('файл зовёт сотрудников', () => {
+  it('даже когда подтверждение в этой череде уже уходило', async () => {
+    await givenStaff({ displayName: 'Анна', telegramUserId: 909n });
+    await core.receiveClientMessage({ telegramUserId: 100n, body: 'Здравствуйте' });
+    await core.takeStaffAlerts(new Date());
+
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'BQACAgIAAxkBAAIC', kind: 'document', name: 'чек.pdf', size: 245_760 },
+    });
+    const alerts = await core.takeStaffAlerts(new Date());
+
+    expect(alerts).toHaveLength(2);
+    // Подписи у файла нет, и описание занимает место слов клиента.
+    expect(alerts[0]).toMatchObject({
+      kind: 'staff-client-message',
+      preview: 'Файл чек.pdf (240 КБ)',
+    });
+  });
+
+  it('но второй раз о том же файле не напоминает', async () => {
+    await givenStaff({ displayName: 'Анна', telegramUserId: 910n });
+    await core.receiveClientMessage({
+      telegramUserId: 100n,
+      attachment: { fileId: 'AgACAgIAAxkBAAI', kind: 'photo' },
+    });
+
+    await core.takeStaffAlerts(new Date());
+
+    expect(await core.takeStaffAlerts(new Date())).toEqual([]);
   });
 });

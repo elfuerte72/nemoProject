@@ -586,6 +586,7 @@ export {
   isGreetingOnly,
 } from './concierge-voice.js';
 export { CONCIERGE_QUIET_MS } from './concierge.js';
+export { NEW_INQUIRY_AFTER_MINUTES } from './conversations.js';
 export {
   ATTACHMENT_DOWNLOAD_LIMIT_BYTES,
   attachmentKinds,

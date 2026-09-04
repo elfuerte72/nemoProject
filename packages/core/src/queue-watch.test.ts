@@ -159,7 +159,10 @@ describe('клиент, который ждёт ответа', () => {
   it('напоминает и тогда, когда клиент дописал ещё, не дождавшись ответа', async () => {
     await core.receiveClientMessage({ telegramUserId: 100n, body: 'Не работает приложение' });
     await core.takeStaffAlerts(new Date());
-    await aged(60);
+    // Двадцать минут: дольше срока напоминания и короче того молчания,
+    // после которого сообщение считается новым обращением, — то есть
+    // ровно та дописка, о которой речь.
+    await aged(20);
     await core.receiveClientMessage({ telegramUserId: 100n, body: '?' });
 
     const alerts = await core.takeStaffAlerts(new Date());
