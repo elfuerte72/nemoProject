@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentHeaders } from './attachment-response';
+import { attachmentHeaders, sliceRange } from './attachment-response';
 
 /*
  * Файл клиента отдаётся из домена панели, и что браузер с ним сделает,
@@ -81,5 +81,81 @@ describe('attachmentHeaders', () => {
     expect(headers['content-disposition']).toBe(
       "inline; filename=\"..etcpasswd.pdf\"; filename*=UTF-8''..etcpasswd.pdf",
     );
+  });
+});
+
+/*
+ * Имя без расширения получает его от сигнатуры: Telegram отдаёт
+ * `receipt` или вовсе ничего, а сохранённый «receipt» без `.pdf` не
+ * открывается двойным щелчком.
+ */
+describe('attachmentHeaders: расширение', () => {
+  it('дописывается к имени без расширения по сигнатуре', () => {
+    expect(
+      attachmentHeaders({ kind: 'document', mime: 'application/pdf', name: 'receipt' }, PDF),
+    ).toMatchObject({
+      'content-disposition': "inline; filename=\"receipt.pdf\"; filename*=UTF-8''receipt.pdf",
+    });
+  });
+
+  it('и к запасному имени документа без имени', () => {
+    expect(attachmentHeaders({ kind: 'document', mime: null, name: null }, PDF)).toMatchObject({
+      'content-disposition': "inline; filename=\"file.pdf\"; filename*=UTF-8''file.pdf",
+    });
+  });
+
+  it('своё расширение не переписывается', () => {
+    expect(
+      attachmentHeaders({ kind: 'document', mime: 'image/png', name: 'screen.PNG' }, PNG),
+    ).toMatchObject({ 'content-disposition': expect.stringContaining('filename="screen.PNG"') });
+  });
+});
+
+/*
+ * Плеер Safari просит первые байты заголовком Range и ждёт 206: на
+ * 200 он от источника отказывается, и голосовое читалось бы как
+ * «недоступно у Telegram». Файл уже в памяти целиком, и кусок из него
+ * вырезается по заголовку.
+ */
+describe('sliceRange', () => {
+  const bytes = Uint8Array.from({ length: 10 }, (_, index) => index);
+
+  it('без Range отдаёт всё целиком и объявляет, что диапазоны понимает', () => {
+    const answer = sliceRange(bytes, null);
+
+    expect(answer.status).toBe(200);
+    expect(answer.body).toEqual(bytes);
+    expect(answer.headers).toEqual({ 'accept-ranges': 'bytes', 'content-length': '10' });
+  });
+
+  it('вырезает названный кусок и говорит, из чего', () => {
+    const answer = sliceRange(bytes, 'bytes=2-4');
+
+    expect(answer.status).toBe(206);
+    expect([...answer.body]).toEqual([2, 3, 4]);
+    expect(answer.headers).toEqual({
+      'accept-ranges': 'bytes',
+      'content-length': '3',
+      'content-range': 'bytes 2-4/10',
+    });
+  });
+
+  it('открытый хвост и хвост сверх длины обрезаются по файлу', () => {
+    expect([...sliceRange(bytes, 'bytes=7-').body]).toEqual([7, 8, 9]);
+    expect(sliceRange(bytes, 'bytes=7-99').headers['content-range']).toBe('bytes 7-9/10');
+  });
+
+  it('невыполнимый диапазон — 416 с длиной файла, тело пустое', () => {
+    const answer = sliceRange(bytes, 'bytes=10-');
+
+    expect(answer.status).toBe(416);
+    expect(answer.body.length).toBe(0);
+    expect(answer.headers).toEqual({ 'accept-ranges': 'bytes', 'content-range': 'bytes */10' });
+  });
+
+  it('непонятный Range — как его отсутствие', () => {
+    expect(sliceRange(bytes, 'items=1-2').status).toBe(200);
+    expect(sliceRange(bytes, 'bytes=a-b').status).toBe(200);
+    expect(sliceRange(bytes, 'bytes=0-1,4-5').status).toBe(200);
   });
 });

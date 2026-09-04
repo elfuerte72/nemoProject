@@ -251,25 +251,23 @@ async function receive(
     ...(ctx.from?.username === undefined ? {} : { username: ctx.from.username }),
   });
 
-  // О файле сверх предела Telegram — первым и всегда: это факт о файле,
-  // а не ответ на вопрос, и он не зависит от того, кто ответит дальше.
-  const tooLarge = notifications.find((one) => one.kind === 'client-attachment-too-large');
-  if (tooLarge) {
-    const rendered = renderNotification(tooLarge);
+  /*
+   * Ответы клиенту — все, что вернула операция, и в её порядке: она
+   * знает, что сказать первым (файл сверх предела), а что следом
+   * (подтверждение приёма). Выбирать здесь по виду значило бы молча
+   * терять каждый вид, заведённый после. Отвечается прямо здесь, а не
+   * уходит доставкой: так ответ приходит тем же ответом на сообщение
+   * клиента.
+   */
+  for (const notification of notifications) {
+    const rendered = renderNotification(notification);
     await ctx.reply(rendered.text, { ...WITHOUT_OLD_KEYBOARD, ...markupOf(rendered) });
   }
 
-  // Подтверждение отвечается прямо здесь, а не уходит доставкой: так оно
-  // приходит тем же ответом на сообщение клиента. Пустой ответ операции
-  // означает одно из двух: подтверждение уже уходило в этой череде, либо
-  // за сообщение взялся консьерж — и тогда клиент получит не
-  // подтверждение, а живой ответ.
-  const acknowledgement = notifications.find(
-    (one) => one.kind === 'client-message-received',
-  );
-  if (acknowledgement) {
-    const rendered = renderNotification(acknowledgement);
-    await ctx.reply(rendered.text, { ...WITHOUT_OLD_KEYBOARD, ...markupOf(rendered) });
+  // Подтверждение приёма означает, что консьерж за сообщение не взялся.
+  // Его отсутствие — одно из двух: подтверждение уже уходило в этой
+  // череде, либо клиент получит не подтверждение, а живой ответ.
+  if (notifications.some((one) => one.kind === 'client-message-received')) {
     // Толчок ровно там же, где подтверждение: право на него занимает то
     // же условное изменение, которым обращение становится видимым
     // сотрудникам. Второе сообщение той же череды нового повода не

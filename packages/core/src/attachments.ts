@@ -16,6 +16,8 @@
 import {
   ATTACHMENT_DOWNLOAD_LIMIT_BYTES,
   attachmentKinds,
+  attachmentWords,
+  capitalize,
   formatFileSize,
   isDownloadable,
   type AttachmentKind,
@@ -78,15 +80,6 @@ export function attachmentViewOf(
   };
 }
 
-const KIND_WORDS: Readonly<Record<AttachmentKind, string>> = {
-  photo: 'изображение',
-  document: 'файл',
-  video: 'видео',
-  voice: 'голосовое сообщение',
-  audio: 'аудио',
-  video_note: 'видеосообщение',
-};
-
 /**
  * Вложение словами, для середины фразы: «клиент прислал файл чек.pdf
  * (240 КБ)». У документа имя и размер — по ним менеджер понимает, чек
@@ -94,7 +87,7 @@ const KIND_WORDS: Readonly<Record<AttachmentKind, string>> = {
  * имени ничего не говорит.
  */
 export function describeAttachment(facts: AttachmentFacts): string {
-  if (facts.kind !== 'document' || facts.name === null) return KIND_WORDS[facts.kind];
+  if (facts.kind !== 'document' || facts.name === null) return attachmentWords[facts.kind];
   return facts.size === null
     ? `файл ${facts.name}`
     : `файл ${facts.name} (${formatFileSize(facts.size)})`;
@@ -114,8 +107,4 @@ export function staffPreview(
   if (attachment === null) return { preview: body ?? '' };
   const described = capitalize(describeAttachment(attachment));
   return body === null ? { preview: described } : { preview: body, attachment: described };
-}
-
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }

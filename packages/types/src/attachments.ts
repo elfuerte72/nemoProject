@@ -22,6 +22,12 @@ export const attachmentKinds = [
 ] as const;
 export type AttachmentKind = (typeof attachmentKinds)[number];
 
+/**
+ * Ровно 20 МиБ: в исходниках сервера Bot API (`telegram-bot-api/Client.h`,
+ * `MAX_DOWNLOAD_FILE_SIZE = 20 << 20`) файл больше этого отвечает «file is
+ * too big», равный проходит. Не 20 000 000: округлённое вниз число
+ * отвергало бы файлы, которые Telegram отдаёт.
+ */
 export const ATTACHMENT_DOWNLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
 
 /** Размер неизвестен — считается, что отдаст: Telegram не всегда его называет. */
@@ -35,8 +41,48 @@ export function isDownloadable(size: number | null): boolean {
  */
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
+  // Единица выбирается после округления: 1 048 575 байт — это «1 МБ»,
+  // а не «1024 КБ».
+  const kilobytes = Math.round(bytes / 1024);
+  if (kilobytes < 1024) return `${kilobytes} КБ`;
   const megabytes = bytes / (1024 * 1024);
   const rounded = megabytes >= 10 ? Math.round(megabytes) : Math.round(megabytes * 10) / 10;
   return `${String(rounded).replace('.', ',')} МБ`;
+}
+
+/**
+ * Род словами, для середины фразы: «клиент прислал голосовое
+ * сообщение». Одна таблица на ядро и панель: две разошлись бы при
+ * первом переименовании, и уведомление называло бы файл не так, как
+ * пузырь в переписке.
+ */
+export const attachmentWords: Readonly<Record<AttachmentKind, string>> = {
+  photo: 'изображение',
+  document: 'файл',
+  video: 'видео',
+  voice: 'голосовое сообщение',
+  audio: 'аудио',
+  video_note: 'видеосообщение',
+};
+
+/** Слово, собранное для середины фразы, — в начало строки. */
+export function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * Картинки, которые браузер рисует сам и которые панель узнаёт по
+ * первым байтам. Тип со слов клиента вне этого набора — HEIC с iPhone,
+ * SVG — в пузыре картинкой не показывается: HEIC браузер не раскодирует,
+ * а SVG исполняется.
+ */
+export const browserImageTypes: ReadonlySet<string> = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+]);
+
+export function isBrowserImage(mime: string | null): boolean {
+  return mime !== null && browserImageTypes.has(mime);
 }

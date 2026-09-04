@@ -19,6 +19,12 @@ describe('formatFileSize', () => {
     expect(formatFileSize(1_258_291)).toBe('1,2 МБ');
     expect(formatFileSize(20 * 1024 * 1024)).toBe('20 МБ');
   });
+
+  it('на границе мегабайта не пишет «1024 КБ»', () => {
+    expect(formatFileSize(1_047_552)).toBe('1023 КБ');
+    expect(formatFileSize(1_048_064)).toBe('1 МБ');
+    expect(formatFileSize(1_048_575)).toBe('1 МБ');
+  });
 });
 
 describe('describeAttachment', () => {

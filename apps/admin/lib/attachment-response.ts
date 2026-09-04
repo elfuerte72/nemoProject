@@ -74,7 +74,10 @@ export function attachmentHeaders(
   head: Uint8Array,
 ): Record<string, string> {
   const known = SIGNATURES.find((one) => one.matches(head));
-  const name = safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind];
+  const name = withExtension(
+    safeName(attachment.name) ?? FALLBACK_NAMES[attachment.kind],
+    known === undefined ? '' : `.${known.extension}`,
+  );
 
   if (known) {
     return headersFor('inline', known.type, name, `.${known.extension}`);
@@ -114,10 +117,21 @@ function safeName(name: string | null): string | undefined {
   return cleaned === '' ? undefined : cleaned;
 }
 
+/**
+ * Имя без расширения получает его от сигнатуры: Telegram отдаёт `receipt`
+ * или вовсе ничего, а сохранённый «receipt» без `.pdf` не открывается
+ * двойным щелчком. Своё расширение не переписывается.
+ */
+function withExtension(name: string, knownExtension: string): string {
+  return knownExtension !== '' && !EXTENSION.test(name) ? `${name}${knownExtension}` : name;
+}
+
+const EXTENSION = /\.[a-z0-9]{1,5}$/i;
+
 /** Имя латиницей для читателей без RFC 5987: своё, если оно и так латиницей, иначе `file` с расширением. */
 function asciiName(name: string, knownExtension: string): string {
   if (/^[\x20-\x7e]+$/.test(name)) return name;
-  const extension = /\.[a-z0-9]{1,5}$/i.exec(name)?.[0] ?? knownExtension;
+  const extension = EXTENSION.exec(name)?.[0] ?? knownExtension;
   return `file${extension.toLowerCase()}`;
 }
 
@@ -135,4 +149,56 @@ function bytesAt(head: Uint8Array, offset: number, expected: readonly number[]):
 
 function asciiAt(head: Uint8Array, offset: number, expected: string): boolean {
   return bytesAt(head, offset, [...expected].map((char) => char.charCodeAt(0)));
+}
+
+/**
+ * Кусок файла по заголовку Range.
+ *
+ * Плеер Safari просит первые байты и ждёт 206: на 200 он от источника
+ * отказывается, и голосовое читалось бы как «недоступно у Telegram», а
+ * каждая его проба писала бы в журнал доступа ещё один просмотр. Файл
+ * уже в памяти целиком — Telegram отдаёт ботам не больше 20 МБ, — и
+ * кусок вырезается из него. Понимается один диапазон; список
+ * диапазонов и чужие единицы отвечаются целым файлом, как если бы
+ * заголовка не было.
+ */
+export interface RangeAnswer {
+  readonly status: 200 | 206 | 416;
+  /** Над `ArrayBuffer`, а не `ArrayBufferLike`: только такой массив годится телом `Response`. */
+  readonly body: Uint8Array<ArrayBuffer>;
+  readonly headers: Record<string, string>;
+}
+
+export function sliceRange(bytes: Uint8Array<ArrayBuffer>, range: string | null): RangeAnswer {
+  const total = bytes.length;
+  const match = range === null ? null : /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+  if (!match || (match[1] === '' && match[2] === '')) {
+    return {
+      status: 200,
+      body: bytes,
+      headers: { 'accept-ranges': 'bytes', 'content-length': String(total) },
+    };
+  }
+
+  // «bytes=-500» — последние пятьсот байт; иначе от начала до конца или до края файла.
+  const start = match[1] === '' ? Math.max(0, total - Number(match[2])) : Number(match[1]);
+  const end = match[1] !== '' && match[2] !== '' ? Math.min(Number(match[2]), total - 1) : total - 1;
+  if (start >= total || start > end) {
+    return {
+      status: 416,
+      body: new Uint8Array(0),
+      headers: { 'accept-ranges': 'bytes', 'content-range': `bytes */${total}` },
+    };
+  }
+
+  const body = bytes.subarray(start, end + 1);
+  return {
+    status: 206,
+    body,
+    headers: {
+      'accept-ranges': 'bytes',
+      'content-length': String(body.length),
+      'content-range': `bytes ${start}-${end}/${total}`,
+    },
+  };
 }

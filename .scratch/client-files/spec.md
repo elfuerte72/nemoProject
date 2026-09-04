@@ -48,8 +48,10 @@
   `attachments.test.ts`, `notifications.test.ts`, `concierge.test.ts`).
 - База: род обязателен при файле, описание без файла отвергается
   (`constraints.test.ts`).
-- Бот: разбор сообщения Telegram по фикстурам формы Bot API
-  (`apps/miniapp/lib/telegram/attachments.test.ts`).
+- Бот: разбор сообщения Telegram по сообщениям, собранным по описанию
+  Bot API, а не записанным (`apps/miniapp/lib/telegram/attachments.test.ts`);
+  записать живые обновления — долг в `backlog.md`, для него нужен
+  прогон с файлами от человека.
 - Панель: тип по байтам, разметка под видом картинки не уходит в
   строку, имя файла не выходит из заголовка
   (`apps/admin/lib/attachment-response.test.ts`).

@@ -1,5 +1,6 @@
 import {
   Money,
+  capitalize,
   sayRate,
   type Amount,
   type CardApplicationStatus,
@@ -488,11 +489,6 @@ export function humanAmount(value: Amount): string {
 function renderWaiting(minutes: number): string {
   if (minutes < 120) return `${minutes} мин`;
   return `больше ${Math.floor(minutes / 60)} ч`;
-}
-
-/** Подпись заявки собрана для середины фразы, а здесь начинает строку. */
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 const INQUIRY_WORDS: Readonly<Record<InquiryTopic, string>> = {

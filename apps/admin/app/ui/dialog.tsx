@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { MessageAttachmentView, MessageView } from '@nemo/core';
-import { ATTACHMENT_DOWNLOAD_LIMIT_BYTES, formatFileSize, type AttachmentKind } from '@nemo/types';
+import {
+  ATTACHMENT_DOWNLOAD_LIMIT_BYTES,
+  attachmentWords,
+  capitalize,
+  formatFileSize,
+  isBrowserImage,
+} from '@nemo/types';
 import { dayKey, formatDayHeading } from '@/lib/format';
 import { Moment, useBrowserZone } from '@/app/ui/moment';
 
@@ -196,10 +202,12 @@ function authorOf(message: MessageView): string {
  * туда просмотр, которого не было.
  *
  * Файл подтягивается по требованию и клиентским токеном: на дисках
- * сервиса чужих чеков нет. Telegram хранит файлы не вечно, и
- * недоступное вложение показывается отсутствующим: битая картинка
- * читалась бы как «оно есть, но панель сломалась». Файл сверх предела
- * Telegram не откроется вовсе, и это сказано до нажатия.
+ * сервиса чужих чеков нет. Не показалось — ссылкой, а не словом
+ * «недоступно»: формат, которого браузер не знает (HEIC с iPhone), и
+ * файл, которого у Telegram больше нет, с экрана неотличимы, а ссылка
+ * честна в обоих случаях — по ней либо скачается файл, либо придёт
+ * ответ, что его нет. Файл сверх предела Telegram не откроется вовсе,
+ * и это сказано до нажатия.
  */
 function Attachment({
   messageId,
@@ -208,7 +216,7 @@ function Attachment({
   readonly messageId: string;
   readonly attachment: MessageAttachmentView;
 }) {
-  const [missing, setMissing] = useState(false);
+  const [failed, setFailed] = useState(false);
   const href = `/api/conversations/attachments/${messageId}`;
   const title = attachmentTitle(attachment);
 
@@ -219,71 +227,50 @@ function Attachment({
       </span>
     );
   }
-  if (missing) {
-    return <span className="bubble__meta">{title} · недоступно у Telegram</span>;
+  if (failed) {
+    return <FileLink href={href}>{title} · не показалось, открыть файлом</FileLink>;
   }
-  if (isImage(attachment)) {
-    return (
-      <img className="bubble__image" src={href} alt={title} onError={() => setMissing(true)} />
-    );
+
+  const fail = () => setFailed(true);
+  switch (attachment.kind) {
+    case 'photo':
+      return <img className="bubble__image" src={href} alt={title} onError={fail} />;
+    case 'voice':
+    case 'audio':
+      return (
+        <span className="bubble__file bubble__file--media">
+          <audio className="bubble__media" controls preload="none" src={href} onError={fail} />
+          <span>{title}</span>
+        </span>
+      );
+    case 'video':
+    case 'video_note':
+      return (
+        <span className="bubble__file bubble__file--media">
+          <video className="bubble__media" controls preload="none" src={href} onError={fail} />
+          <span>{title}</span>
+        </span>
+      );
+    case 'document':
+      // Скриншот «как файл» — тоже картинка, если браузер её нарисует.
+      return isBrowserImage(attachment.mime) ? (
+        <img className="bubble__image" src={href} alt={title} onError={fail} />
+      ) : (
+        <FileLink href={href}>{title}</FileLink>
+      );
   }
-  if (attachment.kind === 'voice' || attachment.kind === 'audio') {
-    return (
-      <span className="bubble__file bubble__file--media">
-        <audio
-          className="bubble__media"
-          controls
-          preload="none"
-          src={href}
-          onError={() => setMissing(true)}
-        />
-        <span>{title}</span>
-      </span>
-    );
-  }
-  if (attachment.kind === 'video' || attachment.kind === 'video_note') {
-    return (
-      <span className="bubble__file bubble__file--media">
-        <video
-          className="bubble__media"
-          controls
-          preload="none"
-          src={href}
-          onError={() => setMissing(true)}
-        />
-        <span>{title}</span>
-      </span>
-    );
-  }
+}
+
+function FileLink({ href, children }: { readonly href: string; readonly children: ReactNode }) {
   return (
     <a className="bubble__file" href={href} target="_blank" rel="noopener noreferrer">
-      {title}
+      {children}
     </a>
   );
 }
 
-/** Картинкой показывается фото и документ, названный картинкой: скриншот «как файл» — тоже картинка. */
-function isImage(attachment: MessageAttachmentView): boolean {
-  if (attachment.kind === 'photo') return true;
-  return (
-    attachment.kind === 'document' &&
-    attachment.mime !== null &&
-    attachment.mime.startsWith('image/') &&
-    attachment.mime !== 'image/svg+xml'
-  );
-}
-
-const KIND_TITLES: Readonly<Record<AttachmentKind, string>> = {
-  photo: 'Изображение',
-  document: 'Файл',
-  video: 'Видео',
-  voice: 'Голосовое сообщение',
-  audio: 'Аудио',
-  video_note: 'Видеосообщение',
-};
-
 /** «чек.pdf · 240 КБ»: имя, если Telegram его дал, иначе род; размер — когда известен. */
 function attachmentTitle(attachment: MessageAttachmentView): string {
-  const name = attachment.name ?? KIND_TITLES[attachment.kind];
+  const name = attachment.name ?? capitalize(attachmentWords[attachment.kind]);
   return attachment.size === null ? name : `${name} · ${formatFileSize(attachment.size)}`;
 }

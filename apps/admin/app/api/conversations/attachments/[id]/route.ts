@@ -1,6 +1,6 @@
 import { botToken } from '@nemo/telegram';
 import { errorResponse } from '@/lib/api';
-import { attachmentHeaders } from '@/lib/attachment-response';
+import { attachmentHeaders, sliceRange } from '@/lib/attachment-response';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 
@@ -22,10 +22,12 @@ export const dynamic = 'force-dynamic';
  *
  * Тело читается целиком, а не стримится: с какими заголовками отдать
  * файл, решают его первые байты (`attachment-response.ts`), а Telegram
- * отдаёт ботам не больше 20 МБ — в память панели это помещается.
+ * отдаёт ботам не больше 20 МБ — в память панели это помещается. Из
+ * того же буфера вырезается кусок по заголовку Range: без него плеер
+ * Safari от файла отказывается.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
@@ -55,7 +57,11 @@ export async function GET(
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
-    return new Response(bytes, { headers: attachmentHeaders(attachment, bytes.subarray(0, 16)) });
+    const piece = sliceRange(bytes, request.headers.get('range'));
+    return new Response(piece.body, {
+      status: piece.status,
+      headers: { ...attachmentHeaders(attachment, bytes.subarray(0, 16)), ...piece.headers },
+    });
   } catch (error) {
     return errorResponse(error);
   }
