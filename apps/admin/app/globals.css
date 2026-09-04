@@ -18,30 +18,42 @@
 :root {
   color-scheme: dark;
 
-  --bg: #0a0a0c;
-  --surface: #15151a;
-  --surface-soft: rgba(245, 242, 234, 0.04);
-  --surface-soft-strong: rgba(245, 242, 234, 0.07);
-  --surface-soft-hover: rgba(245, 242, 234, 0.08);
-  --hairline: rgba(245, 242, 234, 0.07);
-  --hairline-soft: rgba(245, 242, 234, 0.06);
+  /*
+   * Палитра — та же, что у клиента: индиго под медовым акцентом
+   * (`apps/miniapp/app/globals.css`). До 4 сентября 2026 панель была
+   * чёрной с медью — менеджер, открывший её после Mini App, видел
+   * другой сервис. Фон у панели темнее, чем у Mini App: тут не одна
+   * карточка на экране, а таблица в тридцать строк, и на светлом
+   * индиго она сливалась бы с поверхностями.
+   */
+  --bg: #130f21;
+  --surface: #1d1836;
+  --surface-soft: rgba(158, 146, 214, 0.07);
+  --surface-soft-strong: rgba(158, 146, 214, 0.12);
+  --surface-soft-hover: rgba(158, 146, 214, 0.15);
+  --hairline: rgba(158, 146, 214, 0.14);
+  --hairline-soft: rgba(158, 146, 214, 0.1);
 
-  --text: #f5f2ea;
-  --text-dim: #c9c4b9;
-  --text-muted: #96918a;
-  --text-faint: #55524c;
+  --text: #f4f1fb;
+  --text-dim: #c6c0dd;
+  --text-muted: #928bab;
+  --text-faint: #6f6890;
 
-  --gold: #c9a66b;
-  --gold-light: #d9be86;
-  --gold-ink: #14120e;
-  --gold-face: linear-gradient(150deg, #f0dfb8, #c9a66b 65%, #b18f52);
+  /*
+   * Медовый акцент бренда. Имена оставлены золотыми, как и в Mini App:
+   * цвет сменился, а роль — «то, чего ждут от менеджера» — та же.
+   */
+  --gold: #f9a03c;
+  --gold-light: #ffc46b;
+  --gold-ink: #241a08;
+  --gold-face: linear-gradient(150deg, #ffcf7d, #f9a03c 62%, #ee8a24);
 
-  --up: #57b98a;
-  --down: #e0574f;
-  --wait: #d9be86;
+  --up: #4fc08a;
+  --down: #f2685f;
+  --wait: #ffc46b;
 
-  --lift: inset 0 1px 0 rgba(245, 242, 234, 0.07);
-  --drop: 0 18px 40px -28px rgba(0, 0, 0, 1);
+  --lift: inset 0 1px 0 rgba(214, 205, 255, 0.08);
+  --drop: 0 18px 40px -28px rgba(8, 5, 20, 1);
 
   --sidebar: 248px;
   --topbar: 62px;
@@ -131,39 +143,56 @@ a {
   gap: 26px;
   padding: 26px 18px;
   border-right: 1px solid var(--hairline);
-  background: #0c0c10;
+  background: #100d1c;
 }
 
 .sidebar__brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 10px;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
+  padding: 0 8px;
 }
 
-.sidebar__brand > span:last-child {
-  font-size: 11px;
+/*
+ * Знак и имя — те, которыми сервис подписан снаружи и в Mini App. Имя
+ * набрано так же, как на полотне: «TO» светлым, «BEE» мёдом; регистр
+ * задаёт оформление, а не разметка.
+ */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.brand__mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--surface-soft-strong);
+  box-shadow: var(--lift);
+}
+
+.brand__name {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.brand__name > span {
+  color: var(--gold);
+}
+
+.brand__eyebrow {
+  margin-left: auto;
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--text-faint);
-}
-
-/* Знак у имени: квадрат с буквой, той же меди, что и главная кнопка. */
-.sidebar__mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  background: var(--gold-face);
-  color: var(--gold-ink);
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1;
 }
 
 .sidebar__nav {
@@ -251,7 +280,7 @@ a {
  * тёмном мало — вкладки различаются на глаз, только если смотреть.
  */
 .sidebar__link[aria-current='page'] {
-  background: rgba(217, 190, 134, 0.1);
+  background: rgba(249, 160, 60, 0.1);
   color: var(--gold-light);
   box-shadow: inset 2px 0 0 var(--gold);
 }
@@ -277,7 +306,7 @@ a {
 }
 
 .sidebar__link[aria-current='page'] .sidebar__count {
-  background: rgba(217, 190, 134, 0.18);
+  background: rgba(249, 160, 60, 0.18);
   color: var(--gold-light);
 }
 
@@ -304,7 +333,7 @@ a {
   min-height: var(--topbar);
   padding: 10px var(--gutter);
   border-bottom: 1px solid var(--hairline);
-  background: rgba(10, 10, 12, 0.86);
+  background: rgba(19, 15, 33, 0.86);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -318,7 +347,7 @@ a {
   padding: 0 10px 0 12px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-control);
-  background: rgba(245, 242, 234, 0.03);
+  background: rgba(158, 146, 214, 0.045);
   color: var(--text-muted);
   transition:
     border-color 0.15s ease,
@@ -326,12 +355,12 @@ a {
 }
 
 .topbar__search:focus-within {
-  border-color: rgba(217, 190, 134, 0.55);
+  border-color: rgba(249, 160, 60, 0.55);
   background: var(--surface-soft);
 }
 
 .topbar__search:hover {
-  border-color: rgba(217, 190, 134, 0.35);
+  border-color: rgba(249, 160, 60, 0.35);
 }
 
 .topbar__search {
@@ -364,7 +393,7 @@ a {
   justify-content: center;
   align-items: flex-start;
   padding: 10vh 16px 16px;
-  background: rgba(6, 6, 8, 0.6);
+  background: rgba(9, 6, 18, 0.6);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   overflow: auto;
@@ -463,7 +492,7 @@ a {
   justify-content: center;
   align-items: flex-start;
   padding: 12vh 16px 16px;
-  background: rgba(6, 6, 8, 0.6);
+  background: rgba(9, 6, 18, 0.6);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -612,7 +641,7 @@ a {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: rgba(217, 190, 134, 0.18);
+  background: rgba(249, 160, 60, 0.18);
   color: var(--gold-light);
   font-size: 13px;
   font-weight: 700;
@@ -690,7 +719,7 @@ a {
 }
 
 .menu__item--danger {
-  color: #f0857e;
+  color: #f58a82;
 }
 
 /* ── Страница ────────────────────────────────────────────────────── */
@@ -774,7 +803,7 @@ a {
 
 .quick__link:hover {
   background: var(--surface-soft-hover);
-  border-color: rgba(217, 190, 134, 0.35);
+  border-color: rgba(249, 160, 60, 0.35);
   color: var(--text);
 }
 
@@ -843,7 +872,7 @@ a {
 }
 
 a.stat:hover {
-  background: #1a1a20;
+  background: #241e44;
 }
 
 .stat__label {
@@ -1119,7 +1148,7 @@ a.stat:hover {
   padding: 3px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-control);
-  background: rgba(245, 242, 234, 0.02);
+  background: rgba(158, 146, 214, 0.03);
 }
 
 .tab {
@@ -1369,7 +1398,7 @@ a.row:hover {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: rgba(217, 190, 134, 0.12);
+  background: rgba(249, 160, 60, 0.12);
   color: var(--gold-light);
 }
 
@@ -1511,18 +1540,32 @@ a.row:hover {
  * Кнопка отбора: выбранная залита, остальные — контуром. Ряд из трёх
  * читается как один выбор, а не как три отдельных действия.
  */
+/*
+ * Одна и та же кнопка бывает ссылкой и `<button>`: у ссылки нет ни
+ * высоты, ни центровки, у кнопки — свои поля браузера. До 4 сентября
+ * 2026 из-за этого чипы периода стояли разной высоты и с текстом не по
+ * центру. Вид задаётся здесь целиком и для обоих.
+ */
 .chip {
-  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  margin: 0;
   padding: 0 14px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
   background: none;
   color: var(--text-dim);
+  font: inherit;
   font-size: 12.5px;
   font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     background 0.15s ease,
+    border-color 0.15s ease,
     color 0.15s ease;
 }
 
@@ -1532,8 +1575,8 @@ a.row:hover {
 }
 
 .chip--on {
-  background: rgba(217, 190, 134, 0.14);
-  border-color: rgba(217, 190, 134, 0.3);
+  background: rgba(249, 160, 60, 0.14);
+  border-color: rgba(249, 160, 60, 0.3);
   color: var(--gold-light);
 }
 
@@ -1700,7 +1743,7 @@ a.table__row:hover,
  * позже.
  */
 .table__item--fresh {
-  background: rgba(217, 190, 134, 0.07);
+  background: rgba(249, 160, 60, 0.07);
   box-shadow: inset 2px 0 0 var(--gold), var(--lift);
 }
 
@@ -1834,17 +1877,17 @@ a.table__row:hover,
 
 /* Ждёт человека — золото: столько же внимания, сколько кнопке. */
 .pill--wait {
-  background: rgba(217, 190, 134, 0.14);
+  background: rgba(249, 160, 60, 0.14);
   color: var(--gold-light);
 }
 
 .pill--done {
-  background: rgba(87, 185, 138, 0.14);
+  background: rgba(79, 192, 138, 0.14);
   color: var(--up);
 }
 
 .pill--off {
-  background: rgba(224, 87, 79, 0.14);
+  background: rgba(242, 104, 95, 0.14);
   color: var(--down);
 }
 
@@ -1902,7 +1945,7 @@ a.table__row:hover,
 }
 
 .btn--soft:hover:not(:disabled) {
-  background: rgba(245, 242, 234, 0.12);
+  background: rgba(158, 146, 214, 0.18);
 }
 
 .btn--ghost {
@@ -1916,7 +1959,7 @@ a.table__row:hover,
 }
 
 .btn--ghost:hover:not(:disabled) {
-  border-color: rgba(217, 190, 134, 0.5);
+  border-color: rgba(249, 160, 60, 0.5);
   color: var(--text);
 }
 
@@ -1924,12 +1967,12 @@ a.table__row:hover,
    действие, а не авария, но перепутать его с соседним нельзя. */
 .btn--danger {
   background: none;
-  border: 1px solid rgba(224, 87, 79, 0.35);
-  color: #f0857e;
+  border: 1px solid rgba(242, 104, 95, 0.35);
+  color: #f58a82;
 }
 
 .btn--danger:hover:not(:disabled) {
-  background: rgba(224, 87, 79, 0.1);
+  background: rgba(242, 104, 95, 0.1);
 }
 
 .btn--wide {
@@ -1959,7 +2002,7 @@ a.table__row:hover,
   padding: 10px 14px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-control);
-  background: rgba(245, 242, 234, 0.03);
+  background: rgba(158, 146, 214, 0.045);
   color: var(--text);
   font-size: 14px;
   transition:
@@ -1977,7 +2020,7 @@ a.table__row:hover,
 
 .input:focus {
   outline: none;
-  border-color: rgba(217, 190, 134, 0.55);
+  border-color: rgba(249, 160, 60, 0.55);
   background: var(--surface-soft);
 }
 
@@ -2020,6 +2063,45 @@ select.input {
 /* Поле под длинную подпись выбора: способ приёма называется словами. */
 .form-row > .field--wide {
   flex: 0 0 260px;
+}
+
+/*
+ * Предупреждение внутри карточки: то, из-за чего действие не пройдёт,
+ * — до формы, а не серой припиской под ней. С действием, которое это
+ * лечит: сказать «заведите счёт» и не дать кнопки — значит отправить
+ * человека искать раздел по меню.
+ */
+.callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(249, 160, 60, 0.3);
+  border-radius: var(--radius-control);
+  background: rgba(249, 160, 60, 0.08);
+}
+
+.callout__body {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.callout__title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--gold-light);
+}
+
+.callout__text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  text-wrap: pretty;
 }
 
 /* ── Пустое и служебное ──────────────────────────────────────────── */
@@ -2090,8 +2172,8 @@ select.input {
   margin: 0;
   padding: 12px 16px;
   border-radius: var(--radius-control);
-  background: rgba(224, 87, 79, 0.1);
-  color: #f0857e;
+  background: rgba(242, 104, 95, 0.1);
+  color: #f58a82;
   font-size: 13px;
   line-height: 1.5;
   text-wrap: pretty;
@@ -2141,7 +2223,7 @@ select.input {
   width: 440px;
   height: 380px;
   border-radius: 999px;
-  background: radial-gradient(closest-side, rgba(201, 166, 107, 0.16), rgba(201, 166, 107, 0));
+  background: radial-gradient(closest-side, rgba(249, 160, 60, 0.16), rgba(249, 160, 60, 0));
   pointer-events: none;
 }
 
@@ -2160,9 +2242,17 @@ select.input {
 }
 
 .login__brand {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
+  display: flex;
+}
+
+.login__brand .brand__mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+}
+
+.login__brand .brand__name {
+  font-size: 21px;
 }
 
 .login__eyebrow {
@@ -2219,9 +2309,9 @@ select.input {
   flex-direction: column;
   gap: 10px;
   padding: 16px;
-  border: 1px solid rgba(217, 190, 134, 0.35);
+  border: 1px solid rgba(249, 160, 60, 0.35);
   border-radius: var(--radius-inner);
-  background: rgba(217, 190, 134, 0.05);
+  background: rgba(249, 160, 60, 0.05);
 }
 
 .login__enroll .muted {
@@ -2231,8 +2321,8 @@ select.input {
 /* ── Второй фактор ───────────────────────────────────────────────── */
 
 .secret {
-  border: 1px solid rgba(217, 190, 134, 0.35);
-  background: rgba(217, 190, 134, 0.05);
+  border: 1px solid rgba(249, 160, 60, 0.35);
+  background: rgba(249, 160, 60, 0.05);
 }
 
 /* Белая подложка обязательна: код читается по контрасту, а чёрные
@@ -2250,7 +2340,7 @@ select.input {
 .secret__key {
   padding: 10px 14px;
   border-radius: var(--radius-inner);
-  background: rgba(10, 10, 12, 0.6);
+  background: rgba(9, 6, 18, 0.6);
   font-size: 14px;
   font-weight: 600;
 }
@@ -2388,7 +2478,7 @@ select.input {
 }
 
 .who__link:hover {
-  color: #f0ddb4;
+  color: #ffd79a;
 }
 
 /* Значение, которое забирают целиком. Подпись «копировать» появляется
@@ -2442,47 +2532,123 @@ select.input {
   }
 }
 
-/* ── Диалоговое окно переписки ───────────────────────────────────── */
+/* ── Окно переписки ─────────────────────────────────────────────── */
 
 /*
-  Разговор читают, а не расшифровывают список строк: стороны разведены
-  по краям, и кто написал, видно до чтения текста.
-*/
-.dialog {
+ * Чат как в CRM: лента в рамке со своей прокруткой, поле ответа внизу
+ * рамки, входящие слева, ответы сервиса справа. Высота рамки — от
+ * экрана, а не от числа сообщений: поле ответа стоит на месте при
+ * любой длине разговора.
+ */
+.chat {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  min-width: 0;
+  /* Рамка — до низа экрана: над ней ссылка назад, заголовок и отступы
+     страницы, и ровно столько от высоты окна и отнимается. */
+  height: calc(100dvh - var(--topbar) - 232px);
+  min-height: 440px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  overflow: hidden;
 }
 
-.dialog__feed {
+/* Кто ведёт разговор: точка состояния, слова, действие справа. */
+.chat__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 12px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.chat__head .btn {
+  margin-left: auto;
+}
+
+/* Точка состояния: медовая — ведёт человек, тусклая — помощник. В
+   очереди пустая точка значит «не ждёт», здесь же пустоты быть не
+   должно — состояний два, и оба видны. */
+.chat__head .dot {
+  flex-shrink: 0;
+}
+
+.chat__head .dot--off {
+  background: var(--text-faint);
+}
+
+.chat__state {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-wrap: pretty;
+}
+
+.chat__feed {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  padding: 18px 18px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat__empty {
+  margin: auto;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.chat__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Разделитель дня — пилюля посередине, как в мессенджере у клиента. */
+.chat__day {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 6px;
+}
+
+.chat__day > span {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
 .bubble {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   /* Доля от ленты, но не шире строки, которую читают за один взгляд:
-     на широком экране 76% — это полтора экрана текста в строку. */
-  max-width: min(76%, 620px);
-  padding: 12px 14px;
-  border-radius: 14px;
+     на широком экране 72% — это полтора экрана текста в строку. */
+  max-width: min(72%, 560px);
+  padding: 10px 14px;
+  border-radius: 16px;
   font-size: 14px;
   line-height: 1.45;
 }
 
 .bubble--in {
   align-self: flex-start;
-  background: var(--surface-raised, rgba(255, 255, 255, 0.06));
-  border-bottom-left-radius: 4px;
+  background: var(--surface-soft-strong);
+  border-bottom-left-radius: 5px;
 }
 
 .bubble--out {
   align-self: flex-end;
-  background: rgba(217, 190, 134, 0.16);
-  border-bottom-right-radius: 4px;
+  background: rgba(249, 160, 60, 0.16);
+  border-bottom-right-radius: 5px;
 }
 
 /*
@@ -2493,77 +2659,109 @@ select.input {
  * раньше самого текста.
  */
 .bubble--concierge {
-  background: var(--surface-raised, rgba(255, 255, 255, 0.06));
-  border: 1px dashed rgba(217, 190, 134, 0.32);
-}
-
-/*
- * Кто ведёт разговор. Над лентой, а не под ней: решение «отвечаю сам или
- * оставляю помощнику» принимается до чтения, а не после.
- */
-.handover {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  border-radius: 12px;
-  background: var(--surface, rgba(255, 255, 255, 0.03));
-}
-
-.handover__state {
-  margin: 0;
-  color: var(--text-muted, rgba(255, 255, 255, 0.64));
-  font-size: 13px;
+  background: var(--surface-soft);
+  border: 1px dashed rgba(249, 160, 60, 0.36);
 }
 
 .bubble__text {
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Вложение уже обрезано по ширине пузыря: чек читают, а не разглядывают. */
 .bubble__image {
   max-width: 100%;
   border-radius: 10px;
+  outline: 1px solid rgba(255, 255, 255, 0.1);
+  outline-offset: -1px;
 }
 
 .bubble__meta {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
-.dialog__reply {
+.bubble--out .bubble__meta {
+  align-self: flex-end;
+}
+
+/* Поле ответа — внизу рамки, отделено чертой: это часть чата, а не форма под ним. */
+.chat__composer {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  align-items: flex-start;
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--hairline);
+  background: var(--surface);
+}
+
+.chat__input {
+  width: 100%;
+  min-height: 44px;
+  max-height: 160px;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: rgba(158, 146, 214, 0.05);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+  resize: vertical;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.chat__input::placeholder {
+  color: var(--text-faint);
+}
+
+.chat__input:focus-visible {
+  outline: none;
+  border-color: rgba(249, 160, 60, 0.55);
+  background: var(--surface-soft);
+}
+
+.chat__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat__hint {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  text-wrap: pretty;
 }
 
 /*
- * На телефоне поле ответа прилипает к низу экрана.
- *
- * Лента разговора длинная, и без этого, чтобы ответить, её надо
- * пролистать до конца — а прочитав сообщение в середине, пролистать
- * снова. Фон непрозрачный: сквозь поле едут пузыри.
- *
- * Отступ снизу считается с учётом безопасной зоны: на телефонах с
- * жестовой полосой поле иначе оказывается под ней.
+ * На телефоне рамка отпускает высоту: лента идёт потоком страницы, а
+ * поле ответа прилипает к низу экрана — прочитав сообщение в середине,
+ * не листают до конца, чтобы ответить. Отступ снизу считается с учётом
+ * безопасной зоны: на телефонах с жестовой полосой поле иначе
+ * оказывается под ней.
  */
 @media (max-width: 760px) {
-  .dialog__reply {
+  .chat {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .chat__feed {
+    flex: none;
+  }
+
+  .chat__hint {
+    display: none;
+  }
+
+  .chat__composer {
     position: sticky;
     bottom: 0;
     z-index: 1;
-    padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
-    background: var(--bg);
-    align-items: stretch;
-  }
-
-  .dialog__reply .btn {
-    align-self: flex-end;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+    border-radius: 0 0 var(--radius-card) var(--radius-card);
   }
 }

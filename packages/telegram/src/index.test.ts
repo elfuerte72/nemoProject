@@ -96,6 +96,6 @@ describe('deliverNotifications: клиенту', () => {
       'https://panel.example',
     );
 
-    expect(body).toEqual({ chat_id: '5', text: 'a < b' });
+    expect(body).toEqual({ chat_id: '5', text: '[Оператор]: a < b' });
   });
 });

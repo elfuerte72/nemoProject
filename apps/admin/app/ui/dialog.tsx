@@ -1,96 +1,169 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { MessageView } from '@nemo/core';
-import { Moment } from '@/app/ui/moment';
+import { dayKey, formatDayHeading } from '@/lib/format';
+import { Moment, useBrowserZone } from '@/app/ui/moment';
 
 /**
- * Диалоговое окно переписки.
+ * Окно переписки — так, как оно устроено в CRM, где чат и есть работа.
  *
- * Разговор читают, а не расшифровывают список строк: стороны разведены
- * по краям, у ответа виден автор — менеджер должен понимать, писал ли
- * коллега, прежде чем писать своё поверх.
+ * Лента в своей рамке и со своей прокруткой, а не в потоке страницы:
+ * поле ответа всегда под рукой, и, прочитав сообщение в середине, не
+ * надо листать до конца, чтобы ответить. Входящие слева, ответы
+ * сервиса справа — как в мессенджере у самого клиента; кто написал,
+ * видно до чтения текста, а между днями стоит разделитель: «вчера,
+ * 13:35» под каждым пузырём этого не заменяло, потому что читалось
+ * после текста. До 4 сентября 2026 лента была без рамки, а раскладка
+ * страницы раскладывала её по колонкам сетки — пузыри уезжали в правую
+ * треть экрана, и переписываться было негде.
  *
- * Тот же компонент показывает предпросмотр заготовок в настройках:
- * администратор, правящий формулировку, видит её так, как прочтёт
- * клиент. Поэтому поле ответа необязательно — предпросмотру отвечать
- * некому.
+ * Enter отправляет, Shift+Enter переносит строку: так в каждом чате, а
+ * кнопка остаётся для мыши и для тех, кто об этом не знает.
  */
 export function Dialog({
   messages,
   draft,
   onReply,
+  head,
 }: {
   readonly messages: readonly MessageView[];
   /** Что уже стоит в поле ответа: номер заявки, если писать из карточки. */
   readonly draft?: string | undefined;
   readonly onReply?: ((body: string) => Promise<void>) | undefined;
+  /** Строка над лентой: кто ведёт разговор. */
+  readonly head?: ReactNode;
 }) {
   const [body, setBody] = useState(draft ?? '');
   const [busy, setBusy] = useState(false);
+  const feed = useRef<HTMLDivElement>(null);
+  /*
+   * Пояс браузера известен только браузеру: разделители дней считаются
+   * по нему и рисуются после появления разметки. До этого ленту
+   * показывают без них — секунду, которую никто не замечает, — а не
+   * по UTC, где день сменяется посреди рабочей ночи.
+   */
+  const zone = useBrowserZone();
+
+  // Лента открывается на последнем сообщении и возвращается к нему
+  // после каждого ответа: читают то, что только что сказали. Пояс — в
+  // зависимостях, потому что с ним появляются разделители дней, и лента
+  // становится длиннее уже после первой прокрутки.
+  useEffect(() => {
+    const node = feed.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [messages.length, zone]);
 
   async function send() {
-    if (!onReply) return;
+    const text = body.trim();
+    if (!onReply || !text || busy) return;
     setBusy(true);
     try {
-      await onReply(body.trim());
+      await onReply(text);
       setBody('');
     } finally {
       setBusy(false);
     }
   }
 
+  /*
+   * Enter отправляет только с настоящей клавиатуры: у экранной нет
+   * Shift+Enter, и на телефоне перевод строки отправлял бы клиенту
+   * половину фразы. Там Enter переносит строку, отправляет кнопка, а
+   * Ctrl/Cmd+Enter отправляет везде.
+   */
+  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    if (event.metaKey || event.ctrlKey || (!coarse && !event.shiftKey)) {
+      event.preventDefault();
+      void send();
+    }
+  }
+
+  const now = new Date();
+
   return (
-    <div className="dialog">
-      <div className="dialog__feed">
+    <div className="chat">
+      {head}
+
+      <div className="chat__feed" ref={feed}>
         {messages.length === 0 ? (
-          <p className="empty">Переписки пока нет — напишите первым, если есть что уточнить.</p>
+          <p className="chat__empty">
+            Переписки пока нет — напишите первым, если есть что уточнить.
+          </p>
         ) : (
-          messages.map((message) => (
-            <div
-              key={message.id}
-              className={[
-                'bubble',
-                message.direction === 'incoming' ? 'bubble--in' : 'bubble--out',
-                // Ответ помощника отличается от ответа человека: менеджер
-                // читает разговор подряд и должен видеть, что клиенту
-                // говорил не он.
-                message.byConcierge ? 'bubble--concierge' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-            >
-              {message.body ? <span className="bubble__text">{message.body}</span> : undefined}
-              {message.hasAttachment ? <Attachment messageId={message.id} /> : undefined}
-              <span className="bubble__meta">
-                {message.direction === 'outgoing' ? authorOf(message) : ''}
-                <Moment at={new Date(message.createdAt).toISOString()} />
-              </span>
-            </div>
-          ))
+          messages.map((message, index) => {
+            const at = new Date(message.createdAt);
+            const previous = messages[index - 1];
+            const newDay =
+              zone !== undefined &&
+              (!previous || dayKey(new Date(previous.createdAt), zone) !== dayKey(at, zone));
+            return (
+              <div key={message.id} className="chat__group">
+                {newDay ? (
+                  <div className="chat__day" aria-hidden>
+                    <span>{formatDayHeading(at, now, zone)}</span>
+                  </div>
+                ) : undefined}
+                <div
+                  className={[
+                    'bubble',
+                    message.direction === 'incoming' ? 'bubble--in' : 'bubble--out',
+                    // Ответ помощника отличается от ответа человека: менеджер
+                    // читает разговор подряд и должен видеть, что клиенту
+                    // говорил не он.
+                    message.byConcierge ? 'bubble--concierge' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  {message.body ? <span className="bubble__text">{message.body}</span> : undefined}
+                  {message.hasAttachment ? <Attachment messageId={message.id} /> : undefined}
+                  <span className="bubble__meta">
+                    {message.direction === 'outgoing' ? authorOf(message) : ''}
+                    <Moment at={at.toISOString()} mode="time" />
+                  </span>
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
 
       {onReply ? (
-        <div className="dialog__reply">
+        <form
+          className="chat__composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send();
+          }}
+        >
           <textarea
-            className="input"
-            rows={3}
+            className="chat__input"
+            rows={2}
             value={body}
             onChange={(event) => setBody(event.target.value)}
+            onKeyDown={onKeyDown}
             placeholder="Ответ клиенту — придёт ему в чат бота"
+            aria-label="Ответ клиенту"
           />
-          <button
-            type="button"
-            // Пустой ответ отправлять некуда: операция его отвергнет, а
-            // погашенная кнопка говорит об этом до нажатия.
-            disabled={busy || !body.trim()}
-            className="btn btn--gold"
-            onClick={() => void send()}
-          >
-            Отправить
-          </button>
-        </div>
+          <div className="chat__bar">
+            <span className="chat__hint">
+              Enter — отправить, Shift+Enter — новая строка. Клиент увидит ответ с подписью
+              «[Оператор]».
+            </span>
+            <button
+              type="submit"
+              // Пустой ответ отправлять некуда: операция его отвергнет, а
+              // погашенная кнопка говорит об этом до нажатия.
+              disabled={busy || !body.trim()}
+              className="btn btn--gold"
+            >
+              {busy ? 'Отправляю…' : 'Отправить'}
+            </button>
+          </div>
+        </form>
       ) : undefined}
     </div>
   );

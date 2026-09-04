@@ -14,6 +14,7 @@ import {
   type NavGroup,
   type NavItem,
 } from '@/lib/nav';
+import { Brand } from '@/app/ui/brand';
 import { Icon } from '@/app/ui/icons';
 
 /**
@@ -56,11 +57,8 @@ export function Sidebar({ counts }: { counts: SidebarCounts }) {
 
   return (
     <aside className="sidebar">
-      <Link href="/" className="sidebar__brand">
-        <span className="sidebar__mark" aria-hidden>
-          n
-        </span>
-        nemo <span>панель</span>
+      <Link href="/" className="sidebar__brand" aria-label="Tobee, панель — на рабочий стол">
+        <Brand eyebrow="панель" />
       </Link>
 
       <nav className="sidebar__nav">

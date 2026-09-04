@@ -12,7 +12,7 @@ const config: NextConfig = {
    * вне репозитория; маршрут показывает её как `null`.
    */
   env: { APP_VERSION: gitSha(root) ?? '' },
-  transpilePackages: ['@nemo/core', '@nemo/http', '@nemo/telegram', '@nemo/types'],
+  transpilePackages: ['@nemo/brand', '@nemo/core', '@nemo/http', '@nemo/telegram', '@nemo/types'],
   serverExternalPackages: ['postgres'],
   /** См. комментарии в apps/miniapp/next.config.ts. */
   outputFileTracingRoot: root,

@@ -45,6 +45,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@nemo/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
       '@nemo/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -94,6 +97,9 @@ importers:
 
   apps/miniapp:
     dependencies:
+      '@nemo/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
       '@nemo/concierge':
         specifier: workspace:*
         version: link:../../packages/concierge
@@ -152,6 +158,12 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@24.13.3)
+
+  packages/brand:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
 
   packages/concierge:
     dependencies:
