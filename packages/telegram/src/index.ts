@@ -72,8 +72,12 @@ async function send(notification: Notification, options: DeliveryOptions): Promi
           chat_id: notification.to.toString(),
           ...(photo ? { photo, caption: text } : { text }),
           // Разметку объявляет текст, а не выбирает доставка по виду:
-          // так новый вид не уйдёт с тегами в голом тексте.
-          ...(parseMode ? { parse_mode: parseMode } : {}),
+          // так новый вид не уйдёт с тегами в голом тексте. Под разметкой
+          // ссылка на клиента, и Telegram рисовал бы к ней карточку
+          // «You can contact … right away» выше самого уведомления.
+          ...(parseMode
+            ? { parse_mode: parseMode, link_preview_options: { is_disabled: true } }
+            : {}),
           ...panelButton(notification, options.panelUrl),
         }),
       },

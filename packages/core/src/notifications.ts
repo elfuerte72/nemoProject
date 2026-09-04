@@ -1,10 +1,15 @@
-import type {
-  Amount,
-  CardApplicationStatus,
-  ExchangeRequestStatus,
-  ReferralLine,
-  WithdrawalRequestStatus,
+import {
+  Money,
+  sayRate,
+  type Amount,
+  type CardApplicationStatus,
+  type ExchangeRequestStatus,
+  type ReferralLine,
+  type RequisiteKind,
+  type WithdrawalMethod,
+  type WithdrawalRequestStatus,
 } from '@nemo/types';
+import type { InquiryTopic } from './inquiries.js';
 
 /**
  * Что нужно сообщить клиенту — следствие операции, а не отдельное
@@ -91,6 +96,8 @@ export type Notification =
       readonly to: bigint;
       readonly clientId: bigint;
       readonly clientUsername: string | null;
+      /** Просьба из раздела «За границей» — про деньги, и заголовок говорит это первым. */
+      readonly topic: InquiryTopic | null;
       readonly preview: string;
     }
   | {
@@ -182,9 +189,35 @@ export type NewRequestSubject =
       readonly toCode: string;
       /** Наличная заявка: у неё нет курса подачи, и это видно менеджеру сразу. */
       readonly isCash: boolean;
+      /**
+       * Сумма к выдаче и курс подачи — обязательство сервиса, и менеджер
+       * читает их в уведомлении теми же числами, что в карточке. Пусто у
+       * наличной: там и то и другое называет менеджер.
+       */
+      readonly toAmount: Amount | null;
+      readonly rate: Amount | null;
+      /** Куда клиент получит деньги; пусто, если запись не выбрана. */
+      readonly payout: PayoutHint | null;
     }
-  | { readonly kind: 'withdrawal'; readonly id: string; readonly amount: Amount }
+  | {
+      readonly kind: 'withdrawal';
+      readonly id: string;
+      readonly amount: Amount;
+      readonly method: WithdrawalMethod;
+      readonly payout: PayoutHint | null;
+    }
   | { readonly kind: 'card'; readonly id: string };
+
+/**
+ * Запись клиента одним взглядом: вид и банк или сеть — без номера.
+ * Номер в уведомление не идёт: оно живёт в чате телефона годами, а
+ * реквизиты открываются в панели и с записью в журнал доступа.
+ */
+export interface PayoutHint {
+  readonly kind: RequisiteKind;
+  readonly bankName: string | null;
+  readonly network: string | null;
+}
 
 /**
  * Все виды уведомлений списком.
@@ -308,21 +341,32 @@ function renderClientNotification(
 }
 
 /**
- * Сотруднику — три вопроса по порядку: что случилось, с кем, что
- * написано.
+ * Сотруднику — что случилось, с чем, с кем и о чём это.
  *
  * Заголовок жирным: читается с телефона между двумя делами, и решение
- * «бросать ли то, чем занят» принимается по одной строке. Клиент —
- * ссылкой по нику: аккаунт по числу Telegram не открывает; число рядом,
- * потому что ник меняется, а панель ищет клиента по числу. Слова
- * клиента — цитатой, чтобы не читались как слова сервиса. До 3 сентября
- * 2026 всё это уходило тремя одинаковыми строками голого текста, и
- * менеджер не понял ни кто пишет, ни куда идти.
+ * «бросать ли то, чем занят» принимается по одной строке. Под ним то,
+ * по чему решают: у обмена обе суммы, курс и куда клиент получит
+ * деньги — те же числа, что в карточке; до 4 сентября 2026 уходила одна
+ * сумма и пара кодов, и за остальным шли в панель. Клиент — ссылкой по
+ * нику: аккаунт по числу Telegram не открывает; число рядом, потому что
+ * ник меняется, а панель ищет клиента по числу. Слова клиента —
+ * цитатой, чтобы не читались как слова сервиса. Последней строкой —
+ * тема хэштегом: в чате с сотнями уведомлений по нему находят все
+ * заявки на вывод или все просьбы об оплате одним нажатием.
  */
 function renderStaffNotification(notification: StaffNotification): string {
   switch (notification.kind) {
     case 'staff-client-message':
-      return lines(bold('Новое обращение'), clientLine(notification), quote(notification.preview));
+      return lines(
+        bold(
+          notification.topic === null
+            ? 'Новое обращение'
+            : `Просьба оплатить ${INQUIRY_WORDS[notification.topic]}`,
+        ),
+        clientLine(notification),
+        quote(notification.preview),
+        tags(notification.topic === null ? 'поддержка' : 'оплата'),
+      );
     case 'staff-escalation':
       // Причина в заголовке: «клиент говорит, что деньги не дошли»
       // отвечает на вопрос «что случилось» раньше самих слов клиента.
@@ -330,24 +374,28 @@ function renderStaffNotification(notification: StaffNotification): string {
         bold(capitalize(escapeHtml(notification.reason))),
         clientLine(notification),
         quote(notification.preview),
+        tags('поддержка'),
       );
     case 'staff-new-request':
       return lines(
         bold(`Новая ${requestTitle(notification.request)}`),
-        requestDetails(notification.request),
+        ...requestDetails(notification.request),
         clientLine(notification),
+        tags(requestTag(notification.request)),
       );
     case 'staff-stale-request':
       return lines(
         bold(`Заявку никто не взял ${renderWaiting(notification.waitingMinutes)}`),
         requestLine(notification.request),
         clientLine(notification),
+        tags(requestTag(notification.request), 'напоминание'),
       );
     case 'staff-waiting-client':
       return lines(
         bold(`Клиент ждёт ответа ${renderWaiting(notification.waitingMinutes)}`),
         clientLine(notification),
         quote(notification.preview),
+        tags('поддержка', 'напоминание'),
       );
   }
 }
@@ -365,6 +413,11 @@ function quote(text: string): string {
   return `<blockquote>${escapeHtml(text)}</blockquote>`;
 }
 
+/** Тема хэштегами — Telegram делает их ссылками, и по ним ищут. */
+function tags(...names: readonly string[]): string {
+  return names.map((name) => `#${name}`).join(' ');
+}
+
 function clientLine(client: {
   readonly clientId: bigint;
   readonly clientUsername: string | null;
@@ -377,12 +430,24 @@ function clientLine(client: {
 
 /**
  * Разметку сообщения сервис ставит свою, а ник, слова клиента, коды
- * валют и причина эскалации приходят извне: знак «меньше» в любом из
- * них Telegram прочитал бы как начало тега и отверг бы сообщение
+ * валют, банк и причина эскалации приходят извне: знак «меньше» в любом
+ * из них Telegram прочитал бы как начало тега и отверг бы сообщение
  * целиком.
  */
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Число для человека: разряды через неразрывный пробел, дробная часть
+ * через запятую и без хвоста нулей. «10000 USDT» в уведомлении читалось
+ * как «1000» — ошибка в порядке величины там, где по числу решают.
+ */
+export function humanAmount(value: Amount): string {
+  const [whole = '0', fraction = ''] = String(value).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+  const tail = fraction.replace(/0+$/, '');
+  return tail === '' ? grouped : `${grouped},${tail}`;
 }
 
 /**
@@ -401,6 +466,33 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+const INQUIRY_WORDS: Readonly<Record<InquiryTopic, string>> = {
+  hotel: 'отель',
+  purchase: 'покупку',
+};
+
+/** Вид записи словами — так, как запись названа клиенту в приложении. */
+const PAYOUT_WORDS: Readonly<Record<RequisiteKind, string>> = {
+  phone: 'телефон',
+  card: 'карта',
+  wallet: 'кошелёк',
+  account: 'счёт',
+  promptpay: 'PromptPay',
+  alipay: 'Alipay',
+  alipay_qr: 'Alipay QR',
+};
+
+const METHOD_WORDS: Readonly<Record<WithdrawalMethod, string>> = {
+  bank: 'банковский перевод',
+  crypto: 'криптовалюта',
+};
+
+/** Куда придут деньги: вид записи и банк или сеть, без номера. */
+function payoutWords(payout: PayoutHint): string {
+  const where = payout.bankName ?? payout.network;
+  return where === null ? PAYOUT_WORDS[payout.kind] : `${PAYOUT_WORDS[payout.kind]} · ${escapeHtml(where)}`;
+}
+
 /**
  * Чем заявка названа сотруднику.
  *
@@ -413,32 +505,80 @@ function requestTitle(request: NewRequestSubject): string {
     case 'exchange':
       return 'заявка на обмен';
     case 'withdrawal':
-      return 'заявка на вывод';
+      return 'заявка на вывод баллов';
     case 'card':
       return 'заявка на карту';
   }
 }
 
-/** Чем заявка отличается от других таких же; у карты — ничем. */
-function requestDetails(request: NewRequestSubject): string | null {
+function requestTag(request: NewRequestSubject): string {
   switch (request.kind) {
     case 'exchange':
-      return (
-        `${request.fromAmount} ${escapeHtml(request.fromCode)} → ${escapeHtml(request.toCode)}` +
-        (request.isCash ? ', наличными' : '')
-      );
+      return 'обмен';
     case 'withdrawal':
-      return `${request.amount} баллов`;
+      return 'вывод';
+    case 'card':
+      return 'карта';
+  }
+}
+
+/** Суммы и стороны одной строкой: то, чем заявка отличается от других таких же. */
+function requestSum(request: NewRequestSubject): string | null {
+  switch (request.kind) {
+    case 'exchange': {
+      const to =
+        request.toAmount === null
+          ? escapeHtml(request.toCode)
+          : `${humanAmount(request.toAmount)} ${escapeHtml(request.toCode)}`;
+      return (
+        `${humanAmount(request.fromAmount)} ${escapeHtml(request.fromCode)} → ${to}` +
+        (request.isCash ? ' наличными' : '')
+      );
+    }
+    case 'withdrawal':
+      return `${humanAmount(request.amount)} баллов`;
     case 'card':
       return null;
   }
 }
 
+/**
+ * Строки о заявке под заголовком: суммы, затем курс и способ сделки,
+ * затем куда придут деньги. У карты сказать нечего.
+ */
+function requestDetails(request: NewRequestSubject): readonly (string | null)[] {
+  switch (request.kind) {
+    case 'exchange':
+      return [
+        requestSum(request),
+        request.rate === null
+          ? 'Курс назовёт менеджер'
+          : `Курс ${sayRate(request.rate, request.fromCode, request.toCode, humanAmount)} · ${
+              request.isCash ? 'наличные' : 'перевод'
+            }`,
+        request.payout === null ? null : `Получение: ${payoutWords(request.payout)}`,
+      ];
+    case 'withdrawal':
+      return [
+        requestSum(request),
+        `Выплата: ${request.payout === null ? METHOD_WORDS[request.method] : payoutWords(request.payout)}`,
+      ];
+    case 'card':
+      return [];
+  }
+}
+
 /** Заявка одной строкой — там, где заголовок занят другим. */
 function requestLine(request: NewRequestSubject): string {
-  const details = requestDetails(request);
-  const title = capitalize(requestTitle(request));
-  return details === null ? title : `${title}: ${details}`;
+  const sum = requestSum(request);
+  switch (request.kind) {
+    case 'exchange':
+      return `Обмен: ${sum}`;
+    case 'withdrawal':
+      return `Вывод баллов: ${sum}`;
+    case 'card':
+      return 'Заявка на карту';
+  }
 }
 
 function renderExchangeRequestStatus(

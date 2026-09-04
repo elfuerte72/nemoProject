@@ -1,8 +1,8 @@
 import { and, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { clientMessages, clients, exchangeRequests, staff } from '@nemo/db';
-import { Money } from '@nemo/types';
 import type { CoreConfig } from './context.js';
 import type { Notification } from './notifications.js';
+import { exchangeSubject, payoutHintsOf } from './request-subject.js';
 
 /**
  * Сторож очереди: что залежалось.
@@ -97,6 +97,10 @@ async function remindAboutStaleRequests(
   if (stale.length === 0) return [];
 
   const usernames = await usernamesOf(tx, stale.map((one) => one.clientId));
+  const hints = await payoutHintsOf(
+    tx,
+    stale.map((row) => row.requisitesId),
+  );
 
   return stale.flatMap((row) =>
     recipients.map(
@@ -105,14 +109,7 @@ async function remindAboutStaleRequests(
         to: recipient.telegramUserId,
         clientId: row.clientId,
         clientUsername: usernames.get(row.clientId) ?? null,
-        request: {
-          kind: 'exchange',
-          id: row.id,
-          fromAmount: Money.toAmount(row.fromAmount),
-          fromCode: row.fromCode,
-          toCode: row.toCode,
-          isCash: row.kind === 'cash',
-        },
+        request: exchangeSubject(row, hints),
         waitingMinutes: waitedMinutes(row.createdAt, at),
       }),
     ),

@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { seal } from '@nemo/crypto';
-import { withdrawalRequests } from '@nemo/db';
+import { exchangeRequests, withdrawalRequests } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type Actor } from './index.js';
 import {
@@ -89,6 +89,75 @@ describe('новая заявка на обмен', () => {
     const alerts = await core.takeStaffAlerts(new Date());
 
     expect(alerts.map((one) => one.to)).toEqual([ADMIN_TG]);
+  });
+});
+
+describe('детали заявки в уведомлении', () => {
+  /*
+   * Менеджер читает в уведомлении то же, что в карточке: обе суммы,
+   * курс и куда клиент получит деньги. Сцену ставит прямая вставка:
+   * безналичной заявке нужен источник котировок, а проверяется здесь
+   * рассылка, а не цена.
+   */
+  it('безналичный обмен уходит с курсом, суммой к выдаче и видом записи', async () => {
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'phone',
+      bankName: 'Сбербанк',
+      phone: '+79990000000',
+    });
+    await db.insert(exchangeRequests).values({
+      clientId: 100n,
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '10000',
+      toAmount: '866200',
+      requestRate: '86.62',
+      requisitesId: requisites.id,
+    });
+
+    const [alert] = await core.takeStaffAlerts(new Date());
+
+    expect(alert).toMatchObject({
+      kind: 'staff-new-request',
+      request: {
+        kind: 'exchange',
+        fromAmount: '10000',
+        toAmount: '866200',
+        rate: '86.62',
+        payout: { kind: 'phone', bankName: 'Сбербанк', network: null },
+      },
+    });
+  });
+
+  it('вывод на сохранённую запись называет её вид', async () => {
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'phone',
+      bankName: 'Т-Банк',
+      phone: '+79990000000',
+    });
+    // Ссылка на запись и свой шифротекст исключают друг друга — это
+    // ограничение базы, и вывод по записи хранит только ссылку.
+    await db.insert(withdrawalRequests).values({
+      clientId: 100n,
+      amount: '500',
+      method: 'bank',
+      requisitesId: requisites.id,
+    });
+
+    const [alert] = await core.takeStaffAlerts(new Date());
+
+    expect(alert).toMatchObject({
+      request: { kind: 'withdrawal', method: 'bank', payout: { kind: 'phone', bankName: 'Т-Банк' } },
+    });
+  });
+
+  it('просьба об оплате уходит с темой', async () => {
+    await core.submitInquiry({ telegramUserId: 100n, topic: 'hotel', details: 'Hilton' });
+
+    const [alert] = await core.takeStaffAlerts(new Date());
+
+    expect(alert).toMatchObject({ kind: 'staff-client-message', topic: 'hotel' });
   });
 });
 

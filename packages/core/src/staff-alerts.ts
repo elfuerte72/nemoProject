@@ -1,5 +1,4 @@
 import { eq, inArray, isNull } from 'drizzle-orm';
-import { Money } from '@nemo/types';
 import {
   cardApplications,
   clients,
@@ -11,6 +10,12 @@ import type { CoreConfig } from './context.js';
 import { takeStaffNotifications } from './conversations.js';
 import type { NewRequestSubject, Notification } from './notifications.js';
 import { takeQueueWatchAlerts } from './queue-watch.js';
+import {
+  exchangeSubject,
+  payoutHintsOf,
+  withdrawalSubject,
+  type Transaction,
+} from './request-subject.js';
 
 /**
  * О чём сотрудникам ещё не сообщали.
@@ -46,8 +51,6 @@ interface PendingRequest {
   readonly clientId: bigint;
   readonly subject: NewRequestSubject;
 }
-
-type Transaction = Parameters<Parameters<CoreConfig['db']['transaction']>[0]>[0];
 
 async function takeNewRequestNotifications(
   ctx: CoreConfig,
@@ -116,19 +119,12 @@ async function takeExchangeRequests(
     .where(isNull(exchangeRequests.staffNotifiedAt))
     .returning();
 
-  return rows
-    .filter((row) => row.status === 'new')
-    .map((row) => ({
-      clientId: row.clientId,
-      subject: {
-        kind: 'exchange',
-        id: row.id,
-        fromAmount: Money.toAmount(row.fromAmount),
-        fromCode: row.fromCode,
-        toCode: row.toCode,
-        isCash: row.kind === 'cash',
-      },
-    }));
+  const fresh = rows.filter((row) => row.status === 'new');
+  const hints = await payoutHintsOf(
+    tx,
+    fresh.map((row) => row.requisitesId),
+  );
+  return fresh.map((row) => ({ clientId: row.clientId, subject: exchangeSubject(row, hints) }));
 }
 
 async function takeWithdrawalRequests(
@@ -141,12 +137,12 @@ async function takeWithdrawalRequests(
     .where(isNull(withdrawalRequests.staffNotifiedAt))
     .returning();
 
-  return rows
-    .filter((row) => row.status === 'new')
-    .map((row) => ({
-      clientId: row.clientId,
-      subject: { kind: 'withdrawal', id: row.id, amount: Money.toAmount(row.amount) },
-    }));
+  const fresh = rows.filter((row) => row.status === 'new');
+  const hints = await payoutHintsOf(
+    tx,
+    fresh.map((row) => row.requisitesId),
+  );
+  return fresh.map((row) => ({ clientId: row.clientId, subject: withdrawalSubject(row, hints) }));
 }
 
 async function takeCardApplications(
