@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { MessageView } from '@nemo/core';
 import { Dialog } from '@/app/ui/dialog';
+import { LiveRefresh } from '@/app/ui/live-refresh';
 
 /**
  * Переписка с клиентом и отправка ответа.
@@ -31,6 +32,12 @@ export function ConversationView({
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [switching, setSwitching] = useState(false);
+  const [typing, setTyping] = useState(false);
+  /*
+   * Обработчик приходит в `Dialog` зависимостью эффекта: собранный
+   * заново на каждый рендер, он звал бы этот эффект на каждую букву.
+   */
+  const onTyping = useCallback((value: boolean) => setTyping(value), []);
 
   async function reply(body: string) {
     setError(undefined);
@@ -88,6 +95,17 @@ export function ConversationView({
 
   return (
     <div className="split__main">
+      {/*
+        Лента слушает только свой разговор: сообщение другому менеджеру
+        перерисовывало бы этот экран под курсором ни за чем.
+      */}
+      <LiveRefresh
+        topic="conversations"
+        clientId={clientId}
+        busy={switching}
+        typing={typing}
+      />
+
       {error ? <p className="error">{error}</p> : undefined}
 
       <Dialog
@@ -98,6 +116,7 @@ export function ConversationView({
         // иначе он ищет в своей истории строку, которой там нет.
         {...(requestId ? { draft: `По заявке № ${requestId.slice(0, 6)}: ` } : {})}
         onReply={reply}
+        onTyping={onTyping}
         head={
           /*
            * Кто ведёт разговор — над лентой, а не под ней: решение

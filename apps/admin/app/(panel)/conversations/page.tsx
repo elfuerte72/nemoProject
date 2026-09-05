@@ -9,6 +9,7 @@ import {
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { INQUIRY_TOPIC_LABELS, pillClass } from '@/lib/labels';
+import { LiveRefresh } from '@/app/ui/live-refresh';
 import { Moment } from '@/app/ui/moment';
 import { TopicFilter } from './topic-filter';
 
@@ -53,6 +54,13 @@ export default async function ConversationsPage({
 
     return (
       <main className="page page--wide">
+        {/*
+          Список слушает сообщения всех клиентов: он и есть ответ на
+          вопрос «где я нужен», и приходить к нему заново за ответом
+          менеджер не должен.
+        */}
+        <LiveRefresh topic="conversations" />
+
         <header className="page__head">
           <div>
             <h1 className="page__title">Обращения</h1>

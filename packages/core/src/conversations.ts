@@ -4,6 +4,7 @@ import { requireStaff, type Actor } from './actor.js';
 import { conciergeTakesOver } from './concierge.js';
 import type { CoreConfig } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
+import { publishLiveEvent } from './live-events.js';
 import { generateReferralCode } from './referral-code.js';
 import {
   attachmentFactsOf,
@@ -244,6 +245,13 @@ export async function receiveClientMessage(
       })
       .returning();
 
+    // Панели — сразу, до того как решится, кто отвечает: сообщение уже
+    // в переписке, и открытая вкладка обязана его показать.
+    await publishLiveEvent(tx, {
+      topic: 'conversations',
+      clientId: input.telegramUserId.toString(),
+    });
+
     /*
      * Файл сверх предела Telegram называется клиенту сразу и всегда — и
      * тогда, когда за сообщение берётся консьерж: это не ответ на
@@ -334,6 +342,13 @@ export async function replyToClient(
         exchangeRequestId: input.exchangeRequestId ?? null,
       })
       .returning();
+
+    // Разговор бывает открыт у двоих: ответивший видит свой ответ сам,
+    // а второму без толчка он появился бы только к следующему таймеру.
+    await publishLiveEvent(tx, {
+      topic: 'conversations',
+      clientId: input.clientId.toString(),
+    });
 
     return {
       message: toView(row!),

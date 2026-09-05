@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { toClientCardData } from '@/lib/client-card';
 import { getCore } from '@/lib/core';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
 import { formatAmount } from '@/lib/format';
@@ -41,10 +42,10 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
     notFound();
   }
 
-  const [rows, [summary]] = await Promise.all([
-    core.listClientExchangeRequests(actor, clientId, { limit: 100 }),
-    core.listClients(actor, { query: id, limit: 1 }),
-  ]);
+  // Числа о клиенте приходят вместе с карточкой: тот же счёт заявок
+  // вторым запросом — второе место, где он может разойтись с первым.
+  const stats = card.stats;
+  const rows = await core.listClientExchangeRequests(actor, clientId, { limit: 100 });
 
   const title = card.username ? `@${card.username}` : `Клиент ${id}`;
 
@@ -57,11 +58,11 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
         <div>
           <h1 className="page__title">
             {title}
-            {summary?.regular ? <span className="tag tag--gold"> постоянный</span> : undefined}
+            {stats.regular ? <span className="tag tag--gold"> постоянный</span> : undefined}
           </h1>
           <p className="page__sub">
             В сервисе с <Moment at={card.createdAt.toISOString()} mode="day" />
-            {summary?.waiting ? ' · ждёт ответа в переписке' : ''}
+            {stats.waiting ? ' · ждёт ответа в переписке' : ''}
           </p>
         </div>
         <div className="page__actions">
@@ -74,17 +75,17 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
       <div className="split split--work">
         <div className="split__main">
           <Stats>
-            <Stat label="Исполнено" value={summary?.completed ?? 0} note="заявок" />
+            <Stat label="Исполнено" value={stats.completed} note="заявок" />
             <Stat
               label="В работе"
-              value={summary?.open ?? 0}
+              value={stats.open}
               note="сейчас"
-              tone={summary?.open ? 'wait' : 'plain'}
+              tone={stats.open ? 'wait' : 'plain'}
             />
-            <Stat label="Отменено" value={summary?.cancelled ?? 0} note="заявок" />
+            <Stat label="Отменено" value={stats.cancelled} note="заявок" />
             <Stat
               label="Оборот"
-              value={formatByCurrency(summary?.turnover ?? [])}
+              value={formatByCurrency(stats.turnover)}
               note="отдано по исполненным, по валютам"
             />
           </Stats>
@@ -169,12 +170,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
         <ClientCard
           clientId={id}
           conversationHref={`/conversations/${id}`}
-          client={{
-            ...card,
-            telegramUserId: card.telegramUserId.toString(),
-            referrerId: card.referrerId?.toString() ?? null,
-            createdAt: card.createdAt.toISOString(),
-          }}
+          client={toClientCardData(card)}
         />
       </div>
     </main>

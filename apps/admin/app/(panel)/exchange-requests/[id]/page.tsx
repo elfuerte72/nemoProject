@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { toClientCardData } from '@/lib/client-card';
 import { getCore } from '@/lib/core';
 import { ExchangeRequestCard } from './exchange-request-card';
 
@@ -85,16 +86,7 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
       accounts={accounts}
       markupBps={markupBps}
       pricedBySchedule={pricedBySchedule}
-      client={
-        card
-          ? {
-              ...card,
-              telegramUserId: card.telegramUserId.toString(),
-              referrerId: card.referrerId?.toString() ?? null,
-              createdAt: card.createdAt.toISOString(),
-            }
-          : null
-      }
+      client={card ? toClientCardData(card) : null}
       viewerStaffId={actor.staffId}
       viewerRole={actor.role}
       colleagues={colleagues}

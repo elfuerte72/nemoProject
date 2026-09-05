@@ -34,6 +34,7 @@ import {
   isGreetingOnly,
 } from './concierge-voice.js';
 import { NotFoundError } from './errors.js';
+import { publishLiveEvent } from './live-events.js';
 import type { Notification } from './notifications.js';
 import { readServiceSettings } from './settings.js';
 
@@ -474,6 +475,13 @@ async function settle(
       direction: 'outgoing',
       body,
       authoredByConcierge: true,
+    });
+
+    // Ответ помощника — такая же строка в переписке, и менеджер, который
+    // за ней следит, должен увидеть её без перезагрузки.
+    await publishLiveEvent(tx, {
+      topic: 'conversations',
+      clientId: pending.clientId.toString(),
     });
   });
 

@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { clients, referrals } from '@nemo/db';
-import { requireClient, requireStaff, type Actor } from './actor.js';
+import { requireClient, type Actor } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
@@ -183,63 +183,4 @@ export async function getClient(ctx: CoreConfig, actor: Actor): Promise<ClientVi
     throw new NotFoundError('Клиент не найден');
   }
   return toView(row);
-}
-
-/**
- * Клиент глазами сотрудника: с кем идёт разговор.
- *
- * Отдельно от `ClientView`: там профиль самого клиента, а здесь то, что
- * нужно менеджеру в переписке, — по чему его окликнуть и как давно он в
- * сервисе. Ник нужен для ссылки в Telegram: по числовому
- * идентификатору аккаунт не открывается, и без ника окликнуть человека
- * можно только через того же бота.
- */
-export interface ClientCardView {
-  readonly telegramUserId: bigint;
-  readonly username: string | null;
-  readonly createdAt: Date;
-  readonly referralCode: string;
-  /** Кто привёл. Пусто — пришёл сам. */
-  readonly referrerId: bigint | null;
-  readonly referrerUsername: string | null;
-  /** Согласие на рассылку: молчащему писать о курсах нельзя. */
-  readonly marketingConsent: boolean;
-  /**
-   * Разговор ведёт человек: помощник в нём молчит.
-   *
-   * Здесь, а не отдельной операцией: строка клиента для карточки уже
-   * прочитана, а второй запрос ради одного признака платится на каждом
-   * открытии разговора.
-   */
-  readonly handedToHuman: boolean;
-}
-
-export async function getClientCard(
-  ctx: CoreConfig,
-  actor: Actor,
-  clientId: bigint,
-): Promise<ClientCardView> {
-  requireStaff(actor);
-
-  const row = await findByTelegramUserId(ctx.db, clientId);
-  if (!row) {
-    throw new NotFoundError('Клиент не найден');
-  }
-
-  // Пригласивший — тем же запросом, а не отдельной операцией: без ника
-  // строка «привёл 418822013» ничего менеджеру не говорит.
-  const referrer = row.referrerId
-    ? await findByTelegramUserId(ctx.db, row.referrerId)
-    : undefined;
-
-  return {
-    telegramUserId: row.telegramUserId,
-    username: row.username,
-    createdAt: row.createdAt,
-    referralCode: row.referralCode,
-    referrerId: row.referrerId,
-    referrerUsername: referrer?.username ?? null,
-    marketingConsent: row.marketingConsent,
-    handedToHuman: row.handedToHumanAt !== null,
-  };
 }
