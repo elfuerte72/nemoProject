@@ -46,9 +46,20 @@ export async function GET(request: Request): Promise<Response> {
         }
       };
 
-      const unsubscribe = await onLiveEvent((event: LiveEvent) => {
-        send(`data: ${JSON.stringify(event)}\n\n`);
-      });
+      /*
+       * Подписка может не завестись — база не отвечает. Поток при этом
+       * остаётся открытым и пустым: вкладка живёт таймером, как жила до
+       * толчков, а не переоткрывает соединение каждые пару секунд,
+       * пока база не вернётся.
+       */
+      let unsubscribe: (() => Promise<void>) | undefined;
+      try {
+        unsubscribe = await onLiveEvent((event: LiveEvent) => {
+          send(`data: ${JSON.stringify(event)}\n\n`);
+        });
+      } catch {
+        unsubscribe = undefined;
+      }
 
       /*
        * Пустая строка-комментарий каждые полминуты. Молчащее соединение
@@ -70,7 +81,7 @@ export async function GET(request: Request): Promise<Response> {
         closed = true;
         clearInterval(heartbeat);
         clearTimeout(expiry);
-        await unsubscribe();
+        await unsubscribe?.();
         try {
           controller.close();
         } catch {
