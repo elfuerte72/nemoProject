@@ -10,13 +10,15 @@ import {
 import { asClient, givenCurrencyPair, givenNetwork, givenStaff } from './test-support.js';
 
 /**
- * Выдача реквизитов для оплаты: менеджер выбирает счёт сервиса, а
- * сообщение клиенту собирает ядро (docs/adr/0008).
+ * Выдача реквизитов для оплаты: менеджер выбирает счёт сервиса — и
+ * тогда сообщение клиенту собирает ядро (docs/adr/0008) — или
+ * вставляет реквизиты руками (docs/adr/0015).
  *
- * Проверяется здесь то, ради чего затевался справочник: номер не
- * набирается руками, счёт не той валюты и погашенный до клиента не
- * доходят, а выданное остаётся в заявке ссылкой — видно, куда клиенту
- * сказали платить.
+ * Проверяется здесь то, ради чего справочник остался: счёт не той
+ * валюты и погашенный до клиента не доходят, а выданное остаётся в
+ * заявке ссылкой — видно, куда клиенту сказали платить. И то, ради
+ * чего его перестали требовать: набранное руками уходит клиенту как
+ * есть, а не отвергается.
  */
 
 const keys = generateRequisiteKeyPair();
@@ -331,20 +333,56 @@ describe('выдача без счёта', () => {
   });
 
   /*
-   * Главное правило справочника, и держать его должно ядро, а не форма.
-   * Панель ведёт менеджера к выбору счёта, но операцию зовут не только
-   * из неё, а набранный руками номер — это перевод, который не
-   * возвращается. Правило, живущее в разметке, обходится любым другим
-   * путём к операции.
+   * Справочник счетов — подсказка, а не условие (docs/adr/0015). До
+   * 5 сентября 2026 безналичная заявка без счёта из справочника
+   * отвергалась, и менеджер с кошельком в буфере обмена упирался в
+   * пустой раздел настроек. Кошельков и счетов у сервиса много, и
+   * меняются они чаще, чем справочник успевают вести.
    */
-  it('по безналичной заявке не принимает набранные руками реквизиты', async () => {
+  it('по безналичной заявке принимает реквизиты, набранные руками', async () => {
     const id = await givenClaimedRequest();
 
-    await expect(
-      core.confirmExchangeRate(manager, id, {
-        finalRate: '95',
-        paymentInstructions: 'TRC20: TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e',
+    const { request } = await core.confirmExchangeRate(manager, id, {
+      finalRate: '95',
+      paymentInstructions: 'TRC20: TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e',
+    });
+
+    // Как есть, без обвязки: слова менеджера — это и есть сообщение.
+    expect(request.paymentInstructions).toBe('TRC20: TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e');
+    expect(request.serviceAccountId).toBeNull();
+    expect(request.status).toBe('rate_confirmed');
+  });
+
+  it('набранные руками реквизиты уходят клиенту тем же сообщением, что и счёт', async () => {
+    const id = await givenClaimedRequest();
+
+    const { notifications } = await core.confirmExchangeRate(manager, id, {
+      finalRate: '95',
+      paymentInstructions: 'Карта 2200 7005 3456 7890, Т-Банк, Иван П.',
+    });
+
+    expect(notifications).toEqual([
+      expect.objectContaining({
+        status: 'rate_confirmed',
+        paymentInstructions: 'Карта 2200 7005 3456 7890, Т-Банк, Иван П.',
       }),
-    ).rejects.toThrow(InvalidInputError);
+    ]);
+  });
+
+  /*
+   * Без счёта в истории заявки нет и строки о выданном счёте: подпись
+   * «Выдан счёт: …» обещала бы ссылку на справочник, которой нет.
+   */
+  it('без счёта история заявки счёт не называет', async () => {
+    const id = await givenClaimedRequest();
+
+    await core.confirmExchangeRate(manager, id, {
+      finalRate: '95',
+      paymentInstructions: 'TRC20: TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e',
+    });
+
+    const events = await core.listExchangeRequestEvents(manager, id);
+    const issued = events.find((event) => event.toStatus === 'rate_confirmed');
+    expect(issued?.comment ?? null).toBeNull();
   });
 });
