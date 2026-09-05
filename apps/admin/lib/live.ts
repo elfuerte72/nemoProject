@@ -60,6 +60,20 @@ export function shouldRefresh(state: LiveState): boolean {
   return !state.hidden && !state.busy && !state.typing;
 }
 
+/**
+ * В поле правда набрано — или там стоит то, что подставили за менеджера.
+ *
+ * Разговор, открытый из карточки заявки, приходит с подставленным
+ * номером в поле ответа. Считая его набором, экран замолкал бы навсегда:
+ * менеджер не написал ни буквы, а обновление ждёт, пока он «допишет», —
+ * и ответ клиента, ради которого он и открыл разговор, не появился бы
+ * вовсе.
+ */
+export function hasUnsentText(body: string, draft?: string | undefined): boolean {
+  const typed = body.trim();
+  return typed.length > 0 && typed !== (draft ?? '').trim();
+}
+
 /** Экран, который слушает события: своя тема и, у разговора, свой клиент. */
 export interface LiveScreen {
   readonly topic: LiveTopic;

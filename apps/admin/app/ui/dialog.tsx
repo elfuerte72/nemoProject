@@ -10,6 +10,7 @@ import {
   looksLikeImage,
 } from '@nemo/types';
 import { dayKey, formatDayHeading } from '@/lib/format';
+import { hasUnsentText } from '@/lib/live';
 import { Moment, useBrowserZone } from '@/app/ui/moment';
 
 /**
@@ -69,8 +70,8 @@ export function Dialog({
   }, [messages.length, zone]);
 
   useEffect(() => {
-    onTyping?.(body.trim().length > 0);
-  }, [body, onTyping]);
+    onTyping?.(hasUnsentText(body, draft));
+  }, [body, draft, onTyping]);
 
   async function send() {
     const text = body.trim();

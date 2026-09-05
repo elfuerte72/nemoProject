@@ -1,6 +1,6 @@
 import type { LiveEvent } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
-import { onLiveEvent } from '@/lib/live-bus';
+import { getCore } from '@/lib/core';
 import { LIVE_HEARTBEAT_MS, LIVE_STREAM_MAX_MS } from '@/lib/live';
 
 export const runtime = 'nodejs';
@@ -21,6 +21,9 @@ export const dynamic = 'force-dynamic';
  * клиентах и деньгах — а поток открыт долго, и всё, что в него
  * попадает, живёт в памяти браузера до закрытия вкладки.
  *
+ * Слушателей раздаёт ядро: подписка на канал базы одна на процесс, и
+ * второй такой маршрут её не заведёт (`packages/core/src/live-events.ts`).
+ *
  * Вход обязателен, как и везде в панели: событие говорит, что в
  * сервисе идёт работа, и постороннему знать об этом незачем.
  */
@@ -31,18 +34,33 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   const encoder = new TextEncoder();
+  /*
+   * Уборка живёт снаружи потока: её зовут двое — обрыв со стороны
+   * браузера и сам поток, когда его отменяют, — и ни один из них не
+   * видит внутренностей `start`.
+   */
+  let cleanup: (() => Promise<void>) | undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      let closed = false;
+      /*
+       * Два состояния, а не одно. «Писать больше некуда» и «прибрано»
+       * — разные вещи: сорвавшаяся запись закрывает первое, но уборку
+       * ещё только предстоит сделать. Одним флагом на оба смысла
+       * неудачная запись отменяла бы и уборку — таймер бил бы в пустоту
+       * до перезапуска процесса, а слушатель остался бы в ядре.
+       */
+      let writable = true;
+      let ended = false;
+
       const send = (chunk: string): void => {
-        if (closed) return;
+        if (!writable) return;
         try {
           controller.enqueue(encoder.encode(chunk));
         } catch {
-          // Вкладку закрыли между проверкой и записью — уборку сделает
-          // отписка ниже.
-          closed = true;
+          // Вкладку закрыли между проверкой и записью. Уборку сделает
+          // отмена потока или обрыв запроса — здесь только замолкаем.
+          writable = false;
         }
       };
 
@@ -54,7 +72,7 @@ export async function GET(request: Request): Promise<Response> {
        */
       let unsubscribe: (() => Promise<void>) | undefined;
       try {
-        unsubscribe = await onLiveEvent((event: LiveEvent) => {
+        unsubscribe = await getCore().subscribeToLiveEvents((event: LiveEvent) => {
           send(`data: ${JSON.stringify(event)}\n\n`);
         });
       } catch {
@@ -77,8 +95,9 @@ export async function GET(request: Request): Promise<Response> {
       const expiry = setTimeout(() => void close(), LIVE_STREAM_MAX_MS);
 
       async function close(): Promise<void> {
-        if (closed) return;
-        closed = true;
+        if (ended) return;
+        ended = true;
+        writable = false;
         clearInterval(heartbeat);
         clearTimeout(expiry);
         await unsubscribe?.();
@@ -89,12 +108,19 @@ export async function GET(request: Request): Promise<Response> {
         }
       }
 
+      cleanup = close;
       request.signal.addEventListener('abort', () => void close());
       if (request.signal.aborted) await close();
 
       // Первое событие — сразу: по нему вкладка понимает, что канал
       // открыт, а не висит в ожидании ответа.
       send(`: open\n\n`);
+    },
+
+    // Поток отменяют, когда читатель ушёл: без этого уборка держалась бы
+    // на одном лишь обрыве запроса.
+    async cancel() {
+      await cleanup?.();
     },
   });
 

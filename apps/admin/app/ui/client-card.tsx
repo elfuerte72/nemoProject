@@ -49,7 +49,8 @@ export interface ClientCardData {
  * дольше, чем то единственное число, за которым сюда смотрят.
  */
 function sayRequests(stats: ClientCardStats): string {
-  const parts = [`${stats.completed} исполнено`];
+  const parts: string[] = [];
+  if (stats.completed > 0) parts.push(`${stats.completed} исполнено`);
   if (stats.open > 0) parts.push(`${stats.open} в работе`);
   if (stats.cancelled > 0) parts.push(`${stats.cancelled} отменено`);
   return parts.join(' · ');

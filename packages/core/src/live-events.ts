@@ -81,28 +81,97 @@ function parseEvent(payload: string): LiveEvent | undefined {
   }
 }
 
+type LiveHandler = (event: LiveEvent) => void;
+
+interface LiveChannel {
+  /** Кому раздавать события: открытые вкладки панели. */
+  readonly handlers: Set<LiveHandler>;
+  /** Заведение подписки. Пусто — ещё не заводили или прошлая попытка отказала. */
+  started: Promise<void> | undefined;
+}
+
+/*
+ * Подписка одна на процесс и на всю его жизнь, а слушателей у неё
+ * сколько угодно.
+ *
+ * `LISTEN` занимает соединение целиком, и подписка на вкладку означала
+ * бы столько соединений к базе, сколько менеджеров сегодня работает.
+ *
+ * Снимать её, когда ушёл последний слушатель, нельзя, хотя и хочется:
+ * `unlisten` из `postgres.js` замкнут на объект подписки, а после
+ * обрыва связи библиотека подписывается заново и заводит новый —
+ * старый `unlisten` при этом молча не находит себя и ничего не
+ * снимает. Вторая подписка на тот же канал после такого молчания
+ * доставляла бы каждое событие дважды, третья — трижды: 5 сентября
+ * 2026 живая проба показала ровно это. Плата за отказ от снятия —
+ * одно соединение к базе на процесс, в котором панель хоть раз
+ * открывали; закрывается оно вместе с самим процессом.
+ *
+ * Реестр — на `globalThis`, как и модуль операций: Next пересобирает
+ * модули в разработке и собирает бандлы врозь, и переменная модуля
+ * дала бы по подписке на каждую копию.
+ */
+const CHANNELS = Symbol.for('nemo.core.live-channels');
+
+type ChannelHolder = typeof globalThis & { [CHANNELS]?: WeakMap<object, LiveChannel> };
+
+function channelFor(client: object): LiveChannel {
+  const holder = globalThis as ChannelHolder;
+  holder[CHANNELS] ??= new WeakMap();
+  let channel = holder[CHANNELS].get(client);
+  if (!channel) {
+    channel = { handlers: new Set(), started: undefined };
+    holder[CHANNELS].set(client, channel);
+  }
+  return channel;
+}
+
 /**
- * Слушать события. Возвращает то, чем подписку закрывают.
+ * Слушать события. Возвращает то, чем слушателя снимают.
  *
- * Соединение под подпиской — своё: `LISTEN` занимает его целиком, и
- * взятое из пула оно перестало бы отдавать запросы. Поэтому подписка в
- * процессе одна, а раздаёт её открытым вкладкам сам процесс.
- *
- * Обрыв связи с базой `postgres.js` переживает сам и подписывается
- * заново; пропущенное за это время не догоняется — за него отвечает
- * таймер панели.
+ * Снимается именно слушатель, а не подписка в базе: она заводится один
+ * раз и живёт до конца процесса (см. выше). Обрыв связи `postgres.js`
+ * переживает сам и подписывается заново; пропущенное за это время не
+ * догоняется — за него отвечает таймер панели.
  */
 export async function subscribeToLiveEvents(
   ctx: CoreConfig,
-  handler: (event: LiveEvent) => void,
+  handler: LiveHandler,
 ): Promise<() => Promise<void>> {
   const client = ctx.db.$client;
-  const subscription = await client.listen(LIVE_CHANNEL, (payload) => {
-    const event = parseEvent(payload);
-    if (event) handler(event);
-  });
+  const channel = channelFor(client);
+  channel.handlers.add(handler);
+
+  channel.started ??= (async () => {
+    await client.listen(LIVE_CHANNEL, (payload) => {
+      const event = parseEvent(payload);
+      if (!event) return;
+      /*
+       * Каждому слушателю — своя попытка: вкладка, закрывшаяся в этот
+       * самый момент, роняет запись в свой поток, а вслед за ней
+       * уронила бы и рассылку остальным.
+       */
+      for (const one of channel.handlers) {
+        try {
+          one(event);
+        } catch {
+          // Молчим: этого слушателя снимет его же поток, когда закроется.
+        }
+      }
+    });
+  })();
+
+  try {
+    await channel.started;
+  } catch (error) {
+    // Подписка не завелась — слушатель не остаётся висеть, а следующий
+    // пришедший пробует завести её заново.
+    channel.handlers.delete(handler);
+    channel.started = undefined;
+    throw error;
+  }
 
   return async () => {
-    await subscription.unlisten();
+    channel.handlers.delete(handler);
   };
 }

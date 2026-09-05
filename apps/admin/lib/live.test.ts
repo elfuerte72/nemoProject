@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { eventConcerns, LIVE_REFRESH_MS, shouldRefresh } from './live';
+import { eventConcerns, hasUnsentText, LIVE_REFRESH_MS, shouldRefresh } from './live';
 
 /**
  * Когда очередь имеет право обновиться сама.
@@ -58,5 +58,25 @@ describe('чьё это событие', () => {
 
     expect(eventConcerns({ topic: 'conversations', clientId: '200' }, screen)).toBe(true);
     expect(eventConcerns({ topic: 'conversations' }, screen)).toBe(true);
+  });
+});
+
+describe('набрано ли в поле', () => {
+  it('пустое поле набором не считается', () => {
+    expect(hasUnsentText('')).toBe(false);
+    expect(hasUnsentText('   ')).toBe(false);
+  });
+
+  it('подставленный номер заявки — не набор: менеджер не написал ни буквы', () => {
+    const draft = 'По заявке № abc123: ';
+
+    expect(hasUnsentText(draft, draft)).toBe(false);
+    expect(hasUnsentText('По заявке № abc123:', draft)).toBe(false);
+  });
+
+  it('дописанное к подставленному — уже набор', () => {
+    const draft = 'По заявке № abc123: ';
+
+    expect(hasUnsentText(`${draft}деньги ушли`, draft)).toBe(true);
   });
 });

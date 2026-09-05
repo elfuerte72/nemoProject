@@ -74,7 +74,9 @@ describe('толчок о событии', () => {
         fromAmount: '100',
       });
 
-      await expect(nextEvent(events, (one) => one.topic === 'exchange')).resolves.toBeDefined();
+      await expect(nextEvent(events, (one) => one.topic === 'exchange')).resolves.toEqual({
+        topic: 'exchange',
+      });
     } finally {
       await stop();
     }
@@ -96,7 +98,32 @@ describe('толчок о событии', () => {
     try {
       await core.claimExchangeRequest(manager, request.id);
 
-      await expect(nextEvent(events, (one) => one.topic === 'exchange')).resolves.toBeDefined();
+      await expect(nextEvent(events, (one) => one.topic === 'exchange')).resolves.toEqual({
+        topic: 'exchange',
+      });
+    } finally {
+      await stop();
+    }
+  });
+
+  it('вторая подписка не удваивает событие: канал заводится один раз', async () => {
+    // Снятый слушатель и пришедший ему на смену — обычная жизнь панели:
+    // менеджер закрыл вкладку и открыл заново. Каждая такая пара, заведи
+    // она второй `listen`, доставляла бы событие лишний раз, а вкладка
+    // столько же раз перечитывала бы экран.
+    const stopFirst = await core.subscribeToLiveEvents(() => {});
+    await stopFirst();
+
+    const events: LiveEvent[] = [];
+    const stop = await core.subscribeToLiveEvents((event) => events.push(event));
+
+    try {
+      await core.receiveClientMessage({ telegramUserId: 100n, body: 'Здравствуйте' });
+      await nextEvent(events, (one) => one.topic === 'conversations');
+      // Дубль пришёл бы следом за первым, а не вместо него.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(events.filter((one) => one.topic === 'conversations')).toHaveLength(1);
     } finally {
       await stop();
     }
