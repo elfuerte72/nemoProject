@@ -50,16 +50,18 @@ export interface LiveEvent {
  *
  * Зовётся внутри той же транзакции, что и само изменение: `pg_notify`
  * доставляется по коммиту, и подписчик не увидит события, которого в
- * базе не случилось. Отказ канала не роняет операцию — обмен, который
- * не состоялся из-за того, что некому было о нём рассказать, хуже
- * молчания.
+ * базе не случилось.
+ *
+ * Отказ не глушится, хотя соблазн велик — «уведомление не важнее
+ * обмена». Внутри транзакции глушить его нечестно: упавший запрос
+ * рвёт саму транзакцию, и следующая же запись в ней откажет с
+ * невнятным «current transaction is aborted». Падать здесь по правде
+ * не на чем: размер события известен и до предела в восемь килобайт
+ * ему далеко, а обрыв связи означает, что операция не завершится и
+ * без нас.
  */
 export async function publishLiveEvent(executor: Executor, event: LiveEvent): Promise<void> {
-  try {
-    await executor.execute(sql`select pg_notify(${LIVE_CHANNEL}, ${JSON.stringify(event)})`);
-  } catch {
-    // Молчим намеренно: см. выше.
-  }
+  await executor.execute(sql`select pg_notify(${LIVE_CHANNEL}, ${JSON.stringify(event)})`);
 }
 
 function parseEvent(payload: string): LiveEvent | undefined {
