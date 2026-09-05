@@ -31,12 +31,8 @@ import {
   updateCardApplicationStatus,
   type UpdateCardApplicationInput,
 } from './card-applications.js';
-import {
-  getClient,
-  getClientCard,
-  registerClient,
-  type RegisterClientInput,
-} from './clients.js';
+import { getClient, registerClient, type RegisterClientInput } from './clients.js';
+import { getClientCard } from './client-card.js';
 import type { CoreConfig } from './context.js';
 import {
   expireUnpaidExchangeRequests,
@@ -467,11 +463,11 @@ export { createDatabase, type Database } from '@nemo/db';
 export type { Actor } from './actor.js';
 export type { CoreConfig } from './context.js';
 export type {
-  ClientCardView,
   ClientView,
   RegisterClientInput,
   RegisterClientResult,
 } from './clients.js';
+export type { ClientCardView, ClientStats } from './client-card.js';
 export type {
   CurrencyPairView,
   ExchangeRequestView,

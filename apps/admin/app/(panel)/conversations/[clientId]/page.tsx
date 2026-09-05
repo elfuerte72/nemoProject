@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { toClientCardData } from '@/lib/client-card';
 import { getCore } from '@/lib/core';
 import { ClientCard } from '@/app/ui/client-card';
 import { ConversationView } from './conversation-view';
@@ -77,19 +78,7 @@ export default async function ConversationPage({
           {...(requestId ? { requestId } : {})}
         />
 
-        <ClientCard
-          clientId={clientId}
-          client={
-            card
-              ? {
-                  ...card,
-                  telegramUserId: card.telegramUserId.toString(),
-                  referrerId: card.referrerId?.toString() ?? null,
-                  createdAt: card.createdAt.toISOString(),
-                }
-              : null
-          }
-        />
+        <ClientCard clientId={clientId} client={card ? toClientCardData(card) : null} />
       </div>
     </main>
   );
