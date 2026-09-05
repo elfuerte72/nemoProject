@@ -12,14 +12,17 @@
   },
   "dependencies": {
     "@nemo/brand": "workspace:*",
+    "@nemo/concierge": "workspace:^",
     "@nemo/core": "workspace:*",
     "@nemo/http": "workspace:*",
     "@nemo/telegram": "workspace:*",
     "@nemo/types": "workspace:*",
+    "mammoth": "1.12.2",
     "next": "^15.1.4",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "unpdf": "1.8.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {

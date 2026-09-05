@@ -13,7 +13,9 @@ const config: NextConfig = {
    */
   env: { APP_VERSION: gitSha(root) ?? '' },
   transpilePackages: ['@nemo/brand', '@nemo/core', '@nemo/http', '@nemo/telegram', '@nemo/types'],
-  serverExternalPackages: ['postgres'],
+  // Читалки PDF и DOCX остаются пакетами Node, а не собираются в бандл:
+  // у pdf.js внутри воркеры и необязательный canvas, и сборка их ломает.
+  serverExternalPackages: ['postgres', 'unpdf', 'mammoth'],
   /** См. комментарии в apps/miniapp/next.config.ts. */
   outputFileTracingRoot: root,
   webpack: (config) => {

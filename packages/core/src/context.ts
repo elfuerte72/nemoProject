@@ -1,5 +1,6 @@
 import type { Database } from '@nemo/db';
 import type { ConciergeSource } from './concierge-source.js';
+import type { KnowledgeDrafter } from './knowledge-drafter.js';
 import type { RateSource } from './rates.js';
 
 /**
@@ -34,6 +35,13 @@ export interface CoreConfig {
    * клиентском деплое он выключается снятием ключа провайдера.
    */
   readonly concierge?: ConciergeSource | undefined;
+  /**
+   * Кто делит документ администратора на статьи базы знаний. Не задан —
+   * разбор документов выключен, а статьи заводятся руками: это рабочее
+   * состояние деплоя без ключа провайдера, а не поломка. Нужен панели,
+   * а консьерж — клиентскому приложению; ключ у них один.
+   */
+  readonly knowledgeDrafter?: KnowledgeDrafter | undefined;
   /**
    * Сколько миллисекунд тишины консьерж ждёт, прежде чем взять череду.
    * Человек пишет мысль несколькими сообщениями, и ответ на каждое —
