@@ -21,7 +21,12 @@ export type CoreErrorCode =
   /** Переход не описан в таблице состояний. */
   | 'transition-not-allowed'
   /** Кто-то успел раньше: заявку уже взяли, состояние уже изменилось. */
-  | 'conflict';
+  | 'conflict'
+  /**
+   * Чужая сторона не ответила: провайдер модели молчит. Данные в
+   * порядке, права есть — повторить позже можно как есть.
+   */
+  | 'unavailable';
 
 export class CoreError extends Error {
   constructor(
@@ -60,5 +65,11 @@ export class TransitionNotAllowedError extends CoreError {
 export class ConflictError extends CoreError {
   constructor(message: string) {
     super('conflict', message);
+  }
+}
+
+export class UnavailableError extends CoreError {
+  constructor(message: string) {
+    super('unavailable', message);
   }
 }

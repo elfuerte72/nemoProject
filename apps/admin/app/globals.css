@@ -2169,6 +2169,87 @@ select.input {
   margin-top: 10px;
 }
 
+/* ── База знаний: приём документа и черновик ─────────────────────── */
+
+/*
+ * Скрыть с экрана, оставив читалкам и клавиатуре: поле выбора файла
+ * живёт внутри кнопки, а системный вид у него не отсюда.
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.btn:focus-within:has(.sr-only:focus-visible) {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Кнопка-подпись поля файла: у `<label>` нет `disabled`, гасится классом. */
+.btn--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.intake {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.intake__file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+/* Кнопка разбора — справа, отдельно от выбора файла: это шаг, а не выбор. */
+.intake__submit {
+  margin-left: auto;
+}
+
+.draft {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--hairline);
+  background: var(--surface-soft);
+}
+
+.draft__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/*
+ * Предупреждение о статье — золотом, как всё, что ждёт решения
+ * человека: это не отказ, а то, о чём стоит знать до записи.
+ */
+.draft__warn {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--gold-light);
+  text-wrap: pretty;
+}
+
+.draft .row--stack {
+  background: var(--surface);
+}
+
 .muted {
   margin: 0;
   font-size: 12.5px;
