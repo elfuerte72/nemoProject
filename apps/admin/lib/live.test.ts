@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LIVE_REFRESH_MS, shouldRefresh } from './live';
+import { eventConcerns, LIVE_REFRESH_MS, shouldRefresh } from './live';
 
 /**
  * Когда очередь имеет право обновиться сама.
@@ -38,5 +38,25 @@ describe('тихое обновление', () => {
   it('повторяется чаще, чем раз в полминуты', () => {
     expect(LIVE_REFRESH_MS).toBeGreaterThanOrEqual(20_000);
     expect(LIVE_REFRESH_MS).toBeLessThanOrEqual(30_000);
+  });
+});
+
+describe('чьё это событие', () => {
+  it('чужая тема экран не будит', () => {
+    expect(eventConcerns({ topic: 'exchange' }, { topic: 'conversations' })).toBe(false);
+  });
+
+  it('разговор слушает своего клиента, а не всех подряд', () => {
+    const screen = { topic: 'conversations', clientId: '100' } as const;
+
+    expect(eventConcerns({ topic: 'conversations', clientId: '100' }, screen)).toBe(true);
+    expect(eventConcerns({ topic: 'conversations', clientId: '200' }, screen)).toBe(false);
+  });
+
+  it('список обращений слушает всех: он про всех и есть', () => {
+    const screen = { topic: 'conversations' } as const;
+
+    expect(eventConcerns({ topic: 'conversations', clientId: '200' }, screen)).toBe(true);
+    expect(eventConcerns({ topic: 'conversations' }, screen)).toBe(true);
   });
 });

@@ -20,6 +20,7 @@ import { requirePositiveAmount } from './amounts.js';
 import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
+import { publishLiveEvent } from './live-events.js';
 import type { Notification } from './notifications.js';
 import { quoteForSubmission } from './rates.js';
 import { requireSuitableRequisites } from './requisites.js';
@@ -414,6 +415,10 @@ export async function submitExchangeRequest(
       toStatus: 'new',
       actorType: 'client',
     });
+
+    // Заявка появилась в очереди: тот, кто ждёт работу у экрана, узнаёт
+    // об этом сразу, а не с очередным тиком таймера.
+    await publishLiveEvent(tx, { topic: 'exchange' });
 
     const request = toExchangeRequestView(row!);
     return {

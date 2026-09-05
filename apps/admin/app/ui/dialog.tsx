@@ -32,12 +32,19 @@ export function Dialog({
   messages,
   draft,
   onReply,
+  onTyping,
   head,
 }: {
   readonly messages: readonly MessageView[];
   /** Что уже стоит в поле ответа: номер заявки, если писать из карточки. */
   readonly draft?: string | undefined;
   readonly onReply?: ((body: string) => Promise<void>) | undefined;
+  /**
+   * В поле ответа что-то набрано. Наружу — чтобы тихое обновление
+   * страницы подождало: перерисовка посреди набранного ответа отнимает
+   * у менеджера то, что он уже написал клиенту.
+   */
+  readonly onTyping?: ((typing: boolean) => void) | undefined;
   /** Строка над лентой: кто ведёт разговор. */
   readonly head?: ReactNode;
 }) {
@@ -60,6 +67,10 @@ export function Dialog({
     const node = feed.current;
     if (node) node.scrollTop = node.scrollHeight;
   }, [messages.length, zone]);
+
+  useEffect(() => {
+    onTyping?.(body.trim().length > 0);
+  }, [body, onTyping]);
 
   async function send() {
     const text = body.trim();

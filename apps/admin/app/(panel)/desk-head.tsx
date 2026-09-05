@@ -41,7 +41,7 @@ export function DeskHead({
         {heading}
         <div className="page__actions">
           {tools}
-          <LiveQueue fetchedAt={fetchedAt} typing={typing} />
+          <LiveQueue fetchedAt={fetchedAt} topic="exchange" typing={typing} />
         </div>
       </header>
       {overview}

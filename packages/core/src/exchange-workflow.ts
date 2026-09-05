@@ -41,6 +41,7 @@ import {
   TransitionNotAllowedError,
 } from './errors.js';
 import { toExchangeRequestView, type ExchangeRequestView } from './exchange-requests.js';
+import { publishLiveEvent } from './live-events.js';
 import type { Notification } from './notifications.js';
 import { accrueReferralBonuses } from './referral-accruals.js';
 import { readFeeSchedule } from './fee-schedules.js';
@@ -263,6 +264,10 @@ async function applyTransition(
     actorStaffId: input.actorStaffId ?? null,
     comment: input.comment ?? null,
   });
+
+  // Один толчок на любой переход: заявку ведёт один, а смотрят на неё
+  // все, и «у коллег» на чужом столе обязано меняться вместе с ней.
+  await publishLiveEvent(executor, { topic: 'exchange' });
 
   return {
     row: updated!,

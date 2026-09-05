@@ -33,6 +33,7 @@ import {
 } from './card-applications.js';
 import { getClient, registerClient, type RegisterClientInput } from './clients.js';
 import { getClientCard } from './client-card.js';
+import { subscribeToLiveEvents, type LiveEvent } from './live-events.js';
 import type { CoreConfig } from './context.js';
 import {
   expireUnpaidExchangeRequests,
@@ -205,6 +206,13 @@ export function createCore(ctx: CoreConfig) {
     getClient: (actor: Actor) => getClient(ctx, actor),
     /** Карточка клиента для сотрудника: с кем идёт разговор. */
     getClientCard: (actor: Actor, clientId: bigint) => getClientCard(ctx, actor, clientId),
+
+    /**
+     * Слушать события базы: панель держит подписку одну на процесс и
+     * раздаёт её открытым вкладкам. Возвращает то, чем её закрывают.
+     */
+    subscribeToLiveEvents: (handler: (event: LiveEvent) => void) =>
+      subscribeToLiveEvents(ctx, handler),
 
     getExchangeTerms: () => getExchangeTerms(ctx),
     getQuote: (input: QuoteInput) => getQuote(ctx, input),
@@ -468,6 +476,8 @@ export type {
   RegisterClientResult,
 } from './clients.js';
 export type { ClientCardView, ClientStats } from './client-card.js';
+export type { LiveEvent, LiveTopic } from './live-events.js';
+export { LIVE_TOPICS } from './live-events.js';
 export type {
   CurrencyPairView,
   ExchangeRequestView,
