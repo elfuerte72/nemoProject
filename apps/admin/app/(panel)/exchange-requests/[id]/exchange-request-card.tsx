@@ -81,12 +81,15 @@ export function ExchangeRequestCard({
    */
   const [toAmount, setToAmount] = useState('');
   /*
-   * Счёт сервиса, который уйдёт клиенту. Номер по нему собирает ядро —
-   * менеджер его не набирает (docs/adr/0008). Первый в списке выбран
-   * заранее: обычно он там и единственный.
+   * Счёт сервиса из справочника — если он там заведён, номер по нему
+   * собирает ядро (docs/adr/0008). Первый в списке выбран заранее:
+   * это путь короче. Пустое значение — «вставлю реквизиты руками»
+   * (docs/adr/0015), и при пустом справочнике другого пути нет.
    */
   const [serviceAccountId, setServiceAccountId] = useState(accounts[0]?.id ?? '');
   const [paymentInstructions, setPaymentInstructions] = useState('');
+  /** Текст в поле — сами реквизиты, а не приписка к собранным по счёту. */
+  const typedRequisites = request.kind === 'electronic' && !serviceAccountId;
   const [serviceIncome, setServiceIncome] = useState('');
   const [serviceIncomeCode, setServiceIncomeCode] = useState(request.toCode);
   const [reason, setReason] = useState('');
@@ -484,37 +487,6 @@ export function ExchangeRequestCard({
                   : 'У этой заявки курса подачи нет — назовите свой. Курс и реквизиты уйдут ' +
                     'клиенту в бот сообщением, и с этого момента пойдёт срок оплаты.'}
               </p>
-              {/*
-                Счетов нет — говорится до формы, а не припиской под ней, и
-                со ссылкой туда, где счёт заводят: до 4 сентября 2026
-                администратор читал серую строку под курсом и спрашивал,
-                почему кнопка не работает. Правило само — docs/adr/0008:
-                реквизиты руками не набираются, опечатка в одной цифре
-                означает перевод, который не возвращается.
-              */}
-              {accounts.length === 0 && request.kind === 'electronic' ? (
-                <div className="callout" role="status">
-                  <div className="callout__body">
-                    <span className="callout__title">
-                      Выдавать нечего: счетов сервиса в {request.fromCode} нет
-                    </span>
-                    <p className="callout__text">
-                      Клиент переводит {request.fromCode} на счёт сервиса, а его выбирают из
-                      справочника, не набирают руками.{' '}
-                      {viewerRole === 'admin'
-                        ? `Заведите счёт в ${request.fromCode} — он появится здесь списком, и кнопка оживёт.`
-                        : `Счета заводит администратор — попросите его завести счёт в ${request.fromCode}, и кнопка оживёт.`}
-                    </p>
-                  </div>
-                  {/* Менеджеру ссылки нет: раздел у него только для чтения, и
-                      кнопка вела бы в тупик. */}
-                  {viewerRole === 'admin' ? (
-                    <Link href="/service-accounts" className="btn btn--soft">
-                      Завести счёт
-                    </Link>
-                  ) : undefined}
-                </div>
-              ) : undefined}
               <div className="form-row">
                 {/*
               Поле курса — только там, где курс называет менеджер. У
@@ -567,10 +539,13 @@ export function ExchangeRequestCard({
                 )}
               </div>
               {/*
-            Счёт выбирается, а не набирается: опечатка в одной цифре —
-            это перевод, который не возвращается (docs/adr/0008). В
-            списке только счета в валюте, которой платит клиент, и
-            только действующие.
+            Справочник счетов — подсказка, а не условие (docs/adr/0015):
+            выбранный счёт собирает ядро с полным номером, а без него
+            реквизиты вставляют в поле ниже, любые. До 5 сентября 2026
+            пустой справочник гасил кнопку, и менеджер с кошельком в
+            буфере шёл просить администратора. В списке только счета в
+            валюте, которой платит клиент, и только действующие; при
+            пустом списке выбирать нечего, и селекта нет.
           */}
               {accounts.length > 0 ? (
                 <label className="field">
@@ -588,28 +563,57 @@ export function ExchangeRequestCard({
                         {account.note ? ` · ${account.note}` : ''}
                       </option>
                     ))}
+                    <option value="">Другой — вставлю реквизиты руками</option>
                   </select>
                 </label>
               ) : undefined}
 
               <label className="field">
                 <span className="label">
-                  {request.kind === 'electronic'
-                    ? 'Приписка к сообщению — срок, сумма, условие'
-                    : 'Где и когда встречаетесь'}
+                  {request.kind !== 'electronic'
+                    ? 'Где и когда встречаетесь'
+                    : typedRequisites
+                      ? `Реквизиты для оплаты — куда клиент отправит ${request.fromCode}`
+                      : 'Приписка к сообщению — срок, сумма, условие'}
                 </span>
                 <textarea
                   className="input"
                   value={paymentInstructions}
                   onChange={(event) => setPaymentInstructions(event.target.value)}
-                  rows={3}
+                  rows={typedRequisites ? 4 : 3}
                   placeholder={
-                    request.kind === 'electronic'
-                      ? 'Например: оплатите одной суммой'
-                      : 'Например: офис на Тверской, до 19:00'
+                    request.kind !== 'electronic'
+                      ? 'Например: офис на Тверской, до 19:00'
+                      : typedRequisites
+                        ? request.fromCode === 'USDT'
+                          ? 'Сеть и адрес кошелька — как есть, уйдёт клиенту этим текстом'
+                          : 'Банк, номер карты или телефон, получатель — уйдёт клиенту этим текстом'
+                        : 'Например: оплатите одной суммой'
                   }
                 />
               </label>
+              {/*
+                Номер, набранный руками, панель не сверяет — ни по
+                контрольной цифре, ни по форме адреса: он бывает чем
+                угодно. Об этом говорится рядом с полем, а не отказом
+                после: перевод по опечатке не возвращается. Ссылка в
+                справочник — администратору: у менеджера раздел только
+                для чтения.
+              */}
+              {typedRequisites ? (
+                <p className="card__note">
+                  Сверьте номер перед отправкой: перевод по опечатке не возвращается.{' '}
+                  {viewerRole === 'admin' ? (
+                    <>
+                      Счета, которыми платят часто, можно завести в{' '}
+                      <Link href="/service-accounts">справочнике</Link> — тогда сообщение
+                      соберётся само.
+                    </>
+                  ) : (
+                    'Счета, которыми платят часто, администратор заводит в справочнике — тогда сообщение собирается само.'
+                  )}
+                </p>
+              ) : undefined}
               <div className="row__actions">
                 {/*
               Курс и реквизиты обязательны — операция без них откажет.
@@ -623,12 +627,10 @@ export function ExchangeRequestCard({
                     busy ||
                     /*
                      * То же правило, по которому отказывает операция:
-                     * безналичной нужен счёт, наличной — слова. Погашенная
-                     * кнопка говорит об этом до нажатия.
+                     * безналичной нужны реквизиты — счёт или слова, —
+                     * наличной только слова, а счёта у неё и нет.
                      */
-                    (request.kind === 'electronic'
-                      ? !serviceAccountId
-                      : !paymentInstructions.trim()) ||
+                    (!serviceAccountId && !paymentInstructions.trim()) ||
                     // Курс обязателен только там, где его называет менеджер.
                     (!request.requestRate && !finalRate.trim())
                   }
