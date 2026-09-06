@@ -33,6 +33,23 @@ import {
 } from './card-applications.js';
 import { getClient, registerClient, type RegisterClientInput } from './clients.js';
 import { getClientCard } from './client-card.js';
+import {
+  approveMerchant,
+  beginMerchantLogin,
+  changeMerchantPassword,
+  countMerchants,
+  getMerchantCard,
+  getMerchantSession,
+  listMerchants,
+  registerMerchant,
+  rejectMerchant,
+  requestMerchantPasswordReset,
+  resetMerchantPassword,
+  setMerchantActive,
+  verifyMerchantEmail,
+  type MerchantFilter,
+  type RegisterMerchantInput,
+} from './merchants.js';
 import { subscribeToLiveEvents, type LiveEvent } from './live-events.js';
 import type { CoreConfig } from './context.js';
 import {
@@ -44,6 +61,7 @@ import {
   getExchangeTerms,
   listExchangeRequests,
   submitExchangeRequest,
+  type OwnExchangeFilter,
   type SubmitExchangeRequestInput,
 } from './exchange-requests.js';
 import { getClientHistory } from './history-feed.js';
@@ -142,7 +160,9 @@ import {
   isRequestPricedBySchedule,
   getExchangeRequestForStaff,
   listExchangeRequestEvents,
+  listExchangeRequestEventsForOwner,
   listExchangeRequestQueue,
+  listMerchantExchangeRequests,
   listExchangeRequestsInProgress,
   markPaymentReceived,
   type CompleteExchangeRequestInput,
@@ -220,11 +240,59 @@ export function createCore(ctx: CoreConfig) {
     subscribeToLiveEvents: (handler: (event: LiveEvent) => void) =>
       subscribeToLiveEvents(ctx, handler),
 
+    /*
+     * Мерчант — второй владелец заявки со своим аккаунтом
+     * (docs/adr/0017). Регистрация, подтверждение почты и вход
+     * исполнителя не принимают: они его как раз и устанавливают — то
+     * же исключение, что у входа сотрудника.
+     */
+    registerMerchant: (input: RegisterMerchantInput) => registerMerchant(ctx, input),
+    verifyMerchantEmail: (token: string) => verifyMerchantEmail(ctx, token),
+    beginMerchantLogin: (input: { email: string; password: string }) =>
+      beginMerchantLogin(ctx, input),
+    getMerchantSession: (merchantId: string, sessionEpoch: number) =>
+      getMerchantSession(ctx, merchantId, sessionEpoch),
+    changeMerchantPassword: (
+      actor: Actor,
+      input: { currentPassword: string; newPassword: string },
+    ) => changeMerchantPassword(ctx, actor, input),
+    requestMerchantPasswordReset: (email: string) =>
+      requestMerchantPasswordReset(ctx, email),
+    resetMerchantPassword: (token: string, password: string) =>
+      resetMerchantPassword(ctx, token, password),
+
+    /* Мерчанты глазами панели: список и карточка обеим ролям, решения — администратору. */
+    listMerchants: (actor: Actor, filter?: MerchantFilter) =>
+      listMerchants(ctx, actor, filter),
+    countMerchants: (actor: Actor, filter?: MerchantFilter) =>
+      countMerchants(ctx, actor, filter),
+    getMerchantCard: (actor: Actor, merchantId: string) =>
+      getMerchantCard(ctx, actor, merchantId),
+    /** Заявки мерчанта — все, а не только те, что в работе. */
+    listMerchantExchangeRequests: (
+      actor: Actor,
+      merchantId: string,
+      options?: {
+        limit?: number | undefined;
+        after?: { createdAt: Date; id: string } | undefined;
+      },
+    ) => listMerchantExchangeRequests(ctx, actor, merchantId, options),
+    approveMerchant: (actor: Actor, merchantId: string) =>
+      approveMerchant(ctx, actor, merchantId),
+    rejectMerchant: (actor: Actor, merchantId: string, input?: { reason?: string }) =>
+      rejectMerchant(ctx, actor, merchantId, input),
+    setMerchantActive: (actor: Actor, merchantId: string, isActive: boolean) =>
+      setMerchantActive(ctx, actor, merchantId, isActive),
+
     getExchangeTerms: () => getExchangeTerms(ctx),
     getQuote: (input: QuoteInput) => getQuote(ctx, input),
     submitExchangeRequest: (actor: Actor, input: SubmitExchangeRequestInput) =>
       submitExchangeRequest(ctx, actor, input),
-    listExchangeRequests: (actor: Actor) => listExchangeRequests(ctx, actor),
+    listExchangeRequests: (actor: Actor, filter?: OwnExchangeFilter) =>
+      listExchangeRequests(ctx, actor, filter),
+    /** Лента своей заявки — владельцу: без имён сотрудников. */
+    listExchangeRequestEventsForOwner: (actor: Actor, requestId: string) =>
+      listExchangeRequestEventsForOwner(ctx, actor, requestId),
     getClientHistory: (actor: Actor) => getClientHistory(ctx, actor),
     getExchangeRequest: (actor: Actor, requestId: string) =>
       getExchangeRequest(ctx, actor, requestId),
@@ -481,7 +549,7 @@ export type Core = ReturnType<typeof createCore>;
  */
 export { createDatabase, type Database } from '@nemo/db';
 
-export type { Actor } from './actor.js';
+export type { Actor, Owner } from './actor.js';
 export type { CoreConfig } from './context.js';
 export type {
   ClientView,
@@ -489,12 +557,20 @@ export type {
   RegisterClientResult,
 } from './clients.js';
 export type { ClientCardView, ClientStats } from './client-card.js';
+export type {
+  MerchantFilter,
+  MerchantResult,
+  MerchantSession,
+  MerchantView,
+  RegisterMerchantInput,
+} from './merchants.js';
 export type { LiveEvent, LiveTopic } from './live-events.js';
 export { LIVE_TOPICS } from './live-events.js';
 export type {
   CurrencyPairView,
   ExchangeRequestView,
   ExchangeTermsView,
+  OwnExchangeFilter,
   SubmitExchangeRequestInput,
   SubmitExchangeRequestResult,
 } from './exchange-requests.js';
@@ -571,6 +647,7 @@ export type {
   ExchangeQueueFilter,
   ExchangeRequestEventView,
   ManagerExchangeRequestView,
+  OwnExchangeRequestEventView,
   TransitionResult,
 } from './exchange-workflow.js';
 export {
@@ -584,10 +661,15 @@ export {
   type CoreErrorCode,
 } from './errors.js';
 export {
+  MERCHANT_LINK_PLACEHOLDER,
   renderNotification,
+  toClient,
+  toMerchant,
   type NewRequestSubject,
   type Notification,
+  type Recipient,
   type RenderedNotification,
+  type RequestParty,
 } from './notifications.js';
 export type {
   ConciergeAnswer,

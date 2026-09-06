@@ -29,6 +29,7 @@ export async function GET(request: Request): Promise<Response> {
       q: (params.get('q') ?? '').trim(),
       kind: pick(params.get('kind') ?? '', exchangeKinds) ?? '',
       status: pick(params.get('status') ?? '', inProgressExchangeStatuses) ?? '',
+      merchant: (params.get('merchant') ?? '').trim(),
     });
     const cursor = cursorFromParams(params);
     const limit = pick(params.get('limit') ?? '', pageSizes.map(String));

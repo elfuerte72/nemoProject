@@ -1,17 +1,14 @@
-import { eq, inArray, isNull } from 'drizzle-orm';
-import {
-  cardApplications,
-  clients,
-  exchangeRequests,
-  staff,
-  withdrawalRequests,
-} from '@nemo/db';
+import { eq, isNull } from 'drizzle-orm';
+import { cardApplications, exchangeRequests, staff, withdrawalRequests } from '@nemo/db';
+import type { Owner } from './actor.js';
 import type { CoreConfig } from './context.js';
 import { takeStaffNotifications } from './conversations.js';
+import { ownerOf } from './exchange-requests.js';
 import type { NewRequestSubject, Notification } from './notifications.js';
 import { takeQueueWatchAlerts } from './queue-watch.js';
 import {
   exchangeSubject,
+  partiesOf,
   payoutHintsOf,
   withdrawalSubject,
   type Transaction,
@@ -48,7 +45,9 @@ export async function takeStaffAlerts(
 
 /** Строка заявки, приведённая к тому, чем она называется сотруднику. */
 interface PendingRequest {
-  readonly clientId: bigint;
+  readonly owner: Owner;
+  /** Внешний номер мерчанта; у клиента его нет. */
+  readonly reference: string | null;
   readonly subject: NewRequestSubject;
 }
 
@@ -76,21 +75,16 @@ async function takeNewRequestNotifications(
     ];
     if (taken.length === 0) return [];
 
-    // Имена только тех клиентов, чьи заявки уходят: вся таблица ради
+    // Имена только тех владельцев, чьи заявки уходят: вся таблица ради
     // нескольких строк — цена, которую платят на каждом опросе.
-    const owners = await tx
-      .select({ telegramUserId: clients.telegramUserId, username: clients.username })
-      .from(clients)
-      .where(inArray(clients.telegramUserId, [...new Set(taken.map((one) => one.clientId))]));
-    const usernames = new Map(owners.map((one) => [one.telegramUserId, one.username]));
+    const partyOf = await partiesOf(tx, taken);
 
     return taken.flatMap((request) =>
       recipients.map(
         (recipient): Notification => ({
           kind: 'staff-new-request',
           to: recipient.telegramUserId,
-          clientId: request.clientId,
-          clientUsername: usernames.get(request.clientId) ?? null,
+          party: partyOf(request),
           request: request.subject,
         }),
       ),
@@ -124,7 +118,11 @@ async function takeExchangeRequests(
     tx,
     fresh.map((row) => row.requisitesId),
   );
-  return fresh.map((row) => ({ clientId: row.clientId, subject: exchangeSubject(row, hints) }));
+  return fresh.map((row) => ({
+    owner: ownerOf(row),
+    reference: row.reference,
+    subject: exchangeSubject(row, hints),
+  }));
 }
 
 async function takeWithdrawalRequests(
@@ -142,7 +140,11 @@ async function takeWithdrawalRequests(
     tx,
     fresh.map((row) => row.requisitesId),
   );
-  return fresh.map((row) => ({ clientId: row.clientId, subject: withdrawalSubject(row, hints) }));
+  return fresh.map((row) => ({
+    owner: { kind: 'client' as const, clientId: row.clientId },
+    reference: null,
+    subject: withdrawalSubject(row, hints),
+  }));
 }
 
 async function takeCardApplications(
@@ -158,7 +160,8 @@ async function takeCardApplications(
   return rows
     .filter((row) => row.status === 'submitted')
     .map((row) => ({
-      clientId: row.clientId,
-      subject: { kind: 'card', id: row.id },
+      owner: { kind: 'client' as const, clientId: row.clientId },
+      reference: null,
+      subject: { kind: 'card' as const, id: row.id },
     }));
 }

@@ -67,3 +67,28 @@ describe('подразделы настроек', () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 });
+
+/**
+ * Мерчанты — раздел работы, а не администратора: менеджер ведёт их
+ * заявки и должен видеть, с кем имеет дело. Кнопки решений при этом
+ * только у администратора, и отказывает им сама операция.
+ */
+describe('раздел «Мерчанты»', () => {
+  it('стоит в основном ряду и считает ждущих рассмотрения', () => {
+    const item = NAV_GROUPS.flatMap((group) => group.items).find(
+      (one) => one.href === '/merchants',
+    );
+    expect(item).toMatchObject({ label: 'Мерчанты', count: 'merchants' });
+  });
+
+  it('карточка мерчанта подсвечивает свой раздел', () => {
+    expect(isCurrentSection('/merchants', '/merchants/9d2a')).toBe(true);
+    // И не подсвечивает соседний: обмен начинается с корня, и без этой
+    // проверки «/merchants» подсветило бы стол.
+    expect(isCurrentSection('/', '/merchants')).toBe(false);
+  });
+
+  it('у мерчантов есть свой подраздел настроек', () => {
+    expect(SETTINGS_SECTIONS.some((one) => one.href === '/settings/merchants')).toBe(true);
+  });
+});

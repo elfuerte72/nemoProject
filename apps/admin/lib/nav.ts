@@ -43,6 +43,8 @@ export interface NavCounts {
   readonly cards: number;
   /** Клиенты, ждущие ответа: столько же работы, сколько в очередях. */
   readonly conversations: number;
+  /** Анкеты мерчантов на рассмотрении: пока не рассмотрены — ничего не могут. */
+  readonly merchants: number;
 }
 
 export const NAV_GROUPS: readonly NavGroup[] = [
@@ -55,6 +57,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/card-applications', label: 'Карты', icon: 'card', count: 'cards' },
       { href: '/conversations', label: 'Обращения', icon: 'chat', count: 'conversations' },
       { href: '/clients', label: 'Клиенты', icon: 'user' },
+      { href: '/merchants', label: 'Мерчанты', icon: 'account', count: 'merchants' },
     ],
   },
   {
@@ -98,6 +101,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     href: '/settings/concierge',
     label: 'Помощник',
     sub: 'Сколько отвечает за сутки и что знает о сервисе.',
+  },
+  {
+    href: '/settings/merchants',
+    label: 'Мерчанты',
+    sub: 'Куда мерчанты пишут за помощью.',
   },
   {
     href: '/settings/staff',

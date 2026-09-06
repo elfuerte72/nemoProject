@@ -177,3 +177,4 @@ export function addressEdges(address: string): string {
 const EDGE_LENGTH = 4;
 
 export { generateTotpSecret, totpCode, verifyTotp, type TotpOptions } from './totp.js';
+export { hashPassword, verifyPassword } from './password.js';

@@ -64,6 +64,7 @@ export function ExchangeTable({
         q: filter.q,
         kind: filter.kind,
         status: filter.status,
+        merchant: filter.merchant,
         limit: String(prefs.pageSize),
         ...cursorToParams(cursor),
       });
@@ -94,7 +95,12 @@ export function ExchangeTable({
       <div aria-hidden className="table__head" style={style}>
         <span>Обмен</span>
         {show('kind') ? <span>Вид</span> : undefined}
-        {show('client') ? <span>Клиент</span> : undefined}
+        {/*
+          Шапка нейтральна: под ней стоят и клиент, и мерчант, а мерчант
+          клиентом не называется — в глоссарии это разные люди. Кто
+          именно, говорит сама строка.
+        */}
+        {show('client') ? <span>Кто подал</span> : undefined}
         <span>Состояние</span>
         {manager ? <span>Ведёт</span> : undefined}
         {show('submitted') ? <span>Подана</span> : undefined}
@@ -141,11 +147,29 @@ export function ExchangeTable({
               */}
               {show('client') ? (
                 <span className="cell">
-                  <span className="cell__label">Клиент</span>
-                  <span className="cell__value">
-                    {request.clientUsername ? `@${request.clientUsername}` : 'Без ника'}
+                  <span className="cell__label">
+                    {request.party.kind === 'merchant' ? 'Мерчант' : 'Клиент'}
                   </span>
-                  <span className="cell__note">{request.clientId}</span>
+                  {/*
+                    У мерчанта ни ника, ни номера в Telegram нет: вместо
+                    них название и его собственный номер сделки — тот
+                    самый, которым он эту заявку назовёт, если спросит.
+                  */}
+                  <span className="cell__value">
+                    {request.party.kind === 'merchant'
+                      ? request.party.name
+                      : (request.party.username ?? 'Без ника')}
+                  </span>
+                  {/*
+                    Под названием — род и номер сделки: на широком
+                    экране подпись ячейки скрыта шапкой, и без слова
+                    «Мерчант» его заявка читалась бы как клиентская.
+                  */}
+                  <span className="cell__note">
+                    {request.party.kind === 'merchant'
+                      ? ['Мерчант', request.party.reference].filter(Boolean).join(' · ')
+                      : request.party.clientId}
+                  </span>
                 </span>
               ) : undefined}
               <span className="cell">

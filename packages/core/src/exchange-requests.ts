@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from 'drizzle-orm';
 import {
   clientRequisites,
   currencies,
@@ -15,7 +15,7 @@ import {
   type ExchangeRequestStatus,
   type PayoutMethod,
 } from '@nemo/types';
-import { requireClient, type Actor } from './actor.js';
+import { requireOwner, type Actor, type Owner } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
 import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
@@ -23,7 +23,14 @@ import { InvalidInputError, NotFoundError } from './errors.js';
 import { publishLiveEvent } from './live-events.js';
 import type { Notification } from './notifications.js';
 import { quoteForSubmission } from './rates.js';
-import { requireSuitableRequisites } from './requisites.js';
+import { requireActiveMerchant, recipientOf } from './merchants.js';
+import {
+  ownerColumns,
+  requireSuitableRequisites,
+  requisitesOf,
+  saveRequisitesFor,
+  type SaveRequisitesInput,
+} from './requisites.js';
 import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
 
 /**
@@ -49,7 +56,13 @@ import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
  */
 export interface ExchangeRequestView {
   readonly id: string;
-  readonly clientId: bigint;
+  /**
+   * Чья заявка: клиента или мерчанта (docs/adr/0017). Размеченным
+   * объединением, а не парой необязательных полей: «оба пусты» — это
+   * заявка без владельца, и разрешать такое чтение значило бы
+   * разрешить его и записи.
+   */
+  readonly owner: Owner;
   readonly kind: ExchangeKind;
   readonly fromCode: string;
   readonly toCode: string;
@@ -80,6 +93,11 @@ export interface ExchangeRequestView {
    */
   readonly paymentInstructions: string | null;
   readonly cancelReason: string | null;
+  /**
+   * Внешний номер мерчанта: «бронь №1024». Пусто у заявки клиента — ей
+   * взяться ему неоткуда.
+   */
+  readonly reference: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly completedAt: Date | null;
@@ -93,11 +111,30 @@ export interface SubmitExchangeRequestInput {
   /** Куда отправлять деньги. Реквизиты клиент подтверждает при подаче. */
   readonly requisitesId?: string | undefined;
   /**
+   * Получатель прямо в запросе — так подаёт мерчант по API: у его
+   * покупателя сохранённых записей нет и не будет, а заводить их
+   * отдельным вызовом значит требовать двух запросов там, где хватает
+   * одного. Запись заводится и сразу архивируется: список получателей
+   * не должен расти на каждую заявку.
+   *
+   * Вместе с `requisitesId` не приходит: два получателя у одной заявки
+   * означали бы, что деньги ушли неизвестно куда из двух.
+   */
+  readonly payout?: SaveRequisitesInput | undefined;
+  /**
    * Отметка времени курса, который клиент видел на экране. По нему
    * заявка и уходит (docs/adr/0006) — спрошенный заново курс успевал бы
    * обновиться между показом и нажатием.
    */
   readonly quotedAt?: Date | undefined;
+  /** Внешний номер мерчанта: «бронь №1024». Только у него. */
+  readonly reference?: string | undefined;
+  /**
+   * Ключ повтора. Тот же ключ возвращает ту же заявку, а не заводит
+   * вторую: сеть рвётся посреди ответа, и мерчант, не получивший его,
+   * повторяет запрос — без ключа он оплатил бы обмен дважды.
+   */
+  readonly idempotencyKey?: string | undefined;
 }
 
 export interface SubmitExchangeRequestResult {
@@ -151,10 +188,24 @@ function toDisplayAmount(value: string | null): Amount | null {
   return value === null ? null : Money.toAmount(value);
 }
 
+/**
+ * Владелец строки. Ограничение базы держит «ровно одного», и пустота с
+ * обеих сторон означала бы, что оно снято, — молча подставлять сюда
+ * что-то ради типов нельзя.
+ */
+export function ownerOf(row: {
+  clientId: bigint | null;
+  merchantId: string | null;
+}): Owner {
+  if (row.clientId !== null) return { kind: 'client', clientId: row.clientId };
+  if (row.merchantId !== null) return { kind: 'merchant', merchantId: row.merchantId };
+  throw new Error('Строка без владельца: снято ограничение базы');
+}
+
 export function toExchangeRequestView(row: ExchangeRequestRow): ExchangeRequestView {
   return {
     id: row.id,
-    clientId: row.clientId,
+    owner: ownerOf(row),
     kind: row.kind,
     fromCode: row.fromCode,
     toCode: row.toCode,
@@ -167,6 +218,7 @@ export function toExchangeRequestView(row: ExchangeRequestRow): ExchangeRequestV
     requisitesId: row.requisitesId,
     paymentInstructions: row.paymentInstructions,
     cancelReason: row.cancelReason,
+    reference: row.reference,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     completedAt: row.completedAt,
@@ -259,15 +311,13 @@ function thresholdSideOf(
  */
 async function readPayoutMethod(
   executor: Executor,
-  clientId: bigint,
+  owner: Owner,
   requisitesId: string,
 ): Promise<PayoutMethod | undefined> {
   const [row] = await executor
     .select({ kind: clientRequisites.kind, promptpayIdType: clientRequisites.promptpayIdType })
     .from(clientRequisites)
-    .where(
-      and(eq(clientRequisites.id, requisitesId), eq(clientRequisites.clientId, clientId)),
-    )
+    .where(and(eq(clientRequisites.id, requisitesId), requisitesOf(owner)))
     .limit(1);
   return row === undefined ? undefined : payoutMethodOf(row);
 }
@@ -277,14 +327,39 @@ export async function submitExchangeRequest(
   actor: Actor,
   input: SubmitExchangeRequestInput,
 ): Promise<SubmitExchangeRequestResult> {
-  const clientId = requireClient(actor);
+  const owner = requireOwner(actor);
   const fromAmount = requirePositiveAmount(input.fromAmount, 'Сумма заявки');
 
+  if (input.requisitesId !== undefined && input.payout !== undefined) {
+    throw new InvalidInputError(
+      'Укажите либо сохранённые реквизиты, либо реквизиты получателя, но не оба',
+    );
+  }
+
+  /*
+   * Что нельзя мерчанту и что нельзя клиенту.
+   *
+   * Наличные по API не подаются: встреча и касса программно не
+   * автоматизируются, и заявка, которую некому исполнить, хуже отказа.
+   * Внешний номер и ключ повтора, наоборот, свойства мерчанта — у
+   * клиента им взяться неоткуда, и приняв их молча, сервис завёл бы
+   * заявку, которую отвергнет ограничение базы.
+   */
+  if (owner.kind === 'merchant' && input.kind === 'cash') {
+    throw new InvalidInputError(
+      'Наличный обмен подаётся не по API: о встрече договариваются с менеджером',
+    );
+  }
+  if (owner.kind === 'client' && (input.reference !== undefined || input.idempotencyKey !== undefined)) {
+    throw new InvalidInputError('Внешний номер и ключ повтора бывают только у мерчанта');
+  }
+
+  const requisitesGiven = input.requisitesId !== undefined || input.payout !== undefined;
   // Электронный перевод без реквизитов исполнить невозможно: деньги
   // некуда отправить. Правило живёт здесь, а не в форме, потому что
   // форма — не единственный способ вызвать операцию, а последствие у
   // пропуска одно на всех: заявка, застрявшая у менеджера.
-  if (input.kind === 'electronic' && input.requisitesId === undefined) {
+  if (input.kind === 'electronic' && !requisitesGiven) {
     throw new InvalidInputError(
       'Для электронного перевода нужны реквизиты: укажите, куда отправить деньги',
     );
@@ -292,11 +367,39 @@ export async function submitExchangeRequest(
   // Наличные клиент получает на руки. Приложенный к такой заявке
   // реквизит означал бы, что менеджер отправит перевод туда, куда клиент
   // денег не ждёт: два способа получения у одной заявки не бывает.
-  if (input.kind === 'cash' && input.requisitesId !== undefined) {
+  if (input.kind === 'cash' && requisitesGiven) {
     throw new InvalidInputError(
       'Наличные выдаются на руки: реквизиты для перевода к такой заявке не прикладываются',
     );
   }
+
+  /*
+   * Повтор с тем же ключом отдаёт ту же заявку, а не заводит вторую.
+   * Читается до всего остального: у повторённого запроса ни котировка,
+   * ни запись получателя новыми быть не должны — иначе повтор стоил бы
+   * ещё одной архивной записи и похода к бирже.
+   */
+  if (owner.kind === 'merchant' && input.idempotencyKey !== undefined) {
+    const repeated = await findByIdempotencyKey(
+      ctx.db,
+      owner.merchantId,
+      input.idempotencyKey,
+    );
+    if (repeated) {
+      return { request: repeated, notifications: [] };
+    }
+  }
+
+  /*
+   * Получатель из тела запроса заводится записью до транзакции: она
+   * шифруется публичным ключом, а это работа процессора, и проверки
+   * правдоподобия у неё те же, что у формы. Архивной сразу — список
+   * получателей мерчанта не должен расти на каждую заявку.
+   */
+  const requisitesId =
+    input.payout === undefined
+      ? input.requisitesId
+      : (await saveRequisitesFor(ctx, owner, input.payout, { archived: true })).id;
 
   // Котировка запрашивается до транзакции: это обращение к чужому API,
   // и держать открытой транзакцию на время сетевого запроса значило бы
@@ -309,9 +412,9 @@ export async function submitExchangeRequest(
    * какой сетке считать.
    */
   const payoutMethod =
-    input.requisitesId === undefined
+    requisitesId === undefined
       ? undefined
-      : await readPayoutMethod(ctx.db, clientId, input.requisitesId);
+      : await readPayoutMethod(ctx.db, owner, requisitesId);
 
   /*
    * У наличной сделки способ выдачи один — из рук в руки, — и ставка у
@@ -333,9 +436,16 @@ export async function submitExchangeRequest(
   const requestRate = quote?.rate ?? null;
 
   return ctx.db.transaction(async (tx) => {
+    if (owner.kind === 'merchant') {
+      // Отключённый мерчант заявок не подаёт: ключ перестаёт работать в
+      // ту же секунду, а открытые заявки доходят до конца.
+      await requireActiveMerchant(tx, owner.merchantId);
+    }
     await requireActivePair(tx, input);
-    if (input.requisitesId !== undefined) {
-      await requireSuitableRequisites(tx, clientId, input.requisitesId, input.toCode);
+    if (requisitesId !== undefined) {
+      await requireSuitableRequisites(tx, owner, requisitesId, input.toCode, {
+        allowArchived: input.payout !== undefined,
+      });
     }
 
     const settings = await readServiceSettings(tx);
@@ -386,7 +496,11 @@ export async function submitExchangeRequest(
     const [row] = await tx
       .insert(exchangeRequests)
       .values({
-        clientId,
+        ...ownerColumns(owner),
+        ...(input.reference === undefined ? {} : { reference: input.reference.trim() }),
+        ...(input.idempotencyKey === undefined
+          ? {}
+          : { idempotencyKey: input.idempotencyKey.trim() }),
         kind: input.kind,
         fromCode: input.fromCode,
         toCode: input.toCode,
@@ -403,7 +517,7 @@ export async function submitExchangeRequest(
          * округления. Клиент видел именно это число.
          */
         toAmount: quote?.toAmount ?? null,
-        requisitesId: input.requisitesId ?? null,
+        requisitesId: requisitesId ?? null,
       })
       .returning();
 
@@ -413,7 +527,7 @@ export async function submitExchangeRequest(
       requestId: row!.id,
       fromStatus: null,
       toStatus: 'new',
-      actorType: 'client',
+      actorType: owner.kind,
     });
 
     // Заявка появилась в очереди: тот, кто ждёт работу у экрана, узнаёт
@@ -426,7 +540,7 @@ export async function submitExchangeRequest(
       notifications: [
         {
           kind: 'exchange-request-status',
-          to: clientId,
+          to: await recipientOf(tx, owner),
           requestId: request.id,
           status: 'new',
         },
@@ -435,21 +549,85 @@ export async function submitExchangeRequest(
   });
 }
 
+/**
+ * Заявка, поданная с этим ключом раньше. Пусто — такой ещё не было.
+ *
+ * Ищется по паре «мерчант и ключ»: «booking-1024» у двух мерчантов —
+ * два разных обмена, и общий поиск отдал бы второму чужую заявку.
+ */
+async function findByIdempotencyKey(
+  executor: Executor,
+  merchantId: string,
+  idempotencyKey: string,
+): Promise<ExchangeRequestView | undefined> {
+  const [row] = await executor
+    .select()
+    .from(exchangeRequests)
+    .where(
+      and(
+        eq(exchangeRequests.merchantId, merchantId),
+        eq(exchangeRequests.idempotencyKey, idempotencyKey.trim()),
+      ),
+    )
+    .limit(1);
+  return row === undefined ? undefined : toExchangeRequestView(row);
+}
+
+/**
+ * Чем сужается список заявок владельца.
+ *
+ * Клиенту хватает потолка: заявок у него единицы, и все они на одном
+ * экране. Мерчант читает свои сотнями и страницу продолжает курсором по
+ * паре «время подачи и идентификатор» — одного времени мало: две
+ * заявки, поданные по API в одну миллисекунду, теряются или дублируются.
+ */
+export interface OwnExchangeFilter {
+  readonly status?: ExchangeRequestStatus | undefined;
+  readonly from?: Date | undefined;
+  readonly to?: Date | undefined;
+  readonly limit?: number | undefined;
+  readonly after?: { readonly createdAt: Date; readonly id: string } | undefined;
+}
+
+/** Столько заявок отдаётся за раз, когда предел не назван. */
+const OWN_REQUESTS_LIMIT = CLIENT_HISTORY_LIMIT;
+/** Потолок предела: страница крупнее не читается, а копится в памяти. */
+const OWN_REQUESTS_MAX = 200;
+
 export async function listExchangeRequests(
   ctx: CoreConfig,
   actor: Actor,
+  filter: OwnExchangeFilter = {},
 ): Promise<readonly ExchangeRequestView[]> {
-  const clientId = requireClient(actor);
+  const owner = requireOwner(actor);
+  const conditions: SQL[] = [ownedBy(owner)];
+  if (filter.status) conditions.push(eq(exchangeRequests.status, filter.status));
+  if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
+  if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
+  if (filter.after) {
+    conditions.push(
+      sql`(${exchangeRequests.createdAt}, ${exchangeRequests.id})
+        < (${filter.after.createdAt}, ${filter.after.id})`,
+    );
+  }
+
   // Незакрытая заявка в этот кусок попадает всегда: она живёт часами, а
   // потолок отсекает полсотни более свежих — столько за это время
   // руками не подать.
   const rows = await ctx.db
     .select()
     .from(exchangeRequests)
-    .where(eq(exchangeRequests.clientId, clientId))
-    .orderBy(desc(exchangeRequests.createdAt))
-    .limit(CLIENT_HISTORY_LIMIT);
+    .where(and(...conditions))
+    .orderBy(desc(exchangeRequests.createdAt), desc(exchangeRequests.id))
+    .limit(Math.min(filter.limit ?? OWN_REQUESTS_LIMIT, OWN_REQUESTS_MAX));
   return rows.map(toExchangeRequestView);
+}
+
+/** Заявки владельца — клиента или мерчанта. */
+export function ownedBy(owner: Owner): SQL {
+  return owner.kind === 'client'
+    ? eq(exchangeRequests.clientId, owner.clientId)
+    : eq(exchangeRequests.merchantId, owner.merchantId);
 }
 
 /**
@@ -462,11 +640,11 @@ export async function getExchangeRequest(
   actor: Actor,
   requestId: string,
 ): Promise<ExchangeRequestView> {
-  const clientId = requireClient(actor);
+  const owner = requireOwner(actor);
   const [row] = await ctx.db
     .select()
     .from(exchangeRequests)
-    .where(and(eq(exchangeRequests.id, requestId), eq(exchangeRequests.clientId, clientId)))
+    .where(and(eq(exchangeRequests.id, requestId), ownedBy(owner)))
     .limit(1);
 
   if (!row) {

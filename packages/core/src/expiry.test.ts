@@ -92,7 +92,11 @@ describe('отмена по истечении срока', () => {
 
     expect(await statusOf(requestId)).toBe('cancelled');
     expect(notifications).toEqual([
-      expect.objectContaining({ kind: 'exchange-request-status', to: 100n, status: 'cancelled' }),
+      expect.objectContaining({
+        kind: 'exchange-request-status',
+        to: { kind: 'client', telegramUserId: 100n },
+        status: 'cancelled',
+      }),
     ]);
   });
 
@@ -187,7 +191,7 @@ describe('предупреждение о скором истечении', () =
     expect(notifications).toEqual([
       expect.objectContaining({
         kind: 'exchange-request-expiring',
-        to: 100n,
+        to: { kind: 'client', telegramUserId: 100n },
         requestId,
         minutesLeft: 30,
       }),

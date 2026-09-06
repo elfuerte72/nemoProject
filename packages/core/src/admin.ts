@@ -350,6 +350,30 @@ export interface UpdateServiceSettingsInput {
   readonly unpaidExchangeRequestTtlMinutes?: number | undefined;
   readonly conciergeRepliesPerClientDaily?: number | undefined;
   readonly conciergeRepliesDaily?: number | undefined;
+  /**
+   * Ник в Telegram, на который в кабинете мерчанта ведёт «Поддержка», —
+   * без «собаки». Пустая строка снимает ссылку: выдуманный ник вёл бы в
+   * пустой чат, а это хуже отсутствующей ссылки.
+   */
+  readonly merchantSupportUsername?: string | undefined;
+}
+
+/**
+ * Ник в Telegram: буквы, цифры и подчёркивание, от пяти знаков — так их
+ * выдаёт сам Telegram. «Собака» снимается: её набирают по привычке, а
+ * ссылка `t.me/@ник` не открывается.
+ *
+ * Пустая строка законна и означает «поддержки нет»: ссылку в кабинете
+ * тогда не рисуют вовсе.
+ */
+function requireUsername(value: string): string {
+  const trimmed = value.trim().replace(/^@/, '');
+  if (trimmed !== '' && !/^[A-Za-z0-9_]{5,32}$/.test(trimmed)) {
+    throw new InvalidInputError(
+      'Ник в Telegram — латиница, цифры и подчёркивание, от 5 знаков, без «собаки»',
+    );
+  }
+  return trimmed;
 }
 
 /** Ставка выше 100% отдавала бы рефереру больше, чем сервис заработал. */
@@ -433,6 +457,9 @@ export async function updateServiceSettings(
       input.conciergeRepliesDaily,
       'Предел ответов помощника за сутки',
     );
+  }
+  if (input.merchantSupportUsername !== undefined) {
+    patch.merchantSupportUsername = requireUsername(input.merchantSupportUsername);
   }
   if (Object.keys(patch).length === 0) {
     throw new InvalidInputError('Нечего менять');

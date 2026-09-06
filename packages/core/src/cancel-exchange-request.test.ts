@@ -144,7 +144,7 @@ describe('отмена менеджером', () => {
 
     expect(notifications).toEqual([
       expect.objectContaining({
-        to: 100n,
+        to: { kind: 'client', telegramUserId: 100n },
         status: 'cancelled',
         cancelReason: 'направление временно недоступно',
       }),

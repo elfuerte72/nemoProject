@@ -91,7 +91,11 @@ describe('renderNotification: сотруднику', () => {
   });
 
   const client = '<a href="https://t.me/ivan">@ivan</a> · ID 2';
-  const base = { kind: 'staff-new-request', to: 1n, clientId: 2n, clientUsername: 'ivan' } as const;
+  const base = {
+    kind: 'staff-new-request',
+    to: 1n,
+    party: { kind: 'client', clientId: 2n, username: 'ivan' },
+  } as const;
 
   /*
    * Менеджер решает по уведомлению, бросать ли то, чем занят, и для
@@ -220,8 +224,7 @@ describe('renderNotification: сотруднику', () => {
     const stale: Notification = {
       kind: 'staff-stale-request',
       to: 1n,
-      clientId: 2n,
-      clientUsername: null,
+      party: { kind: 'client', clientId: 2n, username: null },
       request: {
         kind: 'exchange',
         id: 'r',

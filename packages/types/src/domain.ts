@@ -642,8 +642,13 @@ export type ReferralLine = z.infer<typeof referralLineSchema>;
  * Кто выполнил действие. Система ставит только начальные состояния;
  * клиент подаёт заявку на обмен и отменяет её, пока она новая; всё
  * остальное делает менеджер.
+ *
+ * Мерчант стоит рядом с клиентом, а не вместо него: заявку он подаёт и
+ * отменяет теми же переходами, но в истории должно остаться, кто это
+ * был. Одно значение на обоих означало бы, что в разборе спорной сделки
+ * «клиент отменил» может значить и «отменил кабинет мерчанта».
  */
-export const actorTypes = ['system', 'client', 'manager'] as const;
+export const actorTypes = ['system', 'client', 'merchant', 'manager'] as const;
 export const actorTypeSchema = z.enum(actorTypes);
 export type ActorType = z.infer<typeof actorTypeSchema>;
 
@@ -659,3 +664,61 @@ export const currencySchema = z.object({
   kind: currencyKindSchema,
 });
 export type Currency = z.infer<typeof currencySchema>;
+
+/**
+ * Состояния мерчанта — бизнеса, который пользуется сервисом как услугой
+ * обмена и подаёт заявки от своего имени (docs/adr/0017).
+ *
+ * Анкета попадает администратору после подтверждения почты, и до его
+ * решения мерчант ничего не может: одобрение открывает право создавать
+ * обязательства сервиса по курсу — решение того же рода, что наценка.
+ *
+ * Отключённый — не отклонённый: ключи API перестают работать сразу, но
+ * вход в кабинет остаётся, и открытые заявки доходят до конца. Иначе
+ * отключение означало бы, что мерчант перестал видеть деньги, которые
+ * уже отправил.
+ */
+export const merchantStatuses = [
+  'pending', // анкета на рассмотрении
+  'active', // одобрен
+  'rejected', // отклонён с причиной
+  'disabled', // отключён администратором
+] as const;
+export const merchantStatusSchema = z.enum(merchantStatuses);
+export type MerchantStatus = z.infer<typeof merchantStatusSchema>;
+
+/**
+ * Почта мерчанта — по той же форме, что и аккаунт Alipay: что-то,
+ * «собака», домен с точкой. Ловится опечатка, а не подделка: существует
+ * ли ящик, знает только письмо с подтверждением, и оно же его и
+ * проверяет.
+ */
+export function looksLikeEmail(value: string): boolean {
+  return EMAIL_FORM.test(value.trim());
+}
+
+/**
+ * Пароль мерчанта. Десять знаков — не оценка стойкости, а нижняя
+ * граница, ниже которой перебор по словарю окупается: угнанный аккаунт
+ * мерчанта означает подменённые реквизиты получателя, и платит по ним
+ * сам мерчант.
+ *
+ * Состав знаков не требуется: правила вроде «заглавная и цифра» дают
+ * «Password1» и ничего больше, а длину человек добирает словами.
+ */
+export const MIN_MERCHANT_PASSWORD = 10;
+
+export function looksLikePassword(value: string): boolean {
+  return value.length >= MIN_MERCHANT_PASSWORD;
+}
+
+/**
+ * Чем анкета и вход мерчанта отвергаются — словами, одними на операцию
+ * и на форму кабинета, по тому же правилу, что и `REQUISITE_COMPLAINTS`.
+ */
+export const MERCHANT_COMPLAINTS = {
+  email: 'Почта не похожа на адрес: проверьте, нет ли опечатки',
+  password: `Пароль короче ${MIN_MERCHANT_PASSWORD} знаков — возьмите фразу подлиннее`,
+  credentials: 'Почта или пароль не подходят',
+  emailTaken: 'На эту почту уже заведён аккаунт',
+} as const;

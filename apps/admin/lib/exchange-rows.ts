@@ -16,11 +16,22 @@ export interface ExchangeRow {
   readonly toAmount: string | null;
   readonly toCode: string;
   readonly status: ExchangeRequestStatus;
-  readonly clientId: string;
-  readonly clientUsername: string | null;
+  /** Кто подал: клиент или мерчант (docs/adr/0017). */
+  readonly party: ExchangeParty;
   readonly assignedManagerName: string | null;
   readonly createdAt: string;
 }
+
+/**
+ * Чья заявка — в том виде, в каком её читает строка стола.
+ *
+ * Размеченным объединением, а не парой необязательных полей: у заявки
+ * мерчанта ника нет вовсе, и строка «Без ника · ID» в ней читалась бы
+ * как клиент, о котором ничего не известно.
+ */
+export type ExchangeParty =
+  | { readonly kind: 'client'; readonly clientId: string; readonly username: string | null }
+  | { readonly kind: 'merchant'; readonly name: string; readonly reference: string | null };
 
 export function toExchangeRow(view: ManagerExchangeRequestView): ExchangeRow {
   return {
@@ -31,11 +42,39 @@ export function toExchangeRow(view: ManagerExchangeRequestView): ExchangeRow {
     toAmount: view.toAmount,
     toCode: view.toCode,
     status: view.status,
-    clientId: view.clientId.toString(),
-    clientUsername: view.clientUsername,
+    party: partyOf(view),
     assignedManagerName: view.assignedManagerName,
     createdAt: view.createdAt.toISOString(),
   };
+}
+
+/**
+ * Кто подал, одной строкой: ник клиента или название мерчанта с его
+ * номером сделки. Одна на стол и на палитру — иначе одна и та же заявка
+ * называлась бы в двух списках по-разному.
+ */
+export function sayParty(party: ExchangeParty): string {
+  if (party.kind === 'client') {
+    return party.username ? `@${party.username}` : party.clientId;
+  }
+  return party.reference ? `${party.name} · ${party.reference}` : party.name;
+}
+
+export function partyOf(view: ManagerExchangeRequestView): ExchangeParty {
+  return view.owner.kind === 'client'
+    ? {
+        kind: 'client',
+        clientId: view.owner.clientId.toString(),
+        username: view.clientUsername,
+      }
+    : {
+        kind: 'merchant',
+        // Мерчант из заявки не пропадает: на него ссылается строка, и
+        // удалить его база не даст. Пустое имя означало бы сломанную
+        // ссылку, и молчать об этом в столе нельзя.
+        name: view.merchantName ?? 'мерчант удалён',
+        reference: view.reference,
+      };
 }
 
 /** Три раздела стола — три выборки. Ключ уходит в адрес дочитывания. */
@@ -48,6 +87,12 @@ export interface DeskFilter {
   readonly q: string;
   readonly kind: string;
   readonly status: string;
+  /**
+   * Только заявки одного мерчанта. Живёт в адресе, как и остальные
+   * сужения: из карточки мерчанта в стол переходят ссылкой, и ссылка
+   * эта должна работать у коллеги.
+   */
+  readonly merchant: string;
 }
 
 /**
@@ -59,6 +104,7 @@ export function coreFilterFor(scope: DeskScope, filter: DeskFilter): ExchangeQue
   const common: ExchangeQueueFilter = {
     ...(filter.q ? { query: filter.q } : {}),
     ...(filter.kind ? { kind: filter.kind as ExchangeKind } : {}),
+    ...(filter.merchant ? { merchantId: filter.merchant } : {}),
   };
   if (scope === 'queue') return common;
   return {

@@ -14,7 +14,7 @@ import type { NavCounts } from '@/lib/nav';
  */
 export const panelCounts = cache(async (actor: StaffActor): Promise<NavCounts> => {
   const core = getCore();
-  const [exchange, withdrawals, cards, conversations] = await Promise.all([
+  const [exchange, withdrawals, cards, conversations, merchants] = await Promise.all([
     // Счётом, а не длиной выборки: у очереди есть предел страницы, и
     // счётчик по ней застыл бы на нём ровно тогда, когда очередь
     // выросла и число стало нужно.
@@ -25,11 +25,16 @@ export const panelCounts = cache(async (actor: StaffActor): Promise<NavCounts> =
     // очередей строк десятки, а сообщений в переписке накапливаются
     // тысячи, и тянуть их ради счётчика нельзя.
     core.countUnansweredConversations(actor),
+    // Анкеты, ждущие рассмотрения. Считаются здесь же, потому что это
+    // такая же незакрытая работа, как заявка в очереди: пока мерчанта
+    // не рассмотрели, он ничего не может.
+    core.countMerchants(actor, { status: 'pending' }),
   ]);
   return {
     exchange,
     withdrawals: withdrawals.length,
     cards: cards.length,
     conversations,
+    merchants,
   };
 });

@@ -84,6 +84,20 @@ export const cardApplicationStatusEnum = pgEnum('card_application_status', [
 
 export const staffRoleEnum = pgEnum('staff_role', ['manager', 'admin']);
 
+/** Состояния мерчанта — см. `merchantStatuses` в `@nemo/types`. */
+export const merchantStatusEnum = pgEnum('merchant_status', [
+  'pending',
+  'active',
+  'rejected',
+  'disabled',
+]);
+
+/** Зачем выдана ссылка из письма: подтвердить адрес или сменить пароль. */
+export const merchantEmailTokenPurposeEnum = pgEnum('merchant_email_token_purpose', [
+  'email_verification',
+  'password_reset',
+]);
+
 export const currencyKindEnum = pgEnum('currency_kind', ['fiat', 'crypto']);
 
 /** Способ, которым клиент получает деньги. Русские названия — в `CONTEXT.md`. */
@@ -110,7 +124,12 @@ export const bonusTransactionKindEnum = pgEnum('bonus_transaction_kind', [
   'adjustment', // ручная правка администратором
 ]);
 
-export const actorTypeEnum = pgEnum('actor_type', ['system', 'client', 'manager']);
+export const actorTypeEnum = pgEnum('actor_type', [
+  'system',
+  'client',
+  'merchant',
+  'manager',
+]);
 
 /** Кто кому написал. Лента одна на клиента, и направление — её единственная ось. */
 export const messageDirectionEnum = pgEnum('message_direction', ['incoming', 'outgoing']);
@@ -245,6 +264,16 @@ export const serviceSettings = pgTable(
      * деньги, в коде не остаются.
      */
     conciergeRepliesDaily: integer('concierge_replies_daily').default(2000).notNull(),
+    /**
+     * Ник в Telegram, на который в кабинете и в письмах ведёт ссылка
+     * «Поддержка» — без «собаки». Настройкой, а не константой: передать
+     * поддержку мерчантов другому человеку выкаткой значило бы держать
+     * их без ответа до неё.
+     *
+     * Пусто — рабочее состояние: ссылки в кабинете просто нет, а
+     * выдуманный ник вёл бы в пустой чат.
+     */
+    merchantSupportUsername: text('merchant_support_username'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -365,6 +394,101 @@ export const clients = pgTable(
 );
 
 /**
+ * Мерчант — бизнес, который пользуется сервисом как услугой обмена:
+ * подаёт заявки от своего имени, программно или руками из кабинета,
+ * платит за них сам и называет, куда отправить деньги — себе или своему
+ * покупателю (docs/adr/0017).
+ *
+ * Второй владелец заявки рядом с клиентом, а не разновидность клиента:
+ * личность клиента — это Telegram, а у мерчанта его нет вовсе. Есть
+ * почта, пароль и ключи API. Баллов, рефералки и переписки у него не
+ * бывает — их место занимает договор с владельцем сервиса вне системы.
+ *
+ * Своим `id`, а не почтой в ключе: почту меняют, а на мерчанта
+ * ссылаются заявки.
+ */
+export const merchants = pgTable(
+  'merchants',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    /**
+     * Почта — то, чем мерчант входит, и то, куда сервис пишет. Хранится
+     * приведённой к нижнему регистру: «Shop@…» и «shop@…» — один ящик, и
+     * два аккаунта на него означали бы, что второй никогда не подтвердит
+     * адрес.
+     */
+    email: text('email').notNull().unique(),
+    passwordHash: text('password_hash').notNull(),
+    /**
+     * Поколение сессий. Смена пароля увеличивает его, и подписанные им
+     * куки перестают подходить разом — иначе угнанная сессия пережила бы
+     * смену пароля, ради которой её и меняли.
+     */
+    sessionEpoch: integer('session_epoch').default(1).notNull(),
+    name: text('name').notNull(),
+    site: text('site'),
+    contactName: text('contact_name').notNull(),
+    phone: text('phone').notNull(),
+    /** «Что собираетесь делать» — свободный текст анкеты для администратора. */
+    about: text('about'),
+    status: merchantStatusEnum('status').default('pending').notNull(),
+    /** Почему отклонён. Мерчант читает её в кабинете, а не гадает. */
+    rejectionReason: text('rejection_reason'),
+    /**
+     * Когда подтверждён адрес почты. До этого анкета администратору не
+     * показывается: рассматривать заявку от ящика, до которого письмо не
+     * дошло, значит рассматривать неизвестно чью.
+     */
+    emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    /**
+     * Требовать ли подпись HMAC у запросов к API. Включает сам мерчант в
+     * кабинете; включённая — обязательна, иначе «по желанию» означало бы
+     * «можно и без неё», то есть ничего.
+     */
+    signatureRequired: boolean('signature_required').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('merchants_status_created_idx').on(table.status, table.createdAt, table.id),
+    // Отклонён — значит, есть чем это объяснить: причина в кабинете
+    // стоит вместо анкеты, и пустая означала бы отказ без слов.
+    check(
+      'merchants_rejection_reason',
+      sql`${table.status} <> 'rejected' or ${table.rejectionReason} is not null`,
+    ),
+  ],
+);
+
+/**
+ * Ссылка из письма: подтверждение адреса или сброс пароля.
+ *
+ * Хранится хеш, а не сама ссылка: письмо доходит до почтового ящика, а
+ * тот бывает чужим — но база, утёкшая целиком, не должна давать войти
+ * ни в один кабинет. Проверка ищет строку по хешу присланного.
+ *
+ * Одной таблицей на оба повода: срок, однократность и уборка у них
+ * одни, а различает их только колонка.
+ */
+export const merchantEmailTokens = pgTable(
+  'merchant_email_tokens',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchants.id, { onDelete: 'cascade' }),
+    purpose: merchantEmailTokenPurposeEnum('purpose').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** Когда по ней прошли. Вторая попытка по той же ссылке — не проход. */
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('merchant_email_tokens_merchant_idx').on(table.merchantId)],
+);
+
+/**
  * Справочник сетей перевода.
  *
  * По образцу справочника валют: код и признак активности. Общий для
@@ -416,9 +540,18 @@ export const clientRequisites = pgTable(
   'client_requisites',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    clientId: bigint('client_id', { mode: 'bigint' })
-      .notNull()
-      .references(() => clients.telegramUserId, { onDelete: 'cascade' }),
+    /**
+     * Владелец записи — клиент или мерчант, ровно один из двух
+     * (docs/adr/0017). Проверяет это ограничение ниже: запись без
+     * владельца видна всем, а с двумя — двум разным людям.
+     */
+    clientId: bigint('client_id', { mode: 'bigint' }).references(
+      () => clients.telegramUserId,
+      { onDelete: 'cascade' },
+    ),
+    merchantId: uuid('merchant_id').references(() => merchants.id, {
+      onDelete: 'cascade',
+    }),
     kind: requisiteKindEnum('kind').notNull(),
     bankName: text('bank_name'),
     phone: text('phone'),
@@ -449,6 +582,12 @@ export const clientRequisites = pgTable(
   },
   (table) => [
     index('client_requisites_client_idx').on(table.clientId),
+    index('client_requisites_merchant_idx').on(table.merchantId),
+    check(
+      'client_requisites_single_owner',
+      sql`(case when ${table.clientId} is not null then 1 else 0 end
+        + case when ${table.merchantId} is not null then 1 else 0 end) = 1`,
+    ),
     /*
      * Набор полей определяется типом, и проверяет это база, а не только
      * форма: форма — не единственный способ создать запись, а
@@ -784,9 +923,29 @@ export const exchangeRequests = pgTable(
   'exchange_requests',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    clientId: bigint('client_id', { mode: 'bigint' })
-      .notNull()
-      .references(() => clients.telegramUserId),
+    /**
+     * Владелец заявки — клиент или мерчант, ровно один из двух
+     * (docs/adr/0017). Клиента опознаёт Telegram, мерчанта — сессия
+     * кабинета или ключ API; для всего остального они равны, и
+     * операции говорят о владельце, а не о клиенте.
+     */
+    clientId: bigint('client_id', { mode: 'bigint' }).references(
+      () => clients.telegramUserId,
+    ),
+    merchantId: uuid('merchant_id').references(() => merchants.id),
+    /**
+     * Внешний номер мерчанта: «бронь №1024». Сервис его не толкует —
+     * он нужен, чтобы менеджер и мерчант говорили об одной заявке
+     * одними словами, а не сверяли два номера.
+     */
+    reference: text('reference'),
+    /**
+     * Ключ повтора запроса. Тот же ключ возвращает ту же заявку, а не
+     * заводит вторую: сеть рвётся посреди ответа, и мерчант, не
+     * получивший его, повторяет запрос — без ключа он оплатил бы обмен
+     * дважды.
+     */
+    idempotencyKey: text('idempotency_key'),
     kind: exchangeKindEnum('kind').notNull(),
     fromCode: text('from_code').notNull(),
     toCode: text('to_code').notNull(),
@@ -866,6 +1025,37 @@ export const exchangeRequests = pgTable(
   },
   (table) => [
     index('exchange_requests_client_idx').on(table.clientId),
+    /*
+     * Кабинет мерчанта читает свои заявки тем же курсором по паре
+     * «время подачи и идентификатор», что и очередь менеджера, — и
+     * индекс у него такой же полный.
+     */
+    index('exchange_requests_merchant_idx').on(
+      table.merchantId,
+      table.createdAt,
+      table.id,
+    ),
+    /*
+     * Ключ повтора уникален в пределах мерчанта, а не всего сервиса:
+     * «booking-1024» у двух мерчантов — два разных обмена, и общая
+     * уникальность отдала бы второму чужую заявку.
+     */
+    uniqueIndex('exchange_requests_merchant_idempotency')
+      .on(table.merchantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+    check(
+      'exchange_requests_single_owner',
+      sql`(case when ${table.clientId} is not null then 1 else 0 end
+        + case when ${table.merchantId} is not null then 1 else 0 end) = 1`,
+    ),
+    // Внешний номер и ключ повтора — свойства заявки мерчанта: у
+    // клиента взяться им неоткуда, и заполненные они означали бы, что
+    // владельца потеряли по дороге.
+    check(
+      'exchange_requests_merchant_fields',
+      sql`${table.merchantId} is not null
+        or (${table.reference} is null and ${table.idempotencyKey} is null)`,
+    ),
     /*
      * Очередь читается состоянием и упорядочена по времени подачи, и
      * страницу отдаёт курсор по паре «время, идентификатор» — то есть
@@ -1339,16 +1529,29 @@ export const requisiteAccessLog = pgTable(
      * как номер карты: на скриншоте перевода видно и счёт, и имя.
      */
     messageId: uuid('message_id').references(() => clientMessages.id),
-    /** Чьи реквизиты открывали. Хранится явно: ссылка бывает разной. */
-    clientId: bigint('client_id', { mode: 'bigint' })
-      .notNull()
-      .references(() => clients.telegramUserId),
+    /**
+     * Чьи реквизиты открывали. Хранится явно: ссылка бывает разной.
+     *
+     * Владелец тот же, что у самой записи, — клиент или мерчант, ровно
+     * один: администратор спрашивает «чьё сотрудник видел», и ответ
+     * «ничьё» журнал обесценивает.
+     */
+    clientId: bigint('client_id', { mode: 'bigint' }).references(
+      () => clients.telegramUserId,
+    ),
+    merchantId: uuid('merchant_id').references(() => merchants.id),
     accessedAt: timestamp('accessed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('requisite_access_log_staff_idx').on(table.staffId),
     index('requisite_access_log_requisites_idx').on(table.requisitesId),
     index('requisite_access_log_client_idx').on(table.clientId),
+    index('requisite_access_log_merchant_idx').on(table.merchantId),
+    check(
+      'requisite_access_log_single_owner',
+      sql`(case when ${table.clientId} is not null then 1 else 0 end
+        + case when ${table.merchantId} is not null then 1 else 0 end) = 1`,
+    ),
     // Запись без предмета не отвечает на вопрос, ради которого журнал
     // ведётся: что именно сотрудник открыл. Предмет ровно один: две
     // ссылки в одной строке означали бы два обращения, слитых в одно.

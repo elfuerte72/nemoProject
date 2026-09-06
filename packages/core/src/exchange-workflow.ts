@@ -2,11 +2,13 @@ import {
   and,
   asc,
   count,
+  desc,
   eq,
   gt,
   ilike,
   inArray,
   isNull,
+  lt,
   ne,
   or,
   sql,
@@ -18,6 +20,7 @@ import {
   currencies,
   exchangeRequestEvents,
   exchangeRequests,
+  merchants,
   staff,
 } from '@nemo/db';
 import {
@@ -30,7 +33,7 @@ import {
   type ExchangeKind,
   type ExchangeRequestStatus,
 } from '@nemo/types';
-import { requireClient, requireStaff, type Actor } from './actor.js';
+import { requireOwner, requireStaff, type Actor, type Owner } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { requirePositiveAmount } from './amounts.js';
 import {
@@ -40,9 +43,15 @@ import {
   NotFoundError,
   TransitionNotAllowedError,
 } from './errors.js';
-import { toExchangeRequestView, type ExchangeRequestView } from './exchange-requests.js';
+import {
+  ownedBy,
+  ownerOf,
+  toExchangeRequestView,
+  type ExchangeRequestView,
+} from './exchange-requests.js';
+import { nameLike, recipientOf } from './merchants.js';
 import { publishLiveEvent } from './live-events.js';
-import type { Notification } from './notifications.js';
+import type { Notification, Recipient } from './notifications.js';
 import { accrueReferralBonuses } from './referral-accruals.js';
 import { readFeeSchedule } from './fee-schedules.js';
 import { describeServiceAccount, issueServiceAccount } from './service-accounts.js';
@@ -87,6 +96,12 @@ export interface ManagerExchangeRequestView extends ExchangeRequestView {
    * «@elfuertue» отличается.
    */
   readonly clientUsername: string | null;
+  /**
+   * Название мерчанта — вместо ника у его заявки. Переписки у него нет,
+   * и открывать по этой строке нечего: она отвечает на вопрос «с кем
+   * имеем дело», а сам мерчант — в своей карточке.
+   */
+  readonly merchantName: string | null;
 }
 
 export interface ExchangeRequestEventView {
@@ -98,6 +113,9 @@ export interface ExchangeRequestEventView {
   readonly createdAt: Date;
 }
 
+/** Лента заявки глазами её владельца: без имён сотрудников. */
+export type OwnExchangeRequestEventView = Omit<ExchangeRequestEventView, 'actorStaffId'>;
+
 export interface TransitionResult {
   readonly request: ManagerExchangeRequestView;
   readonly notifications: readonly Notification[];
@@ -107,6 +125,20 @@ export interface TransitionResult {
 export interface ClientTransitionResult {
   readonly request: ExchangeRequestView;
   readonly notifications: readonly Notification[];
+}
+
+/**
+ * Своя ли это заявка. Чужая не «запрещена», а «не найдена»: отличать
+ * одно от другого значило бы подтверждать существование заявки тому,
+ * кто её перебирает.
+ */
+export function belongsTo(
+  row: { clientId: bigint | null; merchantId: string | null },
+  owner: Owner,
+): boolean {
+  return owner.kind === 'client'
+    ? row.clientId === owner.clientId
+    : row.merchantId === owner.merchantId;
 }
 
 /** Внутренний результат перехода: строка, из которой строят нужное представление. */
@@ -121,6 +153,7 @@ export function toManagerView(
   row: ExchangeRequestRow,
   clientUsername: string | null = null,
   assignedManagerName: string | null = null,
+  merchantName: string | null = null,
 ): ManagerExchangeRequestView {
   return {
     ...toExchangeRequestView(row),
@@ -129,6 +162,7 @@ export function toManagerView(
     serviceIncomeCode: row.serviceIncomeCode,
     serviceAccountId: row.serviceAccountId,
     clientUsername,
+    merchantName,
     assignedManagerName,
   };
 }
@@ -139,11 +173,12 @@ export function toManagerView(
  */
 function notificationFor(
   row: ExchangeRequestRow,
+  to: Recipient,
   payWithinMinutes?: number,
 ): Notification {
   return {
     kind: 'exchange-request-status',
-    to: row.clientId,
+    to,
     requestId: row.id,
     status: row.status,
     ...(row.finalRate === null ? {} : { finalRate: Money.toAmount(row.finalRate) }),
@@ -271,7 +306,13 @@ async function applyTransition(
 
   return {
     row: updated!,
-    notifications: [notificationFor(updated!, input.payWithinMinutes)],
+    notifications: [
+      notificationFor(
+        updated!,
+        await recipientOf(executor, ownerOf(updated!)),
+        input.payWithinMinutes,
+      ),
+    ],
   };
 }
 
@@ -293,10 +334,15 @@ async function staffTransition(
  * второй набор правил разошёлся бы с первым.
  */
 export interface ExchangeQueueFilter {
-  /** Ник или номер клиента: по ним его и ищут, когда он написал в чат. */
+  /**
+   * Ник или номер клиента, название мерчанта или его внешний номер: по
+   * ним заявку и ищут, когда о ней спросили.
+   */
   readonly query?: string | undefined;
   readonly status?: ExchangeRequestStatus | undefined;
   readonly kind?: ExchangeKind | undefined;
+  /** Только заявки одного мерчанта: так их читают из его карточки. */
+  readonly merchantId?: string | undefined;
   /**
    * Чьи заявки показывать: свои, чужие или все.
    *
@@ -391,9 +437,18 @@ function queueConditions(filter: ExchangeQueueFilter, staffId: string): SQL[] {
     conditions.push(
       or(
         ilike(clients.username, `%${likeEscape(query)}%`),
+        // Мерчанта ищут по названию и по его собственному номеру
+        // сделки: «бронь №1024» — то единственное, чем он эту заявку
+        // назовёт, спросив о ней.
+        nameLike(`%${likeEscape(query)}%`),
+        ilike(exchangeRequests.reference, `%${likeEscape(query)}%`),
         ...(digits ? [sql`${exchangeRequests.clientId}::text = ${query}`] : []),
       )!,
     );
+  }
+
+  if (filter.merchantId) {
+    conditions.push(eq(exchangeRequests.merchantId, filter.merchantId));
   }
 
   if (filter.after) {
@@ -435,16 +490,25 @@ async function listQueue(
     .select({
       request: exchangeRequests,
       username: clients.username,
+      merchantName: merchants.name,
       managerName: staff.displayName,
     })
     .from(exchangeRequests)
-    .innerJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
+    /*
+     * Соединения внешние: у заявки мерчанта клиента нет вовсе, и
+     * внутреннее выбросило бы её из очереди целиком — менеджер не
+     * увидел бы работу, за которую уже заплачено.
+     */
+    .leftJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
+    .leftJoin(merchants, eq(merchants.id, exchangeRequests.merchantId))
     .leftJoin(staff, eq(staff.id, exchangeRequests.assignedManagerId))
     .where(and(...conditions))
     .orderBy(asc(exchangeRequests.createdAt), asc(exchangeRequests.id))
     .limit(queueLimit(filter.limit));
 
-  return rows.map((row) => toManagerView(row.request, row.username, row.managerName));
+  return rows.map((row) =>
+    toManagerView(row.request, row.username, row.managerName, row.merchantName),
+  );
 }
 
 /**
@@ -470,7 +534,8 @@ async function countQueue(
   const [row] = await ctx.db
     .select({ total: count() })
     .from(exchangeRequests)
-    .innerJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
+    .leftJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
+    .leftJoin(merchants, eq(merchants.id, exchangeRequests.merchantId))
     .where(and(...conditions));
 
   return row?.total ?? 0;
@@ -527,6 +592,53 @@ export async function listExchangeRequestsInProgress(
   );
 }
 
+/**
+ * Заявки мерчанта — все, а не только те, что в работе: карточка
+ * отвечает на вопрос «что он у нас менял», и новая заявка в этом ответе
+ * такая же строка, как исполненная.
+ *
+ * Курсор по паре «время подачи и идентификатор» — тот же, что у стола:
+ * одно время теряет или дублирует заявки, поданные по API в одну
+ * миллисекунду, а по API их и подают.
+ */
+export async function listMerchantExchangeRequests(
+  ctx: CoreConfig,
+  actor: Actor,
+  merchantId: string,
+  options: {
+    readonly limit?: number | undefined;
+    readonly after?: { readonly createdAt: Date; readonly id: string } | undefined;
+  } = {},
+): Promise<readonly ManagerExchangeRequestView[]> {
+  requireStaff(actor);
+  const cursor = options.after
+    ? or(
+        lt(exchangeRequests.createdAt, options.after.createdAt),
+        and(
+          eq(exchangeRequests.createdAt, options.after.createdAt),
+          lt(exchangeRequests.id, options.after.id),
+        ),
+      )
+    : undefined;
+
+  const rows = await ctx.db
+    .select({
+      request: exchangeRequests,
+      merchantName: merchants.name,
+      managerName: staff.displayName,
+    })
+    .from(exchangeRequests)
+    .innerJoin(merchants, eq(merchants.id, exchangeRequests.merchantId))
+    .leftJoin(staff, eq(staff.id, exchangeRequests.assignedManagerId))
+    .where(and(eq(exchangeRequests.merchantId, merchantId), cursor))
+    .orderBy(desc(exchangeRequests.createdAt), desc(exchangeRequests.id))
+    .limit(Math.min(options.limit ?? 20, 100));
+
+  return rows.map((row) =>
+    toManagerView(row.request, null, row.managerName, row.merchantName),
+  );
+}
+
 export async function getExchangeRequestForStaff(
   ctx: CoreConfig,
   actor: Actor,
@@ -537,19 +649,21 @@ export async function getExchangeRequestForStaff(
     .select({
       request: exchangeRequests,
       username: clients.username,
+      merchantName: merchants.name,
       // Кто ведёт — именем: карточка чужой заявки говорит менеджеру,
       // к кому идти, а «ведёт 5f3c…» не говорит ничего.
       managerName: staff.displayName,
     })
     .from(exchangeRequests)
-    .innerJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
+    .leftJoin(clients, eq(clients.telegramUserId, exchangeRequests.clientId))
+    .leftJoin(merchants, eq(merchants.id, exchangeRequests.merchantId))
     .leftJoin(staff, eq(staff.id, exchangeRequests.assignedManagerId))
     .where(eq(exchangeRequests.id, requestId))
     .limit(1);
   if (!row) {
     throw new NotFoundError('Заявка на обмен не найдена');
   }
-  return toManagerView(row.request, row.username, row.managerName);
+  return toManagerView(row.request, row.username, row.managerName, row.merchantName);
 }
 
 /**
@@ -621,6 +735,47 @@ export async function listExchangeRequestEvents(
     actorType: row.actorType,
     actorStaffId: row.actorStaffId,
     comment: row.comment,
+    createdAt: row.createdAt,
+  }));
+}
+
+/**
+ * Та же лента — владельцу заявки: мерчант читает её в кабинете, а
+ * клиент видит состояние на экране заявки.
+ *
+ * Без имён и идентификаторов сотрудников: мерчанту незачем знать, кто
+ * из смены вёл его обмен, а строка «Пётр отменил» в чужом кабинете —
+ * это данные о нашем сотруднике у постороннего.
+ */
+export async function listExchangeRequestEventsForOwner(
+  ctx: CoreConfig,
+  actor: Actor,
+  requestId: string,
+): Promise<readonly OwnExchangeRequestEventView[]> {
+  const owner = requireOwner(actor);
+
+  const [request] = await ctx.db
+    .select({ id: exchangeRequests.id })
+    .from(exchangeRequests)
+    .where(and(eq(exchangeRequests.id, requestId), ownedBy(owner)))
+    .limit(1);
+  if (!request) {
+    throw new NotFoundError('Заявка на обмен не найдена');
+  }
+
+  const rows = await ctx.db
+    .select()
+    .from(exchangeRequestEvents)
+    .where(eq(exchangeRequestEvents.requestId, requestId))
+    .orderBy(asc(exchangeRequestEvents.createdAt), asc(exchangeRequestEvents.id));
+
+  return rows.map((row) => ({
+    fromStatus: row.fromStatus,
+    toStatus: row.toStatus,
+    actorType: row.actorType,
+    // Причина отмены — единственное, что владельцу нужно прочитать
+    // словами; остальные пометки менеджер пишет для смены.
+    comment: row.toStatus === 'cancelled' ? row.comment : null,
     createdAt: row.createdAt,
   }));
 }
@@ -857,15 +1012,24 @@ export async function completeExchangeRequest(
       patch: { serviceIncome, serviceIncomeCode },
     });
 
-    // Начисление — часть той же транзакции, что и смена статуса: откат
-    // одного откатывает другое. Разделить их значило бы допустить
-    // исполненную заявку без начислений — и обнаружить это, когда
-    // реферер спросит, куда делись его баллы.
-    const accrued = await accrueReferralBonuses(tx, {
-      requestId: row.id,
-      clientId: row.clientId,
-      serviceIncome,
-    });
+    /*
+     * Начисление — часть той же транзакции, что и смена статуса: откат
+     * одного откатывает другое. Разделить их значило бы допустить
+     * исполненную заявку без начислений — и обнаружить это, когда
+     * реферер спросит, куда делись его баллы.
+     *
+     * По заявке мерчанта баллы не начисляются вовсе: реферера у него
+     * нет — рефералка это клиентская механика, а отношения мерчанта с
+     * сервисом описаны договором.
+     */
+    const accrued =
+      row.clientId === null
+        ? []
+        : await accrueReferralBonuses(tx, {
+            requestId: row.id,
+            clientId: row.clientId,
+            serviceIncome,
+          });
 
     return {
       request: toManagerView(applied.row),
@@ -891,11 +1055,11 @@ export async function cancelOwnExchangeRequest(
   actor: Actor,
   requestId: string,
 ): Promise<ClientTransitionResult> {
-  const clientId = requireClient(actor);
+  const owner = requireOwner(actor);
 
   return ctx.db.transaction(async (tx) => {
     const row = await lockRequest(tx, requestId);
-    if (row.clientId !== clientId) {
+    if (!belongsTo(row, owner)) {
       throw new NotFoundError('Заявка на обмен не найдена');
     }
     if (row.status !== 'new') {
@@ -904,7 +1068,10 @@ export async function cancelOwnExchangeRequest(
       );
     }
 
-    const result = await applyTransition(tx, row, { to: 'cancelled', actorType: 'client' });
+    const result = await applyTransition(tx, row, {
+      to: 'cancelled',
+      actorType: owner.kind,
+    });
     return { request: toExchangeRequestView(result.row), notifications: result.notifications };
   });
 }

@@ -19,7 +19,9 @@ export type OptionalColumn = (typeof optionalColumns)[number];
 
 export const COLUMN_LABELS: Record<OptionalColumn, string> = {
   kind: 'Вид',
-  client: 'Клиент',
+  // Под этой колонкой стоят и клиент, и мерчант, а мерчант клиентом не
+  // называется: в глоссарии это разные люди (docs/adr/0017).
+  client: 'Кто подал',
   manager: 'Ведёт',
   submitted: 'Подана',
 };

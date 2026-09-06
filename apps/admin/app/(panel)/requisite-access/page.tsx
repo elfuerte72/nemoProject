@@ -128,7 +128,9 @@ export default async function RequisiteAccessPage({
                 <div className="row__main">
                   <span className="row__title">{entry.staffName}</span>
                   <span className="row__meta">
-                    клиент {entry.clientId.toString()}
+                    {entry.owner.kind === 'client'
+                      ? `клиент ${entry.owner.clientId}`
+                      : `мерчант ${entry.owner.merchantId}`}
                     {/*
                       Что именно открывали, а не только по какой заявке:
                       «карта» стояло здесь и тогда, когда открывали

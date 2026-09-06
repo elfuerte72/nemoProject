@@ -67,7 +67,12 @@ export default async function DeskPage({
    * превращается в фильтр ядра для каждого раздела, знает
    * `coreFilterFor` — та же функция, что у маршрута дочитывания.
    */
-  const filter: DeskFilter = { q: query, kind: kind ?? '', status: status ?? '' };
+  const filter: DeskFilter = {
+    q: query,
+    kind: kind ?? '',
+    status: status ?? '',
+    merchant: single(params.merchant)?.trim() ?? '',
+  };
   const limit = prefs.pageSize;
   const common = { ...coreFilterFor('queue', filter), limit };
   const working = {
@@ -111,7 +116,7 @@ export default async function DeskPage({
   ]);
 
   // Ключ списка: сменился фильтр — дочитанный хвост сбрасывается.
-  const signature = `${filter.q}|${filter.kind}|${filter.status}`;
+  const signature = `${filter.q}|${filter.kind}|${filter.status}|${filter.merchant}`;
 
   return (
     <main className="page page--wide">

@@ -183,10 +183,15 @@ export async function listClients(
       ),
   ]);
 
-  const countsBy = new Map(counts.map((row) => [row.clientId.toString(), row]));
+  /*
+   * Владелец у заявки бывает и мерчантом (docs/adr/0017), но сюда такие
+   * строки не доходят: обе выборки сужены списком клиентов, и пустого
+   * `client_id` среди них нет по условию отбора.
+   */
+  const countsBy = new Map(counts.map((row) => [row.clientId!.toString(), row]));
   const turnoverBy = new Map<string, MoneyByCurrency[]>();
   for (const row of turnover) {
-    const key = row.clientId.toString();
+    const key = row.clientId!.toString();
     const lines = turnoverBy.get(key) ?? [];
     lines.push({ code: row.code, amount: Money.toAmount(row.amount ?? '0'), count: row.n });
     turnoverBy.set(key, lines);

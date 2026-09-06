@@ -111,7 +111,11 @@ describe('поданная заявка', () => {
     });
 
     expect(notifications).toEqual([
-      expect.objectContaining({ kind: 'exchange-request-status', to: 100n, status: 'new' }),
+      expect.objectContaining({
+        kind: 'exchange-request-status',
+        to: { kind: 'client', telegramUserId: 100n },
+        status: 'new',
+      }),
     ]);
   });
 });

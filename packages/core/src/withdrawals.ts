@@ -479,9 +479,10 @@ export async function revealWithdrawalDestination(
       throw new NotFoundError('Заявка на вывод не найдена');
     }
 
+    // Баллы и выводы — клиентская механика: у мерчанта их нет.
     await logRequisiteAccess(tx, {
       staffId: staff.staffId,
-      clientId: row.clientId,
+      owner: { kind: 'client', clientId: row.clientId },
       withdrawalRequestId: requestId,
     });
 

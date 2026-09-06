@@ -29,6 +29,7 @@ const settingsSchema = z.object({
   unpaidExchangeRequestTtlMinutes: z.number().optional(),
   conciergeRepliesPerClientDaily: z.number().optional(),
   conciergeRepliesDaily: z.number().optional(),
+  merchantSupportUsername: z.string().optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {
@@ -48,6 +49,7 @@ export async function POST(request: Request): Promise<Response> {
       unpaidExchangeRequestTtlMinutes: parsed.data.unpaidExchangeRequestTtlMinutes,
       conciergeRepliesPerClientDaily: parsed.data.conciergeRepliesPerClientDaily,
       conciergeRepliesDaily: parsed.data.conciergeRepliesDaily,
+      merchantSupportUsername: parsed.data.merchantSupportUsername,
     });
     return json({ settings });
   } catch (error) {

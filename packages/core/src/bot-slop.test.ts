@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { slopComplaints } from './bot-slop';
 import { BOT_DESCRIPTION, BOT_SHORT_DESCRIPTION, BOT_TEXTS } from './bot-texts';
-import { notificationKinds, renderNotification, type Notification } from './notifications';
+import {
+  notificationKinds,
+  renderNotification,
+  toClient,
+  toMerchant,
+  type Notification,
+} from './notifications';
 import { Money } from '@nemo/types';
 
 describe('slopComplaints', () => {
@@ -130,31 +136,33 @@ describe('заученные обороты', () => {
  * заявка на обмен», набранная столбцом связок, читается машинной ровно
  * так же — а правит её тот же человек и тем же заходом.
  */
+const MERCHANT = toMerchant({ id: 'm', email: 'shop@example.com' });
+
 const EVERY_NOTIFICATION: readonly Notification[] = [
   { kind: 'referral-joined', to: 1n, line: 1 },
   { kind: 'referral-joined', to: 1n, line: 2 },
-  { kind: 'exchange-request-status', to: 1n, requestId: 'r', status: 'new' },
-  { kind: 'exchange-request-status', to: 1n, requestId: 'r', status: 'in_progress' },
+  { kind: 'exchange-request-status', to: toClient(1n), requestId: 'r', status: 'new' },
+  { kind: 'exchange-request-status', to: toClient(1n), requestId: 'r', status: 'in_progress' },
   {
     kind: 'exchange-request-status',
-    to: 1n,
+    to: toClient(1n),
     requestId: 'r',
     status: 'rate_confirmed',
     finalRate: Money.toAmount('81'),
     paymentInstructions: 'Карта 2200 0000 0000 0000, Иван И.',
     payWithinMinutes: 30,
   },
-  { kind: 'exchange-request-status', to: 1n, requestId: 'r', status: 'payment_received' },
-  { kind: 'exchange-request-status', to: 1n, requestId: 'r', status: 'completed' },
-  { kind: 'exchange-request-status', to: 1n, requestId: 'r', status: 'cancelled' },
+  { kind: 'exchange-request-status', to: toClient(1n), requestId: 'r', status: 'payment_received' },
+  { kind: 'exchange-request-status', to: toClient(1n), requestId: 'r', status: 'completed' },
+  { kind: 'exchange-request-status', to: toClient(1n), requestId: 'r', status: 'cancelled' },
   {
     kind: 'exchange-request-status',
-    to: 1n,
+    to: toClient(1n),
     requestId: 'r',
     status: 'cancelled',
     cancelReason: 'оплата не пришла',
   },
-  { kind: 'exchange-request-expiring', to: 1n, requestId: 'r', minutesLeft: 30 },
+  { kind: 'exchange-request-expiring', to: toClient(1n), requestId: 'r', minutesLeft: 30 },
   { kind: 'bonus-accrued', to: 1n, line: 1, amount: Money.toAmount('120') },
   {
     kind: 'withdrawal-request-status',
@@ -191,8 +199,7 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
   {
     kind: 'staff-new-request',
     to: 1n,
-    clientId: 2n,
-    clientUsername: 'ivan',
+    party: { kind: 'client', clientId: 2n, username: 'ivan' },
     request: {
       kind: 'exchange',
       id: 'r',
@@ -208,8 +215,7 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
   {
     kind: 'staff-new-request',
     to: 1n,
-    clientId: 2n,
-    clientUsername: null,
+    party: { kind: 'client', clientId: 2n, username: null },
     request: {
       kind: 'exchange',
       id: 'r',
@@ -225,22 +231,19 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
   {
     kind: 'staff-new-request',
     to: 1n,
-    clientId: 2n,
-    clientUsername: 'ivan',
+    party: { kind: 'client', clientId: 2n, username: 'ivan' },
     request: { kind: 'withdrawal', id: 'w', amount: Money.toAmount('500'), method: 'bank', payout: null },
   },
   {
     kind: 'staff-new-request',
     to: 1n,
-    clientId: 2n,
-    clientUsername: 'ivan',
+    party: { kind: 'client', clientId: 2n, username: 'ivan' },
     request: { kind: 'card', id: 'c' },
   },
   {
     kind: 'staff-stale-request',
     to: 1n,
-    clientId: 2n,
-    clientUsername: 'ivan',
+    party: { kind: 'client', clientId: 2n, username: 'ivan' },
     request: {
       kind: 'exchange',
       id: 'r',
@@ -258,8 +261,7 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
     // Больше двух часов: срок называется часами, и это другая строка.
     kind: 'staff-stale-request',
     to: 1n,
-    clientId: 2n,
-    clientUsername: null,
+    party: { kind: 'client', clientId: 2n, username: null },
     request: {
       kind: 'exchange',
       id: 'r',
@@ -272,6 +274,30 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
       payout: null,
     },
     waitingMinutes: 214,
+  },
+  {
+    kind: 'staff-new-request',
+    to: 1n,
+    party: { kind: 'merchant', name: 'Оплатишка', reference: 'booking-1024' },
+    request: {
+      kind: 'exchange',
+      id: 'r',
+      fromAmount: Money.toAmount('1000'),
+      fromCode: 'RUB',
+      toCode: 'EUR',
+      isCash: false,
+      toAmount: Money.toAmount('9.8'),
+      rate: Money.toAmount('102.04'),
+      payout: { kind: 'card', bankName: 'Revolut', network: null },
+    },
+  },
+  { kind: 'merchant-email-verification', to: MERCHANT, token: 'abc' },
+  { kind: 'merchant-password-reset', to: MERCHANT, token: 'abc' },
+  { kind: 'merchant-application-decided', to: MERCHANT },
+  {
+    kind: 'merchant-application-decided',
+    to: MERCHANT,
+    rejectionReason: 'не отвечает на письма',
   },
 ];
 

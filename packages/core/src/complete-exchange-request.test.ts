@@ -74,7 +74,7 @@ describe('поступление оплаты', () => {
 
     expect(request.status).toBe('payment_received');
     expect(notifications).toEqual([
-      expect.objectContaining({ to: 100n, status: 'payment_received' }),
+      expect.objectContaining({ to: { kind: 'client', telegramUserId: 100n }, status: 'payment_received' }),
     ]);
   });
 
@@ -155,7 +155,7 @@ describe('исполнение заявки', () => {
     expect(request.status).toBe('completed');
     expect(request.completedAt).toBeInstanceOf(Date);
     expect(notifications).toEqual([
-      expect.objectContaining({ to: 100n, status: 'completed' }),
+      expect.objectContaining({ to: { kind: 'client', telegramUserId: 100n }, status: 'completed' }),
     ]);
   });
 
