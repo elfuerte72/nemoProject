@@ -51,8 +51,14 @@ export async function POST(request: Request): Promise<Response> {
     try {
       session = await getCore().beginMerchantLogin({ email, password: parsed.data.password });
     } catch (error) {
-      attemptFailed(email);
-      attemptFailed(address);
+      // Считается неподошедший пароль, а не всякая неудача: отказавшая
+      // база — это не попытка подбора, и запирать за неё вход на
+      // четверть часа значило бы к недоступной базе добавить
+      // недоступный кабинет.
+      if (error instanceof ForbiddenError) {
+        attemptFailed(email);
+        attemptFailed(address);
+      }
       throw error;
     }
 
