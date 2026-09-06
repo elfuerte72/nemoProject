@@ -1,11 +1,16 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import type {
   DraftedArticle,
   KnowledgeDraftRequest,
   KnowledgeDraftResult,
   KnowledgeDrafter,
 } from '@nemo/core';
-import type { DeepSeekOptions } from './deepseek.js';
+import {
+  createDeepSeekClient,
+  deepSeekOptionsFromEnvironment,
+  textOf,
+  type DeepSeekOptions,
+} from './deepseek.js';
 
 /**
  * Черновик статей базы знаний на DeepSeek.
@@ -41,16 +46,7 @@ const MAX_TOKENS = 8192;
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 export function createDeepSeekKnowledgeDrafter(options: DeepSeekOptions): KnowledgeDrafter {
-  const client = new Anthropic({
-    apiKey: options.apiKey,
-    baseURL: options.baseUrl,
-    // Без повторов внутри клиента: администратор видит отказ словами и
-    // жмёт кнопку снова сам, а три молчаливых захода подряд — это шесть
-    // минут ожидания перед тем же отказом.
-    maxRetries: 0,
-    timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    ...(options.fetch ? { fetch: options.fetch } : {}),
-  });
+  const client = createDeepSeekClient(options, DEFAULT_TIMEOUT_MS);
 
   return {
     async draft(request: KnowledgeDraftRequest): Promise<KnowledgeDraftResult | null> {
@@ -95,18 +91,16 @@ function renderSystem(request: KnowledgeDraftRequest): string {
  * модель нельзя.
  */
 function readDraft(message: Anthropic.Message): KnowledgeDraftResult {
-  const text = message.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-    .trim();
+  const text = textOf(message);
 
   const truncated = message.stop_reason === 'max_tokens';
   if (text.toUpperCase() === EMPTY_MARK) return { articles: [], truncated };
 
   const articles: { title: string; body: string[] }[] = [];
   for (const line of text.split('\n')) {
-    const heading = /^\s*#+\s*(.+?)\s*$/.exec(line);
+    // Решётка, пробел, слова: хэштег «#обмен» и «#1 в списке» — строки
+    // текста, а не заголовки; в переписке владельца они обычны.
+    const heading = /^\s*#+\s+(\S.*?)\s*$/.exec(line);
     if (heading) {
       articles.push({ title: heading[1]!, body: [] });
       continue;
@@ -129,12 +123,6 @@ function readDraft(message: Anthropic.Message): KnowledgeDraftResult {
  * состояние, а не поломка.
  */
 export function knowledgeDrafterFromEnvironment(): KnowledgeDrafter | undefined {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return undefined;
-
-  return createDeepSeekKnowledgeDrafter({
-    apiKey,
-    baseUrl: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/anthropic',
-    model: process.env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
-  });
+  const options = deepSeekOptionsFromEnvironment();
+  return options ? createDeepSeekKnowledgeDrafter(options) : undefined;
 }

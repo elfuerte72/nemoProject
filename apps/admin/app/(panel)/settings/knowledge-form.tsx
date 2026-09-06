@@ -1,9 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DraftedArticleView, KnowledgeArticleView } from '@nemo/core';
-import { normalizeKnowledgeTitle } from '@nemo/types';
+import { knowledgeTitleFamily, normalizeKnowledgeTitle } from '@nemo/types';
 import { KNOWLEDGE_FILE_ACCEPT } from '@/lib/knowledge-file-kinds';
 
 /**
@@ -22,6 +22,12 @@ import { KNOWLEDGE_FILE_ACCEPT } from '@/lib/knowledge-file-kinds';
  * обучение агента, а поле «Порядок» не понимал никто. Порядок теперь
  * не спрашивается: новая статья встаёт в конец справки.
  *
+ * Что скажет запись — какую статью заменит, какую погасит, о чём
+ * предупредить, — экран считает по живому тексту черновика, а не по
+ * ответу ядра при разборе: черновик правят, и сказанное при разборе
+ * устарело бы на первой же правке. Правила при этом ядра: одноимённость
+ * и тема — из `@nemo/types`, предупреждения — маршрутом к операции.
+ *
  * Статья руками осталась вторым путём — на одну поправку заводить
  * документ незачем, а без ключа провайдера это путь единственный.
  */
@@ -31,7 +37,10 @@ interface DraftItem extends DraftedArticleView {
   readonly key: number;
 }
 
-type Busy = 'draft' | 'save' | 'edit' | null;
+type Busy = 'draft' | 'save' | 'edit' | 'toggle' | null;
+
+/** Сколько ждать тишины в поле, прежде чем пересчитать предупреждения. */
+const RECHECK_MS = 500;
 
 export function KnowledgeForm({
   articles,
@@ -51,11 +60,19 @@ export function KnowledgeForm({
 
   const [draft, setDraft] = useState<readonly DraftItem[] | null>(null);
   const [truncated, setTruncated] = useState(false);
+  /** Текст документа, из которого собран черновик: по нему пересчитываются предупреждения. */
+  const [source, setSource] = useState('');
+  const recheckTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   /** Какую статью правят руками. `'new'` — пишут новую. */
   const [editing, setEditing] = useState<KnowledgeArticleView | 'new' | null>(null);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+
+  useEffect(() => {
+    const timers = recheckTimers.current;
+    return () => timers.forEach((timer) => clearTimeout(timer));
+  }, []);
 
   async function request<T>(url: string, init: RequestInit, kind: Busy): Promise<T | null> {
     if (busy) return null;
@@ -91,13 +108,19 @@ export function KnowledgeForm({
         };
     const answer = await request<{
       draft: { articles: readonly DraftedArticleView[]; truncated: boolean };
+      source: string;
     }>('/api/concierge/knowledge/draft', init, 'draft');
     if (!answer) return;
 
     setDraft(answer.draft.articles.map((article, key) => ({ ...article, key })));
     setTruncated(answer.draft.truncated);
-    setText('');
-    setFile(null);
+    setSource(answer.source);
+    // Документ остаётся в поле, пока из него ничего не вышло: пустой
+    // черновик — повод поправить текст, а не набирать его заново.
+    if (answer.draft.articles.length > 0) {
+      setText('');
+      setFile(null);
+    }
   }
 
   async function saveDraft() {
@@ -126,7 +149,38 @@ export function KnowledgeForm({
     );
   }
 
+  /**
+   * Пересчитать предупреждения после правки текста — с паузой, чтобы не
+   * ходить на сервер на каждую букву. Ответ на устаревший текст
+   * отбрасывается: к его приходу поле могло уйти дальше.
+   */
+  function scheduleRecheck(key: number, nextBody: string) {
+    const timers = recheckTimers.current;
+    clearTimeout(timers.get(key));
+    timers.set(
+      key,
+      setTimeout(() => {
+        void fetch('/api/concierge/knowledge/check', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ body: nextBody, source }),
+        })
+          .then(async (response) => {
+            if (!response.ok) return;
+            const { warnings } = (await response.json()) as { warnings: readonly string[] };
+            setDraft((current) =>
+              current?.map((item) =>
+                item.key === key && item.body === nextBody ? { ...item, warnings } : item,
+              ) ?? null,
+            );
+          })
+          .catch(() => undefined);
+      }, RECHECK_MS),
+    );
+  }
+
   function dropFromDraft(key: number) {
+    clearTimeout(recheckTimers.current.get(key));
     setDraft((current) => current?.filter((item) => item.key !== key) ?? null);
   }
 
@@ -172,23 +226,59 @@ export function KnowledgeForm({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id: article.id, isActive: !article.isActive }),
       },
-      'edit',
+      'toggle',
     );
     if (answer) router.refresh();
   }
 
+  /**
+   * Пока идёт запрос, открыт черновик или правится статья, начинать
+   * другое нельзя: второй открытый редактор молча стёр бы набранное в
+   * первом.
+   */
+  const locked = busy !== null || draft !== null || editing !== null;
   const canSubmitDocument = busy === null && (file !== null || text.trim() !== '');
 
   /**
-   * Какую статью заменит эта: одноимённую, тем же правилом, что и
-   * запись. Считается по живому названию, а не по ответу ядра: название
-   * в черновике правят, и сказанное при разборе устарело бы на первой
-   * же правке.
+   * Что запись сделает с уже заведёнными статьями — тем же правилом, что
+   * и ядро. Одноимённая заменяется; прежние части той же темы, которых в
+   * черновике нет, гасятся; два одинаковых названия в черновике — отказ.
    */
-  function replacedBy(draftTitle: string): KnowledgeArticleView | undefined {
-    const key = normalizeKnowledgeTitle(draftTitle);
-    return key === '' ? undefined : articles.find((one) => normalizeKnowledgeTitle(one.title) === key);
+  const draftKeys = new Map<string, number>();
+  for (const item of draft ?? []) {
+    const key = normalizeKnowledgeTitle(item.title);
+    draftKeys.set(key, (draftKeys.get(key) ?? 0) + 1);
   }
+  const draftFamilies = new Set([...draftKeys.keys()].map(knowledgeTitleFamily));
+
+  function fateOf(item: DraftItem): readonly { readonly tone: 'note' | 'warn'; readonly text: string }[] {
+    const key = normalizeKnowledgeTitle(item.title);
+    if (key === '') return [];
+    const notes: { tone: 'note' | 'warn'; text: string }[] = [];
+    if ((draftKeys.get(key) ?? 0) > 1) {
+      notes.push({ tone: 'warn', text: 'Такое название в черновике уже есть: объедините статьи или переименуйте одну' });
+    }
+    const replaced = articles.find((one) => normalizeKnowledgeTitle(one.title) === key);
+    if (replaced) {
+      notes.push({
+        tone: 'note',
+        text: `Заменит статью «${replaced.title}»${replaced.isActive ? '' : ' и вернёт её в справку: сейчас она погашена'}.`,
+      });
+    }
+    const family = knowledgeTitleFamily(item.title);
+    for (const one of articles) {
+      const oneKey = normalizeKnowledgeTitle(one.title);
+      if (one.isActive && oneKey !== key && knowledgeTitleFamily(one.title) === family && !draftKeys.has(oneKey)) {
+        notes.push({ tone: 'note', text: `Погасит «${one.title}»: та же тема, а этой части в черновике нет.` });
+      }
+    }
+    return notes;
+  }
+
+  const draftHasDuplicates = [...draftKeys.values()].some((count) => count > 1);
+  const draftIsComplete =
+    draft !== null && draft.length > 0 && !draftHasDuplicates
+    && draft.every((item) => item.title.trim() !== '' && item.body.trim() !== '');
 
   return (
     <section className="card">
@@ -275,12 +365,14 @@ export function KnowledgeForm({
               {draft.length === 0 ? 'Статей не нашлось' : `Черновик: ${sayArticles(draft.length)}`}
             </span>
             <span className="muted">
-              {draft.length === 0
-                ? 'В документе нет фактов о сервисе, которые пригодились бы клиенту. Попробуйте другой текст.'
-                : 'Проверьте и поправьте: так помощник будет отвечать клиентам. Запишется только то, что останется в списке.'}
+              {draft.length > 0
+                ? 'Проверьте и поправьте: так помощник будет отвечать клиентам. Запишется только то, что останется в списке.'
+                : truncated
+                  ? 'Помощник не успел закончить ни одной статьи: документ слишком длинный для одного захода. Пришлите его частями.'
+                  : 'В документе нет фактов о сервисе, которые пригодились бы клиенту. Попробуйте другой текст.'}
             </span>
           </div>
-          {truncated ? (
+          {truncated && draft.length > 0 ? (
             <p className="draft__warn">
               Документ длинный, и разобрана только его часть. Запишите эти статьи, а
               остаток документа пришлите отдельно.
@@ -289,53 +381,52 @@ export function KnowledgeForm({
 
           {draft.length > 0 ? (
             <ul className="rows">
-              {draft.map((item) => {
-                const replaced = replacedBy(item.title);
-                return (
-                  <li key={item.key} className="row row--stack">
-                    <label className="field field--wide">
-                      <span className="label">Название</span>
-                      <input
-                        className="input"
-                        value={item.title}
-                        disabled={busy !== null}
-                        onChange={(event) => patchDraft(item.key, { title: event.target.value })}
-                      />
-                    </label>
-                    <label className="field field--wide">
-                      <span className="label">Текст</span>
-                      <textarea
-                        className="input"
-                        rows={4}
-                        value={item.body}
-                        disabled={busy !== null}
-                        onChange={(event) => patchDraft(item.key, { body: event.target.value })}
-                      />
-                    </label>
-                    {replaced ? (
-                      <span className="muted">
-                        Заменит статью «{replaced.title}»
-                        {replaced.isActive ? '' : ' и вернёт её в справку: сейчас она погашена'}.
-                      </span>
-                    ) : undefined}
-                    {item.warnings.map((warning) => (
-                      <span key={warning} className="draft__warn">
-                        {warning}
-                      </span>
-                    ))}
-                    <div className="row__actions">
-                      <button
-                        type="button"
-                        className="btn btn--ghost btn--tiny"
-                        disabled={busy !== null}
-                        onClick={() => dropFromDraft(item.key)}
-                      >
-                        Убрать из черновика
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
+              {draft.map((item) => (
+                <li key={item.key} className="row row--stack">
+                  <label className="field field--wide">
+                    <span className="label">Название</span>
+                    <input
+                      className="input"
+                      value={item.title}
+                      disabled={busy !== null}
+                      onChange={(event) => patchDraft(item.key, { title: event.target.value })}
+                    />
+                  </label>
+                  <label className="field field--wide">
+                    <span className="label">Текст</span>
+                    <textarea
+                      className="input"
+                      rows={4}
+                      value={item.body}
+                      disabled={busy !== null}
+                      onChange={(event) => {
+                        patchDraft(item.key, { body: event.target.value });
+                        scheduleRecheck(item.key, event.target.value);
+                      }}
+                    />
+                  </label>
+                  {fateOf(item).map((note) => (
+                    <span key={note.text} className={note.tone === 'warn' ? 'draft__warn' : 'muted'}>
+                      {note.text}
+                    </span>
+                  ))}
+                  {item.warnings.map((warning) => (
+                    <span key={warning} className="draft__warn">
+                      {warning}
+                    </span>
+                  ))}
+                  <div className="row__actions">
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--tiny"
+                      disabled={busy !== null}
+                      onClick={() => dropFromDraft(item.key)}
+                    >
+                      Убрать из черновика
+                    </button>
+                  </div>
+                </li>
+              ))}
             </ul>
           ) : undefined}
 
@@ -344,7 +435,7 @@ export function KnowledgeForm({
               <button
                 type="button"
                 className="btn btn--gold"
-                disabled={busy !== null || draft.some((item) => !item.title.trim() || !item.body.trim())}
+                disabled={busy !== null || !draftIsComplete}
                 onClick={() => void saveDraft()}
               >
                 {busy === 'save' ? 'Записываю…' : `Запомнить: ${sayArticles(draft.length)}`}
@@ -407,7 +498,7 @@ export function KnowledgeForm({
           <button
             type="button"
             className="btn btn--ghost btn--tiny"
-            disabled={busy !== null}
+            disabled={locked}
             onClick={() => startEditing('new')}
           >
             Написать статью руками
@@ -435,7 +526,7 @@ export function KnowledgeForm({
                 <button
                   type="button"
                   className="btn btn--ghost"
-                  disabled={busy !== null || draft !== null}
+                  disabled={locked}
                   onClick={() => startEditing(article)}
                 >
                   Править
@@ -443,7 +534,7 @@ export function KnowledgeForm({
                 <button
                   type="button"
                   className="btn btn--ghost"
-                  disabled={busy !== null}
+                  disabled={locked}
                   onClick={() => void toggle(article)}
                 >
                   {article.isActive ? 'Погасить' : 'Вернуть'}

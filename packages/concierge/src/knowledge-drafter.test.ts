@@ -96,6 +96,16 @@ describe('ответ модели', () => {
     expect(draft?.articles).toEqual([{ title: 'Наличные', body: 'Курс называет менеджер.' }]);
   });
 
+  it('хэштег и «#1» в тексте — строки статьи, а не заголовки', async () => {
+    const { fetch } = givenModel('# Оплата\nПереводы отмечены #обмен.\n#1 в списке банков.\n###\nКонец.');
+
+    const draft = await drafterWith(fetch).draft(REQUEST);
+
+    expect(draft?.articles).toEqual([
+      { title: 'Оплата', body: 'Переводы отмечены #обмен.\n#1 в списке банков.\n###\nКонец.' },
+    ]);
+  });
+
   it('знак «фактов нет» читает как пустой черновик, а не как статью', async () => {
     const { fetch } = givenModel('ПУСТО');
 

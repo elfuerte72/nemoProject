@@ -13,3 +13,14 @@
 export function normalizeKnowledgeTitle(title: string): string {
   return title.trim().replace(/\s+/g, ' ').toLowerCase();
 }
+
+/**
+ * Тема статьи без номера части: «Как проходит обмен (2)» → «как проходит
+ * обмен». Длинную статью ядро делит на части с номером в названии, и
+ * присланный заново документ может дать другое число частей: части одной
+ * темы, которых в новом черновике нет, гасятся — иначе хвост старой
+ * версии оставался бы в справке рядом с новой.
+ */
+export function knowledgeTitleFamily(title: string): string {
+  return normalizeKnowledgeTitle(title).replace(/\s*\(\d+\)$/, '');
+}

@@ -1,6 +1,7 @@
 import { InvalidInputError } from '@nemo/core';
 import mammoth from 'mammoth';
 import { extractText } from 'unpdf';
+import { asciiAt, bytesAt } from './bytes';
 
 /**
  * Текст из файла, который администратор принёс в базу знаний.
@@ -107,12 +108,4 @@ function tidy(text: string): string {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-function asciiAt(bytes: Uint8Array, offset: number, expected: string): boolean {
-  return bytesAt(bytes, offset, [...expected].map((char) => char.charCodeAt(0)));
-}
-
-function bytesAt(bytes: Uint8Array, offset: number, expected: readonly number[]): boolean {
-  return expected.every((byte, index) => bytes[offset + index] === byte);
 }

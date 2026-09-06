@@ -25,7 +25,9 @@ export async function POST(request: Request): Promise<Response> {
     const actor = await requireStaffActor();
     const text = await documentText(request);
     const draft = await getCore().draftKnowledgeArticles(actor, { text });
-    return json({ draft });
+    // Текст документа уходит обратно: экран пересчитывает по нему
+    // предупреждения, когда статью правят, а из файла его у экрана нет.
+    return json({ draft, source: text });
   } catch (error) {
     return errorResponse(error);
   }

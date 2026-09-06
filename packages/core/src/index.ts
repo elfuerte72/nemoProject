@@ -88,6 +88,7 @@ import {
   listKnowledgeArticles,
   saveKnowledgeArticle,
   setKnowledgeArticleActive,
+  warnAboutKnowledgeArticle,
   type KnowledgeDraftInput,
   type NewKnowledgeArticle,
   type SaveKnowledgeArticleInput,
@@ -396,6 +397,8 @@ export function createCore(ctx: CoreConfig) {
       draftKnowledgeArticles(ctx, actor, input),
     addKnowledgeArticles: (actor: Actor, articles: readonly NewKnowledgeArticle[]) =>
       addKnowledgeArticles(ctx, actor, articles),
+    warnAboutKnowledgeArticle: (actor: Actor, input: { body: string; source: string }) =>
+      warnAboutKnowledgeArticle(actor, input),
     listRequisiteAccessLog: (actor: Actor, filter?: RequisiteAccessFilter) =>
       listRequisiteAccessLog(ctx, actor, filter),
 

@@ -1,6 +1,6 @@
 import { asc, eq, sql } from 'drizzle-orm';
 import { conciergeKnowledge } from '@nemo/db';
-import { normalizeKnowledgeTitle } from '@nemo/types';
+import { knowledgeTitleFamily, normalizeKnowledgeTitle } from '@nemo/types';
 import { requireAdmin, type Actor } from './actor.js';
 import { slopComplaints } from './bot-slop.js';
 import { TIME_UNIT } from './concierge-guard.js';
@@ -52,6 +52,18 @@ const MAX_TITLE = 120;
  * заходом он упрётся в потолок ответа модели: хвост потеряется молча.
  */
 const MAX_DOCUMENT = 60_000;
+
+/**
+ * Сколько текста уходит модели за один запрос.
+ *
+ * Потолок её ответа — около двенадцати тысяч знаков статей, и документ
+ * длиннее этого обрывался бы на полуслове. Поэтому длинный документ
+ * режется по абзацам на части по десять тысяч знаков, каждая уходит
+ * своим запросом, статьи собираются по порядку. Модель при этом не
+ * видит соседних частей — и не должна: статья отвечает на один вопрос,
+ * а не связывает главы.
+ */
+const CHUNK_CHARS = 10_000;
 
 /**
  * Шаг позиции между статьями. С зазором, а не подряд: между двумя
@@ -183,6 +195,7 @@ export async function saveKnowledgeArticle(
   requireAdmin(actor);
 
   const { title, body } = validated(input);
+  await requireTitleFree(ctx.db, title, input.id);
   const values = {
     title,
     body,
@@ -274,16 +287,28 @@ export async function draftKnowledgeArticles(
     );
   }
 
-  const result = await drafter.draft({ instructions: KNOWLEDGE_DRAFT_INSTRUCTIONS, text });
-  if (result === null) {
+  // Части идут разом: администратор ждёт у кнопки, и пять запросов
+  // подряд — это пять ожиданий вместо одного.
+  const results = await Promise.all(
+    splitText(text, CHUNK_CHARS).map((chunk) =>
+      drafter.draft({ instructions: KNOWLEDGE_DRAFT_INSTRUCTIONS, text: chunk }),
+    ),
+  );
+  if (results.some((one) => one === null)) {
+    // Половина черновика без слов о второй половине читалась бы как весь
+    // документ: отказ целиком, повтор — целиком.
     throw new UnavailableError('Помощник не ответил: провайдер молчит. Повторите разбор через минуту');
   }
 
-  const articles = result.articles.flatMap(tidy).map(
-    (article): DraftedArticleView => ({ ...article, warnings: warningsFor(article.body, text) }),
-  );
+  const articles = results
+    .flatMap((one) => one!.articles)
+    .flatMap(tidy)
+    .map((article): DraftedArticleView => ({
+      ...article,
+      warnings: knowledgeArticleWarnings(article.body, text),
+    }));
 
-  return { articles, truncated: result.truncated };
+  return { articles, truncated: results.some((one) => one!.truncated) };
 }
 
 /**
@@ -308,18 +333,43 @@ export async function addKnowledgeArticles(
   }
   const clean = articles.map(validated);
 
+  // Две одноимённые в одном черновике — не замена, а потеря: вторая
+  // перезаписала бы первую молча, а панель отчиталась бы о двух.
+  const seen = new Map<string, string>();
+  for (const article of clean) {
+    const key = normalizeKnowledgeTitle(article.title);
+    const first = seen.get(key);
+    if (first !== undefined) {
+      throw new InvalidInputError(
+        `Две статьи с названием «${first}»: объедините их или переименуйте одну`,
+      );
+    }
+    seen.set(key, article.title);
+  }
+
   return ctx.db.transaction(async (tx) => {
+    // В порядке справки: экран называет заменяемую статью первой по
+    // этому же порядку, и ядро обязано заменить её же.
     const existing = await tx
-      .select({ id: conciergeKnowledge.id, title: conciergeKnowledge.title })
-      .from(conciergeKnowledge);
-    const byTitle = new Map(existing.map((row) => [normalizeKnowledgeTitle(row.title), row.id]));
+      .select({
+        id: conciergeKnowledge.id,
+        title: conciergeKnowledge.title,
+        isActive: conciergeKnowledge.isActive,
+      })
+      .from(conciergeKnowledge)
+      .orderBy(asc(conciergeKnowledge.position), asc(conciergeKnowledge.title));
+    const byTitle = new Map<string, string>();
+    for (const row of existing) {
+      const key = normalizeKnowledgeTitle(row.title);
+      if (!byTitle.has(key)) byTitle.set(key, row.id);
+    }
     let position = await nextPosition(tx);
 
     const saved: KnowledgeArticleView[] = [];
+    const touched = new Set<string>();
     for (const article of clean) {
-      const key = normalizeKnowledgeTitle(article.title);
       const values = { ...article, isActive: true, updatedAt: new Date() };
-      const id = byTitle.get(key);
+      const id = byTitle.get(normalizeKnowledgeTitle(article.title));
       if (id !== undefined) {
         const [updated] = await tx
           .update(conciergeKnowledge)
@@ -327,6 +377,7 @@ export async function addKnowledgeArticles(
           .where(eq(conciergeKnowledge.id, id))
           .returning();
         saved.push(updated!);
+        touched.add(id);
         continue;
       }
       const [created] = await tx
@@ -334,11 +385,60 @@ export async function addKnowledgeArticles(
         .values({ ...values, position })
         .returning();
       saved.push(created!);
-      byTitle.set(key, created!.id);
+      touched.add(created!.id);
       position += POSITION_STEP;
     }
+
+    /*
+     * Прежние части тех же тем, которых в черновике больше нет, гасятся:
+     * документ прислали заново, и хвост старой версии рядом с новой
+     * читался бы помощником как ещё одна правда. Сюда же попадают
+     * одноимённые дубли, оставшиеся с тех пор, когда одноимённость не
+     * проверялась. Гашение, а не удаление — по общему правилу базы.
+     */
+    const families = new Set(clean.map((article) => knowledgeTitleFamily(article.title)));
+    const stale = existing.filter(
+      (row) => row.isActive && !touched.has(row.id) && families.has(knowledgeTitleFamily(row.title)),
+    );
+    for (const row of stale) {
+      await tx
+        .update(conciergeKnowledge)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(conciergeKnowledge.id, row.id));
+    }
+
     return saved;
   });
+}
+
+/**
+ * Что администратору стоит знать о статье до записи — по её тексту и по
+ * документу, из которого она взята. Отдельной операцией, потому что
+ * текст в черновике правят, и предупреждение обязано отвечать тому, что
+ * запишется, а не тому, что модель прислала.
+ */
+export function warnAboutKnowledgeArticle(
+  actor: Actor,
+  input: { readonly body: string; readonly source: string },
+): readonly string[] {
+  requireAdmin(actor);
+  return knowledgeArticleWarnings(input.body, input.source);
+}
+
+/**
+ * Название свободно — или отказ словами. Одноимённая статья заводится
+ * не второй строкой, а правкой первой: две «Оплаты» в справке помощник
+ * читал бы как две правды, а администратор — как одну.
+ */
+async function requireTitleFree(executor: Executor, title: string, ownId?: string): Promise<void> {
+  const key = normalizeKnowledgeTitle(title);
+  const rows = await executor
+    .select({ id: conciergeKnowledge.id, title: conciergeKnowledge.title })
+    .from(conciergeKnowledge);
+  const clash = rows.find((row) => row.id !== ownId && normalizeKnowledgeTitle(row.title) === key);
+  if (clash) {
+    throw new InvalidInputError(`Статья «${clash.title}» уже есть: откройте её и поправьте`);
+  }
 }
 
 /** Название и текст по правилам статьи — или отказ словами. */
@@ -379,7 +479,7 @@ function tidy(article: DraftedArticle): readonly { title: string; body: string }
   const body = article.body.trim();
   if (!title || !body) return [];
 
-  const parts = splitBody(body);
+  const parts = splitText(body, MAX_BODY);
   if (parts.length === 1) return [{ title, body: parts[0]! }];
 
   const base = shortenTitle(title, MAX_TITLE - ` (${parts.length})`.length);
@@ -395,24 +495,25 @@ function shortenTitle(title: string, limit: number = MAX_TITLE): string {
 }
 
 /**
- * Разделить текст на части не длиннее потолка: по абзацам, длинный
- * абзац — по предложениям, а предложение длиннее потолка — как придётся.
+ * Разделить текст на части не длиннее предела: по абзацам, длинный
+ * абзац — по предложениям, а предложение длиннее предела — как придётся.
  * Части собираются жадно: в одну кладётся столько абзацев, сколько
  * влезает, — иначе документ из коротких абзацев рассыпался бы на
- * десятки статей.
+ * десятки кусков. Одно правило на два предела: статью делит потолок
+ * статьи, документ — потолок запроса к модели.
  */
-function splitBody(body: string): readonly string[] {
-  if (body.length <= MAX_BODY) return [body];
+function splitText(text: string, limit: number): readonly string[] {
+  if (text.length <= limit) return [text];
 
   const units: { sep: string; text: string }[] = [];
-  body.split(/\n\s*\n/).forEach((paragraph, index) => {
+  text.split(/\n\s*\n/).forEach((paragraph, index) => {
     const before = index === 0 ? '' : '\n\n';
-    if (paragraph.length <= MAX_BODY) {
+    if (paragraph.length <= limit) {
       units.push({ sep: before, text: paragraph });
       return;
     }
     paragraph.split(/(?<=[.!?…])\s+/).forEach((sentence, at) => {
-      hardChunks(sentence).forEach((chunk, piece) => {
+      hardChunks(sentence, limit).forEach((chunk, piece) => {
         units.push({ sep: piece > 0 ? '' : at === 0 ? before : ' ', text: chunk });
       });
     });
@@ -422,7 +523,7 @@ function splitBody(body: string): readonly string[] {
   let current = '';
   for (const unit of units) {
     const joined = current === '' ? unit.text : `${current}${unit.sep}${unit.text}`;
-    if (joined.length <= MAX_BODY) {
+    if (joined.length <= limit) {
       current = joined;
       continue;
     }
@@ -433,10 +534,10 @@ function splitBody(body: string): readonly string[] {
   return parts;
 }
 
-function hardChunks(text: string): readonly string[] {
+function hardChunks(text: string, limit: number): readonly string[] {
   const chunks: string[] = [];
-  for (let at = 0; at < text.length; at += MAX_BODY) {
-    chunks.push(text.slice(at, at + MAX_BODY));
+  for (let at = 0; at < text.length; at += limit) {
+    chunks.push(text.slice(at, at + limit));
   }
   return chunks;
 }
@@ -456,7 +557,7 @@ const ADVICE =
  * тем же правилом, что и тексты бота; совет от себя — потому что его
  * не было в документе, а прочитает его клиент.
  */
-function warningsFor(body: string, source: string): readonly string[] {
+function knowledgeArticleWarnings(body: string, source: string): readonly string[] {
   const warnings = [...slopComplaints(body)];
   if (TIME_UNIT.test(body)) {
     warnings.push('называет срок: помощник сможет обещать его клиентам');

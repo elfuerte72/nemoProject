@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_REPLY_LENGTH, replyComplaints } from './concierge-guard.js';
+import { MAX_REPLY_LENGTH, TIME_UNIT, replyComplaints } from './concierge-guard.js';
 import {
   CONCIERGE_GREETING,
   CONCIERGE_HANDOVER,
@@ -394,4 +394,20 @@ describe('разметка', () => {
       }),
     ).toEqual([]);
   });
+});
+
+describe('единица времени в справке', () => {
+  it.each(['перевод идёт до часа', 'полчаса', 'в течение суток', 'днём и ночью', 'через два дня', 'на неделе', 'за минуту'])(
+    'ловит «%s»',
+    (text) => {
+      expect(TIME_UNIT.test(text)).toBe(true);
+    },
+  );
+
+  it.each(['частые вопросы о наличных', 'часть суммы', 'суть в том', 'недельный отчёт', 'минутка', 'часто спрашивают'])(
+    'не принимает за срок «%s»',
+    (text) => {
+      expect(TIME_UNIT.test(text)).toBe(false);
+    },
+  );
 });

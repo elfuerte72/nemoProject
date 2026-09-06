@@ -27,6 +27,7 @@
     "@nemo/core": "workspace:*",
     "@nemo/crypto": "workspace:*",
     "@nemo/db": "workspace:*",
+    "@nemo/types": "workspace:*",
     "drizzle-orm": "^0.38.3",
     "qrcode": "^1.5.4"
   },

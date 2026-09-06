@@ -17,8 +17,10 @@ import { givenStaff } from './test-support.js';
 
 const db = testDatabase();
 
+type Drafted = readonly { title: string; body: string }[];
+
 function givenDrafter(
-  articles: readonly { title: string; body: string }[] | null,
+  articles: Drafted | null | ((request: KnowledgeDraftRequest) => Drafted | null),
   options: { truncated?: boolean } = {},
 ): KnowledgeDrafter & { readonly requests: KnowledgeDraftRequest[] } {
   const requests: KnowledgeDraftRequest[] = [];
@@ -26,7 +28,8 @@ function givenDrafter(
     requests,
     draft: async (request) => {
       requests.push(request);
-      return articles === null ? null : { articles, truncated: options.truncated ?? false };
+      const answer = typeof articles === 'function' ? articles(request) : articles;
+      return answer === null ? null : { articles: answer, truncated: options.truncated ?? false };
     },
   };
 }
@@ -72,6 +75,37 @@ describe('статья руками', () => {
     expect(edited.position).toBe(40);
     const titles = (await core.listKnowledgeArticles(admin)).map((one) => one.title);
     expect(titles).toEqual(['График работы', 'Оплата']);
+  });
+});
+
+describe('статья руками: одно название — одна статья', () => {
+  it('вторую статью с тем же названием не заводит, а отсылает к первой', async () => {
+    const core = coreWith();
+    await core.saveKnowledgeArticle(admin, { title: 'Оплата', body: 'СБП.' });
+
+    await expect(
+      core.saveKnowledgeArticle(admin, { title: ' оплата ', body: 'Карта.' }),
+    ).rejects.toMatchObject({ code: 'invalid-input', message: expect.stringContaining('«Оплата»') });
+    expect(await db.select().from(conciergeKnowledge)).toHaveLength(1);
+  });
+
+  it('при правке нельзя назвать статью именем другой', async () => {
+    const core = coreWith();
+    await core.saveKnowledgeArticle(admin, { title: 'Оплата', body: 'СБП.' });
+    const other = await core.saveKnowledgeArticle(admin, { title: 'Наличные', body: 'Касса.' });
+
+    await expect(
+      core.saveKnowledgeArticle(admin, { id: other.id, title: 'оплата', body: 'Касса.' }),
+    ).rejects.toMatchObject({ code: 'invalid-input' });
+  });
+
+  it('правка своей статьи под тем же названием проходит', async () => {
+    const core = coreWith();
+    const one = await core.saveKnowledgeArticle(admin, { title: 'Оплата', body: 'СБП.' });
+
+    const edited = await core.saveKnowledgeArticle(admin, { id: one.id, title: 'оплата', body: 'СБП и карта.' });
+
+    expect(edited).toMatchObject({ id: one.id, title: 'оплата', body: 'СБП и карта.' });
   });
 });
 
@@ -228,6 +262,34 @@ describe('черновик из документа', () => {
     expect(draft.truncated).toBe(true);
   });
 
+  it('длинный документ уходит модели частями по абзацам, статьи собираются по порядку', async () => {
+    const paragraph = (mark: string) => `${mark} ${'слово '.repeat(700)}`.trim(); // ≈ 4 200 знаков
+    const text = [paragraph('ПЕРВЫЙ'), paragraph('ВТОРОЙ'), paragraph('ТРЕТИЙ')].join('\n\n'); // ≈ 12 600
+    const drafter = givenDrafter((request) => [
+      { title: `Из части «${request.text.slice(0, 6)}»`, body: 'Текст.' },
+    ]);
+    const core = coreWith(drafter);
+
+    const draft = await core.draftKnowledgeArticles(admin, { text });
+
+    // Две части: первые два абзаца влезают в одну, третий — во вторую.
+    expect(drafter.requests).toHaveLength(2);
+    expect(drafter.requests[0]?.text.startsWith('ПЕРВЫЙ')).toBe(true);
+    expect(drafter.requests[0]?.text).toContain('ВТОРОЙ');
+    expect(drafter.requests[1]?.text.startsWith('ТРЕТИЙ')).toBe(true);
+    expect(drafter.requests.every((one) => one.instructions.includes('статьи'))).toBe(true);
+    expect(draft.articles.map((one) => one.title)).toEqual(['Из части «ПЕРВЫЙ»', 'Из части «ТРЕТИЙ»']);
+  });
+
+  it('часть, на которую провайдер не ответил, — отказ целиком, а не половина черновика', async () => {
+    const paragraph = 'слово '.repeat(1100).trim(); // ≈ 6 600
+    const text = [paragraph, paragraph].join('\n\n');
+    let calls = 0;
+    const core = coreWith(givenDrafter(() => (calls++ === 0 ? [{ title: 'Есть', body: 'Текст.' }] : null)));
+
+    await expect(core.draftKnowledgeArticles(admin, { text })).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
   it('документ длиннее потолка отвергает словами, а не молча режет', async () => {
     const core = coreWith(givenDrafter([]));
 
@@ -263,6 +325,69 @@ describe('запись черновика', () => {
     const all = await core.listKnowledgeArticles(admin);
     expect(all).toHaveLength(2);
     expect(all[0]).toMatchObject({ id: old.id, title: 'график', body: 'Круглосуточно.', position: 40, isActive: true });
+  });
+
+  it('две статьи с одним названием в одном черновике отвергаются, а не схлопываются в одну', async () => {
+    const core = coreWith();
+
+    await expect(
+      core.addKnowledgeArticles(admin, [
+        { title: 'Оплата', body: 'СБП.' },
+        { title: ' оплата ', body: 'Карта.' },
+      ]),
+    ).rejects.toMatchObject({ code: 'invalid-input', message: expect.stringContaining('«Оплата»') });
+    expect(await db.select().from(conciergeKnowledge)).toHaveLength(0);
+  });
+
+  it('части темы заменяют прежние части и гасят те, которых в черновике больше нет', async () => {
+    const core = coreWith();
+    const whole = await core.saveKnowledgeArticle(admin, { title: 'Как проходит обмен', body: 'Старая цельная.', position: 10 });
+    const first = await core.saveKnowledgeArticle(admin, { title: 'Как проходит обмен (1)', body: 'Старая 1.', position: 20 });
+    const second = await core.saveKnowledgeArticle(admin, { title: 'Как проходит обмен (2)', body: 'Старая 2.', position: 30 });
+    const third = await core.saveKnowledgeArticle(admin, { title: 'Как проходит обмен (3)', body: 'Старая 3.', position: 40 });
+    await core.saveKnowledgeArticle(admin, { title: 'Оплата', body: 'СБП.', position: 50 });
+
+    await core.addKnowledgeArticles(admin, [
+      { title: 'Как проходит обмен (1)', body: 'Новая 1.' },
+      { title: 'Как проходит обмен (2)', body: 'Новая 2.' },
+    ]);
+
+    const byId = new Map((await core.listKnowledgeArticles(admin)).map((one) => [one.id, one]));
+    expect(byId.get(first.id)).toMatchObject({ body: 'Новая 1.', isActive: true, position: 20 });
+    expect(byId.get(second.id)).toMatchObject({ body: 'Новая 2.', isActive: true, position: 30 });
+    expect(byId.get(whole.id)?.isActive).toBe(false);
+    expect(byId.get(third.id)?.isActive).toBe(false);
+    // Чужая тема не тронута.
+    expect([...byId.values()].find((one) => one.title === 'Оплата')?.isActive).toBe(true);
+  });
+
+  it('цельная статья гасит прежние части той же темы', async () => {
+    const core = coreWith();
+    const part = await core.saveKnowledgeArticle(admin, { title: 'Оплата (1)', body: 'Старая 1.' });
+
+    await core.addKnowledgeArticles(admin, [{ title: 'Оплата', body: 'Новая цельная.' }]);
+
+    const all = await core.listKnowledgeArticles(admin);
+    expect(all.find((one) => one.id === part.id)?.isActive).toBe(false);
+    expect(all.find((one) => one.title === 'Оплата')).toMatchObject({ body: 'Новая цельная.', isActive: true });
+  });
+
+  it('из двух одноимённых статей, оставшихся с прежних времён, заменяется первая по справке, вторая гасится', async () => {
+    // Такие пары в базе больше не заводятся, но могли остаться: до
+    // 5 сентября 2026 одноимённость не проверялась.
+    const core = coreWith();
+    await db.insert(conciergeKnowledge).values([
+      { title: 'оплата', body: 'Вторая.', position: 20 },
+      { title: 'Оплата', body: 'Первая.', position: 10 },
+    ]);
+
+    await core.addKnowledgeArticles(admin, [{ title: 'Оплата', body: 'Новая.' }]);
+
+    const all = await core.listKnowledgeArticles(admin);
+    expect(all.map((one) => [one.position, one.body, one.isActive])).toEqual([
+      [10, 'Новая.', true],
+      [20, 'Вторая.', false],
+    ]);
   });
 
   it('пустой черновик не записывается', async () => {
