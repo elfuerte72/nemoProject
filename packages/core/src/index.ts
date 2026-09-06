@@ -46,6 +46,7 @@ import {
   registerMerchant,
   rejectMerchant,
   requestMerchantPasswordReset,
+  resendMerchantEmailVerification,
   resetMerchantPassword,
   setMerchantActive,
   verifyMerchantEmail,
@@ -60,6 +61,7 @@ import {
 } from './expiry.js';
 import {
   countExchangeRequests,
+  countExchangeRequestsByStatus,
   getExchangeRequest,
   getExchangeTerms,
   listExchangeRequests,
@@ -251,6 +253,8 @@ export function createCore(ctx: CoreConfig) {
      */
     registerMerchant: (input: RegisterMerchantInput) => registerMerchant(ctx, input),
     verifyMerchantEmail: (token: string) => verifyMerchantEmail(ctx, token),
+    resendMerchantEmailVerification: (actor: Actor) =>
+      resendMerchantEmailVerification(ctx, actor),
     beginMerchantLogin: (input: { email: string; password: string }) =>
       beginMerchantLogin(ctx, input),
     getMerchantSession: (merchantId: string, sessionEpoch: number) =>
@@ -297,6 +301,7 @@ export function createCore(ctx: CoreConfig) {
       listExchangeRequests(ctx, actor, filter),
     countExchangeRequests: (actor: Actor, filter?: Omit<OwnExchangeFilter, 'limit' | 'after'>) =>
       countExchangeRequests(ctx, actor, filter),
+    countExchangeRequestsByStatus: (actor: Actor) => countExchangeRequestsByStatus(ctx, actor),
     /** Лента своей заявки — владельцу: без имён сотрудников. */
     listExchangeRequestEventsForOwner: (actor: Actor, requestId: string) =>
       listExchangeRequestEventsForOwner(ctx, actor, requestId),

@@ -8,6 +8,7 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   or,
   sql,
   type SQL,
@@ -199,10 +200,10 @@ function hashToken(token: string): string {
 /**
  * Анкета мерчанта: заводится им самим на сайте кабинета.
  *
- * Уведомление о подтверждении почты она возвращает, но доставки писем у
- * сервиса пока нет — пакет `@nemo/email` идёт своим тикетом. До него
- * ключ подтверждения виден только тому, кто позвал операцию: так его и
- * забирает сид разработки. Записано в `backlog.md`.
+ * Ключ подтверждения уходит уведомлением, а ссылку из него собирает
+ * доставка (`@nemo/email`): на каком домене стоит кабинет, ядро не
+ * знает. Тем же ключом из ответа пользуется сид разработки — письма
+ * там никуда не отправляются.
  */
 export async function registerMerchant(
   ctx: CoreConfig,
@@ -272,6 +273,31 @@ export async function registerMerchant(
 }
 
 /**
+ * Прежние ключи той же цели — в расход.
+ *
+ * Живых ссылок на один ящик должно быть столько же, сколько писем,
+ * которых мерчант ждёт, — одна. Иначе забытое письмо недельной
+ * давности открывает кабинет ровно так же, как свежее, а попросивший
+ * ссылку трижды не знает, какая из трёх сработает.
+ */
+async function spendOldTokens(
+  tx: Executor,
+  merchantId: string,
+  purpose: 'email_verification' | 'password_reset',
+): Promise<void> {
+  await tx
+    .update(merchantEmailTokens)
+    .set({ usedAt: new Date() })
+    .where(
+      and(
+        eq(merchantEmailTokens.merchantId, merchantId),
+        eq(merchantEmailTokens.purpose, purpose),
+        isNull(merchantEmailTokens.usedAt),
+      ),
+    );
+}
+
+/**
  * Ключ из письма, годный к употреблению: не просроченный и ни разу не
  * использованный. Отметка ставится в той же транзакции, что и само
  * действие: без неё ссылка сбрасывала бы пароль столько раз, сколько по
@@ -303,6 +329,56 @@ async function takeToken(
     .set({ usedAt: new Date() })
     .where(eq(merchantEmailTokens.id, row.id));
   return row.merchantId;
+}
+
+/**
+ * Письмо подтверждения заново — по просьбе того, кто вошёл.
+ *
+ * Ссылка одноразовая, а письма теряются: их съедает спам-фильтр, их
+ * открывают через двое суток, по ним проходит сканер ссылок почтового
+ * шлюза. Без второго письма мерчант остаётся с неподтверждённым
+ * адресом навсегда — анкету к рассмотрению не примут, а завести
+ * кабинет заново нельзя: почта занята им же самим.
+ *
+ * Просит вошедший, а не всякий, кто назвал адрес: так эта операция не
+ * становится способом слать письма на чужие ящики и перебирать, кто
+ * здесь заведён. Вход подтверждения не требует — потому и просит.
+ */
+export async function resendMerchantEmailVerification(
+  ctx: CoreConfig,
+  actor: Actor,
+): Promise<MerchantResult> {
+  const merchantId = requireMerchant(actor);
+  const { token, tokenHash } = issueToken();
+
+  return ctx.db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(merchants)
+      .where(eq(merchants.id, merchantId))
+      .limit(1)
+      .for('update');
+
+    if (!row) {
+      throw new NotFoundError('Мерчант не найден');
+    }
+    if (row.emailVerifiedAt !== null) {
+      throw new ConflictError('Почта уже подтверждена');
+    }
+
+    await spendOldTokens(tx, merchantId, 'email_verification');
+    await tx.insert(merchantEmailTokens).values({
+      merchantId,
+      purpose: 'email_verification',
+      tokenHash,
+      expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
+    });
+
+    return {
+      merchant: toView(row),
+      notifications: [{ kind: 'merchant-email-verification', to: toMerchant(row), token }],
+    };
+  });
 }
 
 export async function verifyMerchantEmail(
@@ -575,11 +651,14 @@ export async function requestMerchantPasswordReset(
   }
 
   const { token, tokenHash } = issueToken();
-  await ctx.db.insert(merchantEmailTokens).values({
-    merchantId: row.id,
-    purpose: 'password_reset',
-    tokenHash,
-    expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+  await ctx.db.transaction(async (tx) => {
+    await spendOldTokens(tx, row.id, 'password_reset');
+    await tx.insert(merchantEmailTokens).values({
+      merchantId: row.id,
+      purpose: 'password_reset',
+      tokenHash,
+      expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+    });
   });
 
   return {

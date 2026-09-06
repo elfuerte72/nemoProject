@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Brand } from '@nemo/ui';
 import { SignOut } from '@/app/ui/sign-out';
 import { SupportLink } from '@/app/ui/support-link';
@@ -15,10 +16,13 @@ export function StateScreen({
   title,
   lines,
   support,
+  action,
 }: {
   readonly title: string;
   readonly lines: readonly string[];
   readonly support: string | null;
+  /** Что здесь можно сделать, кроме как написать в поддержку. */
+  readonly action?: ReactNode;
 }) {
   return (
     <main className="state">
@@ -32,7 +36,8 @@ export function StateScreen({
             {line}
           </p>
         ))}
-        <SupportLink username={support} />
+        {action}
+        <SupportLink username={support} className="btn btn--soft" />
         <SignOut />
       </div>
     </main>

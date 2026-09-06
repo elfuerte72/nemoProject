@@ -726,6 +726,41 @@ export async function countExchangeRequests(
   return row?.total ?? 0;
 }
 
+/**
+ * Сколько своих заявок в каждом состоянии — одним запросом.
+ *
+ * Экран кабинета спрашивает сразу обо всех табах и о счётчике в меню, а
+ * состояний шесть: шесть запросов «сколько там» вместо одного — это
+ * шесть заходов в базу на каждое тихое обновление, то есть каждые
+ * полминуты у каждой открытой вкладки.
+ */
+export async function countExchangeRequestsByStatus(
+  ctx: CoreConfig,
+  actor: Actor,
+): Promise<Readonly<Record<ExchangeRequestStatus, number>>> {
+  const owner = requireOwner(actor);
+  const rows = await ctx.db
+    .select({ status: exchangeRequests.status, total: count() })
+    .from(exchangeRequests)
+    .where(ownedBy(owner))
+    .groupBy(exchangeRequests.status);
+
+  // Состояние, которого у владельца нет, — это ноль, а не отсутствие
+  // ключа: экран считает по ним суммы и рисует табы.
+  const counted: Record<ExchangeRequestStatus, number> = {
+    new: 0,
+    in_progress: 0,
+    rate_confirmed: 0,
+    payment_received: 0,
+    completed: 0,
+    cancelled: 0,
+  };
+  for (const row of rows) {
+    counted[row.status] = row.total;
+  }
+  return counted;
+}
+
 /** Заявки владельца — клиента или мерчанта. */
 export function ownedBy(owner: Owner): SQL {
   return owner.kind === 'client'

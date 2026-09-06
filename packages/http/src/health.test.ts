@@ -75,4 +75,24 @@ describe('healthResponse', () => {
     expect(response.status).toBe(503);
     expect((await bodyOf(response)).database).toBe('timeout');
   });
+
+/*
+ * Поле `details` для того и заведено, чтобы приложение дописывало своё.
+ * Ключ, совпавший с известным, не должен подменять ответ о базе или имя
+ * приложения — иначе сторожок читает выдумку.
+ */
+it('своё не перебивает известные поля', async () => {
+  const response = await healthResponse({
+    app: 'cabinet',
+    version: null,
+    ping: () => Promise.resolve(),
+    details: { mail: 'log', database: 'выдумка', app: 'чужое' },
+  });
+
+  expect(await response.json()).toMatchObject({
+    app: 'cabinet',
+    database: 'ok',
+    mail: 'log',
+  });
+});
 });

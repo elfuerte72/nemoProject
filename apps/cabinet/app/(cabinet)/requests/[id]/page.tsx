@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { Moment, QuietRefresh } from '@nemo/ui';
 import { formatMoney, formatRate } from '@nemo/ui/format';
-import { requireViewer } from '@/lib/auth';
 import { getCore } from '@/lib/core';
+import { viewer } from '@/lib/reads';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
 import { CancelRequest } from './cancel-request';
 
@@ -23,7 +23,7 @@ export default async function RequestPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { actor } = await requireViewer();
+  const { actor } = await viewer();
   const { id } = await params;
   const core = getCore();
 

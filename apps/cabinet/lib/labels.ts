@@ -31,14 +31,6 @@ export const STATUS_TONES: Record<ExchangeRequestStatus, PillTone> = {
   cancelled: 'off',
 };
 
-/** Состояния, при которых заявка ещё не закрыта: они и есть работа. */
-export const OPEN_STATUSES: readonly ExchangeRequestStatus[] = [
-  'new',
-  'in_progress',
-  'rate_confirmed',
-  'payment_received',
-];
-
 export const KIND_LABELS: Record<ExchangeKind, string> = {
   electronic: 'электронный перевод',
   cash: 'наличные',

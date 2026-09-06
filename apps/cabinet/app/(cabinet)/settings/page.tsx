@@ -1,6 +1,6 @@
 import { HowTo, Moment } from '@nemo/ui';
-import { requireViewer } from '@/lib/auth';
 import { getCore } from '@/lib/core';
+import { viewer } from '@/lib/reads';
 import { MERCHANT_STATUS_LABELS } from '@/lib/labels';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { PasswordForm } from './password-form';
@@ -32,7 +32,7 @@ const HOW_TO = [
 ];
 
 export default async function SettingsPage() {
-  const { actor, session } = await requireViewer();
+  const { actor, session } = await viewer();
   const profile = await getCore().getMerchantProfile(actor);
 
   return (

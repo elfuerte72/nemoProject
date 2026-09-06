@@ -37,12 +37,17 @@ const DEFAULT_TIMEOUT_MS = 3_000;
 export async function healthResponse(probe: HealthProbe): Promise<Response> {
   const database = await probeDatabase(probe.ping, probe.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const ok = database === 'ok';
+  /*
+   * Своё приложение говорит первым, а известные поля — последними: имя
+   * приложения, коммит и состояние базы перебить нельзя, как бы ни
+   * назвали ключ в `details`.
+   */
   const body = {
+    ...(probe.details ?? {}),
     ok,
     app: probe.app,
     version: probe.version,
     database,
-    ...(probe.details ?? {}),
   };
   return new Response(JSON.stringify(body), {
     status: ok ? 200 : 503,

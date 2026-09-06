@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
-import { CoreError, type Actor, type MerchantSession } from '@nemo/core';
+import type { Actor, MerchantSession } from '@nemo/core';
 import { getCore } from '@/lib/core';
-import { readToken, SESSION_COOKIE, sessionSecret, SessionError } from '@/lib/session';
+import { readToken, SESSION_COOKIE, sessionSecret } from '@/lib/session';
 
 export type MerchantActor = Actor & { type: 'merchant' };
 
@@ -35,21 +35,8 @@ export async function requireActor(): Promise<MerchantActor> {
   return (await requireViewer()).actor;
 }
 
-/**
- * То же для экранов: `null` означает «нужно войти».
- *
- * `null` возвращается только на отказ во входе — нет куки, кука
- * истекла, поколение сменилось. Всё остальное — незаданный секрет
- * сессии, отказавшая база — пробрасывается: молча отправлять и такое на
- * страницу входа значит превращать аварию в бесконечный редирект, о
- * котором никто не узнает.
+/*
+ * Тот же вход, но с `null` вместо отказа, — в `lib/reads.ts`: экранам
+ * он нужен поверх памяти запроса, иначе каркас и раздел под ним читают
+ * сессию дважды.
  */
-export async function requireViewerOrNull(): Promise<MerchantViewer | null> {
-  try {
-    return await requireViewer();
-  } catch (error) {
-    if (error instanceof SessionError) return null;
-    if (error instanceof CoreError && error.code === 'forbidden') return null;
-    throw error;
-  }
-}

@@ -1,6 +1,6 @@
 import { HowTo, QuietRefresh, Tabs } from '@nemo/ui';
-import { requireViewer } from '@/lib/auth';
 import { getCore } from '@/lib/core';
+import { countOf, requestCounts, viewer } from '@/lib/reads';
 import {
   pickTab,
   REQUESTS_PAGE,
@@ -56,20 +56,19 @@ export default async function RequestsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { actor, session } = await requireViewer();
+  const { actor, session } = await viewer();
   const params = await searchParams;
   const tab = pickTab(single(params.tab));
 
-  const core = getCore();
-  const [rows, ...counts] = await Promise.all([
-    core.listExchangeRequests(actor, {
+  const [rows, counts] = await Promise.all([
+    getCore().listExchangeRequests(actor, {
       limit: REQUESTS_PAGE,
       ...withStatuses(tab),
     }),
-    ...REQUEST_TABS.map((one) => core.countExchangeRequests(actor, withStatuses(one))),
+    requestCounts(),
   ]);
 
-  const total = counts[REQUEST_TABS.indexOf(tab)] ?? 0;
+  const total = countOf(counts, statusesOf(tab));
 
   return (
     <main className="page page--wide">
@@ -88,10 +87,10 @@ export default async function RequestsPage({
       <div className="filters">
         <Tabs
           label="Какие заявки показывать"
-          items={REQUEST_TABS.map((one, index) => ({
+          items={REQUEST_TABS.map((one) => ({
             href: `/requests?tab=${one}`,
             label: TAB_LABELS[one],
-            count: counts[index] ?? 0,
+            count: countOf(counts, statusesOf(one)),
             current: one === tab,
           }))}
         />

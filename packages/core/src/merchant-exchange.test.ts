@@ -570,6 +570,21 @@ describe('счёт своих заявок', () => {
     expect(await core.countExchangeRequests(other)).toBe(1);
   });
 
+  it('раскладывает по состояниям одним запросом', async () => {
+    const first = await submit(merchant);
+    await submit(merchant);
+    await core.cancelOwnExchangeRequest(merchant, first);
+
+    expect(await core.countExchangeRequestsByStatus(merchant)).toEqual({
+      new: 1,
+      in_progress: 0,
+      rate_confirmed: 0,
+      payment_received: 0,
+      completed: 0,
+      cancelled: 1,
+    });
+  });
+
   it('считает по состоянию и по нескольким разом', async () => {
     const first = await submit(merchant);
     await submit(merchant);

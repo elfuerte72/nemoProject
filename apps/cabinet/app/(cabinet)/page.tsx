@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { EmptyState, Greeting, HowTo, Moment, QuietRefresh } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
-import { requireViewer } from '@/lib/auth';
 import { getCore } from '@/lib/core';
-import { OPEN_STATUSES, STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
+import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
+import { openCount, requestCounts, viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 
 export const dynamic = 'force-dynamic';
@@ -38,13 +38,13 @@ const HOW_TO = [
 ];
 
 export default async function OverviewPage() {
-  const { actor, session } = await requireViewer();
-  const core = getCore();
+  const { actor, session } = await viewer();
 
-  const [recent, active] = await Promise.all([
-    core.listExchangeRequests(actor, { limit: 5 }),
-    core.countExchangeRequests(actor, { statuses: OPEN_STATUSES }),
+  const [recent, counts] = await Promise.all([
+    getCore().listExchangeRequests(actor, { limit: 5 }),
+    requestCounts(),
   ]);
+  const active = openCount(counts);
 
   return (
     <main className="page">

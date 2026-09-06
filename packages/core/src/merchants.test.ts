@@ -439,3 +439,67 @@ describe('мерчант о себе', () => {
     expect(mine.id).not.toBe(merchant.id);
   });
 });
+
+/**
+ * Ссылка из письма — вещь одноразовая, а письма теряются: их съедает
+ * спам-фильтр, их открывают через двое суток, по ним проходит чужой
+ * сканер ссылок. Без второго письма мерчант остаётся с неподтверждённым
+ * адресом навсегда: анкету к рассмотрению не примут, а завести кабинет
+ * заново нельзя — почта занята им же самим.
+ */
+describe('письмо подтверждения заново', () => {
+  it('высылается по просьбе того, кто вошёл, и работает', async () => {
+    const { merchant } = await core.registerMerchant(ANKETA);
+    const actor = { type: 'merchant', merchantId: merchant.id } as const;
+
+    const again = await core.resendMerchantEmailVerification(actor);
+    await core.verifyMerchantEmail(tokenOf(again, 'merchant-email-verification'));
+
+    const [found] = await core.listMerchants(await givenStaff({ role: 'admin' }), {
+      status: 'pending',
+    });
+    expect(found?.emailVerifiedAt).not.toBeNull();
+  });
+
+  /*
+   * Прежняя ссылка гасится: живых ссылок на один ящик должно быть
+   * столько же, сколько писем, которые мерчант ждёт, — одна.
+   */
+  it('гасит прежнюю ссылку', async () => {
+    const registered = await core.registerMerchant(ANKETA);
+    const first = tokenOf(registered, 'merchant-email-verification');
+    const actor = { type: 'merchant', merchantId: registered.merchant.id } as const;
+
+    await core.resendMerchantEmailVerification(actor);
+
+    await expect(core.verifyMerchantEmail(first)).rejects.toThrow(/не подходит/i);
+  });
+
+  it('подтвердившему второе письмо не высылается', async () => {
+    const registered = await core.registerMerchant(ANKETA);
+    await core.verifyMerchantEmail(tokenOf(registered, 'merchant-email-verification'));
+    const actor = { type: 'merchant', merchantId: registered.merchant.id } as const;
+
+    await expect(core.resendMerchantEmailVerification(actor)).rejects.toThrow(/уже подтвержд/i);
+  });
+});
+
+/**
+ * То же у сброса пароля: попросив ссылку трижды, мерчант получает три
+ * письма, но живой должна остаться последняя — иначе забытое письмо
+ * недельной давности открывает кабинет столько же времени, сколько
+ * свежее.
+ */
+describe('сброс пароля', () => {
+  it('гасит прежнюю ссылку', async () => {
+    const registered = await core.registerMerchant(ANKETA);
+    await core.verifyMerchantEmail(tokenOf(registered, 'merchant-email-verification'));
+
+    const first = await core.requestMerchantPasswordReset(ANKETA.email);
+    await core.requestMerchantPasswordReset(ANKETA.email);
+
+    await expect(
+      core.resetMerchantPassword(tokenOf(first, 'merchant-password-reset'), 'новый длинный пароль'),
+    ).rejects.toThrow(/не подходит/i);
+  });
+});

@@ -1,6 +1,5 @@
 import { HowTo } from '@nemo/ui';
-import { requireViewer } from '@/lib/auth';
-import { getCore } from '@/lib/core';
+import { supportUsername, viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { SupportLink } from '@/app/ui/support-link';
 
@@ -32,8 +31,8 @@ const HOW_TO = [
 ];
 
 export default async function SupportPage() {
-  const { session } = await requireViewer();
-  const support = await getCore().merchantSupportUsername();
+  const { session } = await viewer();
+  const support = await supportUsername();
 
   return (
     <main className="page page--narrow">

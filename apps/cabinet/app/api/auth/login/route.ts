@@ -5,7 +5,7 @@ import { errorResponse, json } from '@/lib/api';
 import {
   addressOf,
   attemptAllowed,
-  attemptFailed,
+  attemptSpent,
   attemptSucceeded,
 } from '@/lib/attempts';
 import { getCore } from '@/lib/core';
@@ -56,8 +56,8 @@ export async function POST(request: Request): Promise<Response> {
       // четверть часа значило бы к недоступной базе добавить
       // недоступный кабинет.
       if (error instanceof ForbiddenError) {
-        attemptFailed(email);
-        attemptFailed(address);
+        attemptSpent(email);
+        attemptSpent(address);
       }
       throw error;
     }

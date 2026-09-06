@@ -52,8 +52,21 @@ export const TAB_LABELS: Record<RequestTab, string> = {
   all: 'Все',
 };
 
+/**
+ * Состояния, при которых заявка ещё не закрыта: они и есть работа.
+ * Отсюда их берут и таб «В работе», и счётчик в меню — списком в двух
+ * местах они разошлись бы при первом же новом состоянии, и счётчик стал
+ * бы спорить с табом, на который показывает.
+ */
+export const OPEN_STATUSES: readonly ExchangeRequestStatus[] = [
+  'new',
+  'in_progress',
+  'rate_confirmed',
+  'payment_received',
+];
+
 const TAB_STATUSES: Record<RequestTab, readonly ExchangeRequestStatus[] | undefined> = {
-  open: ['new', 'in_progress', 'rate_confirmed', 'payment_received'],
+  open: OPEN_STATUSES,
   completed: ['completed'],
   cancelled: ['cancelled'],
   all: undefined,

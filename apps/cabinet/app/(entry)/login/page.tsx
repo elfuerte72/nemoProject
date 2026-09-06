@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { requireViewerOrNull } from '@/lib/auth';
+import { viewerOrNull } from '@/lib/reads';
 import { LoginForm } from './login-form';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: 'Вход — кабинет Tobee' }
  * где входить не нужно.
  */
 export default async function LoginPage() {
-  if (await requireViewerOrNull()) {
+  if (await viewerOrNull()) {
     redirect('/');
   }
   return <LoginForm />;
