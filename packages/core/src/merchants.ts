@@ -124,6 +124,13 @@ export interface MerchantSession {
   readonly sessionEpoch: number;
   readonly name: string;
   readonly status: MerchantStatus;
+  /**
+   * Подтверждён ли адрес почты. Состояние «на рассмотрении» бывает по
+   * двум причинам — письмо не открыто или анкета ещё не рассмотрена, —
+   * и говорить о них одними словами нельзя: в первом случае от мерчанта
+   * ждут действия, во втором ждать должен он.
+   */
+  readonly emailVerified: boolean;
 }
 
 export interface MerchantFilter {
@@ -366,6 +373,7 @@ function toSession(row: MerchantRow): MerchantSession {
     sessionEpoch: row.sessionEpoch,
     name: row.name,
     status: row.status,
+    emailVerified: row.emailVerifiedAt !== null,
   };
 }
 
@@ -476,6 +484,31 @@ export function recipientFor(
     throw new NotFoundError('Мерчант не найден');
   }
   return found;
+}
+
+/**
+ * Своя анкета — самому мерчанту.
+ *
+ * Отдельно от `getMerchantCard`, который читает сотрудник: тот отдаёт
+ * ещё и заявки, и решения администратора, и права у него другие. Здесь
+ * же — то, что мерчант о себе заполнил, и состояние с причиной отказа:
+ * причину он должен видеть, иначе исправлять ему нечего.
+ */
+export async function getMerchantProfile(
+  ctx: CoreConfig,
+  actor: Actor,
+): Promise<MerchantView> {
+  const merchantId = requireMerchant(actor);
+  const [row] = await ctx.db
+    .select()
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .limit(1);
+
+  if (!row) {
+    throw new NotFoundError('Мерчант не найден');
+  }
+  return toView(row);
 }
 
 export async function changeMerchantPassword(

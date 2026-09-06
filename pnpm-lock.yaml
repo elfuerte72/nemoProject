@@ -113,6 +113,55 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@24.13.3)
 
+  apps/cabinet:
+    dependencies:
+      '@nemo/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
+      '@nemo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@nemo/email':
+        specifier: workspace:*
+        version: link:../../packages/email
+      '@nemo/http':
+        specifier: workspace:*
+        version: link:../../packages/http
+      '@nemo/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@nemo/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      next:
+        specifier: ^15.1.4
+        version: 15.5.22(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.8(react@19.2.8)
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.2.4(@types/react@19.2.18)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@24.13.3)
+
   apps/miniapp:
     dependencies:
       '@nemo/brand':

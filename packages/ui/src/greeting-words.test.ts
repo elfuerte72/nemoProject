@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayWords, salute } from './greeting';
+import { dayWords, salute } from './greeting-words.js';
 
 describe('приветствие по часу', () => {
   it('называет время суток', () => {

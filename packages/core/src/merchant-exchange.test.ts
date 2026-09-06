@@ -542,3 +542,43 @@ describe('чистка после мерчанта', () => {
     ).rejects.toThrow();
   });
 });
+
+/**
+ * Счётчик заявок. Числа за табами кабинета считает база, а не длина
+ * показанной страницы: страница ограничена пределом, и «50» означало бы
+ * и пятьдесят, и пятьсот.
+ */
+describe('счёт своих заявок', () => {
+  async function submit(actor: Actor): Promise<string> {
+    const { request } = await core.submitExchangeRequest(actor, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      payout: PAYOUT,
+    });
+    return request.id;
+  }
+
+  it('считает свои и не считает чужие', async () => {
+    await submit(merchant);
+    await submit(merchant);
+    const other = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    await submit(other);
+
+    expect(await core.countExchangeRequests(merchant)).toBe(2);
+    expect(await core.countExchangeRequests(other)).toBe(1);
+  });
+
+  it('считает по состоянию и по нескольким разом', async () => {
+    const first = await submit(merchant);
+    await submit(merchant);
+    await core.cancelOwnExchangeRequest(merchant, first);
+
+    expect(await core.countExchangeRequests(merchant, { status: 'cancelled' })).toBe(1);
+    expect(await core.countExchangeRequests(merchant, { status: 'new' })).toBe(1);
+    expect(
+      await core.countExchangeRequests(merchant, { statuses: ['new', 'in_progress'] }),
+    ).toBe(1);
+  });
+});

@@ -7,7 +7,7 @@ import { Moment } from '@nemo/ui';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
 import type { DeskFilter, DeskScope, ExchangeRow } from '@/lib/exchange-rows';
 import { pillClass } from '@/lib/labels';
-import { cursorOf, cursorToParams, mergePages } from '@/lib/paging';
+import { cursorOf, cursorToParams, mergePages } from '@nemo/ui/paging';
 import { gridColumns, type TablePrefs } from '@/lib/table-prefs';
 
 /**

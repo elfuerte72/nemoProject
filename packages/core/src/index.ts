@@ -39,6 +39,7 @@ import {
   changeMerchantPassword,
   countMerchants,
   getMerchantCard,
+  getMerchantProfile,
   merchantSupportUsername,
   getMerchantSession,
   listMerchants,
@@ -58,6 +59,7 @@ import {
   warnAboutExpiringExchangeRequests,
 } from './expiry.js';
 import {
+  countExchangeRequests,
   getExchangeRequest,
   getExchangeTerms,
   listExchangeRequests,
@@ -253,6 +255,7 @@ export function createCore(ctx: CoreConfig) {
       beginMerchantLogin(ctx, input),
     getMerchantSession: (merchantId: string, sessionEpoch: number) =>
       getMerchantSession(ctx, merchantId, sessionEpoch),
+    getMerchantProfile: (actor: Actor) => getMerchantProfile(ctx, actor),
     changeMerchantPassword: (
       actor: Actor,
       input: { currentPassword: string; newPassword: string },
@@ -292,6 +295,8 @@ export function createCore(ctx: CoreConfig) {
       submitExchangeRequest(ctx, actor, input),
     listExchangeRequests: (actor: Actor, filter?: OwnExchangeFilter) =>
       listExchangeRequests(ctx, actor, filter),
+    countExchangeRequests: (actor: Actor, filter?: Omit<OwnExchangeFilter, 'limit' | 'after'>) =>
+      countExchangeRequests(ctx, actor, filter),
     /** Лента своей заявки — владельцу: без имён сотрудников. */
     listExchangeRequestEventsForOwner: (actor: Actor, requestId: string) =>
       listExchangeRequestEventsForOwner(ctx, actor, requestId),

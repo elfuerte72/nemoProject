@@ -3,7 +3,7 @@ import { errorResponse, json } from '@/lib/api';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { coreFilterFor, deskScopes, toExchangeRow, type DeskScope } from '@/lib/exchange-rows';
-import { cursorFromParams } from '@/lib/paging';
+import { cursorFromParams } from '@nemo/ui/paging';
 import { pageSizes } from '@/lib/table-prefs';
 
 export const runtime = 'nodejs';

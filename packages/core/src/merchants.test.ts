@@ -394,3 +394,48 @@ describe('срок ссылки из письма', () => {
     await expect(core.verifyMerchantEmail(token)).rejects.toThrow(/ссылк/i);
   });
 });
+
+/**
+ * Кабинет спрашивает у ядра две вещи о самом себе: подтверждена ли
+ * почта — иначе «на рассмотрении» означает две разные вещи, — и что
+ * мерчант о себе заполнил.
+ */
+describe('мерчант о себе', () => {
+  it('сессия говорит, подтверждена ли почта', async () => {
+    const registered = await core.registerMerchant(ANKETA);
+    const before = await core.beginMerchantLogin({
+      email: ANKETA.email,
+      password: ANKETA.password,
+    });
+    expect(before.emailVerified).toBe(false);
+
+    await core.verifyMerchantEmail(tokenOf(registered, 'merchant-email-verification'));
+
+    const after = await core.beginMerchantLogin({
+      email: ANKETA.email,
+      password: ANKETA.password,
+    });
+    expect(after.emailVerified).toBe(true);
+  });
+
+  it('отдаёт свою анкету с состоянием и причиной отказа', async () => {
+    const { merchant } = await core.registerMerchant(ANKETA);
+    const actor = { type: 'merchant', merchantId: merchant.id } as const;
+
+    const mine = await core.getMerchantProfile(actor);
+    expect(mine).toMatchObject({ name: 'Оплатишка', status: 'pending', phone: ANKETA.phone });
+    // Хеша пароля наружу не уходит ни в одном виде мерчанта.
+    expect(mine).not.toHaveProperty('passwordHash');
+  });
+
+  it('чужую анкету не отдаёт: спрашивают о себе', async () => {
+    const { merchant } = await core.registerMerchant(ANKETA);
+    const other = await core.registerMerchant({ ...ANKETA, email: 'two@example.com' });
+
+    const mine = await core.getMerchantProfile({
+      type: 'merchant',
+      merchantId: other.merchant.id,
+    });
+    expect(mine.id).not.toBe(merchant.id);
+  });
+});

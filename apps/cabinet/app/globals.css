@@ -1,0 +1,171 @@
+/*
+ * Своё у кабинета мерчанта.
+ *
+ * Общее — оболочка, страница, плитки, таблица, кнопки, поля, карточка
+ * входа — живёт в `@nemo/ui`: кабинет и панель менеджера собраны из
+ * одних деталей, и двух правд о том, как выглядит плитка, быть не
+ * должно. Файл пакета подключается раньше этого (`app/layout.tsx`),
+ * поэтому здесь дописывают, а не спорят.
+ */
+
+/* ── Колонки списка заявок ───────────────────────────────────────── */
+
+/*
+ * Что мерчант читает в строке: что он отдаёт, что получает, свой номер
+ * сделки, состояние и когда подана. Клиента в строке нет — все заявки
+ * его собственные.
+ */
+.table--requests {
+  --cols: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) 150px 130px;
+}
+
+/* ── Анкета ──────────────────────────────────────────────────────── */
+
+/*
+ * Карточка заведения кабинета шире карточки входа: полей в анкете семь,
+ * и в колонке шириной с поле пароля она превращается в прокрутку на
+ * полтора экрана. Пары полей идут в ряд (`.form-row` из `@nemo/ui`), а
+ * на узком окне ряд складывается сам.
+ */
+.login__card--wide {
+  max-width: 520px;
+}
+
+/* ── Экран состояния ─────────────────────────────────────────────── */
+
+/*
+ * Один экран вместо кабинета: анкета на рассмотрении, отклонена или
+ * почта не подтверждена. Разделы здесь не показываются — открывать
+ * пока нечего, а меню, из которого некуда идти, только обещает лишнее.
+ */
+.state {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.state__card {
+  width: 100%;
+  max-width: 460px;
+  padding: 32px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: nm-fade-up 0.32s var(--ease) both;
+}
+
+.state__title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.state__text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+/* ── Полоса «доступ отключён» ────────────────────────────────────── */
+
+/*
+ * Отключённый мерчант в кабинет входит: открытые заявки доходят до
+ * конца, и видеть их он должен. Полоса стоит над содержимым каждого
+ * раздела, а не одним экраном: сказанное однажды на входе к третьему
+ * разделу забывается, а кнопок подачи при этом нет.
+ */
+.banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px 16px;
+  border: 1px solid rgba(242, 104, 95, 0.35);
+  border-radius: var(--radius-control);
+  background: rgba(242, 104, 95, 0.08);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #f58a82;
+  text-wrap: pretty;
+}
+
+.banner b {
+  font-weight: 700;
+}
+
+/* ── Заявка ──────────────────────────────────────────────────────── */
+
+/*
+ * Стороны сделки крупно и рядом: «отдаю» и «получаю» — это первое, за
+ * чем открывают заявку, и читаются они парой.
+ */
+.deal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: baseline;
+}
+
+.deal__side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.deal__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.deal__amount {
+  font-size: 21px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Реквизиты для оплаты: их переносят в банк по одному знаку. */
+.instructions {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-inner);
+  background: var(--surface-soft);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Лента событий заявки: что и когда с ней случилось. */
+.trail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trail__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.trail__when {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,4 +1,12 @@
 import type { LiveEvent, LiveTopic } from '@nemo/core';
+import { hasUnsentText, LIVE_REFRESH_MS, shouldRefresh, type LiveState } from '@nemo/ui/live';
+
+/*
+ * Общее с кабинетом мерчанта — как часто обновляться, когда можно и
+ * набрано ли в поле — живёт в `@nemo/ui/live`. Здесь оно реэкспортом,
+ * чтобы экраны панели брали всё об обновлении из одного места.
+ */
+export { hasUnsentText, LIVE_REFRESH_MS, shouldRefresh, type LiveState };
 
 /**
  * Тихое обновление экрана: толчком от сервера, а таймером — вслед.
@@ -20,13 +28,6 @@ import type { LiveEvent, LiveTopic } from '@nemo/core';
  */
 
 /**
- * Как часто. Полминуты — верх для того, кто ждёт работу у экрана:
- * дольше он успевает решить, что очередь пуста. Чаще — лишние запросы
- * там, где заявки приходят десятками в день.
- */
-export const LIVE_REFRESH_MS = 25_000;
-
-/**
  * Адрес потока событий. Один на всю панель: экран решает сам, его ли
  * это событие, а второе соединение ради второй темы стоило бы вкладке
  * второго открытого сокета.
@@ -46,33 +47,6 @@ export const LIVE_HEARTBEAT_MS = 30_000;
  * процесс не копит потоки забытых с вечера вкладок.
  */
 export const LIVE_STREAM_MAX_MS = 30 * 60_000;
-
-export interface LiveState {
-  /** Вкладка скрыта: за фоновые запросы телефон платит батареей. */
-  readonly hidden: boolean;
-  /** Идёт собственное действие менеджера. */
-  readonly busy: boolean;
-  /** В форме на экране что-то набрано и ещё не отправлено. */
-  readonly typing: boolean;
-}
-
-export function shouldRefresh(state: LiveState): boolean {
-  return !state.hidden && !state.busy && !state.typing;
-}
-
-/**
- * В поле правда набрано — или там стоит то, что подставили за менеджера.
- *
- * Разговор, открытый из карточки заявки, приходит с подставленным
- * номером в поле ответа. Считая его набором, экран замолкал бы навсегда:
- * менеджер не написал ни буквы, а обновление ждёт, пока он «допишет», —
- * и ответ клиента, ради которого он и открыл разговор, не появился бы
- * вовсе.
- */
-export function hasUnsentText(body: string, draft?: string | undefined): boolean {
-  const typed = body.trim();
-  return typed.length > 0 && typed !== (draft ?? '').trim();
-}
 
 /** Экран, который слушает события: своя тема и, у разговора, свой клиент. */
 export interface LiveScreen {

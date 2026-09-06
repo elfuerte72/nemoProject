@@ -8,7 +8,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./format": "./src/format.ts",
+    "./live": "./src/live.ts",
     "./nav": "./src/nav.ts",
+    "./paging": "./src/paging.ts",
     "./styles.css": "./styles/base.css"
   },
   "scripts": {

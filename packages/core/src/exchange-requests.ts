@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, lte, sql, type SQL } from 'drizzle-orm';
 import {
   clientRequisites,
   currencies,
@@ -645,6 +645,12 @@ function trimmedOrNone(value: string | undefined, subject: string): string | und
  */
 export interface OwnExchangeFilter {
   readonly status?: ExchangeRequestStatus | undefined;
+  /**
+   * Несколько состояний разом: «в работе» — это четыре из шести, и
+   * четыре запроса вместо одного экран не ускорят. Задан вместе с
+   * `status` — действуют оба, то есть отбирается пересечение.
+   */
+  readonly statuses?: readonly ExchangeRequestStatus[] | undefined;
   readonly from?: Date | undefined;
   readonly to?: Date | undefined;
   readonly limit?: number | undefined;
@@ -664,6 +670,9 @@ export async function listExchangeRequests(
   const owner = requireOwner(actor);
   const conditions: SQL[] = [ownedBy(owner)];
   if (filter.status) conditions.push(eq(exchangeRequests.status, filter.status));
+  if (filter.statuses?.length) {
+    conditions.push(inArray(exchangeRequests.status, [...filter.statuses]));
+  }
   if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
   if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
   if (filter.after) {
@@ -683,6 +692,38 @@ export async function listExchangeRequests(
     .orderBy(desc(exchangeRequests.createdAt), desc(exchangeRequests.id))
     .limit(Math.min(filter.limit ?? OWN_REQUESTS_LIMIT, OWN_REQUESTS_MAX));
   return rows.map(toExchangeRequestView);
+}
+
+/**
+ * Сколько своих заявок у владельца — с теми же условиями отбора, что и
+ * список.
+ *
+ * Нужен табам кабинета и счётчику в меню: число за табом отвечает на
+ * вопрос «сколько там», не открывая его, а посчитать его длиной
+ * страницы нельзя — страница ограничена пределом, и «50» означало бы и
+ * пятьдесят, и пятьсот. Курсор здесь не при чём и не читается: считают
+ * всё, а не хвост после последней показанной строки.
+ */
+export async function countExchangeRequests(
+  ctx: CoreConfig,
+  actor: Actor,
+  filter: Omit<OwnExchangeFilter, 'limit' | 'after'> = {},
+): Promise<number> {
+  const owner = requireOwner(actor);
+  const conditions: SQL[] = [ownedBy(owner)];
+  if (filter.status) conditions.push(eq(exchangeRequests.status, filter.status));
+  if (filter.statuses?.length) {
+    conditions.push(inArray(exchangeRequests.status, [...filter.statuses]));
+  }
+  if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
+  if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
+
+  const [row] = await ctx.db
+    .select({ total: count() })
+    .from(exchangeRequests)
+    .where(and(...conditions));
+
+  return row?.total ?? 0;
 }
 
 /** Заявки владельца — клиента или мерчанта. */
