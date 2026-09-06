@@ -3,6 +3,7 @@ import { InvalidInputError } from '@nemo/core';
 import { errorResponse, json } from '@/lib/api';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
+import { deliverMail } from '@/lib/mail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,11 +17,10 @@ export const dynamic = 'force-dynamic';
  * описывать его дважды. Менеджер получает здесь отказ ядра, а не
  * скрытую кнопку: скрытая кнопка — видимость разграничения.
  *
- * Письмо о решении сюда не доставляется: почтового пакета у панели
- * ещё нет (тикет 04), и уведомления, которые вернула операция, пока
- * никуда не уходят. Это заметно снаружи и записано в тикете как шаг
- * приёмки — но заводить недоставку молча нельзя, поэтому она названа
- * здесь.
+ * Письмо о решении уходит здесь же: одобрение открывает кабинет, отказ
+ * называет причину, и узнать об этом мерчант должен не заходом «а вдруг
+ * рассмотрели». Отключение письма не порождает — о нём говорит
+ * владелец, а ключи API перестают работать сразу.
  */
 
 const actionSchema = z.discriminatedUnion('action', [
@@ -45,20 +45,21 @@ export async function POST(
     const input = parsed.data;
     const core = getCore();
 
-    const merchant = await (async () => {
+    const decided = await (async () => {
       switch (input.action) {
         case 'approve':
-          return (await core.approveMerchant(actor, id)).merchant;
+          return core.approveMerchant(actor, id);
         case 'reject':
-          return (await core.rejectMerchant(actor, id, { reason: input.reason })).merchant;
+          return core.rejectMerchant(actor, id, { reason: input.reason });
         case 'disable':
-          return core.setMerchantActive(actor, id, false);
+          return { merchant: await core.setMerchantActive(actor, id, false), notifications: [] };
         case 'enable':
-          return core.setMerchantActive(actor, id, true);
+          return { merchant: await core.setMerchantActive(actor, id, true), notifications: [] };
       }
     })();
 
-    return json({ merchant });
+    await deliverMail(decided.notifications);
+    return json({ merchant: decided.merchant });
   } catch (error) {
     return errorResponse(error);
   }

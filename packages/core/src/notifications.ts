@@ -12,6 +12,7 @@ import {
 } from '@nemo/types';
 import type { InquiryTopic } from './inquiries.js';
 import { ATTACHMENT_DOWNLOAD_LIMIT_BYTES, formatFileSize } from './attachments.js';
+import { merchantAccountMail } from './merchant-mails.js';
 
 /**
  * Что нужно сообщить клиенту — следствие операции, а не отдельное
@@ -403,66 +404,11 @@ export function renderNotification(notification: Notification): RenderedNotifica
     case 'merchant-email-verification':
     case 'merchant-password-reset':
     case 'merchant-application-decided':
-      return renderMerchantNotification(notification);
+      // Письмо, а не сообщение: доставляет его `@nemo/email`, а слова
+      // живут рядом с остальными письмами мерчанту.
+      return merchantAccountMail(notification);
     default:
       return { text: renderClientNotification(notification) };
-  }
-}
-
-/**
- * Письмо мерчанту: тема и текст.
- *
- * Голым текстом, без разметки: письмо читают и в почтовом клиенте, и в
- * веб-интерфейсе, и на телефоне, а вёрстка письма — отдельная работа,
- * которая ничего не добавляет к трём строкам и ссылке.
- *
- * Ссылку собирает доставка: адрес кабинета — свойство развёртывания, а
- * не текста, и ядро его не знает. Здесь стоит место под неё, потому что
- * порядок слов вокруг ссылки — часть текста, и решать его отправителю
- * нельзя.
- */
-export const MERCHANT_LINK_PLACEHOLDER = '{{ссылка}}';
-
-function renderMerchantNotification(
-  notification: MerchantNotification,
-): RenderedNotification {
-  switch (notification.kind) {
-    case 'merchant-email-verification':
-      return {
-        subject: 'Подтвердите почту',
-        text:
-          'Вы завели кабинет мерчанта Tobee. Подтвердите адрес, и анкета ' +
-          'уйдёт на рассмотрение:\n' +
-          `${MERCHANT_LINK_PLACEHOLDER}\n` +
-          'Ссылка работает сутки. Если кабинет заводили не вы, письмо можно ' +
-          'выбросить: без подтверждения анкета никуда не пойдёт.',
-      };
-    case 'merchant-password-reset':
-      return {
-        subject: 'Смена пароля',
-        text:
-          'Кто-то попросил сменить пароль от кабинета мерчанта Tobee. Если ' +
-          'это были вы, задайте новый:\n' +
-          `${MERCHANT_LINK_PLACEHOLDER}\n` +
-          'Ссылка работает час. Если не вы — ничего делать не нужно, старый ' +
-          'пароль остаётся в силе.',
-      };
-    case 'merchant-application-decided':
-      return notification.rejectionReason === undefined
-        ? {
-            subject: 'Анкета одобрена',
-            text:
-              'Анкета одобрена: кабинет открыт, ключи API выпускаются в ' +
-              'разделе «API». Курс, минимальную сумму и срок оплаты ' +
-              'смотрите в разделе «Курсы».',
-          }
-        : {
-            subject: 'Анкета отклонена',
-            text:
-              `Анкета отклонена. Причина: ${notification.rejectionReason}\n` +
-              'Написать по этому поводу можно в поддержку — ссылка есть в ' +
-              'кабинете.',
-          };
   }
 }
 

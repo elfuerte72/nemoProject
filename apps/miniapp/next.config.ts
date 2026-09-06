@@ -15,6 +15,7 @@ const config: NextConfig = {
   transpilePackages: [
     '@nemo/brand',
     '@nemo/core',
+    '@nemo/email',
     '@nemo/http',
     '@nemo/rates',
     '@nemo/telegram',

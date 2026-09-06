@@ -39,6 +39,7 @@ import {
   changeMerchantPassword,
   countMerchants,
   getMerchantCard,
+  merchantSupportUsername,
   getMerchantSession,
   listMerchants,
   registerMerchant,
@@ -268,6 +269,7 @@ export function createCore(ctx: CoreConfig) {
       countMerchants(ctx, actor, filter),
     getMerchantCard: (actor: Actor, merchantId: string) =>
       getMerchantCard(ctx, actor, merchantId),
+    merchantSupportUsername: () => merchantSupportUsername(ctx),
     /** Заявки мерчанта — все, а не только те, что в работе. */
     listMerchantExchangeRequests: (
       actor: Actor,
@@ -662,6 +664,12 @@ export {
 } from './errors.js';
 export {
   MERCHANT_LINK_PLACEHOLDER,
+  merchantAccountMail,
+  merchantMailSignature,
+  renderMerchantMail,
+  type MerchantMail,
+} from './merchant-mails.js';
+export {
   renderNotification,
   toClient,
   toMerchant,

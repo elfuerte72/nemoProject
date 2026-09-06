@@ -2,6 +2,7 @@ import { botToken, deliverNotifications } from '@nemo/telegram';
 import { schedulerCallDenied } from '@nemo/http';
 import { errorResponse, json } from '@/lib/api';
 import { getCore } from '@/lib/core';
+import { deliverMail } from '@/lib/mail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,7 +40,10 @@ export async function POST(request: Request): Promise<Response> {
     const warnings = await core.warnAboutExpiringExchangeRequests(at);
     const expired = await core.expireUnpaidExchangeRequests(at);
 
+    // Заявка бывает и мерчантской (docs/adr/0017): срок у неё тот же, а
+    // адрес почтовый — доставщики зовутся оба.
     await deliverNotifications([...warnings, ...expired], { botToken: botToken() });
+    await deliverMail([...warnings, ...expired]);
 
     return json({ warned: warnings.length, expired: expired.length });
   } catch (error) {

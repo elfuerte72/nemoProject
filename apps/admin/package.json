@@ -14,6 +14,7 @@
     "@nemo/brand": "workspace:*",
     "@nemo/concierge": "workspace:^",
     "@nemo/core": "workspace:*",
+    "@nemo/email": "workspace:*",
     "@nemo/http": "workspace:*",
     "@nemo/telegram": "workspace:*",
     "@nemo/types": "workspace:*",

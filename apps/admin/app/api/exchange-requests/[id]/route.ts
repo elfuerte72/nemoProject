@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { InvalidInputError } from '@nemo/core';
+import { botToken, deliverNotifications } from '@nemo/telegram';
 import { errorResponse, json } from '@/lib/api';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
-import { botToken, deliverNotifications } from '@nemo/telegram';
+import { deliverMail } from '@/lib/mail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -84,7 +85,10 @@ export async function POST(
       }
     })();
 
+    // Владелец заявки бывает клиентом и мерчантом (docs/adr/0017):
+    // доставщики зовутся оба, и каждый берёт свои уведомления.
     await deliverNotifications(result.notifications, { botToken: botToken() });
+    await deliverMail(result.notifications);
     return json({ request: result.request });
   } catch (error) {
     return errorResponse(error);

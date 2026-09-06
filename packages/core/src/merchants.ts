@@ -45,6 +45,7 @@ import {
   type Recipient,
 } from './notifications.js';
 import { likePattern, merchantNameLike } from './search.js';
+import { readServiceSettings } from './settings.js';
 import { recordSettingsChange } from './settings-audit.js';
 
 /**
@@ -570,6 +571,19 @@ export async function resetMerchantPassword(
       .set({ passwordHash, sessionEpoch: nextEpoch() })
       .where(eq(merchants.id, merchantId));
   });
+}
+
+/**
+ * Ник поддержки для мерчантов — без спроса о том, кто спрашивает.
+ *
+ * Прав он не требует: этот ник кабинет показывает каждому мерчанту и
+ * каждое письмо ставит подписью, секрета в нём нет. Отдельная операция,
+ * а не чтение настроек целиком: настройки — администратору, а ник
+ * нужен доставке писем, у которой актора нет вовсе.
+ */
+export async function merchantSupportUsername(ctx: CoreConfig): Promise<string | null> {
+  const { merchantSupportUsername: username } = await readServiceSettings(ctx.db);
+  return username;
 }
 
 export async function listMerchants(
