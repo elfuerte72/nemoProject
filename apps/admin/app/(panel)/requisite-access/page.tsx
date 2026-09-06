@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
+import { Moment } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { HowToAccessLog } from '@/app/ui/how-to';
-import { Moment } from '@/app/ui/moment';
 
 export const dynamic = 'force-dynamic';
 

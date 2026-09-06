@@ -33,8 +33,9 @@ export function Brand({ eyebrow }: { readonly eyebrow?: string | undefined }) {
  * Окно — по габариту знака с полем, а не по его сетке 24×24: в сетке
  * знак стоит с полями в две трети, и в плитке 34 пикселя от него
  * оставалось бы восемь. Ширина выводится из высоты — знак выше, чем
- * шире. Идентификатор градиента свой на панель, чтобы не столкнуться с
- * тем же знаком в Mini App, если разметка окажется на одной странице.
+ * шире. Идентификатор градиента свой у рабочих интерфейсов, чтобы не
+ * столкнуться с тем же знаком в Mini App, если разметка окажется на
+ * одной странице.
  * Фавикон `app/icon.svg` — тот же знак теми же числами, но статикой:
  * Next отдаёт файл как есть, и импортировать пакет ему нечем.
  */
@@ -58,7 +59,7 @@ export function TobeeMark({ height = 20 }: { readonly height?: number }) {
     >
       <defs>
         <linearGradient
-          id="tobee-honey-panel"
+          id="tobee-honey-ui"
           x1={TOBEE_HONEY_GRADIENT.x1}
           y1={TOBEE_HONEY_GRADIENT.y1}
           x2={TOBEE_HONEY_GRADIENT.x2}
@@ -70,7 +71,7 @@ export function TobeeMark({ height = 20 }: { readonly height?: number }) {
           ))}
         </linearGradient>
       </defs>
-      <g fill="url(#tobee-honey-panel)" fillRule="evenodd">
+      <g fill="url(#tobee-honey-ui)" fillRule="evenodd">
         <path d={TOBEE_MARK_BRACE} />
         <path d={TOBEE_MARK_CELL} />
       </g>

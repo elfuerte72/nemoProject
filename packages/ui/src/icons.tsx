@@ -1,22 +1,36 @@
-import type { NavIcon } from '@/lib/nav';
-
 /**
- * Значки панели.
+ * Значки рабочих интерфейсов: панели менеджера и кабинета мерчанта.
  *
- * Рисуются здесь, а не тянутся пакетом: их полтора десятка, и каждый —
- * две строки разметки. Зависимость с сотней значков стоила бы дороже, а
+ * Рисуются здесь, а не тянутся пакетом: их два десятка, и каждый — две
+ * строки разметки. Зависимость с сотней значков стоила бы дороже, а
  * общий штрих у своих значков держится сам собой.
+ *
+ * Набор один на оба приложения: разделы у них разные, а язык знаков
+ * общий — «ключ» у мерчанта и «ключ» у сотрудника рисуются одинаково,
+ * иначе это два разных сервиса.
  */
 
 export type IconName =
-  | NavIcon
+  | 'exchange'
+  | 'withdrawal'
+  | 'card'
+  | 'chat'
+  | 'settings'
+  | 'log'
+  | 'account'
+  | 'chart'
   | 'search'
   | 'chevron'
   | 'logout'
   | 'user'
   | 'question'
   | 'inbox'
-  | 'spark';
+  | 'spark'
+  | 'home'
+  | 'key'
+  | 'plug'
+  | 'book'
+  | 'plus';
 
 export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
   const common = {
@@ -132,6 +146,40 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
       return (
         <svg {...common}>
           <path d="M4 16l4-6 4 3 4-7 4 4" />
+        </svg>
+      );
+    case 'home':
+      return (
+        <svg {...common}>
+          <path d="M4 11 12 4l8 7" />
+          <path d="M6 10v10h12V10" />
+        </svg>
+      );
+    case 'key':
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="12" r="4" />
+          <path d="M12 12h9m-3 0v3m-2-3v2" />
+        </svg>
+      );
+    case 'plug':
+      return (
+        <svg {...common}>
+          <path d="M6 4v6a6 6 0 0 0 12 0V4" />
+          <path d="M9 4v3m6-3v3M12 16v4" />
+        </svg>
+      );
+    case 'book':
+      return (
+        <svg {...common}>
+          <path d="M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z" />
+          <path d="M8 8h6M8 12h6" />
+        </svg>
+      );
+    case 'plus':
+      return (
+        <svg {...common}>
+          <path d="M12 5v14M5 12h14" />
         </svg>
       );
   }

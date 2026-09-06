@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Icon, type IconName } from '@/app/ui/icons';
+import { Icon, type IconName } from './icons.js';
 
 /**
  * Пустое состояние, которое учит.

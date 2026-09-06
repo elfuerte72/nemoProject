@@ -3,12 +3,12 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { formatAmount } from '@nemo/ui/format';
+import { Icon } from '@nemo/ui';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
 import { sayParty } from '@/lib/exchange-rows';
-import { formatAmount } from '@/lib/format';
 import { pillClass } from '@/lib/labels';
 import { classifyQuery, directHref, type PaletteQuery } from '@/lib/palette';
-import { Icon } from '@/app/ui/icons';
 import type { ClientHit, SearchHit } from '@/app/api/search/route';
 
 /**

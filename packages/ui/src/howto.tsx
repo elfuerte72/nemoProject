@@ -1,4 +1,4 @@
-import { Icon } from '@/app/ui/icons';
+import { Icon } from './icons.js';
 
 /**
  * Подсказка «как устроено» — свёрнутый блок под заголовком раздела.

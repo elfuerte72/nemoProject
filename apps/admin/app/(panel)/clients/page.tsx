@@ -1,11 +1,9 @@
 import { redirect } from 'next/navigation';
 import { REGULAR_CLIENT_COMPLETED } from '@nemo/core';
+import { HowTo, Stat, Stats, Tabs } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { CLIENT_TAB_LABELS, clientTabs, pickTab, toClientRowDto } from '@/lib/client-rows';
 import { getCore } from '@/lib/core';
-import { HowTo } from '@/app/ui/howto';
-import { Stat, Stats } from '@/app/ui/stat';
-import { Tabs } from '@/app/ui/tabs';
 import { ClientsSearch } from './clients-search';
 import { ClientsTable } from './clients-table';
 

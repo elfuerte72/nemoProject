@@ -16,16 +16,16 @@ import {
   type ExchangeRequestStatus,
   type StaffRole,
 } from '@nemo/types';
+import { Moment } from '@nemo/ui';
+import { formatAmount, formatMoney, formatRate } from '@nemo/ui/format';
+import { PROMPTPAY_ID_LABELS } from '@nemo/types';
 import { ClientCard, type ClientCardData } from '@/app/ui/client-card';
 import { MerchantCard, type MerchantCardData } from '@/app/ui/merchant-card';
 import { HowToRunRequest } from '@/app/ui/how-to';
-import { Moment } from '@/app/ui/moment';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
-import { formatAmount, formatMoney, formatRate } from '@/lib/format';
 import { suggestServiceIncome } from '@/lib/income';
 import type { OwnerData } from '@/lib/merchant-card';
 import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
-import { PROMPTPAY_ID_LABELS } from '@nemo/types';
 
 /**
  * Действия менеджера над заявкой.

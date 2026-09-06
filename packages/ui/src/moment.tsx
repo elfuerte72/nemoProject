@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { formatDay, formatMoment, formatTime } from '@/lib/format';
+import { formatDay, formatMoment, formatTime } from './format.js';
 
 /**
  * Время события — в часах того, кто на него смотрит.

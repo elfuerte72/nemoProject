@@ -1,13 +1,10 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { EmptyState, HowTo, Moment, Tabs } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { MERCHANT_TABS, MERCHANT_TAB_LABELS, pickMerchantStatus } from '@/lib/merchant-rows';
-import { EmptyState } from '@/app/ui/empty';
-import { HowTo } from '@/app/ui/howto';
 import { MERCHANT_STATUS_LABELS, merchantPillClass } from '@/app/ui/merchant-card';
-import { Moment } from '@/app/ui/moment';
-import { Tabs } from '@/app/ui/tabs';
 import { MerchantsSearch } from './merchants-search';
 
 export const dynamic = 'force-dynamic';

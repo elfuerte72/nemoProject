@@ -66,6 +66,9 @@ importers:
       '@nemo/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@nemo/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       mammoth:
         specifier: 1.12.2
         version: 1.12.2
@@ -322,6 +325,34 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@24.13.3)
+
+  packages/ui:
+    dependencies:
+      '@nemo/brand':
+        specifier: workspace:*
+        version: link:../brand
+      '@nemo/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      next:
+        specifier: ^15.1.4
+        version: 15.5.22(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
       typescript:
         specifier: ^5.6.0
         version: 5.9.3

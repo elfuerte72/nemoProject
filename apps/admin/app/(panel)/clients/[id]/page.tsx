@@ -1,16 +1,15 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
+import { formatAmount } from '@nemo/ui/format';
+import { Moment, Stat, Stats } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { toClientCardData } from '@/lib/client-card';
 import { getCore } from '@/lib/core';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
-import { formatAmount } from '@/lib/format';
 import { pillClass } from '@/lib/labels';
 import { formatByCurrency } from '@/lib/money-list';
 import { ClientCard } from '@/app/ui/client-card';
-import { Moment } from '@/app/ui/moment';
-import { Stat, Stats } from '@/app/ui/stat';
 
 export const dynamic = 'force-dynamic';
 

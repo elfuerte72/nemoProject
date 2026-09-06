@@ -6,11 +6,11 @@ import {
   type ConversationTopicFilter,
   type ConversationView,
 } from '@nemo/core';
+import { Moment } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { INQUIRY_TOPIC_LABELS, pillClass } from '@/lib/labels';
 import { LiveRefresh } from '@/app/ui/live-refresh';
-import { Moment } from '@/app/ui/moment';
 import { TopicFilter } from './topic-filter';
 
 export const dynamic = 'force-dynamic';

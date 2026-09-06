@@ -3,41 +3,22 @@
  *
  * Список пунктов лежит здесь, а не в разметке меню: раздел заводится
  * одной строкой массива, и та же карта пригодится палитре быстрого
- * перехода — двух списков разделов у панели быть не должно.
+ * перехода — двух списков разделов у панели быть не должно. Форма
+ * списка и правила меню — общие с кабинетом мерчанта и живут в
+ * `@nemo/ui`.
  *
  * Разделы администратора видны всем. Скрывать их значило бы полагаться
  * на то, что менеджер не наберёт адрес руками, — это не разграничение
  * доступа, а его видимость; отказывают сами операции.
  */
 
-export type NavIcon =
-  | 'exchange'
-  | 'withdrawal'
-  | 'card'
-  | 'chat'
-  | 'settings'
-  | 'log'
-  | 'account'
-  | 'chart'
-  | 'user'
-  | 'spark';
+import type { NavGroup, NavItem } from '@nemo/ui/nav';
 
-export interface NavItem {
-  readonly href: string;
-  readonly label: string;
-  readonly icon: NavIcon;
-  /** Какой счётчик из меню показывать рядом с названием. */
-  readonly count?: keyof NavCounts | undefined;
-}
-
-export interface NavGroup {
-  /** Ключ группы: по нему запоминается свёртка. Не меняется при переименовании. */
-  readonly key: string;
-  readonly title: string;
-  readonly items: readonly NavItem[];
-}
-
-export interface NavCounts {
+/**
+ * Счётчики очередей в меню. Тип, а не интерфейс: меню принимает набор
+ * счётчиков по ключу, и интерфейс к такому набору не приводится.
+ */
+export type NavCounts = {
   readonly exchange: number;
   readonly withdrawals: number;
   readonly cards: number;
@@ -45,9 +26,22 @@ export interface NavCounts {
   readonly conversations: number;
   /** Анкеты мерчантов на рассмотрении: пока не рассмотрены — ничего не могут. */
   readonly merchants: number;
+};
+
+/**
+ * Пункт панели называет счётчик из своего набора, а не любую строку:
+ * опечатка в ключе означала бы пункт, у которого счётчик не появится
+ * никогда, и заметить это можно только глазами.
+ */
+interface PanelNavItem extends NavItem {
+  readonly count?: keyof NavCounts | undefined;
 }
 
-export const NAV_GROUPS: readonly NavGroup[] = [
+interface PanelNavGroup extends NavGroup {
+  readonly items: readonly PanelNavItem[];
+}
+
+export const NAV_GROUPS: readonly PanelNavGroup[] = [
   {
     key: 'work',
     title: 'Основное',
@@ -124,45 +118,5 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
 ];
 
-/**
- * Текущий раздел — по адресу. Корень отмечается только на самом корне:
- * иначе он подсвечен всегда, потому что с него начинается любой адрес.
- * Остальные разделы — с вложенными страницами: карточка заявки
- * принадлежит своему разделу.
- */
-export function isCurrentSection(href: string, pathname: string): boolean {
-  return href === '/' ? pathname === '/' : pathname.startsWith(href);
-}
-
 /** Ключ в хранилище браузера. Личная настройка: коллег не касается. */
 export const NAV_COLLAPSED_KEY = 'nemo.admin.nav.collapsed';
-
-/**
- * Свёрнутые группы из строки хранилища. Всё, что не список строк, —
- * пустой набор: испорченная запись не должна ронять меню, а незнакомые
- * ключи безвредны — группы с таким ключом просто нет.
- */
-export function parseCollapsed(raw: string | null | undefined): ReadonlySet<string> {
-  if (!raw) return new Set();
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((one): one is string => typeof one === 'string'));
-  } catch {
-    return new Set();
-  }
-}
-
-export function serializeCollapsed(collapsed: ReadonlySet<string>): string {
-  return JSON.stringify([...collapsed]);
-}
-
-export function toggleCollapsed(collapsed: ReadonlySet<string>, key: string): ReadonlySet<string> {
-  const next = new Set(collapsed);
-  if (next.has(key)) {
-    next.delete(key);
-  } else {
-    next.add(key);
-  }
-  return next;
-}

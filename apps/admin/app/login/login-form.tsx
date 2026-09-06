@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Brand } from '@/app/ui/brand';
+import { Brand } from '@nemo/ui';
 
 /**
  * Вход менеджера: кнопка Telegram, затем одноразовый код.

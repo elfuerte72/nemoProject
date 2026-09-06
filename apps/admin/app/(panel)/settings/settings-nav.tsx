@@ -1,8 +1,8 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import { Tabs } from '@nemo/ui';
 import { SETTINGS_SECTIONS } from '@/lib/nav';
-import { Tabs } from '@/app/ui/tabs';
 
 /**
  * Подменю настроек: те же табы, что у состояний очереди, — выбор живёт

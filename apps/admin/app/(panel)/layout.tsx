@@ -1,9 +1,12 @@
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { Brand, Sidebar, Topbar } from '@nemo/ui';
 import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
 import { panelCounts } from '@/lib/counts';
-import { Sidebar } from '@/app/ui/sidebar';
-import { Topbar } from '@/app/ui/topbar';
+import { ROLE_LABELS } from '@/lib/labels';
+import { NAV_COLLAPSED_KEY, NAV_GROUPS } from '@/lib/nav';
+import { TZ_COOKIE } from '@/lib/period';
+import { PaletteSearch } from '@/app/ui/palette-search';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,9 +40,23 @@ export default async function PanelLayout({ children }: { children: ReactNode })
 
   return (
     <div className="shell">
-      <Sidebar counts={counts} />
+      <Sidebar
+        groups={NAV_GROUPS}
+        counts={counts}
+        storageKey={NAV_COLLAPSED_KEY}
+        brand={<Brand eyebrow="панель" />}
+        homeLabel="Tobee, панель — на рабочий стол"
+      />
       <div className="shell__main">
-        <Topbar displayName={displayName} role={actor.role} />
+        <Topbar
+          search={<PaletteSearch />}
+          name={displayName}
+          sub={ROLE_LABELS[actor.role]}
+          items={[{ href: '/settings', label: 'Настройки', icon: 'settings' }]}
+          logoutPath="/api/auth/logout"
+          afterLogout="/login"
+          timeZoneCookie={TZ_COOKIE}
+        />
         {children}
       </div>
     </div>

@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { canTransitionWithdrawal } from '@nemo/types';
 import type { ManagerWithdrawalView } from '@nemo/core';
-import { formatAmount } from '@/lib/format';
+import { formatAmount } from '@nemo/ui/format';
+import { Moment } from '@nemo/ui';
 import {
   pillClass,
   WITHDRAWAL_METHOD_LABELS,
@@ -12,7 +13,6 @@ import {
   WITHDRAWAL_STATUS_TONES,
 } from '@/lib/labels';
 import { LiveQueue } from '@/app/ui/live-queue';
-import { Moment } from '@/app/ui/moment';
 
 /**
  * Очередь выплат по бонусным баллам.

@@ -1,15 +1,13 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { CoreError, type ExchangeSummary } from '@nemo/core';
+import { HowTo, Moment, Stat, Stats, type StatTone } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { STATUS_LABELS } from '@/lib/exchange-request-labels';
 import { averageByCurrency, compareByCurrency, formatByCurrency } from '@/lib/money-list';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@/lib/period';
 import { Funnel } from '@/app/ui/funnel';
-import { HowTo } from '@/app/ui/howto';
-import { Moment } from '@/app/ui/moment';
-import { Stat, Stats, type StatTone } from '@/app/ui/stat';
 import { PeriodChips } from './period-chips';
 
 export const dynamic = 'force-dynamic';

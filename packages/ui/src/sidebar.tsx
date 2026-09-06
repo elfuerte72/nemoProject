@@ -2,33 +2,47 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Icon } from './icons.js';
 import {
-  NAV_COLLAPSED_KEY,
-  NAV_GROUPS,
   isCurrentSection,
   parseCollapsed,
   serializeCollapsed,
   toggleCollapsed,
-  type NavCounts,
+  type NavCountMap,
   type NavGroup,
   type NavItem,
-} from '@/lib/nav';
-import { Brand } from '@/app/ui/brand';
-import { Icon } from '@/app/ui/icons';
+} from './nav.js';
 
 /**
- * Постоянное меню панели.
+ * Постоянное меню рабочего интерфейса.
  *
  * Клиентский компонент ради двух вещей: текущий раздел определяется по
  * адресу, а адрес меняется без перезагрузки; свёртка группы — личная и
  * живёт в браузере. Всё остальное — счётчики, состав разделов —
  * приходит готовым.
+ *
+ * Состав разделов приходит снаружи: у панели менеджера он свой, у
+ * кабинета мерчанта свой, а меню у них одно и то же.
  */
 
-export type SidebarCounts = NavCounts;
-
-export function Sidebar({ counts }: { counts: SidebarCounts }) {
+export function Sidebar({
+  groups,
+  counts,
+  storageKey,
+  brand,
+  homeHref = '/',
+  homeLabel,
+}: {
+  readonly groups: readonly NavGroup[];
+  readonly counts: NavCountMap;
+  /** Ключ в хранилище браузера: у каждого приложения свой. */
+  readonly storageKey: string;
+  /** Знак и имя: их рисует приложение — надпись под знаком у них разная. */
+  readonly brand: ReactNode;
+  readonly homeHref?: string;
+  readonly homeLabel: string;
+}) {
   const pathname = usePathname();
   /*
    * Свёрнутое читается после первого показа, а не при нём: сервер о
@@ -39,17 +53,17 @@ export function Sidebar({ counts }: { counts: SidebarCounts }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     try {
-      setCollapsed(parseCollapsed(window.localStorage.getItem(NAV_COLLAPSED_KEY)));
+      setCollapsed(parseCollapsed(window.localStorage.getItem(storageKey)));
     } catch {
       // Хранилище закрыто — меню просто не запомнит свёртку.
     }
-  }, []);
+  }, [storageKey]);
 
   const toggle = (key: string) => {
     const next = toggleCollapsed(collapsed, key);
     setCollapsed(next);
     try {
-      window.localStorage.setItem(NAV_COLLAPSED_KEY, serializeCollapsed(next));
+      window.localStorage.setItem(storageKey, serializeCollapsed(next));
     } catch {
       // То же: без памяти, но работает.
     }
@@ -57,12 +71,12 @@ export function Sidebar({ counts }: { counts: SidebarCounts }) {
 
   return (
     <aside className="sidebar">
-      <Link href="/" className="sidebar__brand" aria-label="Tobee, панель — на рабочий стол">
-        <Brand eyebrow="панель" />
+      <Link href={homeHref} className="sidebar__brand" aria-label={homeLabel}>
+        {brand}
       </Link>
 
       <nav className="sidebar__nav">
-        {NAV_GROUPS.map((group) => (
+        {groups.map((group) => (
           <Group
             key={group.key}
             group={group}
@@ -85,7 +99,7 @@ function Group({
   onToggle,
 }: {
   group: NavGroup;
-  counts: NavCounts;
+  counts: NavCountMap;
   pathname: string;
   open: boolean;
   onToggle: () => void;

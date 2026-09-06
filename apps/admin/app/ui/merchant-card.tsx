@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import type { MerchantStatus } from '@nemo/types';
-import { CopyValue } from '@/app/ui/copy';
-import { Moment } from '@/app/ui/moment';
+import { CopyValue, Moment } from '@nemo/ui';
 
 /**
  * С кем имеет дело менеджер, когда заявку подал бизнес.

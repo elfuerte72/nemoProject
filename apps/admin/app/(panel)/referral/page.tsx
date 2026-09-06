@@ -2,14 +2,12 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
+import { formatAmount } from '@nemo/ui/format';
+import { HowTo, Moment, Stat, Stats } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
-import { formatAmount } from '@/lib/format';
 import { bpsToPercent } from '@/lib/percent';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@/lib/period';
-import { HowTo } from '@/app/ui/howto';
-import { Moment } from '@/app/ui/moment';
-import { Stat, Stats } from '@/app/ui/stat';
 import { PeriodChips } from '../analytics/period-chips';
 
 export const dynamic = 'force-dynamic';
