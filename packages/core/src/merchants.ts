@@ -18,6 +18,7 @@ import {
   looksLikeEmail,
   looksLikePassword,
   looksLikePhone,
+  looksLikeWebsite,
   MERCHANT_COMPLAINTS,
   REQUISITE_COMPLAINTS,
   type MerchantStatus,
@@ -43,6 +44,7 @@ import {
   type Notification,
   type Recipient,
 } from './notifications.js';
+import { likePattern, merchantNameLike } from './search.js';
 import { recordSettingsChange } from './settings-audit.js';
 
 /**
@@ -186,6 +188,14 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * Анкета мерчанта: заводится им самим на сайте кабинета.
+ *
+ * Уведомление о подтверждении почты она возвращает, но доставки писем у
+ * сервиса пока нет — пакет `@nemo/email` идёт своим тикетом. До него
+ * ключ подтверждения виден только тому, кто позвал операцию: так его и
+ * забирает сид разработки. Записано в `backlog.md`.
+ */
 export async function registerMerchant(
   ctx: CoreConfig,
   input: RegisterMerchantInput,
@@ -200,6 +210,15 @@ export async function registerMerchant(
   if (!looksLikePhone(phone)) {
     throw new InvalidInputError(REQUISITE_COMPLAINTS.phone);
   }
+  /*
+   * Сайт панель рисует ссылкой, а анкету заводит кто угодно снаружи:
+   * «javascript:» в этом поле — клик администратора в контексте панели,
+   * а строка без схемы уводит по относительному адресу внутрь неё же.
+   */
+  const site = input.site?.trim() || null;
+  if (site !== null && !looksLikeWebsite(site)) {
+    throw new InvalidInputError(MERCHANT_COMPLAINTS.site);
+  }
 
   // Хеш считается до транзакции: argon2id намеренно занимает десятки
   // миллисекунд, и держать ради него открытую транзакцию незачем.
@@ -207,40 +226,39 @@ export async function registerMerchant(
   const { token, tokenHash } = issueToken();
 
   return ctx.db.transaction(async (tx) => {
-    const [taken] = await tx
-      .select({ id: merchants.id })
-      .from(merchants)
-      .where(eq(merchants.email, email))
-      .limit(1);
-    if (taken) {
-      throw new ConflictError(MERCHANT_COMPLAINTS.emailTaken);
-    }
-
+    /*
+     * Занятость почты сторожит индекс, а не проверка перед вставкой:
+     * между «занята ли» и «пишу» вклинивается вторая вкладка, и обе
+     * проверки проходят. Пустой ответ здесь — это «кто-то уже завёл», и
+     * говорится об этом теми же словами, что и в обычном отказе.
+     */
     const [row] = await tx
       .insert(merchants)
       .values({
         email,
         passwordHash,
         name,
-        site: input.site?.trim() || null,
+        site,
         contactName,
         phone,
         about: input.about?.trim() || null,
       })
+      .onConflictDoNothing({ target: merchants.email })
       .returning();
+    if (row === undefined) {
+      throw new ConflictError(MERCHANT_COMPLAINTS.emailTaken);
+    }
 
     await tx.insert(merchantEmailTokens).values({
-      merchantId: row!.id,
+      merchantId: row.id,
       purpose: 'email_verification',
       tokenHash,
       expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
     });
 
     return {
-      merchant: toView(row!),
-      notifications: [
-        { kind: 'merchant-email-verification', to: toMerchant(row!), token },
-      ],
+      merchant: toView(row),
+      notifications: [{ kind: 'merchant-email-verification', to: toMerchant(row), token }],
     };
   });
 }
@@ -597,25 +615,12 @@ function merchantConditions(filter: MerchantFilter): SQL | undefined {
     }
   }
   if (filter.query?.trim()) {
-    const like = `%${filter.query.trim()}%`;
-    conditions.push(or(nameLike(like), ilike(merchants.email, like))!);
+    // Знаки шаблона обезвреживаются: «%» в поле поиска — это мерчант с
+    // процентом в названии, а не «покажи всех».
+    const like = likePattern(filter.query);
+    conditions.push(or(merchantNameLike(like), ilike(merchants.email, like))!);
   }
   return conditions.length === 0 ? undefined : and(...conditions);
-}
-
-/**
- * Название без учёта регистра — с явной коллацией ICU.
- *
- * Обычный `ilike` регистр кириллицы не понимает: база сервиса собрана
- * с локалью `C`, и «Оплатишка» на запрос «оплат» не находится вовсе.
- * Ник клиента этим не задет — он латиницей, — а название мерчанта
- * русское, и менеджер набирает его как придётся.
- *
- * Коллация есть у Postgres, собранного с ICU: так собран официальный
- * образ, на котором сервис и работает.
- */
-export function nameLike(pattern: string): SQL {
-  return sql`${merchants.name} collate "und-x-icu" ilike ${pattern}`;
 }
 
 export async function getMerchantCard(

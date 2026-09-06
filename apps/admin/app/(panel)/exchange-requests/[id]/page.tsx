@@ -58,7 +58,12 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
         })
       : null;
   const merchant =
-    owner.kind === 'merchant' ? await core.getMerchantCard(actor, owner.merchantId) : null;
+    owner.kind === 'merchant'
+      ? await core.getMerchantCard(actor, owner.merchantId).catch((error: unknown) => {
+          if (error instanceof CoreError && error.code === 'not-found') return null;
+          throw error;
+        })
+      : null;
 
   /*
    * Счета сервиса — только в той валюте, которой платит клиент, и

@@ -49,7 +49,8 @@ import {
   toExchangeRequestView,
   type ExchangeRequestView,
 } from './exchange-requests.js';
-import { nameLike, recipientOf } from './merchants.js';
+import { recipientOf } from './merchants.js';
+import { likeEscape, merchantNameLike } from './search.js';
 import { publishLiveEvent } from './live-events.js';
 import type { Notification, Recipient } from './notifications.js';
 import { accrueReferralBonuses } from './referral-accruals.js';
@@ -387,18 +388,6 @@ function queueLimit(limit: number | undefined): number {
  * одним, то другим. Регистр не важен — ник в Telegram пишут как
  * придётся.
  */
-/**
- * Обезвредить знаки поиска по образцу.
- *
- * Процент и подчёркивание в `like` означают «что угодно», и набранный
- * человеком «100%» превратился бы в поиск всего, что начинается на сто.
- * Обратная косая экранируется первой — иначе ею же и обошли бы
- * экранирование.
- */
-function likeEscape(value: string): string {
-  return value.replace(/[\\%_]/g, (sign) => `\\${sign}`);
-}
-
 function queueConditions(filter: ExchangeQueueFilter, staffId: string): SQL[] {
   const conditions: SQL[] = [];
 
@@ -440,7 +429,7 @@ function queueConditions(filter: ExchangeQueueFilter, staffId: string): SQL[] {
         // Мерчанта ищут по названию и по его собственному номеру
         // сделки: «бронь №1024» — то единственное, чем он эту заявку
         // назовёт, спросив о ней.
-        nameLike(`%${likeEscape(query)}%`),
+        merchantNameLike(`%${likeEscape(query)}%`),
         ilike(exchangeRequests.reference, `%${likeEscape(query)}%`),
         ...(digits ? [sql`${exchangeRequests.clientId}::text = ${query}`] : []),
       )!,

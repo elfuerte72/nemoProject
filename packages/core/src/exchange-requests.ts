@@ -19,16 +19,17 @@ import { requireOwner, type Actor, type Owner } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
 import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
-import { InvalidInputError, NotFoundError } from './errors.js';
+import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
 import { publishLiveEvent } from './live-events.js';
 import type { Notification } from './notifications.js';
 import { quoteForSubmission } from './rates.js';
 import { requireActiveMerchant, recipientOf } from './merchants.js';
 import {
   ownerColumns,
+  payoutMethodOfInput,
   requireSuitableRequisites,
   requisitesOf,
-  saveRequisitesFor,
+  saveRequisitesIn,
   type SaveRequisitesInput,
 } from './requisites.js';
 import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
@@ -354,6 +355,14 @@ export async function submitExchangeRequest(
     throw new InvalidInputError('Внешний номер и ключ повтора бывают только у мерчанта');
   }
 
+  /*
+   * Пустое поле — это отсутствие поля, а не значение «пусто». Обвязка
+   * мерчанта, шлющая ключ повтора пустым, иначе получала бы на каждую
+   * новую заявку первую: заявки перестают подаваться, и молча.
+   */
+  const reference = trimmedOrNone(input.reference, 'Внешний номер');
+  const idempotencyKey = trimmedOrNone(input.idempotencyKey, 'Ключ повтора');
+
   const requisitesGiven = input.requisitesId !== undefined || input.payout !== undefined;
   // Электронный перевод без реквизитов исполнить невозможно: деньги
   // некуда отправить. Правило живёт здесь, а не в форме, потому что
@@ -379,27 +388,12 @@ export async function submitExchangeRequest(
    * ни запись получателя новыми быть не должны — иначе повтор стоил бы
    * ещё одной архивной записи и похода к бирже.
    */
-  if (owner.kind === 'merchant' && input.idempotencyKey !== undefined) {
-    const repeated = await findByIdempotencyKey(
-      ctx.db,
-      owner.merchantId,
-      input.idempotencyKey,
-    );
+  if (idempotencyKey !== undefined) {
+    const repeated = await findByIdempotencyKey(ctx.db, owner, idempotencyKey);
     if (repeated) {
       return { request: repeated, notifications: [] };
     }
   }
-
-  /*
-   * Получатель из тела запроса заводится записью до транзакции: она
-   * шифруется публичным ключом, а это работа процессора, и проверки
-   * правдоподобия у неё те же, что у формы. Архивной сразу — список
-   * получателей мерчанта не должен расти на каждую заявку.
-   */
-  const requisitesId =
-    input.payout === undefined
-      ? input.requisitesId
-      : (await saveRequisitesFor(ctx, owner, input.payout, { archived: true })).id;
 
   // Котировка запрашивается до транзакции: это обращение к чужому API,
   // и держать открытой транзакцию на время сетевого запроса значило бы
@@ -412,9 +406,11 @@ export async function submitExchangeRequest(
    * какой сетке считать.
    */
   const payoutMethod =
-    requisitesId === undefined
-      ? undefined
-      : await readPayoutMethod(ctx.db, owner, requisitesId);
+    input.requisitesId !== undefined
+      ? await readPayoutMethod(ctx.db, owner, input.requisitesId)
+      : input.payout === undefined
+        ? undefined
+        : payoutMethodOfInput(input.payout);
 
   /*
    * У наличной сделки способ выдачи один — из рук в руки, — и ставка у
@@ -442,6 +438,19 @@ export async function submitExchangeRequest(
       await requireActiveMerchant(tx, owner.merchantId);
     }
     await requireActivePair(tx, input);
+
+    /*
+     * Получатель из тела запроса заводится здесь же, в транзакции
+     * заявки: порознь каждая отвергнутая подача оставляла бы в базе
+     * зашифрованную запись, на которую никто не сошлётся. Архивной
+     * сразу — список получателей мерчанта не должен расти на каждую
+     * заявку.
+     */
+    const requisitesId =
+      input.payout === undefined
+        ? input.requisitesId
+        : (await saveRequisitesIn(ctx, tx, owner, input.payout, { archived: true })).id;
+
     if (requisitesId !== undefined) {
       await requireSuitableRequisites(tx, owner, requisitesId, input.toCode, {
         allowArchived: input.payout !== undefined,
@@ -493,33 +502,42 @@ export async function submitExchangeRequest(
       );
     }
 
-    const [row] = await tx
-      .insert(exchangeRequests)
-      .values({
-        ...ownerColumns(owner),
-        ...(input.reference === undefined ? {} : { reference: input.reference.trim() }),
-        ...(input.idempotencyKey === undefined
-          ? {}
-          : { idempotencyKey: input.idempotencyKey.trim() }),
-        kind: input.kind,
-        fromCode: input.fromCode,
-        toCode: input.toCode,
-        fromAmount,
-        requestRate,
-        // Сумма к получению — такое же обещание, как и курс: клиент
-        // видел её в калькуляторе и по ней принимал решение. Считается
-        // здесь, а не набирается менеджером руками, иначе обещание
-        // держалось бы на его внимательности.
-        /*
-         * Берётся из котировки, а не пересчитывается умножением: со
-         * ступенчатой комиссией курс — это уже частное от посчитанной
-         * выдачи, и обратное умножение разошлось бы с ней на хвост
-         * округления. Клиент видел именно это число.
-         */
-        toAmount: quote?.toAmount ?? null,
-        requisitesId: requisitesId ?? null,
-      })
-      .returning();
+    const [row] = await insertRequest(tx, {
+      ...ownerColumns(owner),
+      ...(reference === undefined ? {} : { reference }),
+      ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+      kind: input.kind,
+      fromCode: input.fromCode,
+      toCode: input.toCode,
+      fromAmount,
+      requestRate,
+      /*
+       * Сумма к получению — такое же обещание, как и курс: клиент видел
+       * её в калькуляторе и по ней принимал решение. Считается здесь, а
+       * не набирается менеджером руками, иначе обещание держалось бы на
+       * его внимательности.
+       *
+       * Берётся из котировки, а не пересчитывается умножением: со
+       * ступенчатой комиссией курс — это уже частное от посчитанной
+       * выдачи, и обратное умножение разошлось бы с ней на хвост
+       * округления. Клиент видел именно это число.
+       */
+      toAmount: quote?.toAmount ?? null,
+      requisitesId: requisitesId ?? null,
+    });
+
+    /*
+     * Повтор, обогнавший первый запрос, отдаёт ту же заявку: ключ и
+     * заведён ради этого случая, а пятисотый ответ заставил бы мерчанта
+     * повторить ещё раз.
+     */
+    if (row === undefined) {
+      const repeated = await findByIdempotencyKey(tx, owner, idempotencyKey!);
+      if (repeated === undefined) {
+        throw new ConflictError('Заявка уже подаётся: повторите запрос');
+      }
+      return { request: repeated, notifications: [] };
+    }
 
     // История заявки начинается с того, как она появилась: иначе в
     // разборе спорного обмена первый её шаг ничем не подтверждён.
@@ -552,25 +570,69 @@ export async function submitExchangeRequest(
 /**
  * Заявка, поданная с этим ключом раньше. Пусто — такой ещё не было.
  *
- * Ищется по паре «мерчант и ключ»: «booking-1024» у двух мерчантов —
+ * Ищется по паре «владелец и ключ»: «booking-1024» у двух мерчантов —
  * два разных обмена, и общий поиск отдал бы второму чужую заявку.
  */
 async function findByIdempotencyKey(
   executor: Executor,
-  merchantId: string,
+  owner: Owner,
   idempotencyKey: string,
 ): Promise<ExchangeRequestView | undefined> {
   const [row] = await executor
     .select()
     .from(exchangeRequests)
-    .where(
-      and(
-        eq(exchangeRequests.merchantId, merchantId),
-        eq(exchangeRequests.idempotencyKey, idempotencyKey.trim()),
-      ),
-    )
+    .where(and(ownedBy(owner), eq(exchangeRequests.idempotencyKey, idempotencyKey)))
     .limit(1);
   return row === undefined ? undefined : toExchangeRequestView(row);
+}
+
+/**
+ * Вставка заявки, уступающая повтору.
+ *
+ * `on conflict do nothing` вместо перехвата ошибки: нарушение
+ * уникальности, брошенное внутри транзакции, прерывает её целиком —
+ * дочитать по ключу было бы уже нечем. Пустой ответ здесь означает, что
+ * заявку с этим ключом успел записать кто-то другой; ждать его Postgres
+ * будет сам, а после его коммита строка уже видна.
+ *
+ * Цель конфликта названа поимённо: без неё любой уникальный индекс,
+ * заведённый над заявками позже, молча читался бы как повтор.
+ */
+async function insertRequest(
+  tx: Executor,
+  values: typeof exchangeRequests.$inferInsert,
+): Promise<(typeof exchangeRequests.$inferSelect)[]> {
+  return tx
+    .insert(exchangeRequests)
+    .values(values)
+    .onConflictDoNothing({
+      target: [exchangeRequests.merchantId, exchangeRequests.idempotencyKey],
+      where: sql`${exchangeRequests.idempotencyKey} is not null`,
+    })
+    .returning();
+}
+
+/**
+ * Поле, которого может не быть: пустая строка — это его отсутствие, а
+ * не значение «пусто». Записанная в базу, она означала бы, что все
+ * заявки мерчанта поданы «под одним ключом», и вторая возвращала бы
+ * первую.
+ *
+ * Длиннее потолка — отказ, а не обрезка: обрезанный ключ повтора
+ * перестал бы совпадать сам с собой, а обрезанный номер сделки указал
+ * бы на чужую бронь.
+ */
+const MAX_MERCHANT_FIELD = 200;
+
+function trimmedOrNone(value: string | undefined, subject: string): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length > MAX_MERCHANT_FIELD) {
+    throw new InvalidInputError(
+      `${subject}: не длиннее ${MAX_MERCHANT_FIELD} знаков`,
+    );
+  }
+  return trimmed;
 }
 
 /**

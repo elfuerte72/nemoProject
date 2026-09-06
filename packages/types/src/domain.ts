@@ -713,6 +713,25 @@ export function looksLikePassword(value: string): boolean {
 }
 
 /**
+ * Сайт мерчанта — только `http` и `https`.
+ *
+ * Строку из анкеты панель рисует ссылкой, а анкету заводит кто угодно
+ * снаружи: «javascript:» в этом поле означает клик сотрудника в
+ * контексте панели, а строка без схемы («shop.ru») уводит по
+ * относительному адресу внутрь неё же. Проверяется схема, а не
+ * существование сайта: открыть его — работа администратора, читающего
+ * анкету.
+ */
+export function looksLikeWebsite(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Чем анкета и вход мерчанта отвергаются — словами, одними на операцию
  * и на форму кабинета, по тому же правилу, что и `REQUISITE_COMPLAINTS`.
  */
@@ -721,4 +740,5 @@ export const MERCHANT_COMPLAINTS = {
   password: `Пароль короче ${MIN_MERCHANT_PASSWORD} знаков — возьмите фразу подлиннее`,
   credentials: 'Почта или пароль не подходят',
   emailTaken: 'На эту почту уже заведён аккаунт',
+  site: 'Сайт — целиком, вместе с «https://»',
 } as const;

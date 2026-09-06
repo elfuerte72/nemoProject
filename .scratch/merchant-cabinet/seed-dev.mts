@@ -13,7 +13,7 @@
  * уведомления: письма здесь никуда не уходят, и ключ берётся оттуда же,
  * откуда его возьмёт доставка.
  */
-import { createCore, createDatabase } from '@nemo/core';
+import { CoreError, createCore, createDatabase } from '@nemo/core';
 
 const url = process.env.DATABASE_URL;
 if (!url || !url.endsWith('/nemo_dev')) {
@@ -76,13 +76,29 @@ function tokenOf(notifications: readonly { kind: string }[]): string {
   return found.token as string;
 }
 
+/*
+ * Второй прогон ничего не делает: почта уже занята, а удалять мерчанта
+ * с заявками база не даст — на него ссылаются. Молча падать при этом
+ * нельзя: сид зовут после каждой правки, и «ConflictError» в консоли
+ * читается как поломка панели.
+ */
 const ids: string[] = [];
 for (const anketa of ANKETY) {
-  const registered = await core.registerMerchant({
-    ...anketa,
-    site: anketa.site ?? undefined,
-    password: 'правильная лошадь батарейка',
-  });
+  const registered = await core
+    .registerMerchant({
+      ...anketa,
+      site: anketa.site ?? undefined,
+      password: 'правильная лошадь батарейка',
+    })
+    .catch((error: unknown) => {
+      if (error instanceof CoreError && error.code === 'conflict') return null;
+      throw error;
+    });
+  if (registered === null) {
+    console.log('Мерчанты уже заведены — сид ничего не меняет.');
+    await db.$client.end();
+    process.exit(0);
+  }
   await core.verifyMerchantEmail(tokenOf(registered.notifications));
   ids.push(registered.merchant.id);
 }

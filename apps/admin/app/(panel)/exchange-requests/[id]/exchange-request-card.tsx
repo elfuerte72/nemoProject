@@ -800,10 +800,7 @@ export function ExchangeRequestCard({
           ими (docs/adr/0017).
         */}
         {merchant ? (
-          <MerchantCard
-            merchant={merchant}
-            requestsHref={`/?merchant=${merchant.id}`}
-          />
+          <MerchantCard merchant={merchant} requestsHref={`/?merchant=${merchant.id}`} />
         ) : (
           <ClientCard
             clientId={request.owner.kind === 'client' ? request.owner.clientId : ''}

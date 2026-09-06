@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { generateRequisiteKeyPair } from '@nemo/crypto';
-import { bonusTransactions } from '@nemo/db';
+import { bonusTransactions, clientRequisites } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type Actor } from './index.js';
 import {
@@ -9,6 +9,7 @@ import {
   givenCurrencyPair,
   givenMerchant,
   givenNetwork,
+  givenServiceSettings,
   givenStaff,
 } from './test-support.js';
 
@@ -78,6 +79,81 @@ describe('подача заявки мерчантом', () => {
     expect(await core.listExchangeRequests(merchant)).toHaveLength(1);
     // Повтор — не событие: письмо о новой заявке уходит однажды.
     expect(second.notifications).toEqual([]);
+  });
+
+  /**
+   * Пустой ключ — это отсутствие ключа, а не ключ «пусто». Обвязка
+   * мерчанта, шлющая заголовок пустым, иначе получала бы на каждую
+   * новую заявку первую: заявки перестают подаваться, и молча.
+   */
+  it('пустой ключ повтора заявки не склеивает', async () => {
+    const first = await core.submitExchangeRequest(merchant, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      payout: PAYOUT,
+      idempotencyKey: '  ',
+    });
+    const second = await core.submitExchangeRequest(merchant, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '999',
+      payout: PAYOUT,
+      idempotencyKey: '',
+    });
+
+    expect(second.request.id).not.toBe(first.request.id);
+    expect(second.request.fromAmount).toBe('999');
+    expect(second.request.reference).toBeNull();
+  });
+
+  /**
+   * Ключ и заведён ради этого случая: мерчант не дождался ответа и
+   * повторил запрос, пока первый ещё в полёте. Обе подачи доходят до
+   * вставки, и вторая обязана отдать ту же заявку, а не пятисотый —
+   * иначе он повторит ещё раз, и ещё.
+   */
+  it('повтор, пришедший, пока первый в полёте, отдаёт ту же заявку', async () => {
+    const input = {
+      kind: 'electronic' as const,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      payout: PAYOUT,
+      idempotencyKey: 'booking-1024',
+    };
+
+    const [one, two] = await Promise.all([
+      core.submitExchangeRequest(merchant, input),
+      core.submitExchangeRequest(merchant, input),
+    ]);
+
+    expect(two.request.id).toBe(one.request.id);
+    expect(await core.listExchangeRequests(merchant)).toHaveLength(1);
+  });
+
+  /**
+   * Отказ не должен оставлять следов: запись получателя шифруется и
+   * заводится в той же транзакции, что и заявка, — иначе каждая
+   * отвергнутая подача копит в базе строку, на которую никто не
+   * сошлётся.
+   */
+  it('отвергнутая подача не оставляет записи получателя', async () => {
+    await givenServiceSettings({ minExchangeAmount: '1000000' });
+
+    await expect(
+      core.submitExchangeRequest(merchant, {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '1',
+        payout: PAYOUT,
+      }),
+    ).rejects.toThrow(/Минимальная сумма/);
+
+    expect(await db.select().from(clientRequisites)).toEqual([]);
   });
 
   it('тот же ключ у другого мерчанта заводит свою заявку', async () => {

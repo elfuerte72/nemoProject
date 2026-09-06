@@ -57,10 +57,37 @@ describe('анкета мерчанта', () => {
    * «Shop@…» и «shop@…» — один ящик. Два аккаунта на него означали бы,
    * что письмо о втором приходит владельцу первого.
    */
+  /**
+   * Занятость почты сторожит индекс базы, а не проверка перед вставкой:
+   * между «занята ли» и «пишу» вклинивается вторая вкладка, и разнять
+   * их может только база. Наружу это уходит теми же словами, что и
+   * обычный отказ, — не пятисотым ответом.
+   */
   it('почта приводится к нижнему регистру и занимается один раз', async () => {
     await core.registerMerchant({ ...ANKETA, email: 'Shop@Example.com' });
 
     await expect(core.registerMerchant(ANKETA)).rejects.toThrow(/уже заведён/i);
+  });
+
+  /**
+   * Сайт из анкеты панель рисует ссылкой, а анкету заводит кто угодно
+   * снаружи: «javascript:» в этом поле — клик администратора в контексте
+   * панели.
+   */
+  it('сайт принимается только по http и https', async () => {
+    await expect(
+      core.registerMerchant({ ...ANKETA, site: 'javascript:alert(1)' }),
+    ).rejects.toThrow(/сайт/i);
+    await expect(core.registerMerchant({ ...ANKETA, site: 'oplatishka.ru' })).rejects.toThrow(
+      /сайт/i,
+    );
+
+    const ok = await core.registerMerchant({
+      ...ANKETA,
+      email: 'ok@example.com',
+      site: 'https://oplatishka.example/pay',
+    });
+    expect(ok.merchant.site).toBe('https://oplatishka.example/pay');
   });
 
   it('отвергает почту с опечаткой и короткий пароль', async () => {
@@ -312,6 +339,19 @@ describe('решение администратора', () => {
     expect(await core.listMerchants(admin, { query: 'оплат' })).toHaveLength(1);
     expect(await core.listMerchants(admin, { query: 'SHOP@example' })).toHaveLength(1);
     expect(await core.listMerchants(admin, { query: 'другой' })).toEqual([]);
+  });
+
+  /**
+   * Знаки шаблона в поиске — это набранные человеком знаки, а не
+   * подстановка: «%» в поле поиска означает «мерчант с процентом в
+   * названии», а не «покажи всех».
+   */
+  it('процент и подчёркивание в поиске ничего не подставляют', async () => {
+    const admin = await givenStaff({ role: 'admin' });
+    await waiting();
+
+    expect(await core.listMerchants(admin, { query: '%' })).toEqual([]);
+    expect(await core.listMerchants(admin, { query: 'Оплат_шка' })).toEqual([]);
   });
 
   it('считает мерчантов по состояниям', async () => {

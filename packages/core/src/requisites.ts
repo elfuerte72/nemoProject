@@ -11,10 +11,12 @@ import {
   looksLikeThaiAccountNumber,
   looksLikeWalletAddress,
   parsePromptPay,
+  payoutMethodOf,
   promptPayHint,
   PROMPTPAY_ID_LABELS,
   REQUISITE_COMPLAINTS,
   requisiteKindSuitsCurrency,
+  type PayoutMethod,
   type PromptPayIdType,
   type RequisiteKind,
 } from '@nemo/types';
@@ -368,43 +370,69 @@ function rowFor(
   }
 }
 
+/**
+ * Каким способом уйдут деньги по записи, которую ещё не завели.
+ *
+ * Нужен до транзакции: по нему выбирается сетка комиссии, а котировку
+ * спрашивают у чужого API, и держать ради неё открытую транзакцию
+ * нельзя. У PromptPay ответ зависит от того, что внутри QR, — строку
+ * разбирает то же правило, что и при сохранении; неразборчивый QR
+ * способа не называет, и отказывать за него будет сама вставка своими
+ * словами.
+ */
+export function payoutMethodOfInput(input: SaveRequisitesInput): PayoutMethod | undefined {
+  if (input.kind !== 'promptpay') {
+    return payoutMethodOf({ kind: input.kind, promptpayIdType: null });
+  }
+  const parsed = parsePromptPay(input.qr);
+  return parsed.ok
+    ? payoutMethodOf({ kind: 'promptpay', promptpayIdType: parsed.idType })
+    : undefined;
+}
+
 export async function saveRequisites(
   ctx: CoreConfig,
   actor: Actor,
   input: SaveRequisitesInput,
 ): Promise<RequisitesView> {
-  return saveRequisitesFor(ctx, requireOwner(actor), input);
+  const owner = requireOwner(actor);
+  return ctx.db.transaction((tx) => saveRequisitesIn(ctx, tx, owner, input));
 }
 
 /**
- * То же, но владелец назван прямо: так запись заводит подача заявки,
- * получившая реквизиты в теле запроса. Проверки при этом те же —
- * правдоподобие и живая сеть, — иначе путь через API оказался бы
- * слабее пути через форму.
+ * То же, но владелец назван прямо и вставка идёт в чужой транзакции:
+ * так запись заводит подача заявки, получившая реквизиты в теле
+ * запроса. Проверки при этом те же — правдоподобие и живая сеть, —
+ * иначе путь через API оказался бы слабее пути через форму.
+ *
+ * Своей транзакции у неё нет намеренно: заявка и запись получателя
+ * появляются вместе или не появляются вовсе. Отдельной транзакцией
+ * каждая отвергнутая подача — мало ли, не та сумма, закрытое
+ * направление — оставляла бы в базе зашифрованную строку, на которую
+ * никто уже не сошлётся.
  */
-export async function saveRequisitesFor(
+export async function saveRequisitesIn(
   ctx: CoreConfig,
+  tx: Executor,
   owner: Owner,
   input: SaveRequisitesInput,
   options: { archived?: boolean } = {},
 ): Promise<RequisitesView> {
   const values = rowFor(ctx, owner, input);
 
-  return ctx.db.transaction(async (tx) => {
-    // Сеть — из общего справочника: выключенную администратором
-    // сохранять незачем, по ней всё равно не отправят.
-    if (values.network) {
-      await requireActiveNetwork(tx, values.network);
-    }
+  // Сеть — из общего справочника: выключенную администратором
+  // сохранять незачем, по ней всё равно не отправят.
+  if (values.network) {
+    await requireActiveNetwork(tx, values.network);
+  }
 
-    // Прежние записи остаются: карта, телефон и кошелёк — разные
-    // способы получения, а не смена одного другим.
-    const [row] = await tx
-      .insert(clientRequisites)
-      .values(options.archived ? { ...values, archivedAt: new Date() } : values)
-      .returning();
-    return toView(row!);
-  });
+  // Прежние записи остаются: карта, телефон и кошелёк — разные
+  // способы получения, а не смена одного другим.
+  const [row] = await tx
+    .insert(clientRequisites)
+    .values(options.archived ? { ...values, archivedAt: new Date() } : values)
+    .returning();
+  return toView(row!);
 }
 
 /**
