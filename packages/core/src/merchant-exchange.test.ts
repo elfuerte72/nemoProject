@@ -349,6 +349,53 @@ describe('исполнение заявки мерчанта', () => {
     expect(await db.select().from(bonusTransactions)).toEqual([]);
   });
 
+  /**
+   * Отключение закрывает подачу, а не работу: деньги по открытой заявке
+   * мерчант уже отправил, и бросать её на полпути значило бы наказать
+   * его за решение администратора.
+   */
+  it('открытая заявка отключённого мерчанта доходит до конца', async () => {
+    const admin = await givenStaff({ role: 'admin' });
+    const manager = await givenStaff();
+    const { request } = await core.submitExchangeRequest(merchant, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      payout: PAYOUT,
+    });
+
+    await core.setMerchantActive(admin, merchant.merchantId, false);
+
+    // Новых заявок больше нет...
+    await expect(
+      core.submitExchangeRequest(merchant, {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+        payout: PAYOUT,
+      }),
+    ).rejects.toThrow(/поддержк/i);
+
+    // ...а начатая доходит до исполнения.
+    await core.claimExchangeRequest(manager, request.id);
+    await core.confirmExchangeRate(manager, request.id, {
+      finalRate: '80',
+      paymentInstructions: 'Кошелёк TRC20',
+    });
+    await core.markPaymentReceived(manager, request.id);
+    const done = await core.completeExchangeRequest(manager, request.id, {
+      serviceIncome: '5',
+      serviceIncomeCode: 'USDT',
+    });
+    expect(done.request.status).toBe('completed');
+
+    // И видит её мерчант по-прежнему: вход в кабинет отключение не
+    // закрывает — иначе он не узнал бы, чем всё кончилось.
+    expect(await core.listExchangeRequests(merchant)).toHaveLength(1);
+  });
+
   /** Письма о переходах уходят на почту мерчанта, а не в Telegram. */
   it('шлёт уведомления на почту мерчанта', async () => {
     const manager = await givenStaff();
