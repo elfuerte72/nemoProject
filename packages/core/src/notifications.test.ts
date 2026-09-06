@@ -206,6 +206,65 @@ describe('renderNotification: сотруднику', () => {
     );
   });
 
+  /**
+   * У мерчанта ни ника, ни номера в Telegram нет: открывать по этой
+   * строке нечего, и стоит в ней то, чем он сам эту заявку назовёт.
+   * Хэштег рядом с родом заявки — по нему в чате с сотнями уведомлений
+   * спрашивают «покажи всё по этому мерчанту».
+   */
+  it('заявка мерчанта: название и его номер сделки вместо ника', () => {
+    const { text } = renderNotification({
+      ...base,
+      party: { kind: 'merchant', name: 'Оплатишка', reference: 'booking-1024' },
+      request: {
+        kind: 'exchange',
+        id: 'r',
+        fromAmount: Money.toAmount('100'),
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        isCash: false,
+        toAmount: Money.toAmount('8000'),
+        rate: Money.toAmount('80'),
+        payout: null,
+      },
+    });
+
+    expect(text).toContain('\nМерчант: Оплатишка · booking-1024\n');
+    expect(text).not.toContain('t.me');
+    expect(text.endsWith('#обмен #мерчант')).toBe(true);
+  });
+
+  it('заявка мерчанта без внешнего номера: одно название', () => {
+    const { text } = renderNotification({
+      ...base,
+      party: { kind: 'merchant', name: 'Оплатишка', reference: null },
+      request: {
+        kind: 'exchange',
+        id: 'r',
+        fromAmount: Money.toAmount('100'),
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        isCash: false,
+        toAmount: null,
+        rate: null,
+        payout: null,
+      },
+    });
+
+    expect(text).toContain('\nМерчант: Оплатишка\n');
+  });
+
+  /** Название приходит извне: знак «меньше» Telegram прочитал бы как тег. */
+  it('название мерчанта экранируется', () => {
+    const { text } = renderNotification({
+      ...base,
+      party: { kind: 'merchant', name: 'Т<Банк>', reference: '<b>' },
+      request: { kind: 'card', id: 'c' },
+    });
+
+    expect(text).toContain('Мерчант: Т&lt;Банк&gt; · &lt;b&gt;');
+  });
+
   it('банк и сеть — чужой набор, и экранируются', () => {
     const { text } = renderNotification({
       ...base,
