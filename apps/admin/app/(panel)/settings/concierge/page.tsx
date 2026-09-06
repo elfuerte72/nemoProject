@@ -19,7 +19,7 @@ export default async function ConciergePage() {
           <>
             <SectionLead href="/settings/concierge" />
             <ConciergeLimits settings={settings} />
-            <KnowledgeForm articles={knowledge} />
+            <KnowledgeForm articles={knowledge} canDraft={core.hasKnowledgeDrafter()} />
           </>
         );
       }}

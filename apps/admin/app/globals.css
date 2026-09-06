@@ -1623,7 +1623,10 @@ a.row:hover {
  * прочитается отдельным набором слов. В узком окне, где шапки нет,
  * она же становится видимой.
  */
-.cell__label {
+/* Скрыть с экрана, оставив читалкам и клавиатуре: подпись ячейки на
+   узком экране и поле выбора файла внутри кнопки. */
+.cell__label,
+.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2167,6 +2170,71 @@ select.input {
 
 .empty--rich .btn {
   margin-top: 10px;
+}
+
+/* ── База знаний: приём документа и черновик ─────────────────────── */
+
+.btn:focus-within:has(.sr-only:focus-visible) {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Кнопка-подпись поля файла: у `<label>` нет `disabled`, гасится классом. */
+.btn--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.intake {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.intake__file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+/* Кнопка разбора — справа, отдельно от выбора файла: это шаг, а не выбор. */
+.intake__submit {
+  margin-left: auto;
+}
+
+.draft {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--hairline);
+  background: var(--surface-soft);
+}
+
+.draft__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/*
+ * Предупреждение о статье — золотом, как всё, что ждёт решения
+ * человека: это не отказ, а то, о чём стоит знать до записи.
+ */
+.draft__warn {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--gold-light);
+  text-wrap: pretty;
+}
+
+.draft .row--stack {
+  background: var(--surface);
 }
 
 .muted {

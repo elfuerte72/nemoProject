@@ -90,17 +90,35 @@ const MAX_TOKENS = 700;
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-export function createDeepSeekConcierge(options: DeepSeekOptions): ConciergeSource {
-  const client = new Anthropic({
+/**
+ * Клиент провайдера. Один на консьержа и на черновик базы знаний:
+ * провайдер у них общий, разнится только срок ожидания — секунды для
+ * клиента у экрана, минуты для документа администратора.
+ */
+export function createDeepSeekClient(options: DeepSeekOptions, defaultTimeoutMs: number): Anthropic {
+  return new Anthropic({
     apiKey: options.apiKey,
     baseURL: options.baseUrl,
     // Повторы отключены: ядро само решает, что делать с молчанием, — и
     // решает быстро, потому что на том конце ждёт человек. Второй заход
     // внутри клиента только удлинил бы это ожидание втрое.
     maxRetries: 0,
-    timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    timeout: options.timeoutMs ?? defaultTimeoutMs,
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
+}
+
+/** Текст ответа: блоки текста подряд, прочее (размышление) мимо. */
+export function textOf(message: Anthropic.Message): string {
+  return message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n')
+    .trim();
+}
+
+export function createDeepSeekConcierge(options: DeepSeekOptions): ConciergeSource {
+  const client = createDeepSeekClient(options, DEFAULT_TIMEOUT_MS);
 
   return {
     async answer(request: ConciergeRequest): Promise<ConciergeAnswer | null> {
@@ -196,11 +214,7 @@ function renderConversation(
 }
 
 function readAnswer(message: Anthropic.Message): ConciergeAnswer {
-  const reply = message.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-    .trim();
+  const reply = textOf(message);
 
   /*
    * Просьба считается по любой строке, а не только по первой. Ставить её
@@ -248,10 +262,19 @@ function readAnswer(message: Anthropic.Message): ConciergeAnswer {
  * него.
  */
 export function conciergeFromEnvironment(): ConciergeSource | undefined {
+  const options = deepSeekOptionsFromEnvironment();
+  return options ? createDeepSeekConcierge(options) : undefined;
+}
+
+/**
+ * Настройки провайдера из переменных окружения — одни на консьержа и
+ * на черновик базы знаний. Ключа нет — нет и настроек.
+ */
+export function deepSeekOptionsFromEnvironment(): DeepSeekOptions | undefined {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) return undefined;
 
-  return createDeepSeekConcierge({
+  return {
     apiKey,
     baseUrl: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/anthropic',
     // Имя модели — свойство развёртывания: провайдер переименовывает их
@@ -260,5 +283,5 @@ export function conciergeFromEnvironment(): ConciergeSource | undefined {
     // консьерж отвечает на вопросы поддержки, и старшая модель здесь
     // платится за то, чего от неё не просят.
     model: process.env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
-  });
+  };
 }

@@ -1,5 +1,6 @@
 import { createDatabase, slopComplaints, TIME_UNIT } from '@nemo/core';
 import { conciergeKnowledge } from '@nemo/db';
+import { normalizeKnowledgeTitle } from '@nemo/types';
 
 /**
  * Наполнить базу знаний консьержа тем, что о сервисе уже записано, — в
@@ -201,10 +202,11 @@ async function main(): Promise<void> {
     const existing = await db
       .select({ title: conciergeKnowledge.title })
       .from(conciergeKnowledge);
-    const taken = new Set(existing.map((one) => one.title));
+    // Тем же правилом, что и панель: «Оплата» и «оплата» — одна статья.
+    const taken = new Set(existing.map((one) => normalizeKnowledgeTitle(one.title)));
 
     for (const article of ARTICLES) {
-      if (taken.has(article.title)) {
+      if (taken.has(normalizeKnowledgeTitle(article.title))) {
         console.log(`«${article.title}» уже есть — не тронута`);
         continue;
       }

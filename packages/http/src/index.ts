@@ -24,6 +24,8 @@ const STATUS_BY_CODE: Record<CoreErrorCode, number> = {
   // состояние и решить заново.
   'transition-not-allowed': 409,
   conflict: 409,
+  // Молчит чужая сторона, а не наша: повторить можно как есть.
+  unavailable: 503,
 };
 
 export function statusForCoreError(code: CoreErrorCode): number {

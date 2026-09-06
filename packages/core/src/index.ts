@@ -82,9 +82,15 @@ import {
   type AnswerAsConciergeInput,
 } from './concierge.js';
 import {
+  addKnowledgeArticles,
+  draftKnowledgeArticles,
+  hasKnowledgeDrafter,
   listKnowledgeArticles,
   saveKnowledgeArticle,
   setKnowledgeArticleActive,
+  warnAboutKnowledgeArticle,
+  type KnowledgeDraftInput,
+  type NewKnowledgeArticle,
   type SaveKnowledgeArticleInput,
 } from './concierge-knowledge.js';
 import {
@@ -386,6 +392,13 @@ export function createCore(ctx: CoreConfig) {
       saveKnowledgeArticle(ctx, actor, input),
     setKnowledgeArticleActive: (actor: Actor, id: string, isActive: boolean) =>
       setKnowledgeArticleActive(ctx, actor, id, isActive),
+    hasKnowledgeDrafter: () => hasKnowledgeDrafter(ctx),
+    draftKnowledgeArticles: (actor: Actor, input: KnowledgeDraftInput) =>
+      draftKnowledgeArticles(ctx, actor, input),
+    addKnowledgeArticles: (actor: Actor, articles: readonly NewKnowledgeArticle[]) =>
+      addKnowledgeArticles(ctx, actor, articles),
+    warnAboutKnowledgeArticle: (actor: Actor, input: { body: string; source: string }) =>
+      warnAboutKnowledgeArticle(actor, input),
     listRequisiteAccessLog: (actor: Actor, filter?: RequisiteAccessFilter) =>
       listRequisiteAccessLog(ctx, actor, filter),
 
@@ -567,6 +580,7 @@ export {
   InvalidInputError,
   NotFoundError,
   TransitionNotAllowedError,
+  UnavailableError,
   type CoreErrorCode,
 } from './errors.js';
 export {
@@ -605,7 +619,18 @@ export {
 } from './attachments.js';
 export { WAITING_CLIENT_MINUTES } from './queue-watch.js';
 export { MAX_REPLY_LENGTH, TIME_UNIT, replyComplaints } from './concierge-guard.js';
+export { KNOWLEDGE_DRAFT_INSTRUCTIONS } from './concierge-knowledge.js';
 export type {
+  DraftedArticleView,
   KnowledgeArticleView,
+  KnowledgeDraftInput,
+  KnowledgeDraftView,
+  NewKnowledgeArticle,
   SaveKnowledgeArticleInput,
 } from './concierge-knowledge.js';
+export type {
+  DraftedArticle,
+  KnowledgeDraftRequest,
+  KnowledgeDraftResult,
+  KnowledgeDrafter,
+} from './knowledge-drafter.js';

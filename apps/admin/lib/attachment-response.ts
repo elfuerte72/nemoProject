@@ -1,5 +1,6 @@
 import type { AttachmentKind } from '@nemo/core';
 import { plainType } from '@nemo/types';
+import { asciiAt, bytesAt } from './bytes';
 
 /**
  * Заголовки, с которыми файл клиента уходит из домена панели.
@@ -242,14 +243,6 @@ function encodeRfc5987(name: string): string {
     /['()*]/g,
     (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
   );
-}
-
-function bytesAt(head: Uint8Array, offset: number, expected: readonly number[]): boolean {
-  return expected.every((byte, index) => head[offset + index] === byte);
-}
-
-function asciiAt(head: Uint8Array, offset: number, expected: string): boolean {
-  return bytesAt(head, offset, [...expected].map((char) => char.charCodeAt(0)));
 }
 
 /**
