@@ -7,9 +7,10 @@ import type { NavGroup } from '@nemo/ui/nav';
  * здесь только состав. Раздел заводится одной строкой массива.
  *
  * Порядок отвечает на вопросы по мере их появления: что у меня
- * происходит, что с моими заявками, чем это делать программно, кто я
- * такой и куда писать, если что-то не так. Раздел «API» живёт по
- * адресу `/keys`: `/api` занят самими маршрутами.
+ * происходит, как подать, что с моими заявками, куда приходят деньги
+ * и почём, чем это делать программно, кто я такой и куда писать, если
+ * что-то не так. Раздел «API» живёт по адресу `/keys`: `/api` занят
+ * самими маршрутами.
  */
 
 export const NAV_GROUPS: readonly NavGroup[] = [
@@ -18,7 +19,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     title: 'Работа',
     items: [
       { href: '/', label: 'Обзор', icon: 'home' },
+      { href: '/requests/new', label: 'Новая заявка', icon: 'plus' },
       { href: '/requests', label: 'Заявки', icon: 'exchange', count: 'active' },
+      { href: '/recipients', label: 'Получатели', icon: 'card' },
+      { href: '/rates', label: 'Курсы', icon: 'chart' },
     ],
   },
   {

@@ -17,6 +17,7 @@ const config: NextConfig = {
     '@nemo/core',
     '@nemo/email',
     '@nemo/http',
+    '@nemo/qr',
     '@nemo/rates',
     '@nemo/telegram',
     '@nemo/types',

@@ -12,6 +12,7 @@ const config: NextConfig = {
     '@nemo/core',
     '@nemo/email',
     '@nemo/http',
+    '@nemo/qr',
     '@nemo/rates',
     '@nemo/types',
     '@nemo/ui',

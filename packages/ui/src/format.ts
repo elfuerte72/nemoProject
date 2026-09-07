@@ -1,4 +1,4 @@
-import { Money, sayRate } from '@nemo/types';
+import { Money, readRate, sayRate } from '@nemo/types';
 
 /**
  * Суммы для человека.
@@ -49,6 +49,15 @@ export function formatMoney(value: string, code: string): string {
  */
 export function formatRate(rate: string, fromCode: string, toCode: string): string {
   return sayRate(Money.toAmount(rate), fromCode, toCode, formatAmount);
+}
+
+/**
+ * Курс числом, крупной стороной, — без подписи пары. Подпись добавляет
+ * тот, кто показывает: в блоке «USDT и рубль» сторона названа словами
+ * строки, и «по 86,1 ₽» читается без связки.
+ */
+export function formatRateValue(value: string): string {
+  return formatAmount(readRate(Money.toAmount(value), '', '').value);
 }
 
 /**

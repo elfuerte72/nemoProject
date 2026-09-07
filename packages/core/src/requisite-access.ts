@@ -7,13 +7,18 @@ import {
   requisiteAccessLog,
   staff,
 } from '@nemo/db';
-import { parsePromptPay, type PromptPayIdType, type RequisiteKind } from '@nemo/types';
+import {
+  describeRequisites,
+  parsePromptPay,
+  type PromptPayIdType,
+  type RequisiteKind,
+} from '@nemo/types';
 import { requireAdmin, requireStaff, type Actor, type Owner } from './actor.js';
 import { isDownloadable, type AttachmentKind } from './attachments.js';
 import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
 import { ForbiddenError, NotFoundError } from './errors.js';
 import { ownerOf } from './exchange-requests.js';
-import { describeRequisites, ownerColumns } from './requisites.js';
+import { ownerColumns } from './requisites.js';
 
 /**
  * Чтение полного номера карты менеджером и журнал таких чтений.

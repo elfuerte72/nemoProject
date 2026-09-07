@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { HowTo, QuietRefresh, Tabs } from '@nemo/ui';
 import { getCore } from '@/lib/core';
 import { countOf, requestCounts, viewer } from '@/lib/reads';
@@ -80,6 +81,13 @@ export default async function RequestsPage({
           <h1 className="page__title">Заявки</h1>
           <p className="page__sub">Всё, что подано из кабинета и по API.</p>
         </div>
+        {session.status === 'active' ? (
+          <div className="page__actions">
+            <Link className="btn btn--gold" href="/requests/new">
+              Новая заявка
+            </Link>
+          </div>
+        ) : undefined}
       </header>
 
       <HowTo title="Как это устроено" sub="Состояния, свой номер и отмена" items={HOW_TO} />

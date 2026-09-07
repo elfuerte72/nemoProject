@@ -228,6 +228,70 @@ export const PROMPTPAY_ID_LABELS: Record<PromptPayIdType, string> = {
 };
 
 /**
+ * Способ получения денег — так, как его выбирают в форме. Не «тип
+ * реквизита»: слово «реквизит» в форме означало бы, что человек уже
+ * знает, чем они бывают. Одни слова на Mini App и кабинет мерчанта: у
+ * панели менеджера подпись своя — там это не выбор, а описание.
+ */
+export const REQUISITE_KIND_LABELS: Record<RequisiteKind, string> = {
+  phone: 'По номеру телефона',
+  card: 'На карту',
+  wallet: 'На криптокошелёк',
+  account: 'На тайский банковский счёт',
+  promptpay: 'Thai QR (PromptPay)',
+  alipay: 'На Alipay по телефону или e-mail',
+  alipay_qr: 'На Alipay по QR',
+};
+
+/**
+ * Реквизиты одной строкой: банк и телефон, банк и последние цифры карты,
+ * сеть и края адреса. По этой подписи запись узнают, не видя её целиком
+ * — полное значение расшифровывает только панель менеджера
+ * (docs/adr/0002).
+ *
+ * Здесь, а не в ядре: ядро тянет драйвер базы и в браузер не идёт, а
+ * подпись читают и Mini App, и кабинет мерчанта, и журнал доступа в
+ * ядре. Копии по приложениям расходились бы заметно: один реквизит
+ * назывался бы по-разному.
+ */
+export function describeRequisites(view: {
+  readonly kind: RequisiteKind;
+  readonly bankName: string | null;
+  readonly phone: string | null;
+  readonly cardLast4: string | null;
+  readonly network: string | null;
+  readonly addressHint: string | null;
+  readonly accountLast4: string | null;
+  readonly qrHint: string | null;
+  readonly promptpayIdType: PromptPayIdType | null;
+  readonly alipayAccount: string | null;
+}): string {
+  switch (view.kind) {
+    case 'phone':
+      return [view.bankName, view.phone].filter(Boolean).join(' · ');
+    case 'card':
+      return [view.bankName, `карта •••• ${view.cardLast4 ?? ''}`.trim()]
+        .filter(Boolean)
+        .join(' · ');
+    case 'wallet':
+      return [view.network, view.addressHint].filter(Boolean).join(' · ');
+    case 'account':
+      return [view.bankName, `счёт •••• ${view.accountLast4 ?? ''}`.trim()]
+        .filter(Boolean)
+        .join(' · ');
+    case 'promptpay':
+      return [
+        'PromptPay',
+        `${PROMPTPAY_ID_LABELS[view.promptpayIdType ?? 'phone']} ${view.qrHint ?? ''}`.trim(),
+      ].join(' · ');
+    case 'alipay':
+      return ['Alipay', view.alipayAccount].filter(Boolean).join(' · ');
+    case 'alipay_qr':
+      return ['Alipay', `QR ${view.qrHint ?? ''}`.trim()].join(' · ');
+  }
+}
+
+/**
  * Какими родами записи валюта приходит клиенту.
  *
  * Таблица, а не правило по природе валюты: тайский счёт — фиатный, но
@@ -512,6 +576,183 @@ export function promptPayHint(id: string): string {
 export function alipayQrHint(url: string): string {
   const code = url.trim().replace(/[?#].*$/, '').replace(/\/+$/, '');
   return `…${code.slice(-4)}`;
+}
+
+/**
+ * Последние четыре цифры номера карты — всё, что от него видно после
+ * записи: узнать свою карту в списке можно, восстановить номер — нет.
+ * Разделители в номере не считаются.
+ */
+export function lastFour(cardNumber: string): string {
+  const digits = cardNumber.replace(/\D/g, '');
+  if (digits.length < 4) {
+    throw new RangeError('В номере карты меньше четырёх цифр');
+  }
+  return digits.slice(-4);
+}
+
+/**
+ * Края адреса кошелька — то же, что последние четыре цифры для карты.
+ * Начало и конец, а не только хвост: адреса одной сети начинаются
+ * одинаково, и по одному началу свой от чужого не отличить. Короткий
+ * адрес остаётся целиком — прятать в нём нечего.
+ *
+ * Здесь, а не только в `@nemo/crypto`: хвосты считает и форма до
+ * сохранения, показывая, под какой подписью запись встанет в список.
+ */
+export function addressEdges(address: string): string {
+  const value = address.trim();
+  if (value.length <= ADDRESS_EDGE * 2 + 1) {
+    return value;
+  }
+  return `${value.slice(0, ADDRESS_EDGE)}…${value.slice(-ADDRESS_EDGE)}`;
+}
+
+const ADDRESS_EDGE = 4;
+
+/** У каких способов нужно имя получателя: менеджер сверяет его перед отправкой. */
+export function requisiteHolderRequired(kind: RequisiteKind): boolean {
+  return kind === 'account' || kind === 'promptpay' || kind === 'alipay' || kind === 'alipay_qr';
+}
+
+/**
+ * Черновик записи — то, что набрано в форме до сохранения. Способ
+ * бывает ещё не выбран; поля чужих способов остаются в черновике и не
+ * мешают: что отправлять, решает способ.
+ */
+export interface RequisiteDraft {
+  readonly kind: RequisiteKind | undefined;
+  readonly bankName?: string | undefined;
+  readonly phone?: string | undefined;
+  readonly cardNumber?: string | undefined;
+  readonly network?: string | undefined;
+  readonly address?: string | undefined;
+  readonly accountNumber?: string | undefined;
+  readonly holderName?: string | undefined;
+  readonly alipayAccount?: string | undefined;
+  /** Строка из QR — PromptPay или Alipay, уже прочитанная на устройстве. */
+  readonly qr?: string | undefined;
+}
+
+export type RequisiteField = 'phone' | 'card' | 'address' | 'account' | 'alipay' | 'holder';
+
+export interface RequisiteFieldComplaint {
+  readonly field: RequisiteField;
+  readonly complaint: string;
+}
+
+/**
+ * Что не так с набранным — по тем же правилам, по которым откажет
+ * операция, и теми же словами. Пустое поле замечания не получает:
+ * незаполненное — ещё не ошибка, и кнопка о нём говорит тем, что не
+ * горит. Порядок — порядок полей в форме: первое замечание и есть то,
+ * что показывают под формой; остальные красят свои поля.
+ *
+ * Одно правило на форму Mini App и форму кабинета: каскад, набранный
+ * дважды, разошёлся бы при первом новом способе.
+ */
+export function requisiteDraftComplaints(draft: RequisiteDraft): readonly RequisiteFieldComplaint[] {
+  const { kind } = draft;
+  if (kind === undefined) return [];
+  const typed = (value: string | undefined): value is string => (value?.trim().length ?? 0) > 0;
+  const found: RequisiteFieldComplaint[] = [];
+
+  if (kind === 'phone' && typed(draft.phone) && !looksLikePhone(draft.phone)) {
+    found.push({ field: 'phone', complaint: REQUISITE_COMPLAINTS.phone });
+  }
+  if (kind === 'card' && typed(draft.cardNumber) && !looksLikeCardNumber(draft.cardNumber)) {
+    found.push({ field: 'card', complaint: REQUISITE_COMPLAINTS.card });
+  }
+  if (
+    kind === 'wallet' &&
+    typed(draft.address) &&
+    !looksLikeWalletAddress(draft.network ?? '', draft.address)
+  ) {
+    found.push({ field: 'address', complaint: REQUISITE_COMPLAINTS.walletAddress(draft.network ?? '') });
+  }
+  if (
+    kind === 'account' &&
+    typed(draft.accountNumber) &&
+    !looksLikeThaiAccountNumber(draft.accountNumber)
+  ) {
+    found.push({ field: 'account', complaint: REQUISITE_COMPLAINTS.thaiAccount });
+  }
+  if (kind === 'alipay' && typed(draft.alipayAccount) && !looksLikeAlipayAccount(draft.alipayAccount)) {
+    found.push({ field: 'alipay', complaint: REQUISITE_COMPLAINTS.alipayAccount });
+  }
+  if (requisiteHolderRequired(kind) && typed(draft.holderName) && !looksLikeHolderName(draft.holderName)) {
+    found.push({ field: 'holder', complaint: REQUISITE_COMPLAINTS.holderName });
+  }
+  return found;
+}
+
+/**
+ * Что отправлять ядру — решает выбранный способ, а не то, что осталось
+ * в полях. Пока заполнено не всё, что нужно способу, отправлять нечего:
+ * записи, по которой нельзя отправить деньги, не существует.
+ */
+export function requisiteInputOf(draft: RequisiteDraft): RequisiteInput | undefined {
+  const text = (value: string | undefined) => value?.trim() ?? '';
+  const input = ((): RequisiteInput | undefined => {
+    switch (draft.kind) {
+      case 'phone':
+        return { kind: 'phone', bankName: text(draft.bankName), phone: text(draft.phone) };
+      case 'card':
+        return { kind: 'card', bankName: text(draft.bankName), cardNumber: text(draft.cardNumber) };
+      case 'wallet':
+        return { kind: 'wallet', network: text(draft.network), address: text(draft.address) };
+      case 'account':
+        return {
+          kind: 'account',
+          bankName: text(draft.bankName),
+          accountNumber: text(draft.accountNumber),
+          holderName: text(draft.holderName),
+        };
+      case 'promptpay':
+        return { kind: 'promptpay', qr: text(draft.qr), holderName: text(draft.holderName) };
+      case 'alipay':
+        return { kind: 'alipay', account: text(draft.alipayAccount), holderName: text(draft.holderName) };
+      case 'alipay_qr':
+        return { kind: 'alipay_qr', qr: text(draft.qr), holderName: text(draft.holderName) };
+      case undefined:
+        return undefined;
+    }
+  })();
+  if (input === undefined) return undefined;
+  const complete = Object.values(input).every((value) => String(value).length > 0);
+  return complete ? input : undefined;
+}
+
+/** Что распозналось из картинки — подтверждается перед сохранением. */
+export type QrReading =
+  | {
+      readonly ok: true;
+      readonly kind: 'promptpay';
+      readonly idType: PromptPayIdType;
+      /** Хвост — тот же, под которым запись встанет в список. */
+      readonly hint: string;
+    }
+  | { readonly ok: true; readonly kind: 'alipay_qr'; readonly hint: string }
+  | { readonly ok: false; readonly complaint: string };
+
+/**
+ * Прочитанная из QR строка — на подтверждение: тип идентификатора и
+ * хвост у PromptPay, хвост кода у Alipay. Картинка не та — форма
+ * скажет об этом словами до сохранения, а не в переписке с менеджером.
+ */
+export function qrReadingOf(kind: RequisiteKind, payload: string): QrReading {
+  if (kind === 'promptpay') {
+    const parsed = parsePromptPay(payload);
+    return parsed.ok
+      ? { ok: true, kind, idType: parsed.idType, hint: promptPayHint(parsed.id) }
+      : { ok: false, complaint: parsed.complaint };
+  }
+  if (kind === 'alipay_qr') {
+    return looksLikeAlipayQr(payload)
+      ? { ok: true, kind, hint: alipayQrHint(payload) }
+      : { ok: false, complaint: REQUISITE_COMPLAINTS.alipayQr };
+  }
+  return { ok: false, complaint: REQUISITE_COMPLAINTS.noQr };
 }
 
 /**

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Icon } from './icons.js';
 import {
-  isCurrentSection,
+  currentSection,
   parseCollapsed,
   serializeCollapsed,
   toggleCollapsed,
@@ -69,6 +69,15 @@ export function Sidebar({
     }
   };
 
+  /*
+   * Текущий пункт — один на всё меню, а не по группе: пункты бывают
+   * вложены по адресу, и решать, чей адрес точнее, надо среди всех.
+   */
+  const current = currentSection(
+    groups.flatMap((group) => group.items),
+    pathname,
+  );
+
   return (
     <aside className="sidebar">
       <Link href={homeHref} className="sidebar__brand" aria-label={homeLabel}>
@@ -81,7 +90,7 @@ export function Sidebar({
             key={group.key}
             group={group}
             counts={counts}
-            pathname={pathname}
+            current={current}
             open={!collapsed.has(group.key)}
             onToggle={() => toggle(group.key)}
           />
@@ -94,13 +103,14 @@ export function Sidebar({
 function Group({
   group,
   counts,
-  pathname,
+  current,
   open,
   onToggle,
 }: {
   group: NavGroup;
   counts: NavCountMap;
-  pathname: string;
+  /** Адрес текущего пункта меню, если он в меню есть. */
+  current: string | undefined;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -109,7 +119,7 @@ function Group({
    * Группа с текущим разделом не сворачивается: свёрнутая, она прятала
    * бы подсветку того места, где человек находится.
    */
-  const holdsCurrent = group.items.some((item) => isCurrentSection(item.href, pathname));
+  const holdsCurrent = group.items.some((item) => item.href === current);
   const shown = open || holdsCurrent;
 
   return (
@@ -133,7 +143,7 @@ function Group({
             key={item.href}
             item={item}
             count={item.count ? counts[item.count] : undefined}
-            current={isCurrentSection(item.href, pathname)}
+            current={item.href === current}
           />
         ))}
       </div>

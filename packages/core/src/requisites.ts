@@ -13,7 +13,6 @@ import {
   parsePromptPay,
   payoutMethodOf,
   promptPayHint,
-  PROMPTPAY_ID_LABELS,
   REQUISITE_COMPLAINTS,
   requisiteKindSuitsCurrency,
   type PayoutMethod,
@@ -153,52 +152,6 @@ function toView(row: RequisitesRow, isAvailable = true): RequisitesView {
   };
 }
 
-/**
- * Короткая подпись записи — ею называется открытый реквизит в журнале
- * доступа: администратор должен видеть, что именно сотрудник смотрел.
- *
- * У клиентского приложения такая же подпись своя (`lib/format.ts`), и
- * это не забытая общая функция: ядро тянет за собой драйвер базы, и
- * импорт отсюда в экран увёз бы её в браузер. Совпадать они должны, и
- * расходятся заметно — один реквизит назывался бы в приложении и в
- * панели по-разному.
- */
-export function describeRequisites(view: {
-  kind: RequisiteKind;
-  bankName: string | null;
-  phone: string | null;
-  cardLast4: string | null;
-  network: string | null;
-  addressHint: string | null;
-  accountLast4: string | null;
-  qrHint: string | null;
-  promptpayIdType: PromptPayIdType | null;
-  alipayAccount: string | null;
-}): string {
-  switch (view.kind) {
-    case 'phone':
-      return [view.bankName, view.phone].filter(Boolean).join(' · ');
-    case 'card':
-      return [view.bankName, `карта •••• ${view.cardLast4 ?? ''}`.trim()]
-        .filter(Boolean)
-        .join(' · ');
-    case 'wallet':
-      return [view.network, view.addressHint].filter(Boolean).join(' · ');
-    case 'account':
-      return [view.bankName, `счёт •••• ${view.accountLast4 ?? ''}`.trim()]
-        .filter(Boolean)
-        .join(' · ');
-    case 'promptpay':
-      return [
-        'PromptPay',
-        `${PROMPTPAY_ID_LABELS[view.promptpayIdType ?? 'phone']} ${view.qrHint ?? ''}`.trim(),
-      ].join(' · ');
-    case 'alipay':
-      return ['Alipay', view.alipayAccount].filter(Boolean).join(' · ');
-    case 'alipay_qr':
-      return ['Alipay', `QR ${view.qrHint ?? ''}`.trim()].join(' · ');
-  }
-}
 
 /** Обязательное поле записи: пустое означало бы реквизит, по которому не отправить. */
 function required(value: string, subject: string): string {

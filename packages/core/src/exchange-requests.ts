@@ -27,6 +27,7 @@ import {
   type ExchangeKind,
   type ExchangeRequestStatus,
   type PayoutMethod,
+  minimumMeasure,
 } from '@nemo/types';
 import { requireOwner, type Actor, type Owner } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
@@ -289,29 +290,6 @@ async function requireActivePair(
 }
 
 /**
- * Сторона заявки, с которой сравнивается минимальная сумма обмена, — та,
- * что выражена в валюте порога (`MIN_EXCHANGE_CODE`).
- *
- * Эту валюту клиент либо отдаёт, и тогда это сумма подачи, либо получает
- * — и тогда её нужно посчитать по курсу. Курса может не быть вовсе: у
- * наличных его нет до разговора с менеджером, а провайдер котировок
- * может молчать. В этом случае стороны нет, и порог не проверяется:
- * отказ по числу, которого у сервиса в этот момент не существует,
- * выглядел бы для клиента поломкой.
- */
-function thresholdSideOf(
-  input: { fromCode: string; toCode: string },
-  fromAmount: Amount,
-  rate: Amount | null,
-): Amount | null {
-  if (input.fromCode === MIN_EXCHANGE_CODE) return fromAmount;
-  if (input.toCode === MIN_EXCHANGE_CODE && rate !== null) {
-    return Money.multiply(fromAmount, rate);
-  }
-  return null;
-}
-
-/**
  * Каким способом уйдут деньги по этой записи — от него зависит ставка
  * комиссии.
  *
@@ -473,12 +451,23 @@ export async function submitExchangeRequest(
 
     const settings = await readServiceSettings(tx);
     /*
-     * Порог задан в USDT. Там, где цену назначает сетка, долларовый
-     * эквивалент уже посчитан ради выбора ступени — им и меряем: у пары
-     * «рубли — баты» этой валюты нет ни с одной стороны, и без него
-     * заявку можно было подать на полсотни рублей.
+     * Порог задан в USDT. Чем его мерить — долларовым эквивалентом, уже
+     * посчитанным ради выбора ступени, или стороной в валюте порога, —
+     * решает `minimumMeasure` из `@nemo/types`: тем же правилом экран не
+     * даёт подать заявку, которую подача отвергнет. Курса может не быть
+     * вовсе — у наличных до разговора с менеджером, при молчащем
+     * провайдере, — и тогда полученной стороны нет, а порог не
+     * проверяется: отказ по числу, которого у сервиса в этот момент не
+     * существует, выглядел бы поломкой.
      */
-    const measured = quote?.usdAmount ?? thresholdSideOf(input, fromAmount, requestRate);
+    const measured = minimumMeasure({
+      thresholdCode: MIN_EXCHANGE_CODE,
+      fromCode: input.fromCode,
+      toCode: input.toCode,
+      give: fromAmount,
+      get: requestRate === null ? null : Money.multiply(fromAmount, requestRate),
+      usdAmount: quote?.usdAmount ?? null,
+    });
     if (measured !== null && Money.compare(measured, settings.minExchangeAmount) < 0) {
       throw new InvalidInputError(
         `Минимальная сумма обмена — ${settings.minExchangeAmount} ${MIN_EXCHANGE_CODE}`,

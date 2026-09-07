@@ -6,11 +6,10 @@ import {
   type QuoteView,
 } from '@nemo/core';
 import {
+  giveFor,
   Money,
   parsePromptPay,
-  payoutAfterFee,
   payoutMethodOf,
-  usdForPayout,
   type Amount,
   type PayoutMethod,
   type RequisiteInput,
@@ -22,16 +21,13 @@ import type { QuoteSide } from './schemas';
  *
  * Вопросов у мерчанта два, как у клиента: «сколько дадут за мои сто
  * USDT» и «сколько USDT нужно, чтобы вышло ровно пятьдесят тысяч».
- * Второй считается так же, как на экране Mini App: делением вверх до
- * восьми знаков — отброшенный вниз хвост возвращался бы умножением как
- * недостача, — а со ступенчатой сеткой перебором ступеней той же
- * `usdForPayout`, что и ядро. Найденная сумма отдачи котируется
- * заново на ту же отметку: в ответе стоит то число, которое ядро
- * запишет в заявку, а не обратное умножение.
+ * Второй считается тем же `giveFor` из `@nemo/types`, что и на экране
+ * Mini App и в кабинете: делением вверх до восьми знаков — отброшенный
+ * вниз хвост возвращался бы умножением как недостача, — а со
+ * ступенчатой сеткой перебором ступеней. Найденная сумма отдачи
+ * котируется заново на ту же отметку: в ответе стоит то число, которое
+ * ядро запишет в заявку, а не обратное умножение.
  */
-
-/** До скольких знаков делится обратный счёт — как на экране Mini App. */
-const REVERSE_DIGITS = 8;
 
 export interface ApiQuote {
   readonly from: { readonly currency: string; readonly amount: string };
@@ -89,8 +85,7 @@ export async function quoteFor(core: Core, request: QuoteRequest): Promise<ApiQu
   const probe = await core.getQuote({ ...common, fromAmount: '1' });
   if (!probe) throw unavailable();
 
-  const target = Money.toAmount(request.amount);
-  const give = giveFor(target, probe);
+  const give = giveFor(Money.toAmount(request.amount), probe);
   if (give === null) {
     throw new InvalidInputError(
       'Такую сумму к выдаче не собрать по этому направлению: назовите сумму отдачи (side: "from")',
@@ -132,17 +127,6 @@ export async function recipientPayoutMethod(
   return undefined;
 }
 
-function giveFor(target: Amount, probe: QuoteView): Amount | null {
-  if (probe.fee) {
-    const { toBaseRate, fromBaseRate, tiers, thresholdInclusive } = probe.fee;
-    if (Money.isZero(fromBaseRate) || Money.isZero(toBaseRate)) return null;
-    const neededUsd = usdForPayout(target, fromBaseRate, tiers, { thresholdInclusive });
-    return neededUsd === null ? null : Money.divideCeil(neededUsd, toBaseRate, REVERSE_DIGITS);
-  }
-  if (Money.isZero(probe.rate)) return null;
-  return Money.divideCeil(target, probe.rate, REVERSE_DIGITS);
-}
-
 function toApiQuote(request: QuoteRequest, fromAmount: string, quote: QuoteView): ApiQuote {
   return {
     from: { currency: request.from, amount: fromAmount },
@@ -157,31 +141,4 @@ function unavailable(): UnavailableError {
   return new UnavailableError(
     'Курс сейчас недоступен: источник котировок молчит. Заявку подать можно — курс ей назовёт менеджер',
   );
-}
-
-/**
- * Курс направления для списка `/rates` — для наименьшей суммы, с которой
- * сервис по нему работает.
- *
- * То же правило, что у черты курса в Mini App до набора суммы
- * (`apps/miniapp/lib/rate-line.ts`): без сетки курс один на любую
- * сумму; со ступенями он зависит от суммы, и один курс на направление
- * назвать нечем — называется курс на минимуме направления, а без него на
- * общем минимуме сервиса. Это ориентир, а не обещание на любую сумму,
- * и с ростом суммы он только лучше.
- */
-export function referenceRate(quote: QuoteView, serviceMinUsd: Amount): Amount | null {
-  if (!quote.fee) return Money.isZero(quote.rate) ? null : quote.rate;
-
-  const { toBaseRate, fromBaseRate, tiers, minUsd, thresholdInclusive } = quote.fee;
-  if (Money.isZero(toBaseRate) || Money.isNegative(toBaseRate)) return null;
-
-  const reference = minUsd ?? serviceMinUsd;
-  const giveAtReference = Money.divide(reference, toBaseRate);
-  const payout = Money.roundTo(
-    payoutAfterFee(reference, fromBaseRate, tiers, { thresholdInclusive }),
-    quote.payoutDecimals,
-  );
-  if (Money.isZero(payout) || Money.isZero(giveAtReference)) return null;
-  return Money.divide(payout, giveAtReference);
 }

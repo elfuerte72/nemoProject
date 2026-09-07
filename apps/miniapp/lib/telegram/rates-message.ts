@@ -1,6 +1,11 @@
-import { type Amount, Money, RATE_DIGITS } from '@nemo/types';
-import { currencyFlag, currencyPlace, sortCurrencies } from '../currencies';
-import { formatAmount, formatRate, formatRateValue, MAX_FRACTION_DIGITS } from '../format';
+import {
+  type Amount,
+  arrangeRateBoard,
+  currencyFlag,
+  currencyPlace,
+  payoutPerUnit,
+} from '@nemo/types';
+import { formatAmount, formatRate, formatRateValue } from '../format';
 
 /**
  * Курс в чате — единственное место, где бот показывает данные.
@@ -14,27 +19,15 @@ import { formatAmount, formatRate, formatRateValue, MAX_FRACTION_DIGITS } from '
  * баты перед поездкой, про лиры, про рупии. Ответ про один USDT он читал
  * как «остального у них нет».
  *
- * Собрано в три блока, потому что вопросы разные. Рубль стоит по обе
- * стороны обмена, и котировок у него две: наценка накладывается на
- * каждое направление отдельно, и покупка с продажей не зеркальны. Валюты
- * выдачи сервис только отдаёт — они идут столбцом, одной стороной на все
- * строки. Третий блок — на случай направления, не подходящего ни под
- * одно из двух: справочник растёт, и молча пропущенная строка хуже
- * некрасивой.
+ * Собрано в три блока, потому что вопросы разные, — раскладкой
+ * `arrangeRateBoard` из `@nemo/types`, общей с разделом «Курсы» кабинета
+ * мерчанта: рубль двумя строками, валюты выдачи столбцом одной
+ * стороной, остальное своими строками.
  *
  * Время снимка не подписано намеренно: биржевая котировка живёт
  * секундами, опорный курс банка — сутками, и одна отметка над столбцом
  * врала бы про половину строк.
  */
-
-/**
- * Валюта, которую сервис принимает: от неё считается вся выдача, и
- * справочник направлений собран вокруг неё (docs/adr/0007).
- */
-const BASE_CODE = 'USDT';
-
-/** Единственная валюта, которую сервис и принимает, и выдаёт. */
-const RUBLE_CODE = 'RUB';
 
 /** Направление с курсом, по которому сервис его исполнит. */
 export interface QuotedPair {
@@ -62,25 +55,12 @@ function escapeHtml(value: string): string {
 }
 
 /**
- * Число в столбце валют выдачи: сколько её дают за одну монету.
- *
- * Сторона у столбца одна на все строки — иначе его не прочитать сверху
- * вниз: перевёрнутый курс отвечает на обратный вопрос, а заметить это
- * среди одинаковых строк невозможно. Поэтому здесь не `formatRateValue`:
- * он показывает крупную сторону пары, и у валют, которых за монету дают
- * меньше одной — доллара, евро, — строка перевернулась бы.
- *
- * Знаков столько же, до скольких курс округляет ядро и читает экран
- * (`RATE_DIGITS`), и отброшены они вниз: у бата число в столбце
- * совпадает с числом на черте курса, а у евро посчитанное клиентом по
- * этому числу не больше того, что он получит.
+ * Число в столбце валют выдачи: сколько её дают за одну монету — одним
+ * правилом с разделом «Курсы» кабинета (`payoutPerUnit`); здесь только
+ * разряды.
  */
 function payoutValue(rate: Amount): string {
-  const shown = formatAmount(Money.format(rate, RATE_DIGITS));
-  // Валюты, которой за монету дают меньше сотой доли единицы, в
-  // справочнике нет, но показать её нулём нельзя: ноль читается как
-  // «не дадут ничего».
-  return shown === '0' ? formatAmount(Money.format(rate, MAX_FRACTION_DIGITS)) : shown;
+  return formatAmount(payoutPerUnit(rate));
 }
 
 /**
@@ -124,26 +104,14 @@ export function renderRatesMessage({
   /** Есть ли у сервиса наличные направления: у них курса нет вовсе. */
   readonly hasCash: boolean;
 }): string {
-  const sell = quoted.find((one) => one.fromCode === BASE_CODE && one.toCode === RUBLE_CODE);
-  const buy = quoted.find((one) => one.fromCode === RUBLE_CODE && one.toCode === BASE_CODE);
-
-  // Порядок в столбце — тот же, что в списке выбора на экране: два
-  // порядка одних и тех же валют клиенту пришлось бы сверять глазами.
-  const payout = quoted.filter((one) => one.fromCode === BASE_CODE && one.toCode !== RUBLE_CODE);
-  const order = sortCurrencies(payout.map((one) => one.toCode));
-  payout.sort((left, right) => order.indexOf(left.toCode) - order.indexOf(right.toCode));
-
-  const shown = new Set<QuotedPair>(
-    [sell, buy, ...payout].filter((one) => one !== undefined),
-  );
-  const rest = quoted.filter((one) => !shown.has(one));
+  const { sell, buy, payout, rest } = arrangeRateBoard(quoted);
 
   const blocks: string[] = [];
 
   if (sell || buy) {
     blocks.push(
       [
-        `<b>${currencyFlag(RUBLE_CODE)} USDT и рубль</b>`,
+        `<b>${currencyFlag('RUB')} USDT и рубль</b>`,
         sell ? `Продаёте USDT по ${formatRateValue(sell.rate)} ₽` : undefined,
         // Котировка «рубли → USDT» приходит в USDT за рубль.
         // Переворачивать её здесь не нужно: `formatRateValue` сам

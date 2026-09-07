@@ -40,6 +40,26 @@ export function isCurrentSection(href: string, pathname: string): boolean {
 }
 
 /**
+ * Какой из пунктов меню текущий — среди совпавших самый длинный.
+ *
+ * Пункты бывают вложены по адресу: у кабинета мерчанта «Новая заявка»
+ * живёт под «Заявками» (`/requests/new` под `/requests`), и по одному
+ * `isCurrentSection` подсвечивались бы оба. Человек находится в одном
+ * месте, и отмечается одно — то, чей адрес точнее.
+ */
+export function currentSection(
+  items: readonly { readonly href: string }[],
+  pathname: string,
+): string | undefined {
+  return items
+    .filter((item) => isCurrentSection(item.href, pathname))
+    .reduce<string | undefined>(
+      (best, item) => (best === undefined || item.href.length > best.length ? item.href : best),
+      undefined,
+    );
+}
+
+/**
  * Свёрнутые группы из строки хранилища. Всё, что не список строк, —
  * пустой набор: испорченная запись не должна ронять меню, а незнакомые
  * ключи безвредны — группы с таким ключом просто нет.

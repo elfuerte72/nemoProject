@@ -15,6 +15,7 @@
     "@nemo/core": "workspace:*",
     "@nemo/email": "workspace:*",
     "@nemo/http": "workspace:*",
+    "@nemo/qr": "workspace:*",
     "@nemo/rates": "workspace:^",
     "@nemo/types": "workspace:*",
     "@nemo/ui": "workspace:*",

@@ -60,6 +60,13 @@ export default async function OverviewPage() {
               : 'Незакрытых заявок нет.'}
           </p>
         </div>
+        {session.status === 'active' ? (
+          <div className="page__actions">
+            <Link className="btn btn--gold" href="/requests/new">
+              Новая заявка
+            </Link>
+          </div>
+        ) : undefined}
       </header>
 
       <HowTo title="Как это устроено" sub="Что происходит с заявкой и когда" items={HOW_TO} />

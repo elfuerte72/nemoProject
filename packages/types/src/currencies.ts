@@ -2,12 +2,12 @@
  * Что человек знает о валюте помимо её кода: название, место, порядок в
  * списке и флаг для чата.
  *
- * Одно место на приложение и на бота. Добавить валюту в справочник —
- * значит дописать сюда строку; забыть про это можно безнаказанно, но
- * тогда клиент увидит трёхбуквенный код без названия, а в сообщении бота
- * — код без флага.
+ * Одно место на Mini App, бота и кабинет мерчанта. Добавить валюту в
+ * справочник — значит дописать сюда строку; забыть про это можно
+ * безнаказанно, но тогда клиент увидит трёхбуквенный код без названия,
+ * а в сообщении бота — код без флага.
  *
- * Флагов здесь два вида, и это не дублирование. В приложении флаг
+ * Флагов здесь два вида, и это не дублирование. В Mini App флаг
  * нарисован (`app/ui/flags.tsx`): в системных шрифтах Windows флаговых
  * глифов нет, и внутри Mini App вместо Таиланда показались бы две буквы.
  * В сообщении чата рисовать нечем, но и нужды нет: свой набор знаков
@@ -80,4 +80,55 @@ export function sortCurrencies(codes: readonly string[]): string[] {
     if (rightIndex === -1) return -1;
     return leftIndex - rightIndex;
   });
+}
+
+/**
+ * Валюта, которую сервис принимает: от неё считается вся выдача, и
+ * справочник направлений собран вокруг неё (docs/adr/0007).
+ */
+const BASE_CODE = 'USDT';
+
+/** Единственная валюта, которую сервис и принимает, и выдаёт. */
+const RUBLE_CODE = 'RUB';
+
+export interface RateBoard<T> {
+  /** USDT → рубль: «продаёте USDT по …». */
+  readonly sell: T | undefined;
+  /** Рубль → USDT: «покупаете USDT по …». */
+  readonly buy: T | undefined;
+  /** Валюты выдачи за один USDT — в порядке списка выбора. */
+  readonly payout: readonly T[];
+  /** Направления, не попавшие ни в рублёвый блок, ни в столбец. */
+  readonly rest: readonly T[];
+}
+
+/**
+ * Раскладка доски курсов — одна на сообщение бота и раздел «Курсы»
+ * кабинета.
+ *
+ * Собрано в три блока, потому что вопросы разные. Рубль стоит по обе
+ * стороны обмена, и котировок у него две: наценка накладывается на
+ * каждое направление отдельно, и покупка с продажей не зеркальны.
+ * Валюты выдачи сервис только отдаёт — они идут столбцом, одной
+ * стороной на все строки, в том же порядке, что в списке выбора: два
+ * порядка одних и тех же валют пришлось бы сверять глазами. Третий
+ * блок — на случай направления, не подходящего ни под одно из двух:
+ * справочник растёт, и молча пропущенная строка хуже некрасивой.
+ */
+export function arrangeRateBoard<T extends { readonly fromCode: string; readonly toCode: string }>(
+  directions: readonly T[],
+): RateBoard<T> {
+  const sell = directions.find((one) => one.fromCode === BASE_CODE && one.toCode === RUBLE_CODE);
+  const buy = directions.find((one) => one.fromCode === RUBLE_CODE && one.toCode === BASE_CODE);
+
+  const payout = directions.filter(
+    (one) => one.fromCode === BASE_CODE && one.toCode !== RUBLE_CODE,
+  );
+  const order = sortCurrencies(payout.map((one) => one.toCode));
+  payout.sort((left, right) => order.indexOf(left.toCode) - order.indexOf(right.toCode));
+
+  const shown = new Set<T>([sell, buy, ...payout].filter((one) => one !== undefined));
+  const rest = directions.filter((one) => !shown.has(one));
+
+  return { sell, buy, payout, rest };
 }

@@ -47,5 +47,6 @@ export {
   formatMoment,
   formatMoney,
   formatRate,
+  formatRateValue,
   formatTime,
 } from './format.js';

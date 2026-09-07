@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addressEdges,
   alipayQrHint,
+  describeRequisites,
+  lastFour,
+  qrReadingOf,
+  requisiteDraftComplaints,
+  requisiteHolderRequired,
+  requisiteInputOf,
   looksLikeAlipayAccount,
   looksLikeAlipayQr,
   looksLikeCardNumber,
@@ -15,6 +22,9 @@ import {
   requisiteKindSuitsCurrency,
   requisiteCurrencyCodes,
   requisiteKindsFor,
+  requisiteKinds,
+  REQUISITE_COMPLAINTS,
+  REQUISITE_KIND_LABELS,
 } from './domain.js';
 
 /**
@@ -376,5 +386,135 @@ describe('хвосты QR', () => {
     expect(alipayQrHint('https://qr.alipay.com/fkx12345abcd')).toBe('…abcd');
     expect(alipayQrHint('https://qr.alipay.com/fkx12345abcd/?t=1')).toBe('…abcd');
     expect(alipayQrHint('HTTPS://QR.ALIPAY.COM/FKX12345ABCD')).toBe('…ABCD');
+  });
+});
+
+/*
+ * Подпись записи — одна на Mini App, кабинет мерчанта и ядро: один
+ * реквизит в приложении, в кабинете и в панели должен называться
+ * одинаково, и закреплено это на всех семи родах, а не проверяется
+ * глазами.
+ */
+describe('describeRequisites', () => {
+  const empty = {
+    bankName: null,
+    phone: null,
+    cardLast4: null,
+    network: null,
+    addressHint: null,
+    accountLast4: null,
+    qrHint: null,
+    promptpayIdType: null,
+    alipayAccount: null,
+  };
+  const records = [
+    { ...empty, kind: 'phone' as const, bankName: 'Сбербанк', phone: '+79990000000' },
+    { ...empty, kind: 'card' as const, bankName: 'Тинькофф', cardLast4: '5679' },
+    { ...empty, kind: 'wallet' as const, network: 'TRC20', addressHint: 'TQmX…aU6e' },
+    { ...empty, kind: 'account' as const, bankName: 'Kasikornbank', accountLast4: '6658' },
+    { ...empty, kind: 'promptpay' as const, qrHint: '…614', promptpayIdType: 'ewallet' as const },
+    { ...empty, kind: 'alipay' as const, alipayAccount: '7-9536656387' },
+    { ...empty, kind: 'alipay_qr' as const, qrHint: '…abcd' },
+  ];
+
+  it('называет запись так, как её узнаёт владелец', () => {
+    expect(records.map(describeRequisites)).toEqual([
+      'Сбербанк · +79990000000',
+      'Тинькофф · карта •••• 5679',
+      'TRC20 · TQmX…aU6e',
+      'Kasikornbank · счёт •••• 6658',
+      'PromptPay · кошелёк …614',
+      'Alipay · 7-9536656387',
+      'Alipay · QR …abcd',
+    ]);
+  });
+
+  it('у каждого рода есть подпись словами', () => {
+    for (const kind of requisiteKinds) {
+      expect(REQUISITE_KIND_LABELS[kind].length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('хвосты номера и адреса', () => {
+  it('у карты — последние четыре цифры, без разделителей', () => {
+    expect(lastFour('4111 1111 1111 5679')).toBe('5679');
+    expect(() => lastFour('12')).toThrow(RangeError);
+  });
+
+  it('у адреса — края от десяти знаков, короткий целиком', () => {
+    expect(addressEdges('TQmXqE6VqVqVqVqVqVqVqVqVqVqVqaU6e')).toBe('TQmX…aU6e');
+    expect(addressEdges('abcdefghij')).toBe('abcd…ghij');
+    expect(addressEdges('abcdefghi')).toBe('abcdefghi');
+  });
+});
+
+/**
+ * Черновик записи в форме: что не так с набранным, теми же словами, что
+ * откажет ядро, и что отправлять — решает способ, а не то, что осталось
+ * в полях. Одно правило на форму Mini App и форму кабинета.
+ */
+describe('черновик записи', () => {
+  it('замечание получает только набранное и непохожее на правду', () => {
+    expect(
+      requisiteDraftComplaints({ kind: 'card', cardNumber: '4111 1111 1111 1112', holderName: '' }),
+    ).toEqual([{ field: 'card', complaint: REQUISITE_COMPLAINTS.card }]);
+    expect(requisiteDraftComplaints({ kind: 'card', cardNumber: '' })).toEqual([]);
+    expect(requisiteDraftComplaints({ kind: undefined, phone: '1' })).toEqual([]);
+  });
+
+  it('замечания идут по всем неверным полям, первое — то, что показывают', () => {
+    expect(
+      requisiteDraftComplaints({ kind: 'account', accountNumber: '12', holderName: 'Иван' }),
+    ).toEqual([
+      { field: 'account', complaint: REQUISITE_COMPLAINTS.thaiAccount },
+      { field: 'holder', complaint: REQUISITE_COMPLAINTS.holderName },
+    ]);
+    expect(requisiteDraftComplaints({ kind: 'wallet', network: 'TRC20', address: 'abc' })).toEqual([
+      { field: 'address', complaint: REQUISITE_COMPLAINTS.walletAddress('TRC20') },
+    ]);
+  });
+
+  it('имя получателя нужно тайскому счёту, PromptPay и Alipay', () => {
+    expect(requisiteHolderRequired('account')).toBe(true);
+    expect(requisiteHolderRequired('promptpay')).toBe(true);
+    expect(requisiteHolderRequired('alipay_qr')).toBe(true);
+    expect(requisiteHolderRequired('card')).toBe(false);
+  });
+
+  it('тело собирается по способу и только когда заполнено всё', () => {
+    expect(
+      requisiteInputOf({ kind: 'phone', bankName: ' Сбербанк ', phone: '+79990000000', cardNumber: '4111' }),
+    ).toEqual({ kind: 'phone', bankName: 'Сбербанк', phone: '+79990000000' });
+    expect(requisiteInputOf({ kind: 'phone', bankName: 'Сбербанк', phone: '' })).toBeUndefined();
+    expect(
+      requisiteInputOf({ kind: 'promptpay', qr: '000201…', holderName: 'IVAN' }),
+    ).toEqual({ kind: 'promptpay', qr: '000201…', holderName: 'IVAN' });
+    expect(requisiteInputOf({ kind: undefined })).toBeUndefined();
+  });
+});
+
+describe('что распозналось из QR', () => {
+  it('PromptPay — тип идентификатора и хвост', () => {
+    expect(
+      qrReadingOf('promptpay', '00020101021129390016A000000677010111031514000000000061453037645802TH63042D0B'),
+    ).toEqual({ ok: true, kind: 'promptpay', idType: 'ewallet', hint: '…614' });
+  });
+
+  it('Alipay — хвост кода из ссылки', () => {
+    expect(qrReadingOf('alipay_qr', 'HTTPS://QR.ALIPAY.COM/FKX12345ABCD')).toEqual({
+      ok: true,
+      kind: 'alipay_qr',
+      hint: '…ABCD',
+    });
+  });
+
+  it('чужая картинка отвергается словами', () => {
+    expect(qrReadingOf('alipay_qr', 'https://example.com/x')).toEqual({
+      ok: false,
+      complaint: REQUISITE_COMPLAINTS.alipayQr,
+    });
+    expect(qrReadingOf('promptpay', 'HTTPS://QR.ALIPAY.COM/FKX12345ABCD')).toMatchObject({ ok: false });
+    expect(qrReadingOf('card', 'anything')).toMatchObject({ ok: false });
   });
 });

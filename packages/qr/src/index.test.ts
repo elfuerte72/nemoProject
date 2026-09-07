@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import { describe, expect, it } from 'vitest';
 import { looksLikeAlipayQr, parsePromptPay } from '@nemo/types';
-import { fitWithin, readQrPixels, type Pixels } from './qr';
+import { fitWithin, readQrPixels, type Pixels } from './index.js';
 
 /**
  * Чтение QR из картинки — той же функцией, что работает в браузере.
@@ -14,7 +14,7 @@ import { fitWithin, readQrPixels, type Pixels } from './qr';
  * их (`backlog.md`).
  */
 function pixelsOf(name: string): Pixels {
-  const png = PNG.sync.read(readFileSync(new URL(`./qr-fixtures/${name}`, import.meta.url)));
+  const png = PNG.sync.read(readFileSync(new URL(`../fixtures/${name}`, import.meta.url)));
   return {
     data: new Uint8ClampedArray(png.data.buffer, png.data.byteOffset, png.data.length),
     width: png.width,

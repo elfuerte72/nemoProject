@@ -1,5 +1,5 @@
-// Как собраны картинки в этой папке. Запуск из `apps/miniapp`:
-//   node lib/qr-fixtures/make.mjs
+// Как собраны картинки в этой папке. Запуск из `packages/qr`:
+//   node fixtures/make.mjs
 //
 // Строки — те же, что в тестах доменных типов: PromptPay по стандарту
 // EMVCo с приложением перевода и CRC-16/CCITT-FALSE, ссылка Alipay

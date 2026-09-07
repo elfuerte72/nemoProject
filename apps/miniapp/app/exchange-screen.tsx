@@ -9,11 +9,16 @@ import type {
   RequisitesView,
 } from '@nemo/core';
 import {
+  describeRequisites,
+  giveFor,
+  minimumMeasure,
   Money,
-  payoutAfterFee,
   payoutMethodOf,
+  payoutOf,
+  rateLine,
   requisiteKindsFor,
-  usdForPayout,
+  sortCurrencies,
+  submissionObstacle,
   type Amount,
   type ExchangeKind,
   type PayoutMethod,
@@ -28,15 +33,11 @@ import {
   STEP_NOTES,
   stepOf,
 } from '@/lib/exchange-request-labels';
-import { sortCurrencies } from '@/lib/currencies';
-import { rateLine } from '@/lib/rate-line';
 import { CARD_STATUS_LABELS } from '@/lib/labels';
 import {
-  describeRequisites,
   formatAmount,
   formatMoney,
   formatRate,
-  MAX_FRACTION_DIGITS,
   normalizeTyped,
   parseAmount,
   shortId,
@@ -506,50 +507,22 @@ export function ExchangeScreen({
     if (side === 'give') {
       /*
        * До знака валюты — тем же правилом, что и `roundPayout` в ядре,
-       * и тем же знаком: он приезжает с котировкой. Своей копией, а не
-       * импортом: за `@nemo/core` в браузер приехал бы драйвер базы.
-       * Разойтись они не должны, и проверяет это не типаж, а то, что
-       * обе стороны считают одной и той же `Money`.
+       * и тем же знаком: он приезжает с котировкой. Правило одно на
+       * экран, кабинет мерчанта и ядро и живёт в `@nemo/types`
+       * (`payoutOf`): за `@nemo/core` в браузер приехал бы драйвер базы.
        */
-      return { give: value, get: rate ? payoutFor(value, rate) : null };
+      return { give: value, get: rate ? payoutOf(value, rate) : null };
     }
 
     /*
      * Обратный счёт округляется вверх, и притом до того же знака, до
      * какого сумма показывается. Отброшенный вниз хвост возвращается
      * умножением на курс как недостача: просивший пятьдесят тысяч
-     * получил бы 49 999,99.
+     * получил бы 49 999,99. Со ступенчатой комиссией он перестаёт быть
+     * делением — правило то же, что у ядра (`giveFor`).
      */
     if (!rate) return { give: null, get: value };
-
-    /*
-     * Со ступенчатой комиссией обратный счёт перестаёт быть делением:
-     * ставка берётся от всей суммы, и выдача на границах скачет. Правило
-     * — наименьшая сумма, при которой клиент получает не меньше, чем
-     * просил; считает его та же `usdForPayout`, что и ядро. Цель уходит
-     * в него в валюте выдачи, а не долларами: фикс ступени бывает задан
-     * этой валютой, и деление на курс живёт внутри перебора ступеней.
-     */
-    if (rate.fee) {
-      const { toBaseRate, fromBaseRate, tiers, thresholdInclusive } = rate.fee;
-      if (Money.isZero(fromBaseRate) || Money.isZero(toBaseRate)) {
-        return { give: null, get: value };
-      }
-      const neededUsd = usdForPayout(value, fromBaseRate, tiers, { thresholdInclusive });
-      return {
-        give:
-          neededUsd === null
-            ? null
-            : Money.divideCeil(neededUsd, toBaseRate, MAX_FRACTION_DIGITS),
-        get: value,
-      };
-    }
-
-    if (Money.isZero(rate.rate)) return { give: null, get: value };
-    return {
-      give: Money.divideCeil(value, rate.rate, MAX_FRACTION_DIGITS),
-      get: value,
-    };
+    return { give: giveFor(value, rate), get: value };
   }, [typed, side, rate]);
 
   /**
@@ -562,12 +535,12 @@ export function ExchangeScreen({
    * подтверждении надо то, что запишет ядро.
    */
   const payout = useMemo(
-    () => (rate && sides.give ? payoutFor(sides.give, rate) : null),
+    () => (rate && sides.give ? payoutOf(sides.give, rate) : null),
     [rate, sides.give],
   );
 
   /**
-   * Что стоит на черте курса. Правило в `lib/rate-line`: со ступенчатой
+   * Что стоит на черте курса. Правило в `@nemo/types`: со ступенчатой
    * сеткой курс зависит от суммы, и до набора черта называет его для
    * наименьшей суммы направления, а на сумме ниже порога — сам порог,
    * а не ноль. Общий минимум сервиса задан в USDT, то есть в долларах.
@@ -814,30 +787,25 @@ export function ExchangeScreen({
   const electronic = kind === 'electronic';
 
   /**
-   * Действует ли минимальная сумма на эту заявку. Валюту порога клиент
-   * либо отдаёт — тогда его сторона это введённая сумма, — либо
-   * получает, и тогда её называет курс. Без курса стороны нет, и ядро
-   * порога не проверяет; экран о нём тогда молчит, потому что число, ни
-   * на что не влияющее, читается как обещание.
-   */
-  /**
    * Долларовый эквивалент отданного — там, где цену назначает сетка.
    * Им ядро меряет оба порога, глобальный и направленческий, — экран
-   * меряет тем же числом, иначе кнопка горела бы на заявке, которую
-   * подача отвергнет.
+   * меряет тем же числом (`minimumMeasure` из `@nemo/types`), иначе
+   * кнопка горела бы на заявке, которую подача отвергнет. Без того и
+   * другого порог не меряется, и экран о нём молчит — как молчит и
+   * подача: число, ни на что не влияющее, читается как обещание.
    */
   const measuredUsd =
     rate?.fee && sides.give ? Money.multiply(sides.give, rate.fee.toBaseRate) : null;
-
-  /*
-   * Сторона глобального порога: у пары с USDT — сама сумма в USDT, у
-   * пары через сетку — долларовый эквивалент (USDT считается долларом).
-   * Без того и другого порог не меряется, и экран о нём молчит — как
-   * молчит и подача.
-   */
-  const measured =
-    (terms ? thresholdSide(terms.minAmountCode, { fromCode, toCode }, sides) : null) ??
-    measuredUsd;
+  const measured = terms
+    ? minimumMeasure({
+        thresholdCode: terms.minAmountCode,
+        fromCode,
+        toCode,
+        give: sides.give,
+        get: sides.get,
+        usdAmount: measuredUsd,
+      })
+    : null;
   const minimumApplies = Boolean(
     terms &&
       (fromCode === terms.minAmountCode ||
@@ -848,24 +816,38 @@ export function ExchangeScreen({
     terms && measured && Money.compare(measured, terms.minAmount) < 0,
   );
 
-  /**
-   * Свой порог направления — поверх общего: владелец задаёт евро
-   * «меньше пятисот долларов — недоступно». Порог приезжает вместе с
-   * курсом и меряется тем же долларовым эквивалентом, которым ядро
-   * выбирает ступень; без курса эквивалента нет, и экран о пороге
-   * молчит — как молчит о нём и подача.
-   */
+  /** Свой порог направления — поверх общего; здесь только ради подсказки. */
   const directionMin = rate?.fee?.minUsd ?? null;
   const belowDirectionMinimum = Boolean(
     directionMin && measuredUsd && Money.compare(measuredUsd, directionMin) < 0,
   );
 
   /**
-   * Выдача, съеденная комиссией целиком: арифметика клампит ноль, и
-   * кнопка на нём обязана погаснуть — подавать «0 по курсу 0» ядро всё
-   * равно откажется, но узнать об этом клиент должен до нажатия.
+   * Что мешает подать заявку — то самое, из-за чего не горит кнопка.
+   * Правило и слова — одни с кабинетом мерчанта (`submissionObstacle`):
+   * пороги, съеденная комиссией выдача, валюта без родов записи и
+   * заявка без реквизитов. Наличные клиент получает на руки — там
+   * реквизитов не спрашивают, и получатель считается названным.
    */
-  const nothingLeft = Boolean(payout && Money.isZero(payout));
+  const obstacle = terms
+    ? submissionObstacle(
+        {
+          terms,
+          fromCode,
+          toCode,
+          sides,
+          quote: rate,
+          recipient: !electronic
+            ? 'chosen'
+            : suitableKinds.length === 0
+              ? 'unsupported'
+              : selected === undefined
+                ? 'missing'
+                : 'chosen',
+        },
+        formatMoney,
+      )
+    : undefined;
 
   const ready =
     !busy &&
@@ -876,41 +858,16 @@ export function ExchangeScreen({
     // должна доходить до отправки.
     sides.give !== null &&
     !Money.isZero(sides.give) &&
-    !belowMinimum &&
-    !belowDirectionMinimum &&
-    !nothingLeft &&
+    obstacle === undefined &&
     // Пока ответ о курсе не пришёл, подавать нечего: на экране в этот
     // момент нет ни курса, ни суммы получения, а заявка ушла бы без
     // отметки — то есть по курсу, который ядро спросит заново и которого
     // клиент не видел. Отсутствие курса (`null`) — другое дело: это
     // рабочее состояние, и заявка по нему подаётся.
-    rate !== undefined &&
-    // Электронный перевод без реквизитов отправлять некуда, а наличные
-    // клиент получает на руки — там их и не спрашивают.
-    (!electronic || selected !== undefined);
+    rate !== undefined;
 
   const paymentLeft =
     active && terms ? timeLeftToPay(active, terms.unpaidTtlMinutes, now) : undefined;
-
-  /**
-   * Что мешает подать заявку — то самое, из-за чего не горит кнопка.
-   *
-   * Только названное словами: пустое поле и не пришедший ещё курс сюда
-   * не идут — первое клиент видит сам, второе живёт полвздоха, и строка
-   * под кнопкой мигала бы на каждой смене валюты.
-   */
-  const obstacle =
-    belowMinimum && terms
-      ? `Меньше минимальной суммы обмена — ${formatMoney(terms.minAmount, terms.minAmountCode)}.`
-      : belowDirectionMinimum && directionMin
-        ? `Меньше минимальной суммы направления — ${formatMoney(directionMin, '$')}.`
-        : nothingLeft
-          ? 'Сумма слишком мала: после комиссии к выдаче ничего не останется.'
-          : electronic && suitableKinds.length === 0
-            ? `Получение ${toCode} переводом пока в разработке: реквизиты для этой валюты сервис ещё не принимает.`
-            : electronic && selected === undefined
-              ? `Укажите, как получить ${toCode}: без реквизитов деньги некуда отправить.`
-              : undefined;
 
   const chosen = offered.find((one) => one.id === selected);
   const requisitesLine = chosen ? describeRequisites(chosen) : 'Укажите реквизиты';
@@ -1527,35 +1484,7 @@ export function ExchangeScreen({
 function shownRate(quote: QuoteView, give: Amount | null): Amount | null {
   if (!quote.fee) return quote.rate;
   if (!give || Money.isZero(give)) return null;
-  return Money.divide(payoutFor(give, quote), give);
-}
-
-/**
- * Сколько клиент получит, отдав столько.
- *
- * Там, где цену назначает сетка комиссии, считается путь целиком:
- * сумма переводится в доллары, из них вычитается ставка своей ступени,
- * остаток идёт в валюту выдачи. Той же арифметикой из `@nemo/types`,
- * какой считает ядро, — иначе экран пообещал бы одно, а заявка записала
- * другое.
- *
- * Считается здесь, а не на сервере: со ступенями курс зависит от суммы,
- * и круг по сети означал бы секунду ожидания на каждую набранную цифру.
- */
-function payoutFor(give: Amount, quote: QuoteView): Amount {
-  // Знак — тот же, каким округлило ядро: он приезжает с котировкой, и
-  // свой список точностей здесь разошёлся бы со справочником валют.
-  const decimals = quote.payoutDecimals;
-  if (!quote.fee) return Money.roundTo(Money.multiply(give, quote.rate), decimals);
-  const { toBaseRate, fromBaseRate, tiers, thresholdInclusive } = quote.fee;
-  const usd = Money.multiply(give, toBaseRate);
-  // Путь целиком, а не «остаток на курс»: фикс ступени бывает задан в
-  // валюте выдачи и вычитается уже после умножения. Знак границы
-  // ступени — тот же, каким её читает ядро.
-  return Money.roundTo(
-    payoutAfterFee(usd, fromBaseRate, tiers, { thresholdInclusive }),
-    decimals,
-  );
+  return Money.divide(payoutOf(give, quote), give);
 }
 
 /**
@@ -1569,25 +1498,6 @@ function payoutFor(give: Amount, quote: QuoteView): Amount {
 function swapClass(side: 'give' | 'get', swaps: number): string {
   if (!swaps) return 'calc__line';
   return `calc__line calc__line--${side}-${swaps % 2 === 0 ? 'a' : 'b'}`;
-}
-
-/**
- * Сторона заявки, с которой сравнивается минимальная сумма обмена, — та,
- * что выражена в валюте порога. Валюту называет сервер вместе с самим
- * порогом: она у него константа, но экран о ней догадываться не должен.
- *
- * Зеркалит правило ядра (`thresholdSideOf` в `exchange-requests.ts`):
- * отказывает всё равно операция, а экран лишь не даёт подать заявку,
- * про которую уже известно, что её отвергнут.
- */
-function thresholdSide(
-  thresholdCode: string,
-  direction: { fromCode: string; toCode: string },
-  sides: { readonly give: Amount | null; readonly get: Amount | null },
-): Amount | null {
-  if (direction.fromCode === thresholdCode) return sides.give;
-  if (direction.toCode === thresholdCode) return sides.get;
-  return null;
 }
 
 /**

@@ -1,0 +1,25 @@
+{
+  "name": "@nemo/qr",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "jsqr": "1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pngjs": "6.0.5",
+    "pngjs": "7.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.8"
+  }
+}

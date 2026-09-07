@@ -389,3 +389,165 @@
   flex-direction: column;
   gap: 2px;
 }
+
+/* ── Новая заявка ────────────────────────────────────────────────── */
+
+/*
+ * Калькулятор: две стороны сделки в ряд, между ними разворот, под ними
+ * черта курса. Как у клиента в Mini App, но не столбиком: тут не палец
+ * на телефоне, а курсор на ноутбуке, и стороны читаются парой.
+ */
+.calc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.calc__side {
+  min-width: 0;
+}
+
+.calc__amount {
+  display: flex;
+  gap: 8px;
+}
+
+.calc__input {
+  flex: 1;
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.calc__input:read-only {
+  color: var(--text-dim);
+}
+
+.calc__pick {
+  flex: 0 0 112px;
+  font-weight: 600;
+}
+
+/* Разворот стоит на уровне полей, а не подписей над ними. */
+.calc__swap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-top: 23px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.calc__swap:hover:not(:disabled) {
+  color: var(--gold-light);
+  border-color: rgba(249, 160, 60, 0.4);
+}
+
+.calc__swap:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Черта курса — там, где курс и действует: между отданным и полученным. */
+.calc__rate {
+  margin: 14px 0 0;
+  min-height: 1.5em;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gold-light);
+}
+
+@media (max-width: 720px) {
+  .calc {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .calc__swap {
+    margin: 0 auto;
+  }
+}
+
+/* Поле, набранное неправдоподобно: замечание под ним, рамка в цвет. */
+.input--wrong {
+  border-color: rgba(242, 104, 95, 0.55);
+}
+
+/* Поля получателя — столбиком с воздухом между ними. */
+.recipient {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Группа записей одной валюты: заголовок-код над своими строками. */
+.recipient__group + .recipient__group {
+  margin-top: 18px;
+}
+
+.recipient__currency {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+/* Выбор сохранённого получателя: цель нажатия — вся строка. */
+.recipient__pick {
+  width: 100%;
+  min-height: 0;
+  align-items: flex-start;
+  font-weight: 500;
+}
+
+.recipient__pick input {
+  margin-top: 3px;
+}
+
+/* Сводка перед подачей и пара курсов рубля: подпись слева, число справа. */
+.summary {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summary__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.summary__row dt {
+  color: var(--text-dim);
+}
+
+.summary__row dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.summary__strong {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* ── Курсы ───────────────────────────────────────────────────────── */
+
+.table--rates {
+  --cols: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+}

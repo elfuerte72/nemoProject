@@ -2,17 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import type { BonusAccountView, ClientView, RequisitesView, WithdrawalRequestView } from '@nemo/core';
-import { isServiceCurrencyRequisiteKind, Money } from '@nemo/types';
-import { ApiError, get, post } from '@/lib/client-api';
-import { referralLink } from '@/lib/referral';
 import {
   describeRequisites,
-  formatAmount,
-  formatBps,
-  formatMonth,
-  parseAmount,
-} from '@/lib/format';
-import { REQUISITE_KIND_LABELS } from '@/lib/labels';
+  isServiceCurrencyRequisiteKind,
+  Money,
+  REQUISITE_KIND_LABELS,
+} from '@nemo/types';
+import { ApiError, get, post } from '@/lib/client-api';
+import { referralLink } from '@/lib/referral';
+import { formatAmount, formatBps, formatMonth, parseAmount } from '@/lib/format';
 import {
   getTelegramUser,
   haptic,
