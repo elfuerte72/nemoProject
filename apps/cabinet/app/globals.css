@@ -169,3 +169,190 @@
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Ключи API ───────────────────────────────────────────────────── */
+
+/* Подпись, хвост ключа, даты, состояние и действие. */
+.table--keys {
+  --cols: minmax(0, 1fr) 150px 110px 150px 110px minmax(0, 0.9fr);
+}
+
+/*
+ * Выпущенный ключ: показан один раз, и рамка говорит об этом раньше
+ * слов — это единственное, что на странице выделено медью.
+ */
+.secret {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(var(--gold-rgb, 226, 176, 80), 0.45);
+  border-radius: var(--radius-inner);
+  background: rgba(var(--gold-rgb, 226, 176, 80), 0.08);
+}
+
+.secret__title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+  text-wrap: pretty;
+}
+
+.secret__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+/* Форма выпуска: поле и кнопка в ряд, на узком окне ряд складывается. */
+.form-row--issue {
+  align-items: flex-end;
+}
+
+/* Пример запроса и тела ответов: моноширинно, с прокруткой внутри, без переноса страницы. */
+.code {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-inner);
+  background: var(--surface-soft);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ── Журнал вызовов ──────────────────────────────────────────────── */
+
+.table--calls {
+  --cols: 130px 64px minmax(0, 1.1fr) 64px 80px minmax(0, 0.9fr) minmax(0, 1.3fr);
+}
+
+/*
+ * Путь и слова отказа переносятся, а не режутся троеточием: по словам
+ * отказа мерчант чинит интеграцию, и половина фразы ему не поможет.
+ */
+.call__path,
+.call__error {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ── Документация ────────────────────────────────────────────────── */
+
+.op {
+  border-radius: var(--radius-inner);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  margin-bottom: 8px;
+}
+
+.op__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.op__head::-webkit-details-marker {
+  display: none;
+}
+
+.op__method {
+  min-width: 58px;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  background: var(--surface-soft);
+}
+
+.op__method--post {
+  color: var(--gold, #e2b050);
+}
+
+.op__method--delete {
+  color: #f58a82;
+}
+
+.op__path {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.op__summary {
+  color: var(--text-dim);
+  font-size: 13.5px;
+}
+
+.op__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 16px 16px;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+}
+
+.op__block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.op__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.op__text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+.op__code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-soft);
+  font-size: 0.92em;
+}
+
+.op__params {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.op__params dd {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.op__required {
+  color: var(--gold, #e2b050);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .op__head {
+    flex-wrap: wrap;
+  }
+
+  .op__params {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

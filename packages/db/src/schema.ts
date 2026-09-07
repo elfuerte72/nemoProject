@@ -489,6 +489,88 @@ export const merchantEmailTokens = pgTable(
 );
 
 /**
+ * Ключ API мерчанта (docs/adr/0017).
+ *
+ * Секрет хранится хешем и показывается один раз при выпуске: база,
+ * утёкшая целиком, не должна давать подать заявку от чьего-то имени.
+ * Хеш — SHA-256, а не argon2id, как у пароля: у ключа около 190 бит
+ * случайности, перебирать его по словарю нечем, а медленный хеш на
+ * каждом вызове API стоил бы десятков миллисекунд процессора на запрос.
+ *
+ * Ключей у мерчанта несколько — по одному на систему, которая ходит в
+ * API, — и отзывается каждый по отдельности. Отозванный остаётся
+ * строкой: на него ссылается журнал вызовов, и «каким ключом подана эта
+ * заявка месяц назад» должно отвечаться и после отзыва.
+ */
+export const apiKeys = pgTable(
+  'api_keys',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchants.id),
+    /** Подпись словами — «сайт», «бухгалтерия»: отличает ключи в списке. */
+    label: text('label').notNull(),
+    /**
+     * Начало и хвост ключа: по ним мерчант узнаёт свой ключ в списке и
+     * в журнале, не видя его целиком. Целиком его не видит никто.
+     */
+    hint: text('hint').notNull(),
+    secretHash: text('secret_hash').notNull().unique(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /**
+     * Когда ключом ходили в последний раз — с точностью до минуты:
+     * писать отметку на каждый вызов значило бы удваивать записи в
+     * базу ради числа, которое читают раз в неделю.
+     */
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  },
+  (table) => [index('api_keys_merchant_idx').on(table.merchantId, table.issuedAt)],
+);
+
+/**
+ * Журнал вызовов API: что мерчант спрашивал и что ему ответили.
+ *
+ * Пишется на каждый вызов, включая отвергнутые, — если ключ узнан:
+ * «401 по отозванному ключу» в журнале мерчанта отвечает на вопрос,
+ * почему у него встала интеграция. Вызов с незнакомым ключом ничей и в
+ * журнал не попадает: строка на каждый запрос, который может прислать
+ * кто угодно, отдавала бы место в базе перебирающему.
+ *
+ * Хранится тридцать дней, чистит планировщик: журнал нужен, чтобы
+ * разобрать вчерашнюю ошибку, а не как история.
+ */
+export const apiRequestLog = pgTable(
+  'api_request_log',
+  {
+    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchants.id),
+    apiKeyId: uuid('api_key_id')
+      .notNull()
+      .references(() => apiKeys.id),
+    method: text('method').notNull(),
+    path: text('path').notNull(),
+    status: smallint('status').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    /** Адрес вызывающего: по нему видно, что ключ ушёл на чужую машину. */
+    address: text('address'),
+    /** Слова отказа, если он был. Успешному вызову сказать нечего. */
+    error: text('error'),
+    at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Журнал мерчанта читается от свежего к старому и дочитывается
+    // курсором по паре «время и номер» — тем же, что у заявок.
+    index('api_request_log_merchant_at_idx').on(table.merchantId, table.at, table.id),
+    // Чистка идёт по одному времени: ей всё равно, чей вызов.
+    index('api_request_log_at_idx').on(table.at),
+  ],
+);
+
+/**
  * Справочник сетей перевода.
  *
  * По образцу справочника валют: код и признак активности. Общий для

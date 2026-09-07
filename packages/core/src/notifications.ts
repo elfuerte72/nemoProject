@@ -254,6 +254,23 @@ export type Notification =
       readonly to: Recipient;
       /** Причина отказа; пусто — одобрен. */
       readonly rejectionReason?: string;
+    }
+  | {
+      /**
+       * Ключ API выпущен. Самого ключа в письме нет: он показан один
+       * раз в кабинете, а письмо говорит, что ключ появился, — тому,
+       * кто его не выпускал, это повод отозвать.
+       */
+      readonly kind: 'merchant-api-key-issued';
+      readonly to: Recipient;
+      readonly label: string;
+      readonly hint: string;
+    }
+  | {
+      readonly kind: 'merchant-api-key-revoked';
+      readonly to: Recipient;
+      readonly label: string;
+      readonly hint: string;
     };
 
 /**
@@ -347,6 +364,8 @@ export const notificationKinds = [
   'merchant-email-verification',
   'merchant-password-reset',
   'merchant-application-decided',
+  'merchant-api-key-issued',
+  'merchant-api-key-revoked',
 ] as const satisfies readonly Notification['kind'][];
 
 /**
@@ -404,6 +423,8 @@ export function renderNotification(notification: Notification): RenderedNotifica
     case 'merchant-email-verification':
     case 'merchant-password-reset':
     case 'merchant-application-decided':
+    case 'merchant-api-key-issued':
+    case 'merchant-api-key-revoked':
       // Письмо, а не сообщение: доставляет его `@nemo/email`, а слова
       // живут рядом с остальными письмами мерчанту.
       return merchantAccountMail(notification);

@@ -12,6 +12,7 @@ const config: NextConfig = {
     '@nemo/core',
     '@nemo/email',
     '@nemo/http',
+    '@nemo/rates',
     '@nemo/types',
     '@nemo/ui',
   ],
@@ -21,6 +22,12 @@ const config: NextConfig = {
   webpack: (config, { nextRuntime }) => {
     // Импорты пакетов монорепо указывают `.js` там, где на диске `.ts`.
     config.resolve.extensionAlias = { '.js': ['.ts', '.tsx', '.js'] };
+    /*
+     * Договор API (`docs/api/merchant-v1.yaml`) едет в бандл строкой:
+     * страница «Документация» показывает ту версию, с которой собрано
+     * приложение, и на диск в контейнере за ней не ходит.
+     */
+    config.module.rules.push({ test: /\.ya?ml$/, type: 'asset/source' });
     /*
      * Хук запуска (`instrumentation.ts`) Next собирает под каждый
      * рантайм — в том числе пограничный, которого у приложения нет.

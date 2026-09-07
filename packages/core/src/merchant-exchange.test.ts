@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { generateRequisiteKeyPair } from '@nemo/crypto';
-import { bonusTransactions, clientRequisites } from '@nemo/db';
+import { bonusTransactions, clientRequisites, exchangeRequests } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type Actor } from './index.js';
 import {
@@ -597,3 +597,43 @@ describe('счёт своих заявок', () => {
     ).toBe(1);
   });
 });
+
+/**
+ * Свой список мерчант читает сотнями и продолжает курсором по паре
+ * «время подачи и идентификатор». До 7 сентября 2026 условие курсора
+ * сравнивало кортеж сырым `sql`, и драйвер отправлял дату строкой —
+ * вторая страница отвечала пятисотым, а первая скрывала это.
+ */
+describe('курсор своего списка', () => {
+  it('дочитывает без потерь и дублей, даже когда время подачи одно', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await core.submitExchangeRequest(merchant, {
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: String(100 + i),
+        payout: PAYOUT,
+      });
+    }
+    // Пять заявок в одну миллисекунду — так подают по API пачкой.
+    const at = new Date('2026-09-07T10:00:00Z');
+    await db.update(exchangeRequests).set({ createdAt: at });
+
+    const seen: string[] = [];
+    let after: { createdAt: Date; id: string } | undefined;
+    for (let page = 0; page < 4; page += 1) {
+      const rows = await core.listExchangeRequests(merchant, {
+        limit: 2,
+        ...(after ? { after } : {}),
+      });
+      if (rows.length === 0) break;
+      seen.push(...rows.map((row) => row.id));
+      const last = rows[rows.length - 1]!;
+      after = { createdAt: last.createdAt, id: last.id };
+    }
+
+    expect(seen).toHaveLength(5);
+    expect(new Set(seen).size).toBe(5);
+  });
+});
+

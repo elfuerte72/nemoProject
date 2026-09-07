@@ -41,6 +41,34 @@ describe('письма об аккаунте', () => {
     expect(mail.subject).toBe('Анкета отклонена');
     expect(mail.text).toContain('не отвечает на письма');
   });
+
+  /*
+   * Самого ключа в письме нет: он показан однажды в кабинете. Письмо
+   * нужно тому, кто ключ не выпускал, — и говорит ему, что делать.
+   */
+  it('о выпуске ключа называет подпись и хвост, но не сам ключ', () => {
+    const mail = mailFor({
+      kind: 'merchant-api-key-issued',
+      to: MERCHANT,
+      label: 'сайт',
+      hint: 'sk_live_…a1b2',
+    });
+    expect(mail.subject).toBe('Выпущен ключ API');
+    expect(mail.text).toContain('«сайт»');
+    expect(mail.text).toContain('sk_live_…a1b2');
+    expect(mail.text).toContain('отзовите');
+  });
+
+  it('об отзыве ключа говорит, что запросы с ним получают отказ', () => {
+    const mail = mailFor({
+      kind: 'merchant-api-key-revoked',
+      to: MERCHANT,
+      label: 'сайт',
+      hint: 'sk_live_…a1b2',
+    });
+    expect(mail.subject).toBe('Ключ API отозван');
+    expect(mail.text).toContain('отказ');
+  });
 });
 
 describe('письма о заявке', () => {
@@ -148,6 +176,8 @@ describe('письма набраны человеком', () => {
     { kind: 'merchant-password-reset', to: MERCHANT, token: 'abc' },
     { kind: 'merchant-application-decided', to: MERCHANT },
     { kind: 'merchant-application-decided', to: MERCHANT, rejectionReason: 'нет сайта' },
+    { kind: 'merchant-api-key-issued', to: MERCHANT, label: 'сайт', hint: 'sk_live_…a1b2' },
+    { kind: 'merchant-api-key-revoked', to: MERCHANT, label: 'сайт', hint: 'sk_live_…a1b2' },
     {
       kind: 'exchange-request-status',
       to: MERCHANT,

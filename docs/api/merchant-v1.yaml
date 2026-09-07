@@ -1,0 +1,751 @@
+openapi: 3.1.0
+info:
+  title: Tobee — API мерчанта
+  version: '1'
+  description: |
+    Обмен валют для бизнеса: курс, котировка, заявка, получатель.
+
+    Ключ выпускается в кабинете, раздел «API», и показывается один раз.
+    Передаётся в `Authorization: Bearer <ключ>` или в `x-api-key`. Ключи
+    боевого контура начинаются с `sk_live_`, песочницы — с `sk_test_`.
+
+    Деньги — строками: «100», «49.5». Время — ISO 8601 в UTC.
+
+    Ошибки — телом `{ "error": { "code", "message" } }`: код машинный,
+    слова человеку. Коды: `unauthorized`, `invalid_signature`,
+    `rate_limited`, `invalid_input`, `not_found`, `forbidden`,
+    `transition_not_allowed`, `conflict`, `unavailable`, `internal`.
+
+    Пределы — 100 вызовов в минуту и 1 000 в час на ключ; сверх них
+    ответ `429` с заголовком `retry-after` в секундах.
+
+    Подпись запроса — по желанию, включается в кабинете; включённая
+    обязательна. Заголовки `x-timestamp` (Unix-время в секундах) и
+    `x-signature` — HMAC-SHA256 ключом от строки
+    `METHOD\npath?query\ntimestamp\nsha256(body)`, шестнадцатеричный.
+    Окно пять минут, повтор той же подписи отвергается.
+servers:
+  - url: /api/v1
+    description: Тот же домен, что у кабинета — боевой или песочница.
+security:
+  - bearer: []
+  - apiKey: []
+tags:
+  - name: rates
+    description: Направления и курс
+  - name: exchange-requests
+    description: Заявки на обмен
+  - name: requisites
+    description: Сохранённые получатели
+
+paths:
+  /rates:
+    get:
+      tags: [rates]
+      summary: Направления и курс каждого
+      description: |
+        Только безналичные направления: наличные по API не подаются.
+        Курс назван для наименьшей суммы направления — это ориентир, с
+        ростом суммы он только лучше; точную цену на вашу сумму даёт
+        `POST /quote`. Пустой `rate` — источник котировок молчит; заявку
+        подать всё равно можно, курс ей назовёт менеджер.
+      responses:
+        '200':
+          description: Список направлений с курсом, минимум и срок оплаты
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pairs, minAmount, minAmountCurrency, payWithinMinutes]
+                properties:
+                  pairs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RatePair'
+                  minAmount:
+                    type: string
+                    description: Минимальная сумма обмена, в `minAmountCurrency`
+                  minAmountCurrency:
+                    type: string
+                  payWithinMinutes:
+                    type: integer
+                    description: Сколько минут после выдачи реквизитов ждут оплату
+              example:
+                pairs:
+                  - from: USDT
+                    to: RUB
+                    rate: '81.53'
+                    quotedAt: '2026-09-07T10:00:00.000Z'
+                    minAmountUsd: null
+                  - from: RUB
+                    to: THB
+                    rate: '0.3821'
+                    quotedAt: '2026-09-07T10:00:00.000Z'
+                    minAmountUsd: null
+                  - from: USDT
+                    to: EUR
+                    rate: '0.8492'
+                    quotedAt: '2026-09-07T10:00:00.000Z'
+                    minAmountUsd: '500'
+                minAmount: '35'
+                minAmountCurrency: USDT
+                payWithinMinutes: 120
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /quote:
+    post:
+      tags: [rates]
+      summary: Котировка на сумму
+      description: |
+        Сумма называется с любой стороны: `side: "from"` — сколько
+        отдаёте, `side: "to"` — сколько должно прийти получателю. Ответ
+        несёт обе стороны, курс и `quotedAt`: подача с этой отметкой в
+        пять минут идёт по показанному курсу.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteInput'
+            example:
+              from: USDT
+              to: RUB
+              amount: '100'
+              side: from
+      responses:
+        '200':
+          description: Котировка
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [quote]
+                properties:
+                  quote:
+                    $ref: '#/components/schemas/Quote'
+              example:
+                quote:
+                  from: { currency: USDT, amount: '100' }
+                  to: { currency: RUB, amount: '8153' }
+                  rate: '81.53'
+                  quotedAt: '2026-09-07T10:00:00.000Z'
+                  payoutDecimals: 2
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/InvalidInput'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /exchange-requests:
+    get:
+      tags: [exchange-requests]
+      summary: Свои заявки
+      description: |
+        Свежие первыми. Страница продолжается курсором: `nextCursor` из
+        ответа передаётся параметрами `after` и `afterId`. Один только
+        `after` не годится — две заявки, поданные в одну миллисекунду,
+        терялись бы.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ExchangeRequestStatus'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: after
+          in: query
+          description: '`createdAt` последней показанной заявки'
+          schema: { type: string, format: date-time }
+        - name: afterId
+          in: query
+          description: '`id` последней показанной заявки'
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Страница заявок
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExchangeRequest'
+                  nextCursor:
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        required: [after, afterId]
+                        properties:
+                          after: { type: string, format: date-time }
+                          afterId: { type: string, format: uuid }
+              example:
+                items:
+                  - id: 3f1c2a9e-5b7d-4c0e-9a11-2f6d8e4b7c31
+                    status: rate_confirmed
+                    from: { currency: USDT, amount: '100' }
+                    to: { currency: RUB, amount: '8153' }
+                    rate: '81.53'
+                    reference: booking-1024
+                    requisitesId: 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d
+                    paymentInstructions: 'Кошелёк TRC20: TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e'
+                    payBefore: '2026-09-07T12:00:00.000Z'
+                    cancelReason: null
+                    createdAt: '2026-09-07T09:50:00.000Z'
+                    updatedAt: '2026-09-07T10:00:00.000Z'
+                    completedAt: null
+                nextCursor: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/InvalidInput'
+    post:
+      tags: [exchange-requests]
+      summary: Подать заявку
+      description: |
+        Заголовок `Idempotency-Key` обязателен: повтор с тем же ключом
+        возвращает ту же заявку, а не заводит вторую — сеть рвётся
+        посреди ответа, и без ключа обмен оплачивался бы дважды.
+
+        Получатель — либо `requisitesId` сохранённой записи, либо
+        `payout` прямо в теле: реквизиты покупателя проверяются теми же
+        правилами, что и в форме, заводятся записью и сразу
+        архивируются. Ровно одно из двух.
+
+        `quotedAt` — из ответа `/quote`: заявка уйдёт по тому курсу.
+        Без отметки или с отметкой старше пяти минут — по текущему.
+        `side: "to"` считается обратным счётом на ту же отметку.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 200 }
+          example: booking-1024
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeRequestInput'
+            example:
+              from: USDT
+              to: RUB
+              amount: '100'
+              side: from
+              reference: booking-1024
+              quotedAt: '2026-09-07T10:00:00.000Z'
+              payout:
+                kind: card
+                bankName: Т-Банк
+                cardNumber: '4111111111111111'
+      responses:
+        '201':
+          description: Заявка принята; повтор по ключу отдаёт её же
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/ExchangeRequest'
+              example:
+                request:
+                  id: 3f1c2a9e-5b7d-4c0e-9a11-2f6d8e4b7c31
+                  status: new
+                  from: { currency: USDT, amount: '100' }
+                  to: { currency: RUB, amount: '8153' }
+                  rate: '81.53'
+                  reference: booking-1024
+                  requisitesId: 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d
+                  paymentInstructions: null
+                  payBefore: null
+                  cancelReason: null
+                  createdAt: '2026-09-07T10:00:05.000Z'
+                  updatedAt: '2026-09-07T10:00:05.000Z'
+                  completedAt: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Мерчант ещё не одобрен или отключён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: forbidden
+                  message: 'Доступ к обмену закрыт: напишите в поддержку'
+        '422':
+          $ref: '#/components/responses/InvalidInput'
+
+  /exchange-requests/{id}:
+    get:
+      tags: [exchange-requests]
+      summary: Одна заявка
+      description: Чужая заявка отвечает «не найдена» — как несуществующая.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Заявка
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/ExchangeRequest'
+              example:
+                request:
+                  id: 3f1c2a9e-5b7d-4c0e-9a11-2f6d8e4b7c31
+                  status: completed
+                  from: { currency: USDT, amount: '100' }
+                  to: { currency: RUB, amount: '8153' }
+                  rate: '81.53'
+                  reference: booking-1024
+                  requisitesId: 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d
+                  paymentInstructions: 'Кошелёк TRC20: TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e'
+                  payBefore: null
+                  cancelReason: null
+                  createdAt: '2026-09-07T09:50:00.000Z'
+                  updatedAt: '2026-09-07T11:20:00.000Z'
+                  completedAt: '2026-09-07T11:20:00.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /exchange-requests/{id}/cancel:
+    post:
+      tags: [exchange-requests]
+      summary: Отменить заявку
+      description: |
+        Пока её не взяли в работу. Дальше отменяет менеджер — по заявке
+        уже могли уйти деньги; ответ `409`.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Заявка отменена
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/ExchangeRequest'
+              example:
+                request:
+                  id: 3f1c2a9e-5b7d-4c0e-9a11-2f6d8e4b7c31
+                  status: cancelled
+                  from: { currency: USDT, amount: '100' }
+                  to: { currency: RUB, amount: '8153' }
+                  rate: '81.53'
+                  reference: booking-1024
+                  requisitesId: 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d
+                  paymentInstructions: null
+                  payBefore: null
+                  cancelReason: 'Отменена клиентом'
+                  createdAt: '2026-09-07T09:50:00.000Z'
+                  updatedAt: '2026-09-07T09:55:00.000Z'
+                  completedAt: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Заявку уже взяли в работу
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: transition_not_allowed
+                  message: 'Заявку уже взял менеджер: отменить её может только он'
+
+  /requisites:
+    get:
+      tags: [requisites]
+      summary: Сохранённые получатели
+      description: Только не архивные. Записи, заведённые через `payout` в подаче, сюда не попадают.
+      responses:
+        '200':
+          description: Список записей
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Requisites'
+              example:
+                items:
+                  - id: 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d
+                    kind: wallet
+                    bankName: null
+                    phone: null
+                    cardLast4: null
+                    network: TRC20
+                    addressHint: 'TQmX…aU6e'
+                    holderName: null
+                    accountLast4: null
+                    qrHint: null
+                    alipayAccount: null
+                    isAvailable: true
+                    createdAt: '2026-09-01T08:00:00.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [requisites]
+      summary: Сохранить получателя
+      description: |
+        Способ целиком: телефон, карта, кошелёк с сетью, тайский счёт,
+        PromptPay-QR, Alipay по аккаунту или по QR. Номер карты сходится
+        по Луну, адрес — с формой своей сети; отказ словами.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequisiteInput'
+            example:
+              kind: wallet
+              network: TRC20
+              address: TQmXk9sPzL4nR2vB7cH1dF8gJ5wYt3aU6e
+      responses:
+        '201':
+          description: Запись заведена
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requisites]
+                properties:
+                  requisites:
+                    $ref: '#/components/schemas/Requisites'
+              example:
+                requisites:
+                  id: 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d
+                  kind: wallet
+                  bankName: null
+                  phone: null
+                  cardLast4: null
+                  network: TRC20
+                  addressHint: 'TQmX…aU6e'
+                  holderName: null
+                  accountLast4: null
+                  qrHint: null
+                  alipayAccount: null
+                  isAvailable: true
+                  createdAt: '2026-09-07T10:00:00.000Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/InvalidInput'
+
+  /requisites/{id}:
+    delete:
+      tags: [requisites]
+      summary: Удалить получателя
+      description: На деле — архив; поданные заявки продолжают на запись ссылаться.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Запись убрана из списка
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
+              example:
+                ok: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: '`Authorization: Bearer sk_live_…`'
+    apiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  parameters:
+    RequestId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Ключ не подходит, отозван, мерчант отключён или подпись не сошлась
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: unauthorized
+              message: 'Ключ отозван: выпустите новый в кабинете'
+    InvalidInput:
+      description: Запрос не проходит правило — словами, что исправить
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: invalid_input
+              message: 'Минимальная сумма обмена — 35 USDT'
+    NotFound:
+      description: Нет такого — или он не ваш
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: not_found
+              message: 'Заявка не найдена'
+    Unavailable:
+      description: Источник котировок молчит; повторить можно как есть
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: unavailable
+              message: 'Курс сейчас недоступен: источник котировок молчит. Заявку подать можно — курс ей назовёт менеджер'
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - unauthorized
+                - invalid_signature
+                - rate_limited
+                - invalid_input
+                - not_found
+                - forbidden
+                - transition_not_allowed
+                - conflict
+                - unavailable
+                - internal
+            message:
+              type: string
+
+    Money:
+      type: object
+      required: [currency, amount]
+      properties:
+        currency: { type: string, example: USDT }
+        amount:
+          type: [string, 'null']
+          description: Строкой, без потери точности
+          example: '100'
+
+    ExchangeRequestStatus:
+      type: string
+      enum: [new, in_progress, rate_confirmed, payment_received, completed, cancelled]
+      description: |
+        `new` — ждёт менеджера; `in_progress` — взята в работу;
+        `rate_confirmed` — реквизиты выданы, ждём оплату до `payBefore`;
+        `payment_received` — деньги у сервиса; `completed` — отправлены
+        получателю; `cancelled` — отменена, причина в `cancelReason`.
+
+    RatePair:
+      type: object
+      required: [from, to, rate, quotedAt, minAmountUsd]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        rate:
+          type: [string, 'null']
+          description: Сколько `to` за единицу `from`; пусто — источник молчит
+        quotedAt: { type: [string, 'null'], format: date-time }
+        minAmountUsd:
+          type: [string, 'null']
+          description: Свой минимум направления в долларах, если задан
+
+    QuoteInput:
+      type: object
+      required: [from, to, amount]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        amount: { type: string, description: Строкой }
+        side:
+          type: string
+          enum: [from, to]
+          default: from
+          description: С какой стороны названа сумма
+        payoutMethod:
+          type: string
+          enum: [bank, wallet]
+          description: Куда уйдут деньги; у бата и юаня от этого зависит ставка
+
+    Quote:
+      type: object
+      required: [from, to, rate, quotedAt, payoutDecimals]
+      properties:
+        from: { $ref: '#/components/schemas/Money' }
+        to: { $ref: '#/components/schemas/Money' }
+        rate: { type: string }
+        quotedAt: { type: string, format: date-time }
+        payoutDecimals:
+          type: integer
+          description: До скольких знаков округлена сумма получателя
+
+    ExchangeRequestInput:
+      allOf:
+        - $ref: '#/components/schemas/QuoteInput'
+        - type: object
+          properties:
+            reference:
+              type: string
+              maxLength: 200
+              description: Свой номер сделки — виден менеджеру
+            quotedAt: { type: string, format: date-time }
+            requisitesId: { type: string, format: uuid }
+            payout: { $ref: '#/components/schemas/RequisiteInput' }
+
+    ExchangeRequest:
+      type: object
+      required:
+        - id
+        - status
+        - from
+        - to
+        - rate
+        - reference
+        - requisitesId
+        - paymentInstructions
+        - payBefore
+        - cancelReason
+        - createdAt
+        - updatedAt
+        - completedAt
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/ExchangeRequestStatus' }
+        from: { $ref: '#/components/schemas/Money' }
+        to: { $ref: '#/components/schemas/Money' }
+        rate:
+          type: [string, 'null']
+          description: Обязательство сервиса; пусто, пока курс не назвал менеджер
+        reference: { type: [string, 'null'] }
+        requisitesId: { type: [string, 'null'], format: uuid }
+        paymentInstructions:
+          type: [string, 'null']
+          description: Куда платить; появляется в `rate_confirmed`
+        payBefore:
+          type: [string, 'null']
+          format: date-time
+          description: До какого момента ждут оплату
+        cancelReason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+
+    RequisiteInput:
+      description: Способ получения целиком; `kind` выбирает набор полей
+      oneOf:
+        - type: object
+          required: [kind, bankName, phone]
+          properties:
+            kind: { const: phone }
+            bankName: { type: string }
+            phone: { type: string }
+        - type: object
+          required: [kind, bankName, cardNumber]
+          properties:
+            kind: { const: card }
+            bankName: { type: string }
+            cardNumber: { type: string }
+        - type: object
+          required: [kind, network, address]
+          properties:
+            kind: { const: wallet }
+            network: { type: string, example: TRC20 }
+            address: { type: string }
+        - type: object
+          required: [kind, bankName, accountNumber, holderName]
+          properties:
+            kind: { const: account }
+            bankName: { type: string }
+            accountNumber: { type: string }
+            holderName: { type: string, description: Латиницей, как в банке }
+        - type: object
+          required: [kind, qr, holderName]
+          properties:
+            kind: { const: promptpay }
+            qr: { type: string, description: Содержимое QR строкой }
+            holderName: { type: string }
+        - type: object
+          required: [kind, account, holderName]
+          properties:
+            kind: { const: alipay }
+            account: { type: string, description: Телефон или e-mail аккаунта }
+            holderName: { type: string }
+        - type: object
+          required: [kind, qr, holderName]
+          properties:
+            kind: { const: alipay_qr }
+            qr: { type: string }
+            holderName: { type: string }
+
+    Requisites:
+      type: object
+      description: Запись получателя — хвосты, а не номера
+      required: [id, kind, isAvailable, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [phone, card, wallet, account, promptpay, alipay, alipay_qr]
+        bankName: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+        cardLast4: { type: [string, 'null'] }
+        network: { type: [string, 'null'] }
+        addressHint: { type: [string, 'null'] }
+        holderName: { type: [string, 'null'] }
+        accountLast4: { type: [string, 'null'] }
+        qrHint: { type: [string, 'null'] }
+        alipayAccount: { type: [string, 'null'] }
+        isAvailable:
+          type: boolean
+          description: Ложь у кошелька в сети, которую сервис временно погасил
+        createdAt: { type: string, format: date-time }

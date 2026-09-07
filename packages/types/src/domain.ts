@@ -132,6 +132,63 @@ export const requisiteKinds = [
 export const requisiteKindSchema = z.enum(requisiteKinds);
 export type RequisiteKind = z.infer<typeof requisiteKindSchema>;
 
+/** Имя получателя: у тайского счёта, PromptPay и Alipay. */
+export const MAX_HOLDER_NAME = 100;
+
+/**
+ * Реквизит, как он приходит в запросе — из формы Mini App и из тела
+ * запроса мерчанта по API.
+ *
+ * Разобран по способу получения, а не собран из необязательных полей:
+ * сеть у карты должна отвергаться уже разбором запроса, а не доходить
+ * до ограничения базы. Одна схема на оба пути, потому что путь через
+ * API не должен быть слабее пути через форму — и не должен быть
+ * другим.
+ *
+ * Номер карты, адрес, номер счёта и содержимое QR дальше в ответах не
+ * появляются никогда; QR приходит строкой — картинку читают на
+ * устройстве (docs/adr/0012).
+ */
+export const requisiteInputSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('phone'),
+    bankName: z.string().min(1).max(100),
+    phone: z.string().min(1).max(32),
+  }),
+  z.object({
+    kind: z.literal('card'),
+    bankName: z.string().min(1).max(100),
+    cardNumber: z.string().min(1).max(40),
+  }),
+  z.object({
+    kind: z.literal('wallet'),
+    network: networkCodeSchema,
+    address: z.string().min(1).max(120),
+  }),
+  z.object({
+    kind: z.literal('account'),
+    bankName: z.string().min(1).max(100),
+    accountNumber: z.string().min(1).max(40),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+  z.object({
+    kind: z.literal('promptpay'),
+    qr: z.string().min(1).max(1000),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+  z.object({
+    kind: z.literal('alipay'),
+    account: z.string().min(1).max(120),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+  z.object({
+    kind: z.literal('alipay_qr'),
+    qr: z.string().min(1).max(1000),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+]);
+export type RequisiteInput = z.infer<typeof requisiteInputSchema>;
+
 /**
  * Роды записи в валютах сервиса — рублях и USDT, тех, что он держит сам.
  *
@@ -388,7 +445,6 @@ export function looksLikeThaiAccountNumber(value: string): boolean {
  * набравший его по-русски, сверить менеджеру ничего не даст. Тайское
  * и китайское письмо не запрещены: у местного получателя имя своё.
  */
-export const MAX_HOLDER_NAME = 100;
 const CYRILLIC = /[\u0400-\u04ff]/;
 
 export function looksLikeHolderName(value: string): boolean {

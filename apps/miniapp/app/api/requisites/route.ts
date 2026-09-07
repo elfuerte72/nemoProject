@@ -1,6 +1,5 @@
-import { z } from 'zod';
 import { InvalidInputError } from '@nemo/core';
-import { MAX_HOLDER_NAME, networkCodeSchema } from '@nemo/types';
+import { requisiteInputSchema } from '@nemo/types';
 import { errorResponse, json, requireInitData } from '@/lib/api';
 import { getCore } from '@/lib/core';
 
@@ -12,53 +11,14 @@ export const dynamic = 'force-dynamic';
  *
  * Номер карты, адрес кошелька, номер счёта и содержимое QR уходят сюда
  * открытыми и дальше в ответах не появляются никогда: наружу
- * возвращаются последние четыре цифры, края адреса и хвост QR. Логировать тело этого запроса нельзя — здесь единственное
- * место во всём клиентском приложении, где реквизит вообще виден.
+ * возвращаются последние четыре цифры, края адреса и хвост QR.
+ * Логировать тело этого запроса нельзя — здесь единственное место во
+ * всём клиентском приложении, где реквизит вообще виден.
  *
- * Схема разобрана по способу получения, а не собрана из необязательных
- * полей: сеть у карты должна отвергаться уже разбором запроса, а не
- * доходить до ограничения базы.
+ * Схема — общая с API мерчанта (`requisiteInputSchema` в `@nemo/types`):
+ * путь через API не должен быть ни слабее, ни другим.
  */
-const saveSchema = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('phone'),
-    bankName: z.string().min(1).max(100),
-    phone: z.string().min(1).max(32),
-  }),
-  z.object({
-    kind: z.literal('card'),
-    bankName: z.string().min(1).max(100),
-    cardNumber: z.string().min(1).max(40),
-  }),
-  z.object({
-    kind: z.literal('wallet'),
-    network: networkCodeSchema,
-    address: z.string().min(1).max(120),
-  }),
-  z.object({
-    kind: z.literal('account'),
-    bankName: z.string().min(1).max(100),
-    accountNumber: z.string().min(1).max(40),
-    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
-  }),
-  // QR приходит строкой: картинку клиент читает у себя на телефоне, и
-  // сюда она не попадает никогда (docs/adr/0012).
-  z.object({
-    kind: z.literal('promptpay'),
-    qr: z.string().min(1).max(1000),
-    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
-  }),
-  z.object({
-    kind: z.literal('alipay'),
-    account: z.string().min(1).max(120),
-    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
-  }),
-  z.object({
-    kind: z.literal('alipay_qr'),
-    qr: z.string().min(1).max(1000),
-    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
-  }),
-]);
+const saveSchema = requisiteInputSchema;
 
 export async function GET(request: Request): Promise<Response> {
   try {

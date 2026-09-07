@@ -1,4 +1,17 @@
-import { and, asc, count, desc, eq, gte, inArray, lte, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lt,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import {
   clientRequisites,
   currencies,
@@ -676,9 +689,21 @@ export async function listExchangeRequests(
   if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
   if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
   if (filter.after) {
+    /*
+     * Пара «время и идентификатор» — двумя условиями, а не кортежем в
+     * сыром `sql`: без колонки рядом драйвер не знает, что перед ним
+     * дата, и отправлял её строкой — вторая страница отвечала
+     * пятисотым. Типизированные операторы переводят `Date` сами; так
+     * же устроен курсор очереди в `exchange-workflow.ts`.
+     */
     conditions.push(
-      sql`(${exchangeRequests.createdAt}, ${exchangeRequests.id})
-        < (${filter.after.createdAt}, ${filter.after.id})`,
+      or(
+        lt(exchangeRequests.createdAt, filter.after.createdAt),
+        and(
+          eq(exchangeRequests.createdAt, filter.after.createdAt),
+          lt(exchangeRequests.id, filter.after.id),
+        ),
+      )!,
     );
   }
 

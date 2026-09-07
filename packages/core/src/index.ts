@@ -84,6 +84,23 @@ import {
 } from './networks.js';
 import { pingDatabase } from './health.js';
 import { getQuote, type QuoteInput } from './rates.js';
+import {
+  authenticateApiKey,
+  issueApiKey,
+  listApiKeys,
+  listMerchantApiKeys,
+  revokeApiKey,
+  setSignatureRequired,
+} from './api-keys.js';
+import {
+  countApiRequestLog,
+  listApiRequestLog,
+  logApiRequest,
+  purgeApiRequestLog,
+  summarizeApiRequestLog,
+  type ApiRequestLogFilter,
+  type ApiRequestLogInput,
+} from './api-log.js';
 import { getServiceMarkupBps } from './settings.js';
 import { submitInquiry, type SubmitInquiryInput } from './inquiries.js';
 import {
@@ -292,6 +309,29 @@ export function createCore(ctx: CoreConfig) {
       rejectMerchant(ctx, actor, merchantId, input),
     setMerchantActive: (actor: Actor, merchantId: string, isActive: boolean) =>
       setMerchantActive(ctx, actor, merchantId, isActive),
+
+    /*
+     * Ключи API — мерчант без кабинета: адаптер узнаёт его по секрету
+     * и отдаёт ядру тот же `Actor`. Узнавание без исполнителя — оно
+     * его и устанавливает, как вход. Журнал вызовов пишет адаптер, а
+     * чистит планировщик; ни у того, ни у другого исполнителя нет.
+     */
+    issueApiKey: (actor: Actor, input: { label: string }) => issueApiKey(ctx, actor, input),
+    revokeApiKey: (actor: Actor, keyId: string) => revokeApiKey(ctx, actor, keyId),
+    listApiKeys: (actor: Actor) => listApiKeys(ctx, actor),
+    listMerchantApiKeys: (actor: Actor, merchantId: string) =>
+      listMerchantApiKeys(ctx, actor, merchantId),
+    authenticateApiKey: (secret: string) => authenticateApiKey(ctx, secret),
+    setSignatureRequired: (actor: Actor, required: boolean) =>
+      setSignatureRequired(ctx, actor, required),
+    logApiRequest: (input: ApiRequestLogInput) => logApiRequest(ctx, input),
+    listApiRequestLog: (actor: Actor, filter?: ApiRequestLogFilter) =>
+      listApiRequestLog(ctx, actor, filter),
+    countApiRequestLog: (actor: Actor, filter?: Omit<ApiRequestLogFilter, 'limit' | 'after'>) =>
+      countApiRequestLog(ctx, actor, filter),
+    summarizeApiRequestLog: (actor: Actor, period: { since: Date }) =>
+      summarizeApiRequestLog(ctx, actor, period),
+    purgeApiRequestLog: (olderThan: Date) => purgeApiRequestLog(ctx, olderThan),
 
     getExchangeTerms: () => getExchangeTerms(ctx),
     getQuote: (input: QuoteInput) => getQuote(ctx, input),
@@ -576,6 +616,21 @@ export type {
   MerchantView,
   RegisterMerchantInput,
 } from './merchants.js';
+export type {
+  ApiKeyAuth,
+  ApiKeyPrefix,
+  ApiKeyResult,
+  ApiKeyView,
+  IssuedApiKey,
+} from './api-keys.js';
+export { API_KEY_PREFIXES, isApiKeyPrefix } from './api-keys.js';
+export type {
+  ApiRequestLogEntry,
+  ApiRequestLogFilter,
+  ApiRequestLogInput,
+  ApiRequestLogSummary,
+} from './api-log.js';
+export { API_LOG_RETENTION_DAYS, isFailedApiStatus } from './api-log.js';
 export type { LiveEvent, LiveTopic } from './live-events.js';
 export { LIVE_TOPICS } from './live-events.js';
 export type {

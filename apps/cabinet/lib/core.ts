@@ -1,4 +1,5 @@
 import { createCore, createDatabase, type Core } from '@nemo/core';
+import { ratesFromEnvironment } from '@nemo/rates';
 
 /**
  * Модуль операций кабинета мерчанта.
@@ -7,6 +8,10 @@ import { createCore, createDatabase, type Core } from '@nemo/core';
  * может (docs/adr/0002). Мерчант заводит реквизиты получателя и видит
  * свои заявки, но расшифровать номер карты можно только в панели —
  * ровно как у клиента в Mini App.
+ *
+ * Источник котировок — тот же, что у Mini App, из тех же переменных:
+ * курс заявки, поданной по API, — такое же обязательство сервиса, как
+ * у поданной с экрана, и назначать его должен один и тот же путь.
  *
  * Экземпляр держится на `globalThis`, а не в переменной модуля: Next
  * пересобирает модули в разработке на каждую правку, и с переменной у
@@ -30,6 +35,10 @@ export function getCore(): Core {
   holder[KEY] = createCore({
     db: createDatabase(url),
     requisites: { publicKey: process.env.REQUISITES_PUBLIC_KEY },
+    rateSource: ratesFromEnvironment(),
+    // `sk_live_` на боевом, `sk_test_` на песочнице: не задан — выпуск
+    // ключа отвечает ошибкой развёртывания, а не отказом мерчанту.
+    apiKeyPrefix: process.env.API_KEY_PREFIX,
   });
   return holder[KEY];
 }

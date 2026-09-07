@@ -8,7 +8,8 @@ import type { NavGroup } from '@nemo/ui/nav';
  *
  * Порядок отвечает на вопросы по мере их появления: что у меня
  * происходит, что с моими заявками, чем это делать программно, кто я
- * такой и куда писать, если что-то не так.
+ * такой и куда писать, если что-то не так. Раздел «API» живёт по
+ * адресу `/keys`: `/api` занят самими маршрутами.
  */
 
 export const NAV_GROUPS: readonly NavGroup[] = [
@@ -18,6 +19,16 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { href: '/', label: 'Обзор', icon: 'home' },
       { href: '/requests', label: 'Заявки', icon: 'exchange', count: 'active' },
+    ],
+  },
+  {
+    key: 'integration',
+    title: 'Интеграция',
+    items: [
+      { href: '/keys', label: 'API', icon: 'key' },
+      { href: '/calls', label: 'Журнал вызовов', icon: 'log' },
+      { href: '/docs', label: 'Документация', icon: 'book' },
+      { href: '/sandbox', label: 'Песочница', icon: 'plug' },
     ],
   },
   {

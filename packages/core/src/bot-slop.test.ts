@@ -299,6 +299,8 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
     to: MERCHANT,
     rejectionReason: 'не отвечает на письма',
   },
+  { kind: 'merchant-api-key-issued', to: MERCHANT, label: 'сайт', hint: 'sk_live_…a1b2' },
+  { kind: 'merchant-api-key-revoked', to: MERCHANT, label: 'сайт', hint: 'sk_live_…a1b2' },
 ];
 
 /**

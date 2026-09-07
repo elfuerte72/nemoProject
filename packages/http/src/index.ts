@@ -33,6 +33,28 @@ export function statusForCoreError(code: CoreErrorCode): number {
 }
 
 /**
+ * Отказ ядра — по коду, а не только по классу.
+ *
+ * `instanceof` подводит в разработке: `next dev` собирает маршрут и
+ * хук запуска в разные бандлы, у каждого своя копия `@nemo/core`, а
+ * ядро на `globalThis` одно — и брошенный им `InvalidInputError` в
+ * соседнем бандле классом не узнаётся. До 7 сентября 2026 такой отказ
+ * отвечал пятисотым на любой странице панели в разработке. Код отказа
+ * — часть договора ошибок, и узнать по нему надёжнее, чем по классу:
+ * у ошибки базы код числовой, у сетевой — строка вида `ECONNREFUSED`,
+ * и ни та, ни другая в карту не попадают.
+ */
+export function isCoreError(error: unknown): error is CoreError {
+  if (error instanceof CoreError) return true;
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    Object.hasOwn(STATUS_BY_CODE, error.code)
+  );
+}
+
+/**
  * JSON без потери точности: `telegram_user_id` — bigint, денежные
  * величины — строки, и `JSON.stringify` на первом же bigint бросает.
  */
@@ -48,7 +70,7 @@ export function json(payload: unknown, init?: ResponseInit): Response {
 
 /** Ответ на отказ операции. `null`, если ошибка пришла не из ядра. */
 export function coreErrorResponse(error: unknown): Response | null {
-  if (!(error instanceof CoreError)) {
+  if (!isCoreError(error)) {
     return null;
   }
   return json({ error: error.message }, { status: statusForCoreError(error.code) });

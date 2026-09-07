@@ -50,6 +50,8 @@ export function renderMerchantMail(notification: Notification): MerchantMail | n
     case 'merchant-email-verification':
     case 'merchant-password-reset':
     case 'merchant-application-decided':
+    case 'merchant-api-key-issued':
+    case 'merchant-api-key-revoked':
       return merchantAccountMail(notification);
     case 'exchange-request-status':
       return notification.to.kind === 'merchant' ? exchangeMail(notification) : null;
@@ -109,6 +111,28 @@ export function merchantAccountMail(
               'Написать по этому поводу можно в поддержку — ссылка есть в ' +
               'кабинете.',
           };
+    /*
+     * Самого ключа в письмах нет: он показан один раз в кабинете, и
+     * почтовый ящик — не место для него. Письмо нужно тому, кто ключ
+     * не выпускал: это повод отозвать его и сменить пароль.
+     */
+    case 'merchant-api-key-issued':
+      return {
+        subject: 'Выпущен ключ API',
+        text:
+          `В кабинете выпущен ключ API «${notification.label}» (${notification.hint}). ` +
+          'Сам ключ показан один раз при выпуске и письмом не отправляется.\n' +
+          'Если ключ выпускали не вы, отзовите его в разделе «API» и смените ' +
+          'пароль.',
+      };
+    case 'merchant-api-key-revoked':
+      return {
+        subject: 'Ключ API отозван',
+        text:
+          `Ключ API «${notification.label}» (${notification.hint}) отозван и больше ` +
+          'не принимается. Запросы с ним получают отказ; новый ключ выпускается ' +
+          'в разделе «API».',
+      };
   }
 }
 

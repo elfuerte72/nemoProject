@@ -20,8 +20,7 @@ export const dynamic = 'force-dynamic';
  * кнопка при этом не разграничение доступа, а его видимость: отказывает
  * сама операция, и маршрут отвечает менеджеру тем же отказом.
  *
- * Ключи, вебхуки и статистика встанут сюда позже — их дописывают свои
- * тикеты.
+ * Вебхуки и статистика встанут сюда позже — их дописывают свои тикеты.
  */
 export default async function MerchantPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requireStaffActorOrNull();
@@ -45,7 +44,10 @@ export default async function MerchantPage({ params }: { params: Promise<{ id: s
    * остальными менеджер идёт в стол по ссылке — там курсор и «показать
    * ещё».
    */
-  const requests = await core.listMerchantExchangeRequests(actor, id, { limit: 10 });
+  const [requests, keys] = await Promise.all([
+    core.listMerchantExchangeRequests(actor, id, { limit: 10 }),
+    core.listMerchantApiKeys(actor, id),
+  ]);
 
   return (
     <main className="page">
@@ -93,6 +95,47 @@ export default async function MerchantPage({ params }: { params: Promise<{ id: s
           {actor.role === 'admin' ? (
             <MerchantActions merchantId={merchant.id} status={merchant.status} />
           ) : undefined}
+
+          {/*
+            Ключи без секретов — их нет и у нас — и последняя активность:
+            «интеграция встала» отличается от «ключом не пользовались» по
+            этой колонке. Отзывает ключи сам мерчант; панель только видит.
+          */}
+          <section className="section">
+            <div className="section__head">
+              <h2 className="section__title">Ключи API</h2>
+              <span className="section__rule" />
+            </div>
+            {keys.length === 0 ? (
+              <p className="note">Ключей не выпускал: по API заявок не подаёт.</p>
+            ) : (
+              <ul className="rows rows--tight">
+                {keys.map((key) => (
+                  <li key={key.id} className="row">
+                    <span className="row__main">
+                      <span className="row__title">
+                        {key.label} <span className="mono muted">{key.hint}</span>
+                      </span>
+                      <span className="row__meta">
+                        выпущен <Moment at={key.issuedAt.toISOString()} mode="day" />
+                        {key.lastUsedAt ? (
+                          <>
+                            {' · последний вызов '}
+                            <Moment at={key.lastUsedAt.toISOString()} />
+                          </>
+                        ) : (
+                          ' · вызовов не было'
+                        )}
+                      </span>
+                    </span>
+                    <span className={key.revokedAt ? 'pill pill--off' : 'pill'}>
+                      {key.revokedAt ? 'Отозван' : 'Действует'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
           <section className="section">
             <div className="section__head">
