@@ -1,10 +1,11 @@
 import { cache } from 'react';
-import { CoreError, type AnalyticsPeriod, type MerchantStats } from '@nemo/core';
+import { redirect } from 'next/navigation';
+import type { AnalyticsPeriod, MerchantStats } from '@nemo/core';
 import type { ExchangeRequestStatus } from '@nemo/types';
 import { requireViewer, type MerchantViewer } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import { OPEN_STATUSES } from '@/lib/request-rows';
-import { SessionError } from '@/lib/session';
+import { viewerOrElse } from '@/lib/session';
 
 /**
  * Чтения, которые на одной странице спрашивают дважды.
@@ -20,24 +21,16 @@ import { SessionError } from '@/lib/session';
  * (`apps/admin/lib/counts.ts`).
  */
 
-export const viewer = cache(async (): Promise<MerchantViewer> => requireViewer());
-
 /**
- * То же для каркаса: `null` означает «нужно войти».
- *
- * Поверх той же памяти, а не рядом с ней: каркас спрашивает первым, а
- * раздел под ним — вторым, и два чтения сессии на страницу были бы
- * ровно тем, ради чего эта память и заведена.
+ * Без сессии — на вход, и из каркаса, и из раздела под ним одинаково:
+ * они рисуются параллельно, и редирект одного не отменяет чтения
+ * другого (см. `viewerOrElse`). Разделы под `(cabinet)` читают сессию
+ * только отсюда — прямой `requireViewer` на странице вернул бы ошибку в
+ * журнал; правило закреплено тестом в `session.test.ts`.
  */
-export async function viewerOrNull(): Promise<MerchantViewer | null> {
-  try {
-    return await viewer();
-  } catch (error) {
-    if (error instanceof SessionError) return null;
-    if (error instanceof CoreError && error.code === 'forbidden') return null;
-    throw error;
-  }
-}
+export const viewer = cache(
+  async (): Promise<MerchantViewer> => viewerOrElse(requireViewer, () => redirect('/login')),
+);
 
 /** Ник поддержки — общий на все экраны кабинета и на все письма. */
 export const supportUsername = cache(

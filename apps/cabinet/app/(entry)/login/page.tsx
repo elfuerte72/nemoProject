@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { viewerOrNull } from '@/lib/reads';
+import { viewerOrNull } from '@/lib/auth';
 import { LoginForm } from './login-form';
 
 export const dynamic = 'force-dynamic';

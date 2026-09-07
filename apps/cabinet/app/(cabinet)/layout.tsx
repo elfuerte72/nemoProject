@@ -1,4 +1,3 @@
-import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import type { MerchantSession } from '@nemo/core';
 import { Brand, Sidebar, Topbar } from '@nemo/ui';
@@ -6,7 +5,7 @@ import { TZ_COOKIE } from '@nemo/ui/period';
 import type { MerchantActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import { NAV_COLLAPSED_KEY, NAV_GROUPS } from '@/lib/nav';
-import { openCount, requestCounts, supportUsername, viewerOrNull } from '@/lib/reads';
+import { openCount, requestCounts, supportUsername, viewer } from '@/lib/reads';
 import { ResendVerification } from '@/app/ui/resend-verification';
 import { StateScreen } from '@/app/ui/state-screen';
 
@@ -26,11 +25,7 @@ export const dynamic = 'force-dynamic';
  * спрятанные кнопки.
  */
 export default async function CabinetLayout({ children }: { children: ReactNode }) {
-  const seen = await viewerOrNull();
-  if (!seen) {
-    redirect('/login');
-  }
-  const { actor, session } = seen;
+  const { actor, session } = await viewer();
 
   // Ник поддержки нужен только экранам состояния: активному кабинету он
   // не показывается, и спрашивать его на каждой странице незачем.

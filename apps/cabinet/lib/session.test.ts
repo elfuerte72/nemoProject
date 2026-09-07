@@ -1,6 +1,9 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { issueToken, readToken, SessionError } from './session';
+import { ForbiddenError } from '@nemo/core';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { issueToken, readToken, SessionError, viewerOrElse } from './session';
 
 /**
  * Подписанная кука кабинета.
@@ -62,3 +65,80 @@ function signOf(body: string): string {
   // а поколение — и должен пройти проверку подписи, чтобы дойти до него.
   return createHmac('sha256', secret).update(body).digest('base64url');
 }
+
+/**
+ * Страница без сессии уходит на вход, а не падает.
+ *
+ * Каркас кабинета и раздел под ним читают сессию параллельно: каркас
+ * делал редирект, а раздел успевал бросить отказ — посетитель получал
+ * свой 307, но в журнал контейнера на каждый заход без сессии ложилась
+ * «ошибка». Замечено 7 сентября 2026 на песочнице: журнал — то место,
+ * где ищут настоящие поломки, и ложная строка на каждого выходящего
+ * из сессии там стоит внимания.
+ */
+describe('viewerOrElse', () => {
+  const signIn = (): never => {
+    throw new Error('NEXT_REDIRECT');
+  };
+
+  it('без сессии зовёт вход, а отказ чтения наружу не отдаёт', async () => {
+    await expect(
+      viewerOrElse(async () => {
+        throw new SessionError('Нет сессии');
+      }, signIn),
+    ).rejects.toThrow('NEXT_REDIRECT');
+  });
+
+  it('на отказ ядра «forbidden» — тоже вход: поколение сменилось или мерчанта нет', async () => {
+    await expect(
+      viewerOrElse(async () => {
+        throw new ForbiddenError('Сессия устарела');
+      }, signIn),
+    ).rejects.toThrow('NEXT_REDIRECT');
+  });
+
+  it('чужую ошибку отдаёт как есть', async () => {
+    await expect(
+      viewerOrElse(async () => {
+        throw new Error('база не ответила');
+      }, signIn),
+    ).rejects.toThrow('база не ответила');
+  });
+
+  it('с сессией отдаёт прочитанное', async () => {
+    await expect(viewerOrElse(async () => ({ merchantId: 'm1' }), signIn)).resolves.toEqual({
+      merchantId: 'm1',
+    });
+  });
+
+  it('странице входа отдаёт то, что она попросила вместо отказа', async () => {
+    await expect(
+      viewerOrElse(async () => {
+        throw new SessionError('Нет сессии');
+      }, () => null),
+    ).resolves.toBeNull();
+  });
+});
+
+/**
+ * Правило, которое теряется молча: раздел под `(cabinet)` читает сессию
+ * только через `viewer()` из `lib/reads.ts`. Страница с прямым
+ * `requireViewer` рисуется параллельно с каркасом и без сессии снова
+ * пишет ошибку в журнал — заметит это только тот, кто в журнал
+ * заглянет. Тест того же рода, что и проверка порядка запуска в Mini App.
+ */
+describe('страницы кабинета читают сессию только через viewer()', () => {
+  const root = join(__dirname, '..', 'app', '(cabinet)');
+  const screens = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((name) =>
+    /(^|\/)(page|layout)\.tsx$/.test(name),
+  );
+
+  it('разделы есть', () => {
+    expect(screens.length).toBeGreaterThan(5);
+  });
+
+  it.each(screens)('%s', (name) => {
+    const source = readFileSync(join(root, name), 'utf8');
+    expect(source).not.toMatch(/\b(requireViewer|requireActor|readToken|viewerOrNull)\b/);
+  });
+});

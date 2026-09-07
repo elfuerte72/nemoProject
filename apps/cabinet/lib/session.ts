@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { isCoreError } from '@nemo/http';
 
 /**
  * Сессия кабинета мерчанта.
@@ -20,6 +21,43 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  */
 
 export class SessionError extends Error {}
+
+/**
+ * Отказ, который означает «нужно войти»: сессии нет или она не читается,
+ * либо ядро не признало её — поколение сменилось или мерчанта больше
+ * нет. Отказ ядра узнаётся по коду, а не по классу: в `next dev` у
+ * маршрута и у ядра разные копии класса (см. `isCoreError`).
+ */
+export function isSignedOut(error: unknown): boolean {
+  return error instanceof SessionError || (isCoreError(error) && error.code === 'forbidden');
+}
+
+/**
+ * Чтение сессии для страницы: без сессии — не ошибка, а то, что скажет
+ * вызывающий: разделам кабинета — на вход, странице входа — `null`.
+ *
+ * Каркас кабинета и раздел под ним — два серверных компонента, и Next
+ * рисует их параллельно. Пока каркас делал редирект, раздел успевал
+ * бросить отказ чтения: посетитель получал свой 307, а в журнал
+ * контейнера на каждый заход без сессии ложилась «ошибка» — в тот
+ * журнал, где ищут настоящие поломки. Поэтому на вход уходит само
+ * чтение, и уходит одинаково из любого компонента.
+ *
+ * Куда именно уходить, решает вызывающий: `redirect` из Next бросает
+ * своё исключение, и здесь его знать незачем — так помощник проверяется
+ * без Next.
+ */
+export async function viewerOrElse<T, F>(
+  read: () => Promise<T>,
+  onSignedOut: () => F,
+): Promise<T | F> {
+  try {
+    return await read();
+  } catch (error) {
+    if (isSignedOut(error)) return onSignedOut();
+    throw error;
+  }
+}
 
 export interface SessionPayload {
   readonly merchantId: string;
