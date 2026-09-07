@@ -9,6 +9,7 @@ import {
   looksLikeThaiAccountNumber,
   looksLikeWalletAddress,
   parsePromptPay,
+  defaultPayoutMethodFor,
   payoutMethodOf,
   promptPayHint,
   serviceAccountKindSuits,
@@ -211,6 +212,38 @@ describe('payoutMethodOf', () => {
     expect(payoutMethodOf({ kind: 'promptpay', promptpayIdType: 'ewallet' })).toBe('wallet');
     expect(payoutMethodOf({ kind: 'promptpay', promptpayIdType: 'phone' })).toBe('bank');
     expect(payoutMethodOf({ kind: 'promptpay', promptpayIdType: 'national_id' })).toBe('bank');
+  });
+});
+
+/**
+ * Способ выдачи валюты, когда записи клиента ещё нет.
+ *
+ * Цена зависит от способа, а спросить о ней экран обязан до того, как
+ * клиент выберет запись: курс он показывает сразу. Молча подставленный
+ * банк называл цену, по которой сервис юань не выдаёт вовсе.
+ */
+describe('defaultPayoutMethodFor', () => {
+  it('называет способ там, где он у валюты один', () => {
+    // Юань приходит только на Alipay, а он кошелёк — и другой цены у
+    // юаня не бывает.
+    expect(defaultPayoutMethodFor('CNY')).toBe('wallet');
+    // Рубли — телефон и карта, оба банк; USDT — криптокошелёк.
+    expect(defaultPayoutMethodFor('RUB')).toBe('bank');
+    expect(defaultPayoutMethodFor('USDT')).toBe('wallet');
+  });
+
+  it('не выбирает за клиента там, где способов два', () => {
+    // У бата счёт банковский, а PromptPay бывает и тем и другим:
+    // назвать один — значит назвать цену наугад. Банк здесь не догадка,
+    // а то, чем бат выдавался до появления сеток.
+    expect(defaultPayoutMethodFor('THB')).toBe('bank');
+  });
+
+  it('у валюты без записей остаётся банк', () => {
+    // Лира, рупия, рэнд — записей у них нет вовсе, сетки заведены на
+    // банк, и менять им способ нечем.
+    expect(defaultPayoutMethodFor('TRY')).toBe('bank');
+    expect(defaultPayoutMethodFor('eur')).toBe('bank');
   });
 });
 
