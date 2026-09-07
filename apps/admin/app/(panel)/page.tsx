@@ -2,16 +2,14 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { exchangeKinds, inProgressExchangeStatuses } from '@nemo/types';
+import { Greeting, Icon, Stat, Stats } from '@nemo/ui';
 import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { panelCounts } from '@/lib/counts';
 import { coreFilterFor, toExchangeRow, type DeskFilter } from '@/lib/exchange-rows';
 import { HowToRunRequest } from '@/app/ui/how-to';
-import { Greeting } from '@/app/ui/greeting';
-import { Icon } from '@/app/ui/icons';
-import { Stat, Stats } from '@/app/ui/stat';
 import { TABLE_PREFS_COOKIE, readTablePrefs } from '@/lib/table-prefs';
-import { TZ_COOKIE, readTzOffset, resolvePeriod } from '@/lib/period';
+import { TZ_COOKIE, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 import { DeskHead } from './desk-head';
 import { ExchangeTable } from './exchange-table';
 import { TablePrefsSheet } from './table-prefs-sheet';
@@ -67,7 +65,12 @@ export default async function DeskPage({
    * превращается в фильтр ядра для каждого раздела, знает
    * `coreFilterFor` — та же функция, что у маршрута дочитывания.
    */
-  const filter: DeskFilter = { q: query, kind: kind ?? '', status: status ?? '' };
+  const filter: DeskFilter = {
+    q: query,
+    kind: kind ?? '',
+    status: status ?? '',
+    merchant: single(params.merchant)?.trim() ?? '',
+  };
   const limit = prefs.pageSize;
   const common = { ...coreFilterFor('queue', filter), limit };
   const working = {
@@ -111,7 +114,7 @@ export default async function DeskPage({
   ]);
 
   // Ключ списка: сменился фильтр — дочитанный хвост сбрасывается.
-  const signature = `${filter.q}|${filter.kind}|${filter.status}`;
+  const signature = `${filter.q}|${filter.kind}|${filter.status}|${filter.merchant}`;
 
   return (
     <main className="page page--wide">

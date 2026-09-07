@@ -9,11 +9,12 @@ import {
 } from '@nemo/db';
 import {
   canTransitionWithdrawal,
+  describeRequisites,
+  isServiceCurrencyRequisiteKind,
+  isWithdrawalOpen,
   Money,
   withdrawalRequestStatuses,
-  isWithdrawalOpen,
   type Amount,
-  isServiceCurrencyRequisiteKind,
   type ServiceCurrencyRequisiteKind,
   type WithdrawalMethod,
   type WithdrawalRequestStatus,
@@ -27,7 +28,6 @@ import { InvalidInputError, NotFoundError, TransitionNotAllowedError } from './e
 import { requireActiveNetwork } from './networks.js';
 import type { Notification } from './notifications.js';
 import { logRequisiteAccess } from './requisite-access.js';
-import { describeRequisites } from './requisites.js';
 import { readServiceSettings } from './settings.js';
 
 /**
@@ -479,9 +479,10 @@ export async function revealWithdrawalDestination(
       throw new NotFoundError('Заявка на вывод не найдена');
     }
 
+    // Баллы и выводы — клиентская механика: у мерчанта их нет.
     await logRequisiteAccess(tx, {
       staffId: staff.staffId,
-      clientId: row.clientId,
+      owner: { kind: 'client', clientId: row.clientId },
       withdrawalRequestId: requestId,
     });
 

@@ -56,6 +56,13 @@ export async function deliverNotifications(
  * заблокировавший бота, не должен ломать работу менеджера.
  */
 async function send(notification: Notification, options: DeliveryOptions): Promise<void> {
+  const chatId = chatIdOf(notification);
+  // Не наш адресат: уведомление владельцу-мерчанту доставляет почта, и
+  // здесь оно молча пропускается. Решать по виду, звать ли доставку,
+  // пришлось бы в каждом приложении — а порождаются уведомления там же,
+  // где меняется состояние, и адресат у них уже проставлен.
+  if (chatId === null) return;
+
   try {
     const photo = hintPhotoUrl(notification, options.miniappUrl);
     const method = photo ? 'sendPhoto' : 'sendMessage';
@@ -69,7 +76,7 @@ async function send(notification: Notification, options: DeliveryOptions): Promi
         body: JSON.stringify({
           // Строкой, а не числом: `telegram_user_id` — bigint, и на
           // приведении к `number` он однажды потеряет точность.
-          chat_id: notification.to.toString(),
+          chat_id: chatId.toString(),
           ...(photo ? { photo, caption: text } : { text }),
           // Разметку объявляет текст, а не выбирает доставка по виду:
           // так новый вид не уйдёт с тегами в голом тексте. Под разметкой
@@ -88,6 +95,19 @@ async function send(notification: Notification, options: DeliveryOptions): Promi
   } catch (error) {
     console.error('Не удалось отправить уведомление', notification.kind, error);
   }
+}
+
+/**
+ * Чат, в который уходит уведомление; `null` — это не в Telegram.
+ *
+ * У заявки владельцем бывает мерчант (docs/adr/0017), и адрес у него
+ * почтовый: такие уведомления забирает `@nemo/email`. Остальные виды
+ * адресованы в Telegram по определению — клиенту его бот, сотруднику
+ * бот входа.
+ */
+function chatIdOf(notification: Notification): bigint | null {
+  if (typeof notification.to === 'bigint') return notification.to;
+  return notification.to.kind === 'client' ? notification.to.telegramUserId : null;
 }
 
 /** Полный адрес картинки-подсказки; `null` — обычное текстовое уведомление. */

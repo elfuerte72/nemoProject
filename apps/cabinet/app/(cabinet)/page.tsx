@@ -1,0 +1,271 @@
+import { cookies } from 'next/headers';
+import Link from 'next/link';
+import {
+  EmptyState,
+  ExchangeCountTiles,
+  firstParam,
+  Greeting,
+  HowTo,
+  IntegrationTiles,
+  Moment,
+  MoneyCompare,
+  PeriodChips,
+  QuietRefresh,
+  Stats,
+} from '@nemo/ui';
+import { formatMoney } from '@nemo/ui/format';
+import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
+import { WEBHOOK_ENDPOINT_STATE_LABELS } from '@nemo/types';
+import { getCore } from '@/lib/core';
+import { OVERVIEW_HOW_TO } from '@/lib/exchange-texts';
+import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
+import { merchantStats, openCount, requestCounts, viewer } from '@/lib/reads';
+import { DisabledBanner } from '@/app/ui/disabled-banner';
+
+export const dynamic = 'force-dynamic';
+
+/**
+ * Обзор: что происходит прямо сейчас и что было за период.
+ *
+ * Числа — по правилам аналитики панели (docs/adr/0013), той же
+ * операцией, которой сотрудник смотрит карточку мерчанта: «у нас
+ * исполнено двенадцать» и «у вас одиннадцать» — разговор, который лучше
+ * не начинать. Период живёт в адресе, «сегодня» — по часам браузера и
+ * приходит тем же ответом, что плитки. Последние заявки остаются на
+ * первом экране: обзор открывают, чтобы взглянуть на заявку, а не
+ * только на плитки.
+ */
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { actor, session } = await viewer();
+  const params = await searchParams;
+  const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
+  const period = resolvePeriod(
+    {
+      period: firstParam(params.period),
+      from: firstParam(params.from),
+      to: firstParam(params.to),
+    },
+    new Date(),
+    offset,
+  );
+
+  const core = getCore();
+  const [stats, recent, counts, keys, hooks] = await Promise.all([
+    merchantStats(period.from.getTime(), period.to.getTime(), offset),
+    core.listExchangeRequests(actor, { limit: 5 }),
+    requestCounts(),
+    core.listApiKeys(actor),
+    core.listWebhookEndpoints(actor),
+  ]);
+  const { current, previous, today } = stats;
+  const active = openCount(counts);
+  const lastDay = new Date(period.to.getTime() - 1);
+  const csvQuery = new URLSearchParams({
+    period: period.key,
+    from: dayOf(period.from, offset),
+    to: dayOf(lastDay, offset),
+  }).toString();
+  const maxDay = Math.max(1, ...stats.byDay.map((one) => Math.max(one.submitted, one.completed)));
+  const liveKeys = keys.filter((one) => one.revokedAt === null).length;
+  const failingHooks = hooks.filter((one) => one.state === 'failing');
+  const clock = offset === 0 ? 'по UTC' : 'по вашим часам';
+
+  return (
+    <main className="page">
+      <QuietRefresh />
+      <DisabledBanner status={session.status} />
+
+      <header className="page__head">
+        <div>
+          <Greeting name={session.name} />
+          <p className="page__sub">
+            {active > 0
+              ? `Незакрытых заявок: ${active}. Открытая заявка ждёт либо вас, либо менеджера.`
+              : 'Незакрытых заявок нет.'}
+          </p>
+        </div>
+        {session.status === 'active' ? (
+          <div className="page__actions">
+            <Link className="btn btn--gold" href="/requests/new">
+              Новая заявка
+            </Link>
+          </div>
+        ) : undefined}
+      </header>
+
+      <HowTo title="Как это устроено" sub="Что происходит с заявкой и откуда числа" items={OVERVIEW_HOW_TO} />
+
+      <p className="today">
+        <span className="today__label">Сегодня</span>
+        <span>
+          подано <b>{today.submitted}</b>
+        </span>
+        <span>
+          исполнено <b>{today.completed}</b>
+        </span>
+        <span>
+          отменено <b>{today.cancelled}</b>
+        </span>
+        <span className="today__note">{clock}</span>
+      </p>
+
+      <section className="section">
+        <div className="section__head">
+          <h2 className="section__title">
+            {PERIOD_LABELS[period.key]}: <Moment at={period.from.toISOString()} mode="day" /> —{' '}
+            <Moment at={lastDay.toISOString()} mode="day" />
+          </h2>
+          <span className="section__rule" />
+          <a className="btn btn--ghost btn--tiny" href={`/api/requests/csv?${csvQuery}`}>
+            CSV заявок
+          </a>
+        </div>
+
+        <PeriodChips
+          current={period.key}
+          basePath="/"
+          from={dayOf(period.from, offset)}
+          to={dayOf(lastDay, offset)}
+        />
+
+        <Stats>
+          <ExchangeCountTiles current={current} previous={previous} openHref="/requests" />
+          <IntegrationTiles
+            apiCalls={current.apiCalls}
+            webhookDeliveries={current.webhookDeliveries}
+            callsHref="/calls"
+            webhooksHref="/webhooks"
+          />
+        </Stats>
+
+        <div className="grid">
+          <section className="card">
+            <h2 className="card__title">Оборот</h2>
+            <p className="card__note">Отдано по исполненным заявкам — по каждой валюте отдельно</p>
+            <MoneyCompare now={current.turnover} before={previous.turnover} />
+          </section>
+
+          <section className="card">
+            <h2 className="card__title">По дням</h2>
+            <p className="card__note">Подано и исполнено за две недели, {clock}</p>
+            {/*
+              Столбики, а не таблица: две недели по два числа читаются
+              одним взглядом, а таблица на четырнадцать строк — нет.
+              Высоты — от самого высокого дня; день без заявок остаётся
+              на своём месте пустым, а не пропадает.
+            */}
+            <div className="bars" role="img" aria-label="Подано и исполнено по дням за две недели">
+              {stats.byDay.map((day) => (
+                <div key={day.day} className="bars__day" title={dayTitle(day)}>
+                  <div className="bars__pair">
+                    <span
+                      className={day.submitted ? 'bars__bar' : 'bars__bar bars__bar--none'}
+                      style={{ height: `${Math.round((day.submitted / maxDay) * 100)}%` }}
+                    />
+                    <span
+                      className={
+                        day.completed ? 'bars__bar bars__bar--done' : 'bars__bar bars__bar--none'
+                      }
+                      style={{ height: `${Math.round((day.completed / maxDay) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="bars__label">{day.day.slice(8, 10)}</span>
+                </div>
+              ))}
+            </div>
+            <p className="bars__legend">
+              <span className="bars__key" /> подано <span className="bars__key bars__key--done" />{' '}
+              исполнено
+            </p>
+          </section>
+        </div>
+      </section>
+
+      {/*
+        Состояние интеграции одной строкой: сколько ключей действует,
+        отвечают ли точки, где документация. Подробности — в своих
+        разделах; здесь ответ на «всё ли живо», не открывая их.
+      */}
+      <section className="section">
+        <div className="section__head">
+          <h2 className="section__title">Интеграция</h2>
+          <span className="section__rule" />
+          <Link className="btn btn--soft btn--tiny" href="/docs">
+            Документация
+          </Link>
+        </div>
+        <p className="today">
+          <span>
+            ключей действует <b>{liveKeys}</b>
+          </span>
+          <span>
+            точек вебхуков <b>{hooks.length}</b>
+          </span>
+          {failingHooks.length > 0 ? (
+            <span>
+              не отвечает <b>{failingHooks.length}</b> —{' '}
+              <Link href="/webhooks">
+                {WEBHOOK_ENDPOINT_STATE_LABELS.failing.toLowerCase()}, посмотреть
+              </Link>
+            </span>
+          ) : hooks.length > 0 ? (
+            <span className="today__note">все точки отвечают</span>
+          ) : undefined}
+          {liveKeys === 0 ? (
+            <span className="today__note">
+              по API заявки не подаются — <Link href="/keys">выпустить ключ</Link>
+            </span>
+          ) : undefined}
+        </p>
+      </section>
+
+      <section className="section">
+        <div className="section__head">
+          <h2 className="section__title">Последние заявки</h2>
+          <span className="section__rule" />
+          <Link className="btn btn--soft btn--tiny" href="/requests">
+            Все заявки
+          </Link>
+        </div>
+
+        {recent.length === 0 ? (
+          <EmptyState
+            icon="exchange"
+            title="Заявок пока нет"
+            text="Поданные заявки встанут сюда — и из кабинета, и по API."
+          />
+        ) : (
+          <ul className="rows">
+            {recent.map((request) => (
+              <li key={request.id} className="row">
+                <Link className="row__main" href={`/requests/${request.id}`}>
+                  <span className="row__title">
+                    {formatMoney(request.fromAmount, request.fromCode)} →{' '}
+                    {request.toAmount
+                      ? formatMoney(request.toAmount, request.toCode)
+                      : request.toCode}
+                  </span>
+                  <span className="row__meta">
+                    {request.reference ? `${request.reference} · ` : ''}
+                    подана <Moment at={request.createdAt.toISOString()} />
+                  </span>
+                </Link>
+                <span className={`pill pill--${STATUS_TONES[request.status]}`}>
+                  {STATUS_LABELS[request.status]}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function dayTitle(day: { day: string; submitted: number; completed: number }): string {
+  return `${day.day}: подано ${day.submitted}, исполнено ${day.completed}`;
+}

@@ -107,7 +107,7 @@ describe('взятие заявки', () => {
     expect(notifications).toEqual([
       expect.objectContaining({
         kind: 'exchange-request-status',
-        to: 100n,
+        to: { kind: 'client', telegramUserId: 100n },
         status: 'in_progress',
       }),
     ]);

@@ -8,6 +8,7 @@ import {
   exchangeRequests,
   feeScheduleTiers,
   feeSchedules,
+  merchants,
   referrals,
   serviceAccounts,
   serviceSettings,
@@ -558,5 +559,125 @@ describe('сообщение клиента', () => {
         attachmentSize: 245_760,
       }),
     ).resolves.toBeDefined();
+  });
+});
+
+/**
+ * Второй владелец заявки (docs/adr/0017). Правило «ровно один» живёт в
+ * базе, а не только в операции: заявка без владельца не принадлежит
+ * никому — её увидят все, — а с двумя владельцами она показалась бы и
+ * клиенту, и мерчанту, и отменить её смог бы каждый.
+ */
+describe('владелец заявки на обмен', () => {
+  async function insertMerchant(email: string): Promise<string> {
+    const [row] = await db
+      .insert(merchants)
+      .values({
+        email,
+        passwordHash: 'hash',
+        name: 'Оплатишка',
+        contactName: 'Пётр',
+        phone: '+79990000000',
+      })
+      .returning({ id: merchants.id });
+    return row!.id;
+  }
+
+  it('не бывает пустым', async () => {
+    await expect(
+      db.insert(exchangeRequests).values({
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+      }),
+    ).rejects.toThrow(/exchange_requests_single_owner/);
+  });
+
+  it('не бывает двойным', async () => {
+    await insertClient(1n);
+    const merchantId = await insertMerchant('shop@example.com');
+
+    await expect(
+      db.insert(exchangeRequests).values({
+        clientId: 1n,
+        merchantId,
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+      }),
+    ).rejects.toThrow(/exchange_requests_single_owner/);
+  });
+
+  it('повторный ключ у одного мерчанта отвергается', async () => {
+    const merchantId = await insertMerchant('shop@example.com');
+    const values = {
+      merchantId,
+      idempotencyKey: 'booking-1024',
+      kind: 'electronic' as const,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+    };
+
+    await db.insert(exchangeRequests).values(values);
+    await expect(db.insert(exchangeRequests).values(values)).rejects.toThrow(
+      /exchange_requests_merchant_idempotency/,
+    );
+  });
+
+  it('тот же ключ у другого мерчанта — другая заявка', async () => {
+    const first = await insertMerchant('one@example.com');
+    const second = await insertMerchant('two@example.com');
+    const values = {
+      idempotencyKey: 'booking-1024',
+      kind: 'electronic' as const,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+    };
+
+    await db.insert(exchangeRequests).values({ ...values, merchantId: first });
+    await db.insert(exchangeRequests).values({ ...values, merchantId: second });
+
+    const rows = await db.select().from(exchangeRequests);
+    expect(rows).toHaveLength(2);
+  });
+
+  it('заявке клиента внешний номер не приписывается', async () => {
+    await insertClient(1n);
+    await expect(
+      db.insert(exchangeRequests).values({
+        clientId: 1n,
+        reference: 'booking-1024',
+        kind: 'electronic',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '100',
+      }),
+    ).rejects.toThrow(/exchange_requests_merchant_fields/);
+  });
+
+  it('у записи реквизитов владелец тоже ровно один', async () => {
+    await insertClient(1n);
+    const merchantId = await insertMerchant('shop@example.com');
+
+    await expect(
+      db.insert(clientRequisites).values({
+        clientId: 1n,
+        merchantId,
+        kind: 'phone',
+        bankName: 'Сбербанк',
+        phone: '+79990000000',
+      }),
+    ).rejects.toThrow(/client_requisites_single_owner/);
+  });
+
+  it('отклонённый мерчант без причины не сохраняется', async () => {
+    const merchantId = await insertMerchant('shop@example.com');
+    await expect(
+      db.update(merchants).set({ status: 'rejected' }).where(eq(merchants.id, merchantId)),
+    ).rejects.toThrow(/merchants_rejection_reason/);
   });
 });

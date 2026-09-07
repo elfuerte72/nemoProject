@@ -1,4 +1,5 @@
 import type { ManagerExchangeRequestView } from '@nemo/core';
+import { partyOf, type ExchangeParty } from '@/lib/exchange-rows';
 import { errorResponse, json } from '@/lib/api';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
@@ -27,8 +28,8 @@ export interface SearchHit {
   readonly toAmount: string | null;
   readonly toCode: string;
   readonly status: ManagerExchangeRequestView['status'];
-  readonly clientUsername: string | null;
-  readonly clientId: string;
+  /** Кто подал: клиент по нику или мерчант по названию и своему номеру. */
+  readonly party: ExchangeParty;
   readonly assignedManagerName: string | null;
 }
 
@@ -63,8 +64,7 @@ export async function GET(request: Request): Promise<Response> {
       toAmount: one.toAmount,
       toCode: one.toCode,
       status: one.status,
-      clientUsername: one.clientUsername,
-      clientId: one.clientId.toString(),
+      party: partyOf(one),
       assignedManagerName: one.assignedManagerName,
     }));
     const found: ClientHit[] = clients.map((one) => ({

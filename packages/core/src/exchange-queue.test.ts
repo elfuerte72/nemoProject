@@ -3,7 +3,14 @@ import { inArray } from 'drizzle-orm';
 import { exchangeRequests } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type Actor } from './index.js';
-import { asClient, givenCurrencyPair, givenServiceAccount, givenStaff, testRequisiteKeys } from './test-support.js';
+import {
+  asClient,
+  givenCurrencyPair,
+  givenMerchant,
+  givenServiceAccount,
+  givenStaff,
+  testRequisiteKeys,
+} from './test-support.js';
 
 /**
  * Очередь заявок под рост: кто ведёт, что моё, поиск, фильтры и предел.
@@ -201,6 +208,79 @@ describe('поиск', () => {
     const found = await core.listExchangeRequestQueue(petr, { query: 'PeTr' });
 
     expect(found).toHaveLength(1);
+  });
+
+  /**
+   * Заявка мерчанта в общий стол попадает наравне с клиентской: второй
+   * очереди у сервиса нет — менеджер один, смена одна, и второй список
+   * однажды забудут открыть.
+   */
+  it('находит заявку мерчанта по названию и по его номеру сделки', async () => {
+    const merchant = await givenMerchant({ name: 'Оплатишка' });
+    await core.submitExchangeRequest(merchant, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+      reference: 'booking-1024',
+      payout: { kind: 'phone', bankName: 'Сбербанк', phone: '+79990000001' },
+    });
+
+    // Название — в любом регистре: менеджер набирает его как придётся,
+    // а база сервиса собрана с локалью, где «Оплатишка» и «оплат» без
+    // явной коллации не сходятся.
+    expect(await core.listExchangeRequestQueue(petr, { query: 'оплат' })).toHaveLength(1);
+    expect(await core.listExchangeRequestQueue(petr, { query: 'booking-1024' })).toHaveLength(1);
+    expect(await core.listExchangeRequestQueue(petr, { query: 'другой' })).toEqual([]);
+  });
+
+  /**
+   * Карточка мерчанта отвечает на вопрос «что он у нас менял», и новая
+   * заявка в этом ответе — такая же строка, как исполненная.
+   */
+  it('карточка мерчанта показывает все его заявки, а не только взятые', async () => {
+    const merchant = await givenMerchant({ name: 'Оплатишка' });
+    const { request } = await core.submitExchangeRequest(merchant, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+      reference: 'booking-1024',
+      payout: { kind: 'phone', bankName: 'Сбербанк', phone: '+79990000001' },
+    });
+    await givenNewRequest();
+
+    const rows = await core.listMerchantExchangeRequests(petr, merchant.merchantId);
+    expect(rows.map((one) => one.id)).toEqual([request.id]);
+    expect(rows[0]).toMatchObject({ status: 'new', merchantName: 'Оплатишка' });
+  });
+
+  it('сужается до одного мерчанта', async () => {
+    const merchant = await givenMerchant({ name: 'Оплатишка' });
+    const other = await givenMerchant({ name: 'Другой', email: 'other@example.com' });
+    const payout = { kind: 'phone', bankName: 'Сбербанк', phone: '+79990000001' } as const;
+    await core.submitExchangeRequest(merchant, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+      payout,
+    });
+    await core.submitExchangeRequest(other, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+      payout,
+    });
+    await givenNewRequest();
+
+    const mine = await core.listExchangeRequestQueue(petr, {
+      merchantId: merchant.merchantId,
+    });
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.merchantName).toBe('Оплатишка');
+    expect(await core.countExchangeRequestQueue(petr, { merchantId: merchant.merchantId })).toBe(1);
   });
 });
 

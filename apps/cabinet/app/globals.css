@@ -1,0 +1,628 @@
+/*
+ * Своё у кабинета мерчанта.
+ *
+ * Общее — оболочка, страница, плитки, таблица, кнопки, поля, карточка
+ * входа — живёт в `@nemo/ui`: кабинет и панель менеджера собраны из
+ * одних деталей, и двух правд о том, как выглядит плитка, быть не
+ * должно. Файл пакета подключается раньше этого (`app/layout.tsx`),
+ * поэтому здесь дописывают, а не спорят.
+ */
+
+/* ── Колонки списка заявок ───────────────────────────────────────── */
+
+/*
+ * Что мерчант читает в строке: что он отдаёт, что получает, свой номер
+ * сделки, состояние и когда подана. Клиента в строке нет — все заявки
+ * его собственные.
+ */
+.table--requests {
+  --cols: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) 150px 130px;
+}
+
+/* ── Анкета ──────────────────────────────────────────────────────── */
+
+/*
+ * Карточка заведения кабинета шире карточки входа: полей в анкете семь,
+ * и в колонке шириной с поле пароля она превращается в прокрутку на
+ * полтора экрана. Пары полей идут в ряд (`.form-row` из `@nemo/ui`), а
+ * на узком окне ряд складывается сам.
+ */
+.login__card--wide {
+  max-width: 520px;
+}
+
+/* ── Экран состояния ─────────────────────────────────────────────── */
+
+/*
+ * Один экран вместо кабинета: анкета на рассмотрении, отклонена или
+ * почта не подтверждена. Разделы здесь не показываются — открывать
+ * пока нечего, а меню, из которого некуда идти, только обещает лишнее.
+ */
+.state {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.state__card {
+  width: 100%;
+  max-width: 460px;
+  padding: 32px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: nm-fade-up 0.32s var(--ease) both;
+}
+
+.state__title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.state__text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+/* ── Полоса «доступ отключён» ────────────────────────────────────── */
+
+/*
+ * Отключённый мерчант в кабинет входит: открытые заявки доходят до
+ * конца, и видеть их он должен. Полоса стоит над содержимым каждого
+ * раздела, а не одним экраном: сказанное однажды на входе к третьему
+ * разделу забывается, а кнопок подачи при этом нет.
+ */
+.banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px 16px;
+  border: 1px solid rgba(242, 104, 95, 0.35);
+  border-radius: var(--radius-control);
+  background: rgba(242, 104, 95, 0.08);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #f58a82;
+  text-wrap: pretty;
+}
+
+.banner b {
+  font-weight: 700;
+}
+
+/* ── Заявка ──────────────────────────────────────────────────────── */
+
+/*
+ * Стороны сделки крупно и рядом: «отдаю» и «получаю» — это первое, за
+ * чем открывают заявку, и читаются они парой.
+ */
+.deal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: baseline;
+}
+
+.deal__side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.deal__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.deal__amount {
+  font-size: 21px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Реквизиты для оплаты: их переносят в банк по одному знаку. */
+.instructions {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-inner);
+  background: var(--surface-soft);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Лента событий заявки: что и когда с ней случилось. */
+.trail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trail__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.trail__when {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Ключи API ───────────────────────────────────────────────────── */
+
+/* Подпись, хвост ключа, даты, состояние и действие. */
+.table--keys {
+  --cols: minmax(0, 1fr) 150px 110px 150px 110px minmax(0, 0.9fr);
+}
+
+/*
+ * Выпущенный ключ: показан один раз, и рамка говорит об этом раньше
+ * слов — это единственное, что на странице выделено медью.
+ */
+.secret {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(var(--gold-rgb, 226, 176, 80), 0.45);
+  border-radius: var(--radius-inner);
+  background: rgba(var(--gold-rgb, 226, 176, 80), 0.08);
+}
+
+.secret__title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+  text-wrap: pretty;
+}
+
+.secret__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+/* Форма выпуска: поле и кнопка в ряд, на узком окне ряд складывается. */
+.form-row--issue {
+  align-items: flex-end;
+}
+
+/* Пример запроса и тела ответов: моноширинно, с прокруткой внутри, без переноса страницы. */
+.code {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-inner);
+  background: var(--surface-soft);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ── Журнал вызовов ──────────────────────────────────────────────── */
+
+.table--calls {
+  --cols: 130px 64px minmax(0, 1.1fr) 64px 80px minmax(0, 0.9fr) minmax(0, 1.3fr);
+}
+
+/*
+ * Путь и слова отказа переносятся, а не режутся троеточием: по словам
+ * отказа мерчант чинит интеграцию, и половина фразы ему не поможет.
+ */
+.call__path,
+.call__error {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ── Документация ────────────────────────────────────────────────── */
+
+.op {
+  border-radius: var(--radius-inner);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  margin-bottom: 8px;
+}
+
+.op__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.op__head::-webkit-details-marker {
+  display: none;
+}
+
+.op__method {
+  min-width: 58px;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  background: var(--surface-soft);
+}
+
+.op__method--post {
+  color: var(--gold, #e2b050);
+}
+
+.op__method--delete {
+  color: #f58a82;
+}
+
+.op__path {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.op__summary {
+  color: var(--text-dim);
+  font-size: 13.5px;
+}
+
+.op__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 16px 16px;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+}
+
+.op__block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.op__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.op__text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+.op__code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-soft);
+  font-size: 0.92em;
+}
+
+.op__params {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.op__params dd {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.op__required {
+  color: var(--gold, #e2b050);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .op__head {
+    flex-wrap: wrap;
+  }
+
+  .op__params {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Вебхуки ─────────────────────────────────────────────────────── */
+
+.table--deliveries {
+  --cols: 130px minmax(0, 1.2fr) minmax(0, 1fr) 120px 120px minmax(0, 1.4fr);
+}
+
+/* Адрес приёмника и ответ переносятся: половина адреса ничего не говорит. */
+.hook__url,
+.hook__reply {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.hook .row__meta .tag {
+  margin: 2px 6px 2px 0;
+}
+
+.hook__ping {
+  color: var(--text);
+}
+
+.hook__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hook__events {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── Новая заявка ────────────────────────────────────────────────── */
+
+/*
+ * Калькулятор: две стороны сделки в ряд, между ними разворот, под ними
+ * черта курса. Как у клиента в Mini App, но не столбиком: тут не палец
+ * на телефоне, а курсор на ноутбуке, и стороны читаются парой.
+ */
+.calc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.calc__side {
+  min-width: 0;
+}
+
+.calc__amount {
+  display: flex;
+  gap: 8px;
+}
+
+.calc__input {
+  flex: 1;
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.calc__input:read-only {
+  color: var(--text-dim);
+}
+
+.calc__pick {
+  flex: 0 0 112px;
+  font-weight: 600;
+}
+
+/* Разворот стоит на уровне полей, а не подписей над ними. */
+.calc__swap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-top: 23px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.calc__swap:hover:not(:disabled) {
+  color: var(--gold-light);
+  border-color: rgba(249, 160, 60, 0.4);
+}
+
+.calc__swap:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Черта курса — там, где курс и действует: между отданным и полученным. */
+.calc__rate {
+  margin: 14px 0 0;
+  min-height: 1.5em;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gold-light);
+}
+
+@media (max-width: 720px) {
+  .calc {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .calc__swap {
+    margin: 0 auto;
+  }
+}
+
+/* Поле, набранное неправдоподобно: замечание под ним, рамка в цвет. */
+.input--wrong {
+  border-color: rgba(242, 104, 95, 0.55);
+}
+
+/* Поля получателя — столбиком с воздухом между ними. */
+.recipient {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Группа записей одной валюты: заголовок-код над своими строками. */
+.recipient__group + .recipient__group {
+  margin-top: 18px;
+}
+
+.recipient__currency {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+/* Выбор сохранённого получателя: цель нажатия — вся строка. */
+.recipient__pick {
+  width: 100%;
+  min-height: 0;
+  align-items: flex-start;
+  font-weight: 500;
+}
+
+.recipient__pick input {
+  margin-top: 3px;
+}
+
+/* Сводка перед подачей и пара курсов рубля: подпись слева, число справа. */
+.summary {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summary__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.summary__row dt {
+  color: var(--text-dim);
+}
+
+.summary__row dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.summary__strong {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* ── Курсы ───────────────────────────────────────────────────────── */
+
+.table--rates {
+  --cols: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* ── Обзор: столбики по дням ─────────────────────────────────────── */
+
+/*
+ * Две недели по два столбика: подано и исполнено. Высоты — от самого
+ * высокого дня, пустой день стоит на своём месте пустым.
+ */
+.bars {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 6px;
+  height: 120px;
+  margin-top: 6px;
+}
+
+.bars__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+  gap: 4px;
+}
+
+.bars__pair {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.bars__bar {
+  flex: 1;
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--surface-soft-strong);
+}
+
+.bars__bar--done {
+  background: var(--gold, #e2b050);
+}
+
+/* Нулевой день — пустое место, а не точка: точка читалась бы как «одна». */
+.bars__bar--none {
+  min-height: 0;
+}
+
+.bars__label {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.bars__legend {
+  margin: 10px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.bars__key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--surface-soft-strong);
+}
+
+.bars__key--done {
+  margin-left: 8px;
+  background: var(--gold, #e2b050);
+}

@@ -57,6 +57,9 @@ importers:
       '@nemo/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@nemo/email':
+        specifier: workspace:*
+        version: link:../../packages/email
       '@nemo/http':
         specifier: workspace:*
         version: link:../../packages/http
@@ -66,6 +69,9 @@ importers:
       '@nemo/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@nemo/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       mammoth:
         specifier: 1.12.2
         version: 1.12.2
@@ -107,6 +113,64 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@24.13.3)
 
+  apps/cabinet:
+    dependencies:
+      '@nemo/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
+      '@nemo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@nemo/email':
+        specifier: workspace:*
+        version: link:../../packages/email
+      '@nemo/http':
+        specifier: workspace:*
+        version: link:../../packages/http
+      '@nemo/qr':
+        specifier: workspace:*
+        version: link:../../packages/qr
+      '@nemo/rates':
+        specifier: workspace:^
+        version: link:../../packages/rates
+      '@nemo/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@nemo/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      next:
+        specifier: ^15.1.4
+        version: 15.5.22(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.8(react@19.2.8)
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.0
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.2.4(@types/react@19.2.18)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@24.13.3)
+
   apps/miniapp:
     dependencies:
       '@nemo/brand':
@@ -118,9 +182,15 @@ importers:
       '@nemo/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@nemo/email':
+        specifier: workspace:*
+        version: link:../../packages/email
       '@nemo/http':
         specifier: workspace:*
         version: link:../../packages/http
+      '@nemo/qr':
+        specifier: workspace:*
+        version: link:../../packages/qr
       '@nemo/rates':
         specifier: workspace:*
         version: link:../../packages/rates
@@ -133,9 +203,6 @@ importers:
       grammy:
         specifier: ^1.32.0
         version: 1.45.1
-      jsqr:
-        specifier: 1.4.0
-        version: 1.4.0
       next:
         specifier: ^15.1.4
         version: 15.5.22(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -152,18 +219,12 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
-      '@types/pngjs':
-        specifier: 6.0.5
-        version: 6.0.5
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.18
       '@types/react-dom':
         specifier: ^19.0.0
         version: 19.2.4(@types/react@19.2.18)
-      pngjs:
-        specifier: 7.0.0
-        version: 7.0.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -222,6 +283,13 @@ importers:
         version: 2.1.9(@types/node@24.13.3)
 
   packages/crypto:
+    dependencies:
+      '@nemo/types':
+        specifier: workspace:*
+        version: link:../types
+      hash-wasm:
+        specifier: ^4.12.0
+        version: 4.12.0
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -258,6 +326,22 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@24.13.3)
 
+  packages/email:
+    dependencies:
+      '@nemo/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@24.13.3)
+
   packages/http:
     dependencies:
       '@nemo/core':
@@ -267,6 +351,28 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@24.13.3)
+
+  packages/qr:
+    dependencies:
+      jsqr:
+        specifier: 1.4.0
+        version: 1.4.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/pngjs':
+        specifier: 6.0.5
+        version: 6.0.5
+      pngjs:
+        specifier: 7.0.0
+        version: 7.0.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -318,6 +424,34 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@24.13.3)
+
+  packages/ui:
+    dependencies:
+      '@nemo/brand':
+        specifier: workspace:*
+        version: link:../brand
+      '@nemo/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      next:
+        specifier: ^15.1.4
+        version: 15.5.22(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -1598,6 +1732,9 @@ packages:
     resolution: {integrity: sha512-Y4VL/hqJMZZxwlUr5ZgM68CFu2iIeEkNLR1cY3+Ww68CIvWARDsoXFix7+31rmyC0+7L85ZI+Pq3E5JSG5+nLQ==}
     engines: {node: ^12.20.0 || >=14.13.1}
 
+  hash-wasm@4.12.0:
+    resolution: {integrity: sha512-+/2B2rYLb48I/evdOIhP+K/DD2ca2fgBjp6O+GBEnCDk2e4rpeXIK8GvIyRPjTezgmWn9gmKwkQjjx6BtqDHVQ==}
+
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
 
@@ -1996,6 +2133,11 @@ packages:
 
   y18n@4.0.3:
     resolution: {integrity: sha512-JKhqTOwSrqNA1NY5lSztJ1GrBiUodLMmIZuLiDaMRJ+itFd+ABVE8XBjOvIWL+rSqNDC74LCSFmlb/U4UZ4hJQ==}
+
+  yaml@2.9.0:
+    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   yargs-parser@18.1.3:
     resolution: {integrity: sha512-o50j0JeToy/4K6OZcaQmW6lyXXKhq7csREXcDwk2omFPJEwUNOVtJKvmDr9EI1fAJZUyZcRF7kxGBWmRXudrCQ==}
@@ -2865,6 +3007,8 @@ snapshots:
       - encoding
       - supports-color
 
+  hash-wasm@4.12.0: {}
+
   immediate@3.0.6: {}
 
   inherits@2.0.4: {}
@@ -3268,6 +3412,8 @@ snapshots:
   xmlbuilder@10.1.1: {}
 
   y18n@4.0.3: {}
+
+  yaml@2.9.0: {}
 
   yargs-parser@18.1.3:
     dependencies:

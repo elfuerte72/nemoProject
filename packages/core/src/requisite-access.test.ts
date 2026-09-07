@@ -76,7 +76,7 @@ describe('чтение реквизитов менеджером', () => {
       expect.objectContaining({
         staffId: manager.staffId,
         staffName: 'Пётр',
-        clientId: 100n,
+        owner: { kind: 'client', clientId: 100n },
         exchangeRequestId: requestId,
         accessedAt: expect.any(Date),
       }),
@@ -191,7 +191,7 @@ describe('чтение реквизитов вывода', () => {
     expect(await core.listRequisiteAccessLog(admin)).toEqual([
       expect.objectContaining({
         staffId: manager.staffId,
-        clientId: 200n,
+        owner: { kind: 'client', clientId: 200n },
         withdrawalRequestId: withdrawalId,
         exchangeRequestId: null,
       }),

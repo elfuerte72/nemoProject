@@ -147,33 +147,14 @@ export function open(privateKeyPem: string, envelope: Buffer): string {
  * Последние четыре цифры — единственное, что хранится в открытом виде,
  * чтобы клиент узнавал свою карту, а менеджер различал реквизиты в списке.
  */
-export function lastFour(cardNumber: string): string {
-  const digits = cardNumber.replace(/\D/g, '');
-  if (digits.length < 4) {
-    throw new RangeError('В номере карты меньше четырёх цифр');
-  }
-  return digits.slice(-4);
-}
-
-/**
- * Края адреса кошелька — то же, что последние четыре цифры для карты:
- * узнать свою запись в списке можно, восстановить адрес — нет.
- *
- * Начало и конец, а не только хвост: адреса одной сети начинаются
- * одинаково, и по хвосту клиент их различит, а по началу убедится, что
- * это адрес той сети, которую он выбирал.
- *
- * Короткий адрес не прячется вовсе: скрывать нечего, а многоточие на
- * месте двух знаков читалось бы как обрезанные данные.
+/*
+ * Хвосты — последние четыре цифры карты и края адреса — живут в
+ * `@nemo/types`: их считает и форма до сохранения, показывая, под какой
+ * подписью запись встанет в список, а ядро шифрует рядом с ними. Отсюда
+ * они отдаются по-прежнему — соседям по шифрованию.
  */
-export function addressEdges(address: string): string {
-  const value = address.trim();
-  if (value.length <= EDGE_LENGTH * 2 + 1) {
-    return value;
-  }
-  return `${value.slice(0, EDGE_LENGTH)}…${value.slice(-EDGE_LENGTH)}`;
-}
+export { addressEdges, lastFour } from '@nemo/types';
 
-const EDGE_LENGTH = 4;
 
 export { generateTotpSecret, totpCode, verifyTotp, type TotpOptions } from './totp.js';
+export { hashPassword, verifyPassword } from './password.js';

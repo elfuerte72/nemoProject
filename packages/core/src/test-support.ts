@@ -5,13 +5,14 @@ import {
   currencyPairs,
   feeScheduleTiers,
   feeSchedules,
+  merchants,
   serviceAccounts,
   serviceSettings,
   staff,
   transferNetworks,
 } from '@nemo/db';
 import { testDatabase } from '@nemo/db/testing';
-import type { ExchangeKind, StaffRole } from '@nemo/types';
+import type { ExchangeKind, MerchantStatus, StaffRole } from '@nemo/types';
 import type { Actor } from './actor.js';
 
 /**
@@ -197,6 +198,39 @@ export async function disableStaff(staffId: string): Promise<void> {
 
 export function asClient(telegramUserId: bigint): Actor {
   return { type: 'client', telegramUserId };
+}
+
+let merchantCounter = 0;
+
+/**
+ * Мерчант в нужном состоянии — второй владелец заявки (docs/adr/0017).
+ *
+ * Пишется напрямую, как и остальные фикстуры: анкету заводит сам
+ * мерчант, а рассматривает администратор, и проходить оба шага в тесте
+ * про подачу заявки значило бы проверять не подачу. Хеш пароля здесь
+ * настоящим быть не должен — входа в этих тестах нет.
+ */
+export async function givenMerchant(
+  options: { name?: string; email?: string; status?: MerchantStatus } = {},
+): Promise<Actor & { type: 'merchant' }> {
+  merchantCounter += 1;
+  const status = options.status ?? 'active';
+  const [row] = await db
+    .insert(merchants)
+    .values({
+      email: options.email ?? `shop${merchantCounter}@example.com`,
+      passwordHash: 'фикстура: входа в этих тестах нет',
+      name: options.name ?? 'Оплатишка',
+      contactName: 'Пётр',
+      phone: '+79990000000',
+      status,
+      emailVerifiedAt: new Date(),
+      ...(status === 'rejected' ? { rejectionReason: 'фикстура' } : {}),
+      ...(status === 'active' ? { approvedAt: new Date() } : {}),
+      ...(status === 'disabled' ? { disabledAt: new Date() } : {}),
+    })
+    .returning({ id: merchants.id });
+  return { type: 'merchant', merchantId: row!.id };
 }
 
 /**

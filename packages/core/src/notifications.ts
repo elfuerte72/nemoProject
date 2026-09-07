@@ -7,11 +7,13 @@ import {
   type ExchangeRequestStatus,
   type ReferralLine,
   type RequisiteKind,
+  type WebhookEvent,
   type WithdrawalMethod,
   type WithdrawalRequestStatus,
 } from '@nemo/types';
 import type { InquiryTopic } from './inquiries.js';
 import { ATTACHMENT_DOWNLOAD_LIMIT_BYTES, formatFileSize } from './attachments.js';
+import { merchantAccountMail } from './merchant-mails.js';
 
 /**
  * Что нужно сообщить клиенту — следствие операции, а не отдельное
@@ -23,6 +25,42 @@ import { ATTACHMENT_DOWNLOAD_LIMIT_BYTES, formatFileSize } from './attachments.j
  * смены статуса не забыть позвать бота» — держится только на памяти
  * того, кто пишет следующий переход.
  */
+/**
+ * Кому уходит уведомление о заявке.
+ *
+ * Владелец заявки — клиент или мерчант (docs/adr/0017), и доставляют их
+ * разные пакеты: клиенту пишет бот, которого он запускал, мерчанту —
+ * почта, потому что Telegram у бизнеса нет вовсе. Оба доставщика берут
+ * свои и молча пропускают чужие: уведомление порождается там же, где
+ * меняется состояние, и решать по виду адресата, звать ли доставку,
+ * значило бы повторять этот выбор в каждом приложении.
+ *
+ * Адрес почты едет вместе с идентификатором: доставщик писем в базу не
+ * ходит, как не ходит в неё и доставщик Telegram, — он получает готовый
+ * адрес. Идентификатор рядом с ним отвечает на вопрос «чьё это письмо»
+ * в журнале отправки.
+ *
+ * Остальные уведомления адресата не выбирают: у клиентских он клиент по
+ * определению, у служебных — сотрудник в Telegram бота входа, и
+ * размеченное объединение там означало бы выбор, которого нет.
+ */
+export type Recipient =
+  | { readonly kind: 'client'; readonly telegramUserId: bigint }
+  | {
+      readonly kind: 'merchant';
+      readonly merchantId: string;
+      readonly email: string;
+    };
+
+/** Уведомление владельцу заявки: клиенту в Telegram, мерчанту письмом. */
+export function toClient(telegramUserId: bigint): Recipient {
+  return { kind: 'client', telegramUserId };
+}
+
+export function toMerchant(merchant: { id: string; email: string }): Recipient {
+  return { kind: 'merchant', merchantId: merchant.id, email: merchant.email };
+}
+
 export type Notification =
   | {
       readonly kind: 'referral-joined';
@@ -31,7 +69,7 @@ export type Notification =
     }
   | {
       readonly kind: 'exchange-request-status';
-      readonly to: bigint;
+      readonly to: Recipient;
       readonly requestId: string;
       readonly status: ExchangeRequestStatus;
       /** Курс, названный менеджером: только в переходе «курс подтверждён». */
@@ -54,7 +92,7 @@ export type Notification =
        * сколько у клиента осталось времени.
        */
       readonly kind: 'exchange-request-expiring';
-      readonly to: bigint;
+      readonly to: Recipient;
       readonly requestId: string;
       readonly minutesLeft: number;
     }
@@ -157,8 +195,8 @@ export type Notification =
        */
       readonly kind: 'staff-stale-request';
       readonly to: bigint;
-      readonly clientId: bigint;
-      readonly clientUsername: string | null;
+      /** Чья заявка: клиент по нику или мерчант по названию. */
+      readonly party: RequestParty;
       readonly request: NewRequestSubject;
       /** Сколько она уже ждёт. Без этого напоминание не отличить от нового. */
       readonly waitingMinutes: number;
@@ -186,9 +224,84 @@ export type Notification =
        */
       readonly kind: 'staff-new-request';
       readonly to: bigint;
-      readonly clientId: bigint;
-      readonly clientUsername: string | null;
+      /** Чья заявка: клиент по нику или мерчант по названию. */
+      readonly party: RequestParty;
       readonly request: NewRequestSubject;
+    }
+  | {
+      /**
+       * Подтверждение адреса почты — мерчанту, сразу после анкеты. До
+       * него анкета администратору не показывается: рассматривать
+       * заявку от ящика, до которого письмо не дошло, значит
+       * рассматривать неизвестно чью.
+       *
+       * Едет сам одноразовый ключ, а не готовая ссылка: ядро не знает,
+       * на каком домене стоит кабинет, — адрес собирает доставка, как
+       * она собирает его картинке-подсказке консьержа.
+       */
+      readonly kind: 'merchant-email-verification';
+      readonly to: Recipient;
+      readonly token: string;
+    }
+  | {
+      /** Сброс пароля — по просьбе с формы входа. Ключ живёт час. */
+      readonly kind: 'merchant-password-reset';
+      readonly to: Recipient;
+      readonly token: string;
+    }
+  | {
+      /** Анкета рассмотрена: одобрена или отклонена с причиной. */
+      readonly kind: 'merchant-application-decided';
+      readonly to: Recipient;
+      /** Причина отказа; пусто — одобрен. */
+      readonly rejectionReason?: string;
+    }
+  | {
+      /**
+       * Ключ API выпущен. Самого ключа в письме нет: он показан один
+       * раз в кабинете, а письмо говорит, что ключ появился, — тому,
+       * кто его не выпускал, это повод отозвать.
+       */
+      readonly kind: 'merchant-api-key-issued';
+      readonly to: Recipient;
+      readonly label: string;
+      readonly hint: string;
+    }
+  | {
+      readonly kind: 'merchant-api-key-revoked';
+      readonly to: Recipient;
+      readonly label: string;
+      readonly hint: string;
+    }
+  | {
+      /**
+       * Точка вебхука не отвечает: пять попыток подряд провалились.
+       * Одно письмо на приступ — пока отметка у точки стоит, второго нет.
+       */
+      readonly kind: 'merchant-webhook-failing';
+      readonly to: Recipient;
+      readonly url: string;
+      readonly event: WebhookEvent;
+    };
+
+/**
+ * О ком заявка, показанная сотруднику.
+ *
+ * У клиента это ник и номер в Telegram — по ним менеджер открывает
+ * переписку; у мерчанта ни того, ни другого нет, и вместо них стоит
+ * название и его собственный номер сделки: по «броне №1024» мерчант и
+ * менеджер говорят об одной заявке, не сверяя два номера.
+ */
+export type RequestParty =
+  | {
+      readonly kind: 'client';
+      readonly clientId: bigint;
+      readonly username: string | null;
+    }
+  | {
+      readonly kind: 'merchant';
+      readonly name: string;
+      readonly reference: string | null;
     };
 
 /**
@@ -259,6 +372,12 @@ export const notificationKinds = [
   'staff-new-request',
   'staff-stale-request',
   'staff-waiting-client',
+  'merchant-email-verification',
+  'merchant-password-reset',
+  'merchant-application-decided',
+  'merchant-api-key-issued',
+  'merchant-api-key-revoked',
+  'merchant-webhook-failing',
 ] as const satisfies readonly Notification['kind'][];
 
 /**
@@ -284,9 +403,16 @@ export type EveryKindListed = AssertNone<UnlistedKind>;
 export interface RenderedNotification {
   readonly text: string;
   readonly parseMode?: 'HTML';
+  /**
+   * Тема письма. Есть только у того, что уходит мерчанту: в Telegram
+   * темы нет, а письмо без неё почтовые клиенты показывают как «(без
+   * темы)» и складывают в спам.
+   */
+  readonly subject?: string;
 }
 
 type StaffNotification = Extract<Notification, { kind: `staff-${string}` }>;
+type MerchantNotification = Extract<Notification, { kind: `merchant-${string}` }>;
 
 /** Чем подписан ответ сотрудника в чате бота. Одна строка на всех: клиент узнаёт её. */
 export const OPERATOR_PREFIX = '[Оператор]: ';
@@ -306,13 +432,22 @@ export function renderNotification(notification: Notification): RenderedNotifica
     case 'staff-stale-request':
     case 'staff-waiting-client':
       return { text: renderStaffNotification(notification), parseMode: 'HTML' };
+    case 'merchant-email-verification':
+    case 'merchant-password-reset':
+    case 'merchant-application-decided':
+    case 'merchant-api-key-issued':
+    case 'merchant-api-key-revoked':
+    case 'merchant-webhook-failing':
+      // Письмо, а не сообщение: доставляет его `@nemo/email`, а слова
+      // живут рядом с остальными письмами мерчанту.
+      return merchantAccountMail(notification);
     default:
       return { text: renderClientNotification(notification) };
   }
 }
 
 function renderClientNotification(
-  notification: Exclude<Notification, StaffNotification>,
+  notification: Exclude<Notification, StaffNotification | MerchantNotification>,
 ): string {
   switch (notification.kind) {
     case 'referral-joined':
@@ -404,15 +539,15 @@ function renderStaffNotification(notification: StaffNotification): string {
       return lines(
         bold(`Новая ${requestTitle(notification.request)}`),
         ...requestDetails(notification.request),
-        clientLine(notification),
-        tags(requestTag(notification.request)),
+        partyLine(notification.party),
+        tags(requestTag(notification.request), ...partyTags(notification.party)),
       );
     case 'staff-stale-request':
       return lines(
         bold(`Заявку никто не взял ${renderWaiting(notification.waitingMinutes)}`),
         requestLine(notification.request),
-        clientLine(notification),
-        tags(requestTag(notification.request), 'напоминание'),
+        partyLine(notification.party),
+        tags(requestTag(notification.request), ...partyTags(notification.party), 'напоминание'),
       );
     case 'staff-waiting-client':
       return lines(
@@ -446,6 +581,31 @@ function attachmentLine(attachment: string | undefined): string | null {
 /** Тема хэштегами — Telegram делает их ссылками, и по ним ищут. */
 function tags(...names: readonly string[]): string {
   return names.map((name) => `#${name}`).join(' ');
+}
+
+/**
+ * Чья заявка, одной строкой.
+ *
+ * У клиента — ссылка по нику и номер: по ссылке менеджер открывает
+ * переписку, по номеру находит его в панели. У мерчанта ни ника, ни
+ * переписки нет — стоит название и его собственный номер сделки, тот
+ * самый, которым мерчант эту заявку назовёт, если спросит о ней.
+ */
+function partyLine(party: RequestParty): string {
+  if (party.kind === 'client') {
+    return clientLine({ clientId: party.clientId, clientUsername: party.username });
+  }
+  const name = `Мерчант: ${escapeHtml(party.name)}`;
+  return party.reference === null ? name : `${name} · ${escapeHtml(party.reference)}`;
+}
+
+/**
+ * Хэштег мерчанта — рядом с хэштегом рода заявки: в чате с сотнями
+ * уведомлений «покажи всё по этому мерчанту» спрашивают не реже, чем
+ * «покажи все обмены».
+ */
+function partyTags(party: RequestParty): readonly string[] {
+  return party.kind === 'merchant' ? ['мерчант'] : [];
 }
 
 function clientLine(client: {

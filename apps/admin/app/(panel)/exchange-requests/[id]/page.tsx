@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { toClientCardData } from '@/lib/client-card';
+import { toMerchantCardData, toOwnerData } from '@/lib/merchant-card';
 import { getCore } from '@/lib/core';
 import { ExchangeRequestCard } from './exchange-request-card';
 
@@ -38,16 +39,31 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   });
 
   /*
-   * Карточка клиента — вторым запросом, а не полем заявки: она нужна
+   * Карточка владельца — вторым запросом, а не полем заявки: она нужна
    * менеджеру на экране, но к самой сделке отношения не имеет, и
    * заявка, таскающая профиль клиента, начала бы расходиться с ним.
    * Клиента может не быть: заявку подаёт тот, кто уже завёлся, но
    * запись могли и удалить.
+   *
+   * У заявки мерчанта вместо неё карточка мерчанта (docs/adr/0017):
+   * вопрос «с кем имею дело» тот же, но переписки, баллов и рефералки у
+   * него нет — есть анкета и контакты.
    */
-  const card = await core.getClientCard(actor, request.clientId).catch((error: unknown) => {
-    if (error instanceof CoreError && error.code === 'not-found') return null;
-    throw error;
-  });
+  const owner = request.owner;
+  const card =
+    owner.kind === 'client'
+      ? await core.getClientCard(actor, owner.clientId).catch((error: unknown) => {
+          if (error instanceof CoreError && error.code === 'not-found') return null;
+          throw error;
+        })
+      : null;
+  const merchant =
+    owner.kind === 'merchant'
+      ? await core.getMerchantCard(actor, owner.merchantId).catch((error: unknown) => {
+          if (error instanceof CoreError && error.code === 'not-found') return null;
+          throw error;
+        })
+      : null;
 
   /*
    * Счета сервиса — только в той валюте, которой платит клиент, и
@@ -81,12 +97,13 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
 
   return (
     <ExchangeRequestCard
-      request={{ ...request, clientId: request.clientId.toString() }}
+      request={{ ...request, owner: toOwnerData(request.owner) }}
       events={events}
       accounts={accounts}
       markupBps={markupBps}
       pricedBySchedule={pricedBySchedule}
       client={card ? toClientCardData(card) : null}
+      merchant={merchant ? toMerchantCardData(merchant) : null}
       viewerStaffId={actor.staffId}
       viewerRole={actor.role}
       colleagues={colleagues}

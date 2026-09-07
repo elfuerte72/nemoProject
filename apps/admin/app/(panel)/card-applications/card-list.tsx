@@ -4,9 +4,9 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { ManagerCardApplicationView } from '@nemo/core';
 import { cardApplicationTransitions } from '@nemo/types';
+import { Moment } from '@nemo/ui';
 import { CARD_STATUS_LABELS, CARD_STATUS_TONES, pillClass } from '@/lib/labels';
 import { LiveQueue } from '@/app/ui/live-queue';
-import { Moment } from '@/app/ui/moment';
 
 /**
  * Заявки на виртуальную карту.

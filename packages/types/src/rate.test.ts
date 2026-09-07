@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readRate } from './rate.js';
+import { payoutPerUnit, readRate } from './rate.js';
 import * as Money from './money.js';
 
 /**
@@ -132,5 +132,16 @@ describe('края', () => {
 
   it('отрицательный оставляет как есть', () => {
     expect(readRate(rate('-5'), 'RUB', 'USDT').value).toBe('-5');
+  });
+});
+
+describe('число в столбце валют выдачи', () => {
+  it('до сотых и вниз, как на черте курса', () => {
+    expect(payoutPerUnit(Money.toAmount('32.4467'))).toBe('32.44');
+    expect(payoutPerUnit(Money.toAmount('0.84'))).toBe('0.84');
+  });
+
+  it('валюту, которой за монету дают меньше сотой, не показывает нулём', () => {
+    expect(payoutPerUnit(Money.toAmount('0.0031234567'))).toBe('0.00312345');
   });
 });

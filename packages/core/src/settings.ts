@@ -34,6 +34,11 @@ export interface ServiceSettingsView {
   readonly conciergeRepliesPerClientDaily: number;
   /** Сколько ответов консьерж даёт за сутки всему сервису. */
   readonly conciergeRepliesDaily: number;
+  /**
+   * Ник, на который в кабинете мерчанта ведёт «Поддержка». Пусто —
+   * ссылки нет: выдуманный ник вёл бы в пустой чат.
+   */
+  readonly merchantSupportUsername: string | null;
   readonly updatedAt: Date;
 }
 
@@ -93,6 +98,7 @@ export async function readServiceSettings(
     unpaidExchangeRequestTtlMinutes: row.unpaidExchangeRequestTtlMinutes,
     conciergeRepliesPerClientDaily: row.conciergeRepliesPerClientDaily,
     conciergeRepliesDaily: row.conciergeRepliesDaily,
+    merchantSupportUsername: row.merchantSupportUsername,
     updatedAt: row.updatedAt,
   };
 }

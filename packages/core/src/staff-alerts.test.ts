@@ -65,8 +65,7 @@ describe('новая заявка на обмен', () => {
 
     expect(alerts.map((one) => one.to).sort()).toEqual([MANAGER_TG, SECOND_MANAGER_TG]);
     expect(alerts[0]).toMatchObject({
-      clientId: 100n,
-      clientUsername: 'ivan',
+      party: { kind: 'client', clientId: 100n, username: 'ivan' },
       request: { kind: 'exchange', fromAmount: '100', fromCode: 'USDT', toCode: 'RUB' },
     });
   });

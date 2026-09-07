@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { currencyName, currencyPlace } from '@/lib/currencies';
+import { currencyName, currencyPlace } from '@nemo/types';
 import { CurrencyFlag } from './flags';
 import { ChevronDown } from './icons';
 import { Sheet } from './sheet';

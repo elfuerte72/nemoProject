@@ -14,13 +14,20 @@
  */
 
 export interface HealthProbe {
-  readonly app: 'miniapp' | 'admin';
+  readonly app: 'miniapp' | 'admin' | 'cabinet';
   /** Коммит, из которого собрано приложение; `null`, если сборка его не знает. */
   readonly version: string | null;
   /** Пульс базы: отвергается или не приходит вовсе, когда базы нет. */
   readonly ping: () => Promise<unknown>;
   /** Сколько ждать базу, прежде чем счесть её молчащей. */
   readonly timeoutMs?: number;
+  /**
+   * Что приложение хочет сказать о себе сверх базы — одним словом на
+   * свойство: у кабинета это режим доставки писем, потому что
+   * выключенная почта выглядит рабочим деплоем, а мерчант при ней не
+   * заводится. Секретов здесь быть не может: маршрут открыт.
+   */
+  readonly details?: Readonly<Record<string, string>> | undefined;
 }
 
 export type DatabaseState = 'ok' | 'unreachable' | 'timeout';
@@ -30,7 +37,18 @@ const DEFAULT_TIMEOUT_MS = 3_000;
 export async function healthResponse(probe: HealthProbe): Promise<Response> {
   const database = await probeDatabase(probe.ping, probe.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const ok = database === 'ok';
-  const body = { ok, app: probe.app, version: probe.version, database };
+  /*
+   * Своё приложение говорит первым, а известные поля — последними: имя
+   * приложения, коммит и состояние базы перебить нельзя, как бы ни
+   * назвали ключ в `details`.
+   */
+  const body = {
+    ...(probe.details ?? {}),
+    ok,
+    app: probe.app,
+    version: probe.version,
+    database,
+  };
   return new Response(JSON.stringify(body), {
     status: ok ? 200 : 503,
     headers: {

@@ -1,6 +1,7 @@
 import { Onest } from 'next/font/google';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import '@nemo/ui/styles.css';
 import './globals.css';
 
 export const metadata: Metadata = {

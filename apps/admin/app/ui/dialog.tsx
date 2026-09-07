@@ -9,9 +9,9 @@ import {
   formatFileSize,
   looksLikeImage,
 } from '@nemo/types';
-import { dayKey, formatDayHeading } from '@/lib/format';
+import { dayKey, formatDayHeading } from '@nemo/ui/format';
+import { Moment, useBrowserZone } from '@nemo/ui';
 import { hasUnsentText } from '@/lib/live';
-import { Moment, useBrowserZone } from '@/app/ui/moment';
 
 /**
  * Окно переписки — так, как оно устроено в CRM, где чат и есть работа.

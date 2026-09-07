@@ -1,50 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import {
-  NAV_GROUPS,
-  SETTINGS_SECTIONS,
-  isCurrentSection,
-  parseCollapsed,
-  serializeCollapsed,
-  toggleCollapsed,
-} from './nav';
+import { isCurrentSection } from '@nemo/ui/nav';
+import { NAV_GROUPS, SETTINGS_SECTIONS } from './nav';
 
 /**
- * Память о свёрнутых группах меню.
- *
- * Хранится в браузере строкой, и строку эту никто не охраняет: её
- * может испортить расширение, чужая версия панели или рука. Меню при
- * этом обязано открыться — с испорченной записью так, будто её нет.
+ * Карта разделов панели. Общие правила меню — свёртка групп и то, какой
+ * раздел считать текущим, — живут в `@nemo/ui` и покрыты там: кабинет
+ * мерчанта пользуется теми же.
  */
 
-describe('свёрнутые группы меню', () => {
-  it('переживают запись и чтение', () => {
-    const collapsed = toggleCollapsed(new Set(), 'admin');
-    expect([...parseCollapsed(serializeCollapsed(collapsed))]).toEqual(['admin']);
-  });
-
-  it('повторная свёртка разворачивает', () => {
-    const once = toggleCollapsed(new Set(), 'admin');
-    expect(toggleCollapsed(once, 'admin').size).toBe(0);
-  });
-
-  it('испорченная запись читается как пустая', () => {
-    expect(parseCollapsed('{not json').size).toBe(0);
-    expect(parseCollapsed('"admin"').size).toBe(0);
-    expect(parseCollapsed('[1, null, "admin"]').size).toBe(1);
-    expect(parseCollapsed(null).size).toBe(0);
-  });
-});
-
-describe('текущий раздел', () => {
-  it('корень отмечается только на самом корне', () => {
-    expect(isCurrentSection('/', '/')).toBe(true);
-    expect(isCurrentSection('/', '/withdrawals')).toBe(false);
-  });
-
-  it('вложенная страница принадлежит своему разделу', () => {
-    expect(isCurrentSection('/conversations', '/conversations/123')).toBe(true);
-  });
-
+describe('карта разделов', () => {
   /*
    * Ключ группы — то, по чему её помнят свёрнутой: повторившись, он
    * свернул бы две группы одним нажатием.
@@ -65,5 +29,30 @@ describe('подразделы настроек', () => {
   it('адреса не повторяются', () => {
     const hrefs = SETTINGS_SECTIONS.map((section) => section.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
+  });
+});
+
+/**
+ * Мерчанты — раздел работы, а не администратора: менеджер ведёт их
+ * заявки и должен видеть, с кем имеет дело. Кнопки решений при этом
+ * только у администратора, и отказывает им сама операция.
+ */
+describe('раздел «Мерчанты»', () => {
+  it('стоит в основном ряду и считает ждущих рассмотрения', () => {
+    const item = NAV_GROUPS.flatMap((group) => group.items).find(
+      (one) => one.href === '/merchants',
+    );
+    expect(item).toMatchObject({ label: 'Мерчанты', count: 'merchants' });
+  });
+
+  it('карточка мерчанта подсвечивает свой раздел', () => {
+    expect(isCurrentSection('/merchants', '/merchants/9d2a')).toBe(true);
+    // И не подсвечивает соседний: обмен начинается с корня, и без этой
+    // проверки «/merchants» подсветило бы стол.
+    expect(isCurrentSection('/', '/merchants')).toBe(false);
+  });
+
+  it('у мерчантов есть свой подраздел настроек', () => {
+    expect(SETTINGS_SECTIONS.some((one) => one.href === '/settings/merchants')).toBe(true);
   });
 });

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { BroadcastView } from '@nemo/core';
-import { Moment } from '@/app/ui/moment';
+import { Moment } from '@nemo/ui';
 
 /**
  * Ручная рассылка.

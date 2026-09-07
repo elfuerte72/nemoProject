@@ -7,8 +7,8 @@ import {
   roundRate,
   type Amount,
   type ExchangeKind,
-  type FeeTier,
   type PayoutMethod,
+  type Quote,
 } from '@nemo/types';
 import type { CoreConfig, Executor } from './context.js';
 import { readFeeSchedule, type ActiveFeeSchedule } from './fee-schedules.js';
@@ -59,21 +59,16 @@ export interface RateSource {
   quote(pair: RatePair, at?: Date): Promise<RateQuote | null>;
 }
 
-export interface QuoteView {
-  /** Курс с наценкой сервиса — тот, что видит клиент. */
-  readonly rate: Amount;
+/**
+ * Котировка ядра — та же `Quote`, которую читает экран (курс, знак
+ * валюты выдачи, путь целиком у сетки), с отметкой времени и суммой
+ * поверх. Наследование, а не копия полей: экран считает по этим полям
+ * сам, и разойтись с ядром они не должны.
+ */
+export interface QuoteView extends Quote {
   /** Сколько клиент получит по этому курсу. `null`, если сумма не указана. */
   readonly toAmount: Amount | null;
   readonly markupBps: number;
-  /**
-   * Сколько знаков у валюты выдачи — тот же, каким округлило ядро.
-   *
-   * Отдаётся экрану не ради показа, а ради счёта: сумму он считает сам,
-   * и округлять её обязан тем же знаком. Свой список точностей на
-   * клиенте разошёлся бы со справочником в тот день, когда
-   * администратор заведёт новую валюту.
-   */
-  readonly payoutDecimals: number;
   readonly asOf: Date;
   /**
    * Долларовый эквивалент отдаваемой суммы — есть только там, где цену
@@ -85,35 +80,6 @@ export interface QuoteView {
    * подать на полсотни рублей.
    */
   readonly usdAmount?: Amount;
-  /**
-   * Цена пути целиком — только там, где её назначает сетка комиссии.
-   *
-   * Отдаётся экрану, чтобы он считал сам, а не спрашивал сервер на
-   * каждую набранную цифру: со ступенями курс зависит от суммы, и круг
-   * по сети означал бы секунду ожидания на каждый символ. Считает экран
-   * той же арифметикой из `@nemo/types`, что и ядро, — число сходится
-   * с тем, что запишется в заявку.
-   */
-  readonly fee?: {
-    /** Сколько USDT за единицу отдаваемой валюты. */
-    readonly toBaseRate: Amount;
-    /** Сколько получаемой валюты за один USDT. */
-    readonly fromBaseRate: Amount;
-    readonly tiers: readonly FeeTier[];
-    /**
-     * Минимум направления в долларовом эквиваленте — если владелец его
-     * задал. Экран говорит о нём до подачи, подача сверяет; глобальный
-     * минимум сервиса действует поверх, а не вместо.
-     */
-    readonly minUsd: Amount | null;
-    /**
-     * Как читать порог ступени — включительно или нет. Едет к экрану
-     * вместе со ступенями: считая по ним сам, он обязан читать границу
-     * тем же знаком, что и ядро, иначе на ровно двух тысячах экран и
-     * заявка разошлись бы на процент.
-     */
-    readonly thresholdInclusive: boolean;
-  };
 }
 
 export interface QuoteInput extends RatePair {

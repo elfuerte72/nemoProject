@@ -1,4 +1,4 @@
-import { HowTo, type HowToItem } from '@/app/ui/howto';
+import { HowTo, type HowToItem } from '@nemo/ui';
 
 /**
  * Памятка «как вести заявку».

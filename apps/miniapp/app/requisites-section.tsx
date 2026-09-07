@@ -3,27 +3,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RequisitesView } from '@nemo/core';
 import {
-  alipayQrHint,
-  looksLikeAlipayAccount,
-  looksLikeAlipayQr,
-  looksLikeCardNumber,
-  looksLikeHolderName,
-  looksLikePhone,
-  looksLikeThaiAccountNumber,
-  looksLikeWalletAddress,
-  parsePromptPay,
-  promptPayHint,
+  currencyName,
+  currencyPlace,
+  describeRequisites,
   PROMPTPAY_ID_LABELS,
+  qrReadingOf,
   REQUISITE_COMPLAINTS,
+  REQUISITE_KIND_LABELS,
   requisiteCurrencyCodes,
+  requisiteDraftComplaints,
+  requisiteHolderRequired,
+  requisiteInputOf,
   requisiteKindsFor,
-  type PromptPayIdType,
+  sortCurrencies,
+  type QrReading,
+  type RequisiteField,
   type RequisiteKind,
 } from '@nemo/types';
 import { ApiError, del, post } from '@/lib/client-api';
-import { currencyName, currencyPlace, sortCurrencies } from '@/lib/currencies';
-import { describeRequisites } from '@/lib/format';
-import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { CurrencyFlag } from './ui/flags';
 import { TrashIcon } from './ui/icons';
 import { addressLabel, NetworkPicker } from './ui/network-picker';
@@ -209,16 +206,8 @@ function groupCardDigits(value: string): string {
     .replace(/(\d{4})(?=\d)/g, '$1 ');
 }
 
-/** Что распозналось из картинки — клиент подтверждает это перед сохранением. */
-type QrReading =
-  | {
-      readonly kind: 'promptpay';
-      readonly payload: string;
-      readonly idType: PromptPayIdType;
-      /** Хвост — тот же, под которым запись встанет в список. */
-      readonly hint: string;
-    }
-  | { readonly kind: 'alipay_qr'; readonly payload: string; readonly hint: string };
+/** Что распозналось из картинки — и сама строка, которая уйдёт на сервер. */
+type QrRead = Extract<QrReading, { ok: true }> & { readonly payload: string };
 
 /**
  * Ввод новой записи: валюта, способ, ровно его поля.
@@ -257,7 +246,7 @@ function RequisitesForm({
   const [accountNumber, setAccountNumber] = useState('');
   const [holderName, setHolderName] = useState('');
   const [alipayAccount, setAlipayAccount] = useState('');
-  const [qr, setQr] = useState<QrReading>();
+  const [qr, setQr] = useState<QrRead>();
   /** Чем картинка не подошла — словами, тут же под кнопкой выбора. */
   const [qrComplaint, setQrComplaint] = useState<string>();
   const [reading, setReading] = useState(false);
@@ -287,7 +276,7 @@ function RequisitesForm({
     // Библиотека чтения QR подгружается при показе поля, а не при
     // выборе картинки: между выбором файла и ответом не должно быть
     // сетевого круга. Первый экран её всё равно не везёт.
-    if (kind === 'promptpay' || kind === 'alipay_qr') void import('@/lib/qr');
+    if (kind === 'promptpay' || kind === 'alipay_qr') void import('@nemo/qr');
   }, [kind]);
 
   useEffect(() => {
@@ -298,78 +287,42 @@ function RequisitesForm({
     setNetwork((current) => current || (networks[0] ?? ''));
   }, [networks]);
 
-  /** Что отправлять — решает выбранный способ, а не то, что осталось в полях. */
-  function body(): Record<string, string> | undefined {
-    switch (kind) {
-      case 'phone':
-        return { kind, bankName: bankName.trim(), phone: phone.trim() };
-      case 'card':
-        return { kind, bankName: bankName.trim(), cardNumber: cardNumber.trim() };
-      case 'wallet':
-        return { kind, network, address: address.trim() };
-      case 'account':
-        return {
-          kind,
-          bankName: bankName.trim(),
-          accountNumber: accountNumber.trim(),
-          holderName: holderName.trim(),
-        };
-      case 'promptpay':
-        return { kind, qr: qr?.kind === 'promptpay' ? qr.payload : '', holderName: holderName.trim() };
-      case 'alipay':
-        return { kind, account: alipayAccount.trim(), holderName: holderName.trim() };
-      case 'alipay_qr':
-        return { kind, qr: qr?.kind === 'alipay_qr' ? qr.payload : '', holderName: holderName.trim() };
-      case undefined:
-        return undefined;
-    }
-  }
-
   /**
-   * Что не так с набранным — по тем же правилам, по которым откажет
-   * операция. Своей копии правил здесь нет: они живут в доменных типах,
-   * и разойтись с отказом ядра эта строка не может.
-   *
-   * Пустое поле замечания не получает: незаполненное — ещё не ошибка, и
-   * кнопка о нём говорит тем, что не горит.
+   * Черновик записи — то, что набрано: что с ним не так и что
+   * отправлять, решают правила из доменных типов, общие с формой
+   * кабинета мерчанта и с отказом операции. Своей копии правил здесь
+   * нет: разойтись с отказом ядра эта строка не может.
    */
-  const needsHolder = kind === 'account' || kind === 'promptpay' || kind === 'alipay' || kind === 'alipay_qr';
+  const draft = {
+    kind,
+    bankName,
+    phone,
+    cardNumber,
+    network,
+    address,
+    accountNumber,
+    holderName,
+    alipayAccount,
+    qr: qr && qr.kind === kind ? qr.payload : '',
+  };
+  const needsHolder = kind !== undefined && requisiteHolderRequired(kind);
   /**
    * Что не так в каждом поле — по нему и подсветка, и `aria-invalid`:
    * замечание к номеру счёта не должно красить поле имени. Пустое поле
-   * не считается неверным: незаполненное — ещё не ошибка.
+   * не считается неверным: незаполненное — ещё не ошибка. Первое
+   * замечание — то, что показывают под формой.
    */
-  const typed = (value: string) => value.trim().length > 0;
-  const invalid = {
-    phone: kind === 'phone' && typed(phone) && !looksLikePhone(phone),
-    card: kind === 'card' && typed(cardNumber) && !looksLikeCardNumber(cardNumber),
-    address: kind === 'wallet' && typed(address) && !looksLikeWalletAddress(network, address),
-    account: kind === 'account' && typed(accountNumber) && !looksLikeThaiAccountNumber(accountNumber),
-    alipay: kind === 'alipay' && typed(alipayAccount) && !looksLikeAlipayAccount(alipayAccount),
-    holder: needsHolder && typed(holderName) && !looksLikeHolderName(holderName),
-  };
-  const complaint = invalid.phone
-    ? REQUISITE_COMPLAINTS.phone
-    : invalid.card
-      ? REQUISITE_COMPLAINTS.card
-      : invalid.address
-        ? REQUISITE_COMPLAINTS.walletAddress(network)
-        : invalid.account
-          ? REQUISITE_COMPLAINTS.thaiAccount
-          : invalid.alipay
-            ? REQUISITE_COMPLAINTS.alipayAccount
-            : invalid.holder
-              ? REQUISITE_COMPLAINTS.holderName
-              : undefined;
+  const complaints = requisiteDraftComplaints(draft);
+  const invalid = (field: RequisiteField) => complaints.some((one) => one.field === field);
+  const complaint = complaints[0]?.complaint;
 
   /**
    * Кнопка гаснет, пока не заполнено всё, что нужно этому способу, и
    * пока набранное не похоже на правду: отказ операции на такой записи
    * читался бы как поломка, а не как «проверьте номер».
    */
-  const fields = body();
-  const ready =
-    !complaint && fields !== undefined && Object.values(fields).every((value) => value.length > 0);
+  const fields = complaint ? undefined : requisiteInputOf(draft);
+  const ready = fields !== undefined;
 
   /**
    * Картинка из галереи → строка из QR. Модуль чтения грузится здесь, а
@@ -382,27 +335,19 @@ function RequisitesForm({
     setQrComplaint(undefined);
     setReading(true);
     try {
-      const { readQrFromImage } = await import('@/lib/qr');
+      const { readQrFromImage } = await import('@nemo/qr');
       const payload = await readQrFromImage(file);
       if (token !== attempt.current) return;
       if (!payload) {
         setQrComplaint(REQUISITE_COMPLAINTS.noQr);
         return;
       }
-      if (kind === 'promptpay') {
-        const parsed = parsePromptPay(payload);
-        if (!parsed.ok) {
-          setQrComplaint(parsed.complaint);
-          return;
-        }
-        setQr({ kind, payload, idType: parsed.idType, hint: promptPayHint(parsed.id) });
-      } else if (kind === 'alipay_qr') {
-        if (!looksLikeAlipayQr(payload)) {
-          setQrComplaint(REQUISITE_COMPLAINTS.alipayQr);
-          return;
-        }
-        setQr({ kind, payload, hint: alipayQrHint(payload) });
+      const reading = qrReadingOf(kind, payload);
+      if (!reading.ok) {
+        setQrComplaint(reading.complaint);
+        return;
       }
+      setQr({ ...reading, payload });
     } catch {
       if (token === attempt.current) {
         setQrComplaint('QR не удалось открыть. Попробуйте другой файл.');
@@ -536,7 +481,7 @@ function RequisitesForm({
                 onBlur={() => setChecked(true)}
                 placeholder="+7"
                 inputMode="tel"
-                {...field(invalid.phone)}
+                {...field(invalid('phone'))}
               />
             </label>
           ) : undefined}
@@ -554,7 +499,7 @@ function RequisitesForm({
                 placeholder="0000 0000 0000 0000"
                 inputMode="numeric"
                 autoComplete="cc-number"
-                {...field(invalid.card)}
+                {...field(invalid('card'))}
               />
             </label>
           ) : undefined}
@@ -574,7 +519,7 @@ function RequisitesForm({
                   onChange={(event) => setAddress(event.target.value)}
                   onBlur={() => setChecked(true)}
                   placeholder="Адрес кошелька"
-                  {...field(invalid.address)}
+                  {...field(invalid('address'))}
                 />
               </label>
             </>
@@ -590,7 +535,7 @@ function RequisitesForm({
                 // С дефисами, как номер напечатан в приложении банка.
                 placeholder="000-0-000000"
                 inputMode="numeric"
-                {...field(invalid.account)}
+                {...field(invalid('account'))}
               />
             </label>
           ) : undefined}
@@ -603,7 +548,7 @@ function RequisitesForm({
                 onChange={(event) => setAlipayAccount(event.target.value)}
                 onBlur={() => setChecked(true)}
                 placeholder="+86 или e-mail"
-                {...field(invalid.alipay)}
+                {...field(invalid('alipay'))}
               />
             </label>
           ) : undefined}
@@ -669,7 +614,7 @@ function RequisitesForm({
                 // отправкой.
                 placeholder="IVAN PETROV"
                 autoCapitalize="characters"
-                {...field(invalid.holder)}
+                {...field(invalid('holder'))}
               />
             </label>
           ) : undefined}

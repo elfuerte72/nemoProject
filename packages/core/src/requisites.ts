@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
 import { addressEdges, lastFour, seal } from '@nemo/crypto';
 import { clientRequisites, currencies, transferNetworks } from '@nemo/db';
 import {
@@ -11,14 +11,15 @@ import {
   looksLikeThaiAccountNumber,
   looksLikeWalletAddress,
   parsePromptPay,
+  payoutMethodOf,
   promptPayHint,
-  PROMPTPAY_ID_LABELS,
   REQUISITE_COMPLAINTS,
   requisiteKindSuitsCurrency,
+  type PayoutMethod,
   type PromptPayIdType,
   type RequisiteKind,
 } from '@nemo/types';
-import { requireClient, type Actor } from './actor.js';
+import { requireOwner, type Actor, type Owner } from './actor.js';
 import { requirePublicKey, type CoreConfig, type Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import { requireActiveNetwork } from './networks.js';
@@ -106,6 +107,28 @@ export type SaveRequisitesInput =
 type RequisitesRow = typeof clientRequisites.$inferSelect;
 
 /**
+ * Записи владельца — клиента или мерчанта (docs/adr/0017).
+ *
+ * Одним условием на оба вида: список, форма и проверка при подаче
+ * спрашивают одно и то же — «моё ли это», — и три копии этого вопроса
+ * разошлись бы на первой правке.
+ */
+export function requisitesOf(owner: Owner): SQL {
+  return owner.kind === 'client'
+    ? eq(clientRequisites.clientId, owner.clientId)
+    : eq(clientRequisites.merchantId, owner.merchantId);
+}
+
+/** Владелец в виде полей строки: чем заполняется вставка. */
+export function ownerColumns(
+  owner: Owner,
+): { clientId: bigint; merchantId?: undefined } | { merchantId: string; clientId?: undefined } {
+  return owner.kind === 'client'
+    ? { clientId: owner.clientId }
+    : { merchantId: owner.merchantId };
+}
+
+/**
  * Наружу уходит представление без шифрованных полей: конверт бесполезен
  * без приватного ключа, но и отдавать его клиентскому приложению
  * незачем.
@@ -129,52 +152,6 @@ function toView(row: RequisitesRow, isAvailable = true): RequisitesView {
   };
 }
 
-/**
- * Короткая подпись записи — ею называется открытый реквизит в журнале
- * доступа: администратор должен видеть, что именно сотрудник смотрел.
- *
- * У клиентского приложения такая же подпись своя (`lib/format.ts`), и
- * это не забытая общая функция: ядро тянет за собой драйвер базы, и
- * импорт отсюда в экран увёз бы её в браузер. Совпадать они должны, и
- * расходятся заметно — один реквизит назывался бы в приложении и в
- * панели по-разному.
- */
-export function describeRequisites(view: {
-  kind: RequisiteKind;
-  bankName: string | null;
-  phone: string | null;
-  cardLast4: string | null;
-  network: string | null;
-  addressHint: string | null;
-  accountLast4: string | null;
-  qrHint: string | null;
-  promptpayIdType: PromptPayIdType | null;
-  alipayAccount: string | null;
-}): string {
-  switch (view.kind) {
-    case 'phone':
-      return [view.bankName, view.phone].filter(Boolean).join(' · ');
-    case 'card':
-      return [view.bankName, `карта •••• ${view.cardLast4 ?? ''}`.trim()]
-        .filter(Boolean)
-        .join(' · ');
-    case 'wallet':
-      return [view.network, view.addressHint].filter(Boolean).join(' · ');
-    case 'account':
-      return [view.bankName, `счёт •••• ${view.accountLast4 ?? ''}`.trim()]
-        .filter(Boolean)
-        .join(' · ');
-    case 'promptpay':
-      return [
-        'PromptPay',
-        `${PROMPTPAY_ID_LABELS[view.promptpayIdType ?? 'phone']} ${view.qrHint ?? ''}`.trim(),
-      ].join(' · ');
-    case 'alipay':
-      return ['Alipay', view.alipayAccount].filter(Boolean).join(' · ');
-    case 'alipay_qr':
-      return ['Alipay', `QR ${view.qrHint ?? ''}`.trim()].join(' · ');
-  }
-}
 
 /** Обязательное поле записи: пустое означало бы реквизит, по которому не отправить. */
 function required(value: string, subject: string): string {
@@ -234,13 +211,14 @@ type RequisitesInsert = typeof clientRequisites.$inferInsert;
 
 function rowFor(
   ctx: CoreConfig,
-  clientId: bigint,
+  owner: Owner,
   input: SaveRequisitesInput,
 ): RequisitesInsert {
+  const belongsTo = ownerColumns(owner);
   switch (input.kind) {
     case 'phone':
       return {
-        clientId,
+        ...belongsTo,
         kind: 'phone',
         bankName: required(input.bankName, 'Банк'),
         // Телефон остаётся открытым: по нему менеджер и отправляет
@@ -261,7 +239,7 @@ function rowFor(
         ),
       );
       return {
-        clientId,
+        ...belongsTo,
         kind: 'card',
         bankName: required(input.bankName, 'Банк'),
         cardLast4: card.last4,
@@ -276,7 +254,7 @@ function rowFor(
         REQUISITE_COMPLAINTS.walletAddress(network),
       );
       return {
-        clientId,
+        ...belongsTo,
         kind: 'wallet',
         network,
         addressSealed: seal(requirePublicKey(ctx), address),
@@ -292,7 +270,7 @@ function rowFor(
         REQUISITE_COMPLAINTS.thaiAccount,
       ).replace(/\D/g, '');
       return {
-        clientId,
+        ...belongsTo,
         kind: 'account',
         bankName: required(input.bankName, 'Банк'),
         holderName: holderName(input.holderName),
@@ -307,7 +285,7 @@ function rowFor(
         throw new InvalidInputError(parsed.complaint);
       }
       return {
-        clientId,
+        ...belongsTo,
         kind: 'promptpay',
         holderName: holderName(input.holderName),
         qrSealed: seal(requirePublicKey(ctx), qr),
@@ -317,7 +295,7 @@ function rowFor(
     }
     case 'alipay':
       return {
-        clientId,
+        ...belongsTo,
         kind: 'alipay',
         holderName: holderName(input.holderName),
         // Аккаунт остаётся открытым, как телефон: по нему менеджер и
@@ -335,7 +313,7 @@ function rowFor(
         REQUISITE_COMPLAINTS.alipayQr,
       );
       return {
-        clientId,
+        ...belongsTo,
         kind: 'alipay_qr',
         holderName: holderName(input.holderName),
         qrSealed: seal(requirePublicKey(ctx), qr),
@@ -345,26 +323,69 @@ function rowFor(
   }
 }
 
+/**
+ * Каким способом уйдут деньги по записи, которую ещё не завели.
+ *
+ * Нужен до транзакции: по нему выбирается сетка комиссии, а котировку
+ * спрашивают у чужого API, и держать ради неё открытую транзакцию
+ * нельзя. У PromptPay ответ зависит от того, что внутри QR, — строку
+ * разбирает то же правило, что и при сохранении; неразборчивый QR
+ * способа не называет, и отказывать за него будет сама вставка своими
+ * словами.
+ */
+export function payoutMethodOfInput(input: SaveRequisitesInput): PayoutMethod | undefined {
+  if (input.kind !== 'promptpay') {
+    return payoutMethodOf({ kind: input.kind, promptpayIdType: null });
+  }
+  const parsed = parsePromptPay(input.qr);
+  return parsed.ok
+    ? payoutMethodOf({ kind: 'promptpay', promptpayIdType: parsed.idType })
+    : undefined;
+}
+
 export async function saveRequisites(
   ctx: CoreConfig,
   actor: Actor,
   input: SaveRequisitesInput,
 ): Promise<RequisitesView> {
-  const clientId = requireClient(actor);
-  const values = rowFor(ctx, clientId, input);
+  const owner = requireOwner(actor);
+  return ctx.db.transaction((tx) => saveRequisitesIn(ctx, tx, owner, input));
+}
 
-  return ctx.db.transaction(async (tx) => {
-    // Сеть — из общего справочника: выключенную администратором
-    // сохранять незачем, по ней всё равно не отправят.
-    if (values.network) {
-      await requireActiveNetwork(tx, values.network);
-    }
+/**
+ * То же, но владелец назван прямо и вставка идёт в чужой транзакции:
+ * так запись заводит подача заявки, получившая реквизиты в теле
+ * запроса. Проверки при этом те же — правдоподобие и живая сеть, —
+ * иначе путь через API оказался бы слабее пути через форму.
+ *
+ * Своей транзакции у неё нет намеренно: заявка и запись получателя
+ * появляются вместе или не появляются вовсе. Отдельной транзакцией
+ * каждая отвергнутая подача — мало ли, не та сумма, закрытое
+ * направление — оставляла бы в базе зашифрованную строку, на которую
+ * никто уже не сошлётся.
+ */
+export async function saveRequisitesIn(
+  ctx: CoreConfig,
+  tx: Executor,
+  owner: Owner,
+  input: SaveRequisitesInput,
+  options: { archived?: boolean } = {},
+): Promise<RequisitesView> {
+  const values = rowFor(ctx, owner, input);
 
-    // Прежние записи остаются: карта, телефон и кошелёк — разные
-    // способы получения, а не смена одного другим.
-    const [row] = await tx.insert(clientRequisites).values(values).returning();
-    return toView(row!);
-  });
+  // Сеть — из общего справочника: выключенную администратором
+  // сохранять незачем, по ней всё равно не отправят.
+  if (values.network) {
+    await requireActiveNetwork(tx, values.network);
+  }
+
+  // Прежние записи остаются: карта, телефон и кошелёк — разные
+  // способы получения, а не смена одного другим.
+  const [row] = await tx
+    .insert(clientRequisites)
+    .values(options.archived ? { ...values, archivedAt: new Date() } : values)
+    .returning();
+  return toView(row!);
 }
 
 /**
@@ -378,14 +399,12 @@ export async function listRequisites(
   ctx: CoreConfig,
   actor: Actor,
 ): Promise<readonly RequisitesView[]> {
-  const clientId = requireClient(actor);
+  const owner = requireOwner(actor);
   const rows = await ctx.db
     .select({ requisites: clientRequisites, networkIsActive: transferNetworks.isActive })
     .from(clientRequisites)
     .leftJoin(transferNetworks, eq(transferNetworks.code, clientRequisites.network))
-    .where(
-      and(eq(clientRequisites.clientId, clientId), isNull(clientRequisites.archivedAt)),
-    )
+    .where(and(requisitesOf(owner), isNull(clientRequisites.archivedAt)))
     .orderBy(desc(clientRequisites.createdAt));
 
   // У перевода по телефону и на карту сети нет вовсе, и соединение
@@ -402,14 +421,14 @@ export async function archiveRequisites(
   actor: Actor,
   requisitesId: string,
 ): Promise<void> {
-  const clientId = requireClient(actor);
+  const owner = requireOwner(actor);
   const [row] = await ctx.db
     .update(clientRequisites)
     .set({ archivedAt: new Date() })
     .where(
       and(
         eq(clientRequisites.id, requisitesId),
-        eq(clientRequisites.clientId, clientId),
+        requisitesOf(owner),
         isNull(clientRequisites.archivedAt),
       ),
     )
@@ -432,9 +451,10 @@ export async function archiveRequisites(
  */
 export async function requireSuitableRequisites(
   executor: Executor,
-  clientId: bigint,
+  owner: Owner,
   requisitesId: string,
   toCode: string,
+  options: { allowArchived?: boolean } = {},
 ): Promise<void> {
   const [row] = await executor
     .select({ kind: clientRequisites.kind, network: clientRequisites.network })
@@ -442,8 +462,11 @@ export async function requireSuitableRequisites(
     .where(
       and(
         eq(clientRequisites.id, requisitesId),
-        eq(clientRequisites.clientId, clientId),
-        isNull(clientRequisites.archivedAt),
+        requisitesOf(owner),
+        // Запись, заведённая подачей по API, архивируется сразу: список
+        // получателей мерчанта не должен расти на каждую заявку. Своей
+        // же заявке она подходит — её только что и завели.
+        options.allowArchived ? undefined : isNull(clientRequisites.archivedAt),
       ),
     )
     .limit(1);

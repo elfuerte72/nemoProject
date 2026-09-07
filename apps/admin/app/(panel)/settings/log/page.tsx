@@ -1,5 +1,5 @@
+import { Moment } from '@nemo/ui';
 import { getCore } from '@/lib/core';
-import { Moment } from '@/app/ui/moment';
 import { SectionLead, SettingsSection, settingsActor } from '../section';
 
 export const dynamic = 'force-dynamic';

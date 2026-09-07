@@ -2,8 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import type { LiveTopic } from '@nemo/core';
+import { Moment } from '@nemo/ui';
 import { LiveRefresh } from '@/app/ui/live-refresh';
-import { Moment } from '@/app/ui/moment';
 
 /**
  * Очередь, которая обновляется сама, и отметка о том, когда её видели.

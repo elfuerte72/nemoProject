@@ -26,6 +26,11 @@ afterEach(() => {
 });
 
 const client = { to: 1n, clientId: 2n, clientUsername: 'ivan' } as const;
+/** Заявка называется сотруднику владельцем: клиентом или мерчантом. */
+const byClient = {
+  to: 1n,
+  party: { kind: 'client', clientId: 2n, username: 'ivan' },
+} as const;
 type Exchange = Extract<NewRequestSubject, { kind: 'exchange' }>;
 const exchange: Exchange = {
   kind: 'exchange',
@@ -63,12 +68,12 @@ describe('deliverNotifications: сотруднику', () => {
       '/conversations/2',
     ],
     [
-      { kind: 'staff-new-request', ...client, request: exchange },
+      { kind: 'staff-new-request', ...byClient, request: exchange },
       'Открыть заявку',
       '/exchange-requests/r1',
     ],
     [
-      { kind: 'staff-stale-request', ...client, request: exchange, waitingMinutes: 45 },
+      { kind: 'staff-stale-request', ...byClient, request: exchange, waitingMinutes: 45 },
       'Открыть заявку',
       '/exchange-requests/r1',
     ],

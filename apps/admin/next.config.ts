@@ -12,7 +12,15 @@ const config: NextConfig = {
    * вне репозитория; маршрут показывает её как `null`.
    */
   env: { APP_VERSION: gitSha(root) ?? '' },
-  transpilePackages: ['@nemo/brand', '@nemo/core', '@nemo/http', '@nemo/telegram', '@nemo/types'],
+  transpilePackages: [
+    '@nemo/brand',
+    '@nemo/core',
+    '@nemo/email',
+    '@nemo/http',
+    '@nemo/telegram',
+    '@nemo/types',
+    '@nemo/ui',
+  ],
   // Читалки PDF и DOCX остаются пакетами Node, а не собираются в бандл:
   // у pdf.js внутри воркеры и необязательный canvas, и сборка их ломает.
   serverExternalPackages: ['postgres', 'unpdf', 'mammoth'],

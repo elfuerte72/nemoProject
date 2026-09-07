@@ -16,14 +16,16 @@ import {
   type ExchangeRequestStatus,
   type StaffRole,
 } from '@nemo/types';
-import { ClientCard, type ClientCardData } from '@/app/ui/client-card';
-import { HowToRunRequest } from '@/app/ui/how-to';
-import { Moment } from '@/app/ui/moment';
-import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
-import { formatAmount, formatMoney, formatRate } from '@/lib/format';
-import { suggestServiceIncome } from '@/lib/income';
-import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
+import { Moment } from '@nemo/ui';
+import { formatAmount, formatMoney, formatRate } from '@nemo/ui/format';
 import { PROMPTPAY_ID_LABELS } from '@nemo/types';
+import { ClientCard, type ClientCardData } from '@/app/ui/client-card';
+import { MerchantCard, type MerchantCardData } from '@/app/ui/merchant-card';
+import { HowToRunRequest } from '@/app/ui/how-to';
+import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
+import { suggestServiceIncome } from '@/lib/income';
+import type { OwnerData } from '@/lib/merchant-card';
+import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
 
 /**
  * Действия менеджера над заявкой.
@@ -36,14 +38,25 @@ import { PROMPTPAY_ID_LABELS } from '@nemo/types';
  * шагов: следующий шаг всегда ниже предыдущего, и искать его не надо.
  */
 
-type ExchangeRequestForDisplay = Omit<ManagerExchangeRequestView, 'clientId'> & {
-  clientId: string;
+type ExchangeRequestForDisplay = Omit<ManagerExchangeRequestView, 'owner'> & {
+  owner: OwnerData;
+};
+
+/**
+ * Кем сделан шаг — там, где это не менеджер. Про менеджера в панели и
+ * так понятно, а «клиент отменил» и «отменил кабинет мерчанта» — разные
+ * события, и в разборе спорной сделки их нельзя путать.
+ */
+const ACTOR_WORDS: Partial<Record<ExchangeRequestEventView['actorType'], string>> = {
+  client: ' — клиент',
+  merchant: ' — мерчант',
 };
 
 export function ExchangeRequestCard({
   request,
   events,
   client,
+  merchant,
   accounts,
   markupBps,
   pricedBySchedule,
@@ -53,8 +66,10 @@ export function ExchangeRequestCard({
 }: {
   request: ExchangeRequestForDisplay;
   events: readonly ExchangeRequestEventView[];
-  /** С кем сделка. Пусто, если клиента ещё не завели. */
+  /** С кем сделка. Пусто у заявки мерчанта и если клиента ещё не завели. */
   client: ClientCardData | null;
+  /** С кем сделка, когда её подал бизнес. Пусто у заявки клиента. */
+  merchant: MerchantCardData | null;
   /** Счета сервиса в валюте, которой платит клиент, — из чего выбирать. */
   accounts: readonly ServiceAccountView[];
   /** Наценка сервиса: по ней считается подсказка дохода. */
@@ -233,8 +248,14 @@ export function ExchangeRequestCard({
           </h1>
           <p className="page__sub">
             {KIND_LABELS[request.kind]}
+            {/*
+              Внешний номер мерчанта — здесь же: спрашивая о заявке, он
+              назовёт её «бронью №1024», и сверять два номера менеджеру
+              не должно быть нужно.
+            */}
+            {request.reference ? ` · ${request.reference}` : ''}
             {request.toAmount && request.requestRate
-              ? ` · клиент видел эту сумму при подаче, по курсу ${formatRate(
+              ? ` · сумму при подаче видели по курсу ${formatRate(
                   request.requestRate,
                   request.fromCode,
                   request.toCode,
@@ -341,7 +362,12 @@ export function ExchangeRequestCard({
       */}
           {request.kind === 'electronic' ? (
             <section className="card">
-              <h2 className="card__title">Реквизиты клиента</h2>
+              {/*
+                «Получателя», а не «клиента»: у заявки мерчанта это
+                реквизиты его покупателя, и клиентом он сервису не
+                приходится.
+              */}
+              <h2 className="card__title">Реквизиты получателя</h2>
               {requisites ? (
                 <ul className="rows">
                   <Fact label="Способ получения">{REQUISITE_KIND_LABELS[requisites.kind]}</Fact>
@@ -747,7 +773,8 @@ export function ExchangeRequestCard({
               <h2 className="card__title">Отмена</h2>
               <div className="form-row">
                 <label className="field">
-                  <span className="label">Причина — её увидит клиент</span>
+                  {/* «Тот, кто подал»: у заявки мерчанта клиента нет. */}
+                  <span className="label">Причина — её увидит тот, кто подал</span>
                   <input
                     className="input"
                     value={reason}
@@ -767,11 +794,24 @@ export function ExchangeRequestCard({
           ) : undefined}
         </div>
 
-        <ClientCard
-          clientId={request.clientId}
-          client={client}
-          conversationHref={`/conversations/${request.clientId}?request=${request.id}`}
-        />
+        {/*
+          Справа — тот, чья заявка. У мерчанта переписки нет, и вместо
+          неё в карточке контакты из анкеты: писать ему менеджер будет
+          ими (docs/adr/0017).
+        */}
+        {merchant ? (
+          <MerchantCard merchant={merchant} requestsHref={`/?merchant=${merchant.id}`} />
+        ) : (
+          <ClientCard
+            clientId={request.owner.kind === 'client' ? request.owner.clientId : ''}
+            client={client}
+            conversationHref={
+              request.owner.kind === 'client'
+                ? `/conversations/${request.owner.clientId}?request=${request.id}`
+                : undefined
+            }
+          />
+        )}
       </div>
 
       {/*
@@ -791,7 +831,7 @@ export function ExchangeRequestCard({
               <div className="row__main">
                 <span className="row__title">
                   {STATUS_LABELS[event.toStatus]}
-                  {event.actorType === 'client' ? ' — клиент' : ''}
+                  {ACTOR_WORDS[event.actorType] ?? ''}
                 </span>
                 {event.comment ? <span className="row__meta">{event.comment}</span> : undefined}
               </div>

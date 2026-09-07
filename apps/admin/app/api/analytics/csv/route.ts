@@ -1,10 +1,10 @@
 import { cookies } from 'next/headers';
+import { formatAmount } from '@nemo/ui/format';
 import { errorResponse } from '@/lib/api';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
-import { toCsv } from '@/lib/csv';
-import { formatAmount } from '@/lib/format';
-import { TZ_COOKIE, readTzOffset, resolvePeriod } from '@/lib/period';
+import { toCsv } from '@nemo/ui/csv';
+import { TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -77,8 +77,10 @@ export async function GET(request: Request): Promise<Response> {
             ]),
           ];
 
-    const from = period.from.toISOString().slice(0, 10);
-    const to = new Date(period.to.getTime() - 1).toISOString().slice(0, 10);
+    // Дни в имени — местные, как и границы: файл «1–7 сентября» не должен
+    // называться августом из-за пояса сервера.
+    const from = dayOf(period.from, offset);
+    const to = dayOf(new Date(period.to.getTime() - 1), offset);
     const name = `${kind === 'day' ? 'po-dnyam' : 'po-sotrudnikam'}-${from}-${to}.csv`;
     return new Response(toCsv(rows), {
       headers: {

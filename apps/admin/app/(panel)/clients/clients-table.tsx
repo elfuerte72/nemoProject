@@ -3,10 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { ClientTab } from '@nemo/core';
+import { Moment } from '@nemo/ui';
 import type { ClientRowDto } from '@/lib/client-rows';
-import { formatByCurrency } from '@/lib/money-list';
-import { mergePages } from '@/lib/paging';
-import { Moment } from '@/app/ui/moment';
+import { formatByCurrency } from '@nemo/ui/money-list';
+import { mergePages } from '@nemo/ui/paging';
 
 /**
  * Список клиентов с дочитыванием по курсору — тем же правилом, что у

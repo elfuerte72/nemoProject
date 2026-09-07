@@ -1,7 +1,6 @@
-import { formatAmount } from '@/lib/format';
-import { formatByCurrency, type MoneyLine } from '@/lib/money-list';
-import { CopyValue } from '@/app/ui/copy';
-import { Moment } from '@/app/ui/moment';
+import { formatAmount } from '@nemo/ui/format';
+import { CopyValue, Moment } from '@nemo/ui';
+import { formatByCurrency, type MoneyLine } from '@nemo/ui/money-list';
 
 /**
  * С кем имеет дело менеджер.

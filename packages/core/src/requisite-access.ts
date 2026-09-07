@@ -7,12 +7,18 @@ import {
   requisiteAccessLog,
   staff,
 } from '@nemo/db';
-import { parsePromptPay, type PromptPayIdType, type RequisiteKind } from '@nemo/types';
-import { requireAdmin, requireStaff, type Actor } from './actor.js';
+import {
+  describeRequisites,
+  parsePromptPay,
+  type PromptPayIdType,
+  type RequisiteKind,
+} from '@nemo/types';
+import { requireAdmin, requireStaff, type Actor, type Owner } from './actor.js';
 import { isDownloadable, type AttachmentKind } from './attachments.js';
 import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
 import { ForbiddenError, NotFoundError } from './errors.js';
-import { describeRequisites } from './requisites.js';
+import { ownerOf } from './exchange-requests.js';
+import { ownerColumns } from './requisites.js';
 
 /**
  * Чтение полного номера карты менеджером и журнал таких чтений.
@@ -72,7 +78,8 @@ export interface RequisiteAccessEntry {
   readonly id: string;
   readonly staffId: string;
   readonly staffName: string;
-  readonly clientId: bigint;
+  /** Чьи реквизиты открывали: клиента или мерчанта (docs/adr/0017). */
+  readonly owner: Owner;
   readonly exchangeRequestId: string | null;
   readonly withdrawalRequestId: string | null;
   /** Вложение из переписки, если открывали его. */
@@ -92,7 +99,7 @@ export async function logRequisiteAccess(
   executor: Executor,
   entry: {
     staffId: string;
-    clientId: bigint;
+    owner: Owner;
     requisitesId?: string;
     exchangeRequestId?: string;
     withdrawalRequestId?: string;
@@ -101,7 +108,7 @@ export async function logRequisiteAccess(
 ): Promise<void> {
   await executor.insert(requisiteAccessLog).values({
     staffId: entry.staffId,
-    clientId: entry.clientId,
+    ...ownerColumns(entry.owner),
     requisitesId: entry.requisitesId ?? null,
     exchangeRequestId: entry.exchangeRequestId ?? null,
     withdrawalRequestId: entry.withdrawalRequestId ?? null,
@@ -222,9 +229,10 @@ export async function logMessageAttachmentView(
       .limit(1);
     if (recent) return;
 
+    // Переписка бывает только с клиентом: у мерчанта её нет.
     await logRequisiteAccess(tx, {
       staffId: staffActor.staffId,
-      clientId: row.clientId,
+      owner: { kind: 'client', clientId: row.clientId },
       messageId,
     });
   });
@@ -277,7 +285,7 @@ export async function revealRequisites(
 
     await logRequisiteAccess(tx, {
       staffId,
-      clientId: row.clientId,
+      owner: ownerOf(row),
       requisitesId: row.id,
       exchangeRequestId: request.id,
     });
@@ -337,6 +345,7 @@ export async function listRequisiteAccessLog(
       staffId: requisiteAccessLog.staffId,
       staffName: staff.displayName,
       clientId: requisiteAccessLog.clientId,
+      merchantId: requisiteAccessLog.merchantId,
       exchangeRequestId: requisiteAccessLog.exchangeRequestId,
       withdrawalRequestId: requisiteAccessLog.withdrawalRequestId,
       messageId: requisiteAccessLog.messageId,
@@ -352,8 +361,9 @@ export async function listRequisiteAccessLog(
   // Что именно открывали — той же подписью, по которой запись называется
   // клиенту в приложении: администратор и клиент говорят про один
   // реквизит и должны узнавать его одинаково.
-  return rows.map(({ requisites, ...entry }) => ({
+  return rows.map(({ requisites, clientId, merchantId, ...entry }) => ({
     ...entry,
+    owner: ownerOf({ clientId, merchantId }),
     requisiteKind: requisites?.kind ?? null,
     requisiteHint: requisites === null ? null : describeRequisites(requisites),
   }));

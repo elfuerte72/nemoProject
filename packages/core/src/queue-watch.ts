@@ -2,8 +2,9 @@ import { and, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { attachmentFactsOf, staffPreview } from './attachments.js';
 import { clientMessages, clients, exchangeRequests, staff } from '@nemo/db';
 import type { CoreConfig } from './context.js';
+import { ownerOf } from './exchange-requests.js';
 import type { Notification } from './notifications.js';
-import { exchangeSubject, payoutHintsOf } from './request-subject.js';
+import { exchangeSubject, partiesOf, payoutHintsOf } from './request-subject.js';
 
 /**
  * Сторож очереди: что залежалось.
@@ -103,7 +104,8 @@ async function remindAboutStaleRequests(
 
   if (stale.length === 0) return [];
 
-  const usernames = await usernamesOf(tx, stale.map((one) => one.clientId));
+  const owners = stale.map((row) => ({ owner: ownerOf(row), reference: row.reference }));
+  const partyOf = await partiesOf(tx, owners);
   const hints = await payoutHintsOf(
     tx,
     stale.map((row) => row.requisitesId),
@@ -114,8 +116,7 @@ async function remindAboutStaleRequests(
       (recipient): Notification => ({
         kind: 'staff-stale-request',
         to: recipient.telegramUserId,
-        clientId: row.clientId,
-        clientUsername: usernames.get(row.clientId) ?? null,
+        party: partyOf({ owner: ownerOf(row), reference: row.reference }),
         request: exchangeSubject(row, hints),
         waitingMinutes: waitedMinutes(row.createdAt, at),
       }),

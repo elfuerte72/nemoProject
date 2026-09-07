@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
+import { Moment } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { HowToAccessLog } from '@/app/ui/how-to';
-import { Moment } from '@/app/ui/moment';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,7 +128,9 @@ export default async function RequisiteAccessPage({
                 <div className="row__main">
                   <span className="row__title">{entry.staffName}</span>
                   <span className="row__meta">
-                    клиент {entry.clientId.toString()}
+                    {entry.owner.kind === 'client'
+                      ? `клиент ${entry.owner.clientId}`
+                      : `мерчант ${entry.owner.merchantId}`}
                     {/*
                       Что именно открывали, а не только по какой заявке:
                       «карта» стояло здесь и тогда, когда открывали

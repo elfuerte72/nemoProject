@@ -260,7 +260,10 @@ describe('вложение', () => {
     expect(revealed).toMatchObject({ fileId: 'AgACAgIAAxkBAAI', kind: 'photo' });
     const log = await core.listRequisiteAccessLog(admin);
     expect(log).toHaveLength(1);
-    expect(log[0]).toMatchObject({ clientId: 100n, messageId: message!.id });
+    expect(log[0]).toMatchObject({
+      owner: { kind: 'client', clientId: 100n },
+      messageId: message!.id,
+    });
   });
 
   it('описание файла само по себе следа не оставляет: файла ещё не видели', async () => {

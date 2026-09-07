@@ -132,6 +132,63 @@ export const requisiteKinds = [
 export const requisiteKindSchema = z.enum(requisiteKinds);
 export type RequisiteKind = z.infer<typeof requisiteKindSchema>;
 
+/** Имя получателя: у тайского счёта, PromptPay и Alipay. */
+export const MAX_HOLDER_NAME = 100;
+
+/**
+ * Реквизит, как он приходит в запросе — из формы Mini App и из тела
+ * запроса мерчанта по API.
+ *
+ * Разобран по способу получения, а не собран из необязательных полей:
+ * сеть у карты должна отвергаться уже разбором запроса, а не доходить
+ * до ограничения базы. Одна схема на оба пути, потому что путь через
+ * API не должен быть слабее пути через форму — и не должен быть
+ * другим.
+ *
+ * Номер карты, адрес, номер счёта и содержимое QR дальше в ответах не
+ * появляются никогда; QR приходит строкой — картинку читают на
+ * устройстве (docs/adr/0012).
+ */
+export const requisiteInputSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('phone'),
+    bankName: z.string().min(1).max(100),
+    phone: z.string().min(1).max(32),
+  }),
+  z.object({
+    kind: z.literal('card'),
+    bankName: z.string().min(1).max(100),
+    cardNumber: z.string().min(1).max(40),
+  }),
+  z.object({
+    kind: z.literal('wallet'),
+    network: networkCodeSchema,
+    address: z.string().min(1).max(120),
+  }),
+  z.object({
+    kind: z.literal('account'),
+    bankName: z.string().min(1).max(100),
+    accountNumber: z.string().min(1).max(40),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+  z.object({
+    kind: z.literal('promptpay'),
+    qr: z.string().min(1).max(1000),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+  z.object({
+    kind: z.literal('alipay'),
+    account: z.string().min(1).max(120),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+  z.object({
+    kind: z.literal('alipay_qr'),
+    qr: z.string().min(1).max(1000),
+    holderName: z.string().min(1).max(MAX_HOLDER_NAME),
+  }),
+]);
+export type RequisiteInput = z.infer<typeof requisiteInputSchema>;
+
 /**
  * Роды записи в валютах сервиса — рублях и USDT, тех, что он держит сам.
  *
@@ -169,6 +226,70 @@ export const PROMPTPAY_ID_LABELS: Record<PromptPayIdType, string> = {
   national_id: 'ID-карта',
   ewallet: 'кошелёк',
 };
+
+/**
+ * Способ получения денег — так, как его выбирают в форме. Не «тип
+ * реквизита»: слово «реквизит» в форме означало бы, что человек уже
+ * знает, чем они бывают. Одни слова на Mini App и кабинет мерчанта: у
+ * панели менеджера подпись своя — там это не выбор, а описание.
+ */
+export const REQUISITE_KIND_LABELS: Record<RequisiteKind, string> = {
+  phone: 'По номеру телефона',
+  card: 'На карту',
+  wallet: 'На криптокошелёк',
+  account: 'На тайский банковский счёт',
+  promptpay: 'Thai QR (PromptPay)',
+  alipay: 'На Alipay по телефону или e-mail',
+  alipay_qr: 'На Alipay по QR',
+};
+
+/**
+ * Реквизиты одной строкой: банк и телефон, банк и последние цифры карты,
+ * сеть и края адреса. По этой подписи запись узнают, не видя её целиком
+ * — полное значение расшифровывает только панель менеджера
+ * (docs/adr/0002).
+ *
+ * Здесь, а не в ядре: ядро тянет драйвер базы и в браузер не идёт, а
+ * подпись читают и Mini App, и кабинет мерчанта, и журнал доступа в
+ * ядре. Копии по приложениям расходились бы заметно: один реквизит
+ * назывался бы по-разному.
+ */
+export function describeRequisites(view: {
+  readonly kind: RequisiteKind;
+  readonly bankName: string | null;
+  readonly phone: string | null;
+  readonly cardLast4: string | null;
+  readonly network: string | null;
+  readonly addressHint: string | null;
+  readonly accountLast4: string | null;
+  readonly qrHint: string | null;
+  readonly promptpayIdType: PromptPayIdType | null;
+  readonly alipayAccount: string | null;
+}): string {
+  switch (view.kind) {
+    case 'phone':
+      return [view.bankName, view.phone].filter(Boolean).join(' · ');
+    case 'card':
+      return [view.bankName, `карта •••• ${view.cardLast4 ?? ''}`.trim()]
+        .filter(Boolean)
+        .join(' · ');
+    case 'wallet':
+      return [view.network, view.addressHint].filter(Boolean).join(' · ');
+    case 'account':
+      return [view.bankName, `счёт •••• ${view.accountLast4 ?? ''}`.trim()]
+        .filter(Boolean)
+        .join(' · ');
+    case 'promptpay':
+      return [
+        'PromptPay',
+        `${PROMPTPAY_ID_LABELS[view.promptpayIdType ?? 'phone']} ${view.qrHint ?? ''}`.trim(),
+      ].join(' · ');
+    case 'alipay':
+      return ['Alipay', view.alipayAccount].filter(Boolean).join(' · ');
+    case 'alipay_qr':
+      return ['Alipay', `QR ${view.qrHint ?? ''}`.trim()].join(' · ');
+  }
+}
 
 /**
  * Какими родами записи валюта приходит клиенту.
@@ -423,7 +544,6 @@ export function looksLikeThaiAccountNumber(value: string): boolean {
  * набравший его по-русски, сверить менеджеру ничего не даст. Тайское
  * и китайское письмо не запрещены: у местного получателя имя своё.
  */
-export const MAX_HOLDER_NAME = 100;
 const CYRILLIC = /[\u0400-\u04ff]/;
 
 export function looksLikeHolderName(value: string): boolean {
@@ -491,6 +611,183 @@ export function promptPayHint(id: string): string {
 export function alipayQrHint(url: string): string {
   const code = url.trim().replace(/[?#].*$/, '').replace(/\/+$/, '');
   return `…${code.slice(-4)}`;
+}
+
+/**
+ * Последние четыре цифры номера карты — всё, что от него видно после
+ * записи: узнать свою карту в списке можно, восстановить номер — нет.
+ * Разделители в номере не считаются.
+ */
+export function lastFour(cardNumber: string): string {
+  const digits = cardNumber.replace(/\D/g, '');
+  if (digits.length < 4) {
+    throw new RangeError('В номере карты меньше четырёх цифр');
+  }
+  return digits.slice(-4);
+}
+
+/**
+ * Края адреса кошелька — то же, что последние четыре цифры для карты.
+ * Начало и конец, а не только хвост: адреса одной сети начинаются
+ * одинаково, и по одному началу свой от чужого не отличить. Короткий
+ * адрес остаётся целиком — прятать в нём нечего.
+ *
+ * Здесь, а не только в `@nemo/crypto`: хвосты считает и форма до
+ * сохранения, показывая, под какой подписью запись встанет в список.
+ */
+export function addressEdges(address: string): string {
+  const value = address.trim();
+  if (value.length <= ADDRESS_EDGE * 2 + 1) {
+    return value;
+  }
+  return `${value.slice(0, ADDRESS_EDGE)}…${value.slice(-ADDRESS_EDGE)}`;
+}
+
+const ADDRESS_EDGE = 4;
+
+/** У каких способов нужно имя получателя: менеджер сверяет его перед отправкой. */
+export function requisiteHolderRequired(kind: RequisiteKind): boolean {
+  return kind === 'account' || kind === 'promptpay' || kind === 'alipay' || kind === 'alipay_qr';
+}
+
+/**
+ * Черновик записи — то, что набрано в форме до сохранения. Способ
+ * бывает ещё не выбран; поля чужих способов остаются в черновике и не
+ * мешают: что отправлять, решает способ.
+ */
+export interface RequisiteDraft {
+  readonly kind: RequisiteKind | undefined;
+  readonly bankName?: string | undefined;
+  readonly phone?: string | undefined;
+  readonly cardNumber?: string | undefined;
+  readonly network?: string | undefined;
+  readonly address?: string | undefined;
+  readonly accountNumber?: string | undefined;
+  readonly holderName?: string | undefined;
+  readonly alipayAccount?: string | undefined;
+  /** Строка из QR — PromptPay или Alipay, уже прочитанная на устройстве. */
+  readonly qr?: string | undefined;
+}
+
+export type RequisiteField = 'phone' | 'card' | 'address' | 'account' | 'alipay' | 'holder';
+
+export interface RequisiteFieldComplaint {
+  readonly field: RequisiteField;
+  readonly complaint: string;
+}
+
+/**
+ * Что не так с набранным — по тем же правилам, по которым откажет
+ * операция, и теми же словами. Пустое поле замечания не получает:
+ * незаполненное — ещё не ошибка, и кнопка о нём говорит тем, что не
+ * горит. Порядок — порядок полей в форме: первое замечание и есть то,
+ * что показывают под формой; остальные красят свои поля.
+ *
+ * Одно правило на форму Mini App и форму кабинета: каскад, набранный
+ * дважды, разошёлся бы при первом новом способе.
+ */
+export function requisiteDraftComplaints(draft: RequisiteDraft): readonly RequisiteFieldComplaint[] {
+  const { kind } = draft;
+  if (kind === undefined) return [];
+  const typed = (value: string | undefined): value is string => (value?.trim().length ?? 0) > 0;
+  const found: RequisiteFieldComplaint[] = [];
+
+  if (kind === 'phone' && typed(draft.phone) && !looksLikePhone(draft.phone)) {
+    found.push({ field: 'phone', complaint: REQUISITE_COMPLAINTS.phone });
+  }
+  if (kind === 'card' && typed(draft.cardNumber) && !looksLikeCardNumber(draft.cardNumber)) {
+    found.push({ field: 'card', complaint: REQUISITE_COMPLAINTS.card });
+  }
+  if (
+    kind === 'wallet' &&
+    typed(draft.address) &&
+    !looksLikeWalletAddress(draft.network ?? '', draft.address)
+  ) {
+    found.push({ field: 'address', complaint: REQUISITE_COMPLAINTS.walletAddress(draft.network ?? '') });
+  }
+  if (
+    kind === 'account' &&
+    typed(draft.accountNumber) &&
+    !looksLikeThaiAccountNumber(draft.accountNumber)
+  ) {
+    found.push({ field: 'account', complaint: REQUISITE_COMPLAINTS.thaiAccount });
+  }
+  if (kind === 'alipay' && typed(draft.alipayAccount) && !looksLikeAlipayAccount(draft.alipayAccount)) {
+    found.push({ field: 'alipay', complaint: REQUISITE_COMPLAINTS.alipayAccount });
+  }
+  if (requisiteHolderRequired(kind) && typed(draft.holderName) && !looksLikeHolderName(draft.holderName)) {
+    found.push({ field: 'holder', complaint: REQUISITE_COMPLAINTS.holderName });
+  }
+  return found;
+}
+
+/**
+ * Что отправлять ядру — решает выбранный способ, а не то, что осталось
+ * в полях. Пока заполнено не всё, что нужно способу, отправлять нечего:
+ * записи, по которой нельзя отправить деньги, не существует.
+ */
+export function requisiteInputOf(draft: RequisiteDraft): RequisiteInput | undefined {
+  const text = (value: string | undefined) => value?.trim() ?? '';
+  const input = ((): RequisiteInput | undefined => {
+    switch (draft.kind) {
+      case 'phone':
+        return { kind: 'phone', bankName: text(draft.bankName), phone: text(draft.phone) };
+      case 'card':
+        return { kind: 'card', bankName: text(draft.bankName), cardNumber: text(draft.cardNumber) };
+      case 'wallet':
+        return { kind: 'wallet', network: text(draft.network), address: text(draft.address) };
+      case 'account':
+        return {
+          kind: 'account',
+          bankName: text(draft.bankName),
+          accountNumber: text(draft.accountNumber),
+          holderName: text(draft.holderName),
+        };
+      case 'promptpay':
+        return { kind: 'promptpay', qr: text(draft.qr), holderName: text(draft.holderName) };
+      case 'alipay':
+        return { kind: 'alipay', account: text(draft.alipayAccount), holderName: text(draft.holderName) };
+      case 'alipay_qr':
+        return { kind: 'alipay_qr', qr: text(draft.qr), holderName: text(draft.holderName) };
+      case undefined:
+        return undefined;
+    }
+  })();
+  if (input === undefined) return undefined;
+  const complete = Object.values(input).every((value) => String(value).length > 0);
+  return complete ? input : undefined;
+}
+
+/** Что распозналось из картинки — подтверждается перед сохранением. */
+export type QrReading =
+  | {
+      readonly ok: true;
+      readonly kind: 'promptpay';
+      readonly idType: PromptPayIdType;
+      /** Хвост — тот же, под которым запись встанет в список. */
+      readonly hint: string;
+    }
+  | { readonly ok: true; readonly kind: 'alipay_qr'; readonly hint: string }
+  | { readonly ok: false; readonly complaint: string };
+
+/**
+ * Прочитанная из QR строка — на подтверждение: тип идентификатора и
+ * хвост у PromptPay, хвост кода у Alipay. Картинка не та — форма
+ * скажет об этом словами до сохранения, а не в переписке с менеджером.
+ */
+export function qrReadingOf(kind: RequisiteKind, payload: string): QrReading {
+  if (kind === 'promptpay') {
+    const parsed = parsePromptPay(payload);
+    return parsed.ok
+      ? { ok: true, kind, idType: parsed.idType, hint: promptPayHint(parsed.id) }
+      : { ok: false, complaint: parsed.complaint };
+  }
+  if (kind === 'alipay_qr') {
+    return looksLikeAlipayQr(payload)
+      ? { ok: true, kind, hint: alipayQrHint(payload) }
+      : { ok: false, complaint: REQUISITE_COMPLAINTS.alipayQr };
+  }
+  return { ok: false, complaint: REQUISITE_COMPLAINTS.noQr };
 }
 
 /**
@@ -677,8 +974,13 @@ export type ReferralLine = z.infer<typeof referralLineSchema>;
  * Кто выполнил действие. Система ставит только начальные состояния;
  * клиент подаёт заявку на обмен и отменяет её, пока она новая; всё
  * остальное делает менеджер.
+ *
+ * Мерчант стоит рядом с клиентом, а не вместо него: заявку он подаёт и
+ * отменяет теми же переходами, но в истории должно остаться, кто это
+ * был. Одно значение на обоих означало бы, что в разборе спорной сделки
+ * «клиент отменил» может значить и «отменил кабинет мерчанта».
  */
-export const actorTypes = ['system', 'client', 'manager'] as const;
+export const actorTypes = ['system', 'client', 'merchant', 'manager'] as const;
 export const actorTypeSchema = z.enum(actorTypes);
 export type ActorType = z.infer<typeof actorTypeSchema>;
 
@@ -694,3 +996,81 @@ export const currencySchema = z.object({
   kind: currencyKindSchema,
 });
 export type Currency = z.infer<typeof currencySchema>;
+
+/**
+ * Состояния мерчанта — бизнеса, который пользуется сервисом как услугой
+ * обмена и подаёт заявки от своего имени (docs/adr/0017).
+ *
+ * Анкета попадает администратору после подтверждения почты, и до его
+ * решения мерчант ничего не может: одобрение открывает право создавать
+ * обязательства сервиса по курсу — решение того же рода, что наценка.
+ *
+ * Отключённый — не отклонённый: ключи API перестают работать сразу, но
+ * вход в кабинет остаётся, и открытые заявки доходят до конца. Иначе
+ * отключение означало бы, что мерчант перестал видеть деньги, которые
+ * уже отправил.
+ */
+export const merchantStatuses = [
+  'pending', // анкета на рассмотрении
+  'active', // одобрен
+  'rejected', // отклонён с причиной
+  'disabled', // отключён администратором
+] as const;
+export const merchantStatusSchema = z.enum(merchantStatuses);
+export type MerchantStatus = z.infer<typeof merchantStatusSchema>;
+
+/**
+ * Почта мерчанта — по той же форме, что и аккаунт Alipay: что-то,
+ * «собака», домен с точкой. Ловится опечатка, а не подделка: существует
+ * ли ящик, знает только письмо с подтверждением, и оно же его и
+ * проверяет.
+ */
+export function looksLikeEmail(value: string): boolean {
+  return EMAIL_FORM.test(value.trim());
+}
+
+/**
+ * Пароль мерчанта. Десять знаков — не оценка стойкости, а нижняя
+ * граница, ниже которой перебор по словарю окупается: угнанный аккаунт
+ * мерчанта означает подменённые реквизиты получателя, и платит по ним
+ * сам мерчант.
+ *
+ * Состав знаков не требуется: правила вроде «заглавная и цифра» дают
+ * «Password1» и ничего больше, а длину человек добирает словами.
+ */
+export const MIN_MERCHANT_PASSWORD = 10;
+
+export function looksLikePassword(value: string): boolean {
+  return value.length >= MIN_MERCHANT_PASSWORD;
+}
+
+/**
+ * Сайт мерчанта — только `http` и `https`.
+ *
+ * Строку из анкеты панель рисует ссылкой, а анкету заводит кто угодно
+ * снаружи: «javascript:» в этом поле означает клик сотрудника в
+ * контексте панели, а строка без схемы («shop.ru») уводит по
+ * относительному адресу внутрь неё же. Проверяется схема, а не
+ * существование сайта: открыть его — работа администратора, читающего
+ * анкету.
+ */
+export function looksLikeWebsite(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Чем анкета и вход мерчанта отвергаются — словами, одними на операцию
+ * и на форму кабинета, по тому же правилу, что и `REQUISITE_COMPLAINTS`.
+ */
+export const MERCHANT_COMPLAINTS = {
+  email: 'Почта не похожа на адрес: проверьте, нет ли опечатки',
+  password: `Пароль короче ${MIN_MERCHANT_PASSWORD} знаков — возьмите фразу подлиннее`,
+  credentials: 'Почта или пароль не подходят',
+  emailTaken: 'На эту почту уже заведён аккаунт',
+  site: 'Сайт — целиком, вместе с «https://»',
+} as const;
