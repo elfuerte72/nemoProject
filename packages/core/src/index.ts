@@ -93,6 +93,20 @@ import {
   setSignatureRequired,
 } from './api-keys.js';
 import {
+  addWebhookEndpoint,
+  enqueueWebhookPing,
+  getWebhookDelivery,
+  listMerchantWebhookEndpoints,
+  listWebhookDeliveries,
+  listWebhookEndpoints,
+  recordWebhookDeliveryResult,
+  removeWebhookEndpoint,
+  setWebhookEndpointPaused,
+  takeDueWebhookDeliveries,
+  type WebhookDeliveryResult,
+  type WebhookEvent,
+} from './webhooks.js';
+import {
   countApiRequestLog,
   listApiRequestLog,
   logApiRequest,
@@ -332,6 +346,36 @@ export function createCore(ctx: CoreConfig) {
     summarizeApiRequestLog: (actor: Actor, period: { since: Date }) =>
       summarizeApiRequestLog(ctx, actor, period),
     purgeApiRequestLog: (olderThan: Date) => purgeApiRequestLog(ctx, olderThan),
+
+    /*
+     * Вебхуки (docs/adr/0018): точки заводит мерчант, строки доставок
+     * пишут переходы заявки сами, а забирает и закрывает их воркер
+     * кабинета — без исполнителя, как планировщик.
+     */
+    addWebhookEndpoint: (actor: Actor, input: { url: string; events: readonly WebhookEvent[] }) =>
+      addWebhookEndpoint(ctx, actor, input),
+    listWebhookEndpoints: (actor: Actor) => listWebhookEndpoints(ctx, actor),
+    listMerchantWebhookEndpoints: (actor: Actor, merchantId: string) =>
+      listMerchantWebhookEndpoints(ctx, actor, merchantId),
+    setWebhookEndpointPaused: (actor: Actor, endpointId: string, paused: boolean) =>
+      setWebhookEndpointPaused(ctx, actor, endpointId, paused),
+    removeWebhookEndpoint: (actor: Actor, endpointId: string) =>
+      removeWebhookEndpoint(ctx, actor, endpointId),
+    listWebhookDeliveries: (
+      actor: Actor,
+      filter?: { endpointId?: string | undefined; limit?: number | undefined },
+    ) => listWebhookDeliveries(ctx, actor, filter),
+    getWebhookDelivery: (actor: Actor, deliveryId: string) =>
+      getWebhookDelivery(ctx, actor, deliveryId),
+    enqueueWebhookPing: (actor: Actor, endpointId: string) =>
+      enqueueWebhookPing(ctx, actor, endpointId),
+    takeDueWebhookDeliveries: (options: {
+      now: Date;
+      limit: number;
+      deliveryId?: string | undefined;
+    }) => takeDueWebhookDeliveries(ctx, options),
+    recordWebhookDeliveryResult: (deliveryId: string, result: WebhookDeliveryResult, now?: Date) =>
+      recordWebhookDeliveryResult(ctx, deliveryId, result, now),
 
     getExchangeTerms: () => getExchangeTerms(ctx),
     getQuote: (input: QuoteInput) => getQuote(ctx, input),
@@ -630,7 +674,27 @@ export type {
   ApiRequestLogInput,
   ApiRequestLogSummary,
 } from './api-log.js';
-export { API_LOG_RETENTION_DAYS, isFailedApiStatus } from './api-log.js';
+export { API_LOG_RETENTION_DAYS } from './api-log.js';
+export {
+  looksLikeWebhookUrl,
+  signWebhookBody,
+  WEBHOOK_EVENTS,
+  WEBHOOK_LEASE_MS,
+  WEBHOOK_MAX_ATTEMPTS,
+  WEBHOOK_RESPONSE_CHARS,
+  WEBHOOK_RETRY_MINUTES,
+  WEBHOOK_TIMEOUT_MS,
+} from './webhooks.js';
+export type {
+  AddedWebhookEndpoint,
+  WebhookDeliveryResult,
+  WebhookDeliveryStatus,
+  WebhookDeliveryView,
+  WebhookEndpointView,
+  WebhookEvent,
+  WebhookJob,
+  WebhookUrlCheck,
+} from './webhooks.js';
 export type { LiveEvent, LiveTopic } from './live-events.js';
 export { LIVE_TOPICS } from './live-events.js';
 export type {

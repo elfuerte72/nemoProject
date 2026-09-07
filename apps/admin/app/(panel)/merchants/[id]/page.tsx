@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
+import {
+  WEBHOOK_DELIVERY_STATUS_LABELS,
+  WEBHOOK_ENDPOINT_STATE_LABELS,
+  WEBHOOK_EVENT_LABELS,
+} from '@nemo/types';
 import { EmptyState, Moment } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
@@ -20,7 +25,7 @@ export const dynamic = 'force-dynamic';
  * кнопка при этом не разграничение доступа, а его видимость: отказывает
  * сама операция, и маршрут отвечает менеджеру тем же отказом.
  *
- * Вебхуки и статистика встанут сюда позже — их дописывают свои тикеты.
+ * Статистика встанет сюда позже — её дописывает свой тикет.
  */
 export default async function MerchantPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requireStaffActorOrNull();
@@ -44,9 +49,10 @@ export default async function MerchantPage({ params }: { params: Promise<{ id: s
    * остальными менеджер идёт в стол по ссылке — там курсор и «показать
    * ещё».
    */
-  const [requests, keys] = await Promise.all([
+  const [requests, keys, hooks] = await Promise.all([
     core.listMerchantExchangeRequests(actor, id, { limit: 10 }),
     core.listMerchantApiKeys(actor, id),
+    core.listMerchantWebhookEndpoints(actor, id),
   ]);
 
   return (
@@ -130,6 +136,51 @@ export default async function MerchantPage({ params }: { params: Promise<{ id: s
                     </span>
                     <span className={key.revokedAt ? 'pill pill--off' : 'pill'}>
                       {key.revokedAt ? 'Отозван' : 'Действует'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/*
+            Здоровье доставок: точка, которая не отвечает, объясняет
+            вопрос «почему мне не приходят вебхуки» раньше, чем его зададут.
+          */}
+          <section className="section">
+            <div className="section__head">
+              <h2 className="section__title">Вебхуки</h2>
+              <span className="section__rule" />
+            </div>
+            {hooks.length === 0 ? (
+              <p className="note">Точек не заводил.</p>
+            ) : (
+              <ul className="rows rows--tight">
+                {hooks.map((hook) => (
+                  <li key={hook.id} className="row">
+                    <span className="row__main">
+                      <span className="row__title mono">{hook.url}</span>
+                      <span className="row__meta">
+                        {hook.events.map((one) => WEBHOOK_EVENT_LABELS[one]).join(', ')}
+                        {hook.deliveries > 0 ? ` · доставок: ${hook.deliveries}` : ' · доставок не было'}
+                        {hook.lastDelivery ? (
+                          <>
+                            {' · последняя '}
+                            <Moment at={hook.lastDelivery.at.toISOString()} />
+                            {` — ${WEBHOOK_DELIVERY_STATUS_LABELS[hook.lastDelivery.status].toLowerCase()}`}
+                          </>
+                        ) : undefined}
+                      </span>
+                    </span>
+                    {/* Золотом — то, что зовёт человека: точка, которая не отвечает. */}
+                    <span className={hook.state === 'failing' ? 'pill pill--gold' : 'pill'}>
+                      {WEBHOOK_ENDPOINT_STATE_LABELS[hook.state]}
+                      {hook.failingSince ? (
+                        <>
+                          {' с '}
+                          <Moment at={hook.failingSince.toISOString()} />
+                        </>
+                      ) : undefined}
                     </span>
                   </li>
                 ))}

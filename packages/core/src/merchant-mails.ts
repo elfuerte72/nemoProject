@@ -52,6 +52,7 @@ export function renderMerchantMail(notification: Notification): MerchantMail | n
     case 'merchant-application-decided':
     case 'merchant-api-key-issued':
     case 'merchant-api-key-revoked':
+    case 'merchant-webhook-failing':
       return merchantAccountMail(notification);
     case 'exchange-request-status':
       return notification.to.kind === 'merchant' ? exchangeMail(notification) : null;
@@ -132,6 +133,15 @@ export function merchantAccountMail(
           `Ключ API «${notification.label}» (${notification.hint}) отозван и больше ` +
           'не принимается. Запросы с ним получают отказ; новый ключ выпускается ' +
           'в разделе «API».',
+      };
+    case 'merchant-webhook-failing':
+      return {
+        subject: 'Вебхук не доставляется',
+        text:
+          `Пять попыток доставить событие «${notification.event}» на ${notification.url} ` +
+          'не получили ответа 2xx: приёмник отвечает ошибкой или молчит. Новые события ' +
+          'будут отправляться дальше, по пять попыток каждое, но пока приёмник не починен, ' +
+          'они тоже пропадут. Ответы приёмника и пробная доставка ждут в разделе «Вебхуки».',
       };
   }
 }

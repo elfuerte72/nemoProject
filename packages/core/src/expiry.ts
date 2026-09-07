@@ -2,6 +2,7 @@ import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { exchangeRequestEvents, exchangeRequests } from '@nemo/db';
 import type { CoreConfig } from './context.js';
 import { merchantRecipients, recipientFor } from './merchants.js';
+import { enqueueWebhookDeliveries } from './webhooks.js';
 import type { Notification, Recipient } from './notifications.js';
 import { readServiceSettings } from './settings.js';
 
@@ -111,6 +112,11 @@ export async function expireUnpaidExchangeRequests(
         comment: EXPIRED_REASON,
       })),
     );
+
+    // Мерчанту об истечении — вебхуком, в той же транзакции.
+    for (const row of expired) {
+      await enqueueWebhookDeliveries(tx, { id: row.id, merchantId: row.merchantId, status: 'cancelled' }, at);
+    }
 
     const known = await merchantRecipients(
       tx,

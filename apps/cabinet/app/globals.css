@@ -356,3 +356,36 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── Вебхуки ─────────────────────────────────────────────────────── */
+
+.table--deliveries {
+  --cols: 130px minmax(0, 1.2fr) minmax(0, 1fr) 120px 120px minmax(0, 1.4fr);
+}
+
+/* Адрес приёмника и ответ переносятся: половина адреса ничего не говорит. */
+.hook__url,
+.hook__reply {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.hook .row__meta .tag {
+  margin: 2px 6px 2px 0;
+}
+
+.hook__ping {
+  color: var(--text);
+}
+
+.hook__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hook__events {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

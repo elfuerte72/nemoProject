@@ -8,6 +8,9 @@
  * ожидание которого прогрев и должен съесть. Курс в кабинете виден в
  * разделе «Курсы» и в подаче заявки, и приходить он должен вместе с
  * экраном.
+ *
+ * Здесь же стартует воркер вебхуков (docs/adr/0018): очередь доставок
+ * лежит в базе, и разбирать её должен кто-то, кого не ждут у экрана.
  */
 export async function register(): Promise<void> {
   // Next зовёт хук в каждом рантайме, в котором собрано приложение.
@@ -18,6 +21,8 @@ export async function register(): Promise<void> {
   try {
     const { getCore } = await import('./lib/core');
     getCore();
+    const { startWebhookWorkerFromEnvironment } = await import('./lib/webhooks/start');
+    startWebhookWorkerFromEnvironment();
   } catch (error) {
     // Прогрев — ускорение, а не обязанность: брошенное отсюда уронило
     // бы запуск, и вместо медленного первого запроса вышел бы

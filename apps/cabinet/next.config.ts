@@ -19,7 +19,7 @@ const config: NextConfig = {
   serverExternalPackages: ['postgres'],
   /** См. комментарии в apps/miniapp/next.config.ts. */
   outputFileTracingRoot: root,
-  webpack: (config, { nextRuntime }) => {
+  webpack: (config, { nextRuntime, webpack }) => {
     // Импорты пакетов монорепо указывают `.js` там, где на диске `.ts`.
     config.resolve.extensionAlias = { '.js': ['.ts', '.tsx', '.js'] };
     /*
@@ -41,6 +41,12 @@ const config: NextConfig = {
      */
     if (nextRuntime === 'edge') {
       config.resolve.alias = { ...config.resolve.alias, '@nemo/core': false };
+      /*
+       * Воркер вебхуков разрешает имя приёмника через `node:dns` — той
+       * же схемы `node:`, что и ядро. В пограничном бандле его нет и не
+       * будет: хук выходит по `NEXT_RUNTIME` раньше, чем позовёт воркер.
+       */
+      config.plugins.push(new webpack.IgnorePlugin({ resourceRegExp: /^node:dns\/promises$/ }));
     }
     return config;
   },

@@ -34,6 +34,7 @@ import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
 import { publishLiveEvent } from './live-events.js';
+import { enqueueWebhookDeliveries } from './webhooks.js';
 import type { Notification } from './notifications.js';
 import { quoteForSubmission } from './rates.js';
 import { requireActiveMerchant, recipientOf } from './merchants.js';
@@ -564,6 +565,8 @@ export async function submitExchangeRequest(
     // Заявка появилась в очереди: тот, кто ждёт работу у экрана, узнаёт
     // об этом сразу, а не с очередным тиком таймера.
     await publishLiveEvent(tx, { topic: 'exchange' });
+    // И мерчанту — вебхуком, в той же транзакции (docs/adr/0018).
+    await enqueueWebhookDeliveries(tx, { id: row!.id, merchantId: row!.merchantId, status: 'new' });
 
     const request = toExchangeRequestView(row!);
     return {

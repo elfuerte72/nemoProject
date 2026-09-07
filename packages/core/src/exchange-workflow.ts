@@ -52,6 +52,7 @@ import {
 import { recipientOf } from './merchants.js';
 import { likeEscape, merchantNameLike } from './search.js';
 import { publishLiveEvent } from './live-events.js';
+import { enqueueWebhookDeliveries } from './webhooks.js';
 import type { Notification, Recipient } from './notifications.js';
 import { accrueReferralBonuses } from './referral-accruals.js';
 import { readFeeSchedule } from './fee-schedules.js';
@@ -304,6 +305,13 @@ async function applyTransition(
   // Один толчок на любой переход: заявку ведёт один, а смотрят на неё
   // все, и «у коллег» на чужом столе обязано меняться вместе с ней.
   await publishLiveEvent(executor, { topic: 'exchange' });
+  // Мерчанту — вебхуком, в той же транзакции: доставка о переходе,
+  // которого не случилось, хуже её отсутствия (docs/adr/0018).
+  await enqueueWebhookDeliveries(executor, {
+    id: updated!.id,
+    merchantId: updated!.merchantId,
+    status: input.to,
+  });
 
   return {
     row: updated!,

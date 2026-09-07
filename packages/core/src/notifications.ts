@@ -7,6 +7,7 @@ import {
   type ExchangeRequestStatus,
   type ReferralLine,
   type RequisiteKind,
+  type WebhookEvent,
   type WithdrawalMethod,
   type WithdrawalRequestStatus,
 } from '@nemo/types';
@@ -271,6 +272,16 @@ export type Notification =
       readonly to: Recipient;
       readonly label: string;
       readonly hint: string;
+    }
+  | {
+      /**
+       * Точка вебхука не отвечает: пять попыток подряд провалились.
+       * Одно письмо на приступ — пока отметка у точки стоит, второго нет.
+       */
+      readonly kind: 'merchant-webhook-failing';
+      readonly to: Recipient;
+      readonly url: string;
+      readonly event: WebhookEvent;
     };
 
 /**
@@ -366,6 +377,7 @@ export const notificationKinds = [
   'merchant-application-decided',
   'merchant-api-key-issued',
   'merchant-api-key-revoked',
+  'merchant-webhook-failing',
 ] as const satisfies readonly Notification['kind'][];
 
 /**
@@ -425,6 +437,7 @@ export function renderNotification(notification: Notification): RenderedNotifica
     case 'merchant-application-decided':
     case 'merchant-api-key-issued':
     case 'merchant-api-key-revoked':
+    case 'merchant-webhook-failing':
       // Письмо, а не сообщение: доставляет его `@nemo/email`, а слова
       // живут рядом с остальными письмами мерчанту.
       return merchantAccountMail(notification);

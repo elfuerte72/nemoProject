@@ -69,6 +69,18 @@ describe('письма об аккаунте', () => {
     expect(mail.subject).toBe('Ключ API отозван');
     expect(mail.text).toContain('отказ');
   });
+
+  it('о неотвечающем вебхуке называет адрес и событие', () => {
+    const mail = mailFor({
+      kind: 'merchant-webhook-failing',
+      to: MERCHANT,
+      url: 'https://shop.example/hooks',
+      event: 'exchange_request.completed',
+    });
+    expect(mail.subject).toBe('Вебхук не доставляется');
+    expect(mail.text).toContain('https://shop.example/hooks');
+    expect(mail.text).toContain('exchange_request.completed');
+  });
 });
 
 describe('письма о заявке', () => {
@@ -178,6 +190,12 @@ describe('письма набраны человеком', () => {
     { kind: 'merchant-application-decided', to: MERCHANT, rejectionReason: 'нет сайта' },
     { kind: 'merchant-api-key-issued', to: MERCHANT, label: 'сайт', hint: 'sk_live_…a1b2' },
     { kind: 'merchant-api-key-revoked', to: MERCHANT, label: 'сайт', hint: 'sk_live_…a1b2' },
+    {
+      kind: 'merchant-webhook-failing',
+      to: MERCHANT,
+      url: 'https://shop.example/hooks',
+      event: 'exchange_request.completed',
+    },
     {
       kind: 'exchange-request-status',
       to: MERCHANT,

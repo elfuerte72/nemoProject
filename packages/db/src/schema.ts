@@ -93,6 +93,26 @@ export const merchantStatusEnum = pgEnum('merchant_status', [
 ]);
 
 /** Зачем выдана ссылка из письма: подтвердить адрес или сменить пароль. */
+/**
+ * События, о которых мерчант просит сообщать вебхуком. Переходы заявки
+ * и пробное `ping` из кабинета; «взята в работу» события не порождает —
+ * для мерчанта это ещё ничего не значит.
+ */
+export const webhookEventEnum = pgEnum('webhook_event', [
+  'exchange_request.created',
+  'exchange_request.rate_confirmed',
+  'exchange_request.payment_received',
+  'exchange_request.completed',
+  'exchange_request.cancelled',
+  'ping',
+]);
+
+export const webhookDeliveryStatusEnum = pgEnum('webhook_delivery_status', [
+  'pending',
+  'delivered',
+  'failed',
+]);
+
 export const merchantEmailTokenPurposeEnum = pgEnum('merchant_email_token_purpose', [
   'email_verification',
   'password_reset',
@@ -567,6 +587,94 @@ export const apiRequestLog = pgTable(
     index('api_request_log_merchant_at_idx').on(table.merchantId, table.at, table.id),
     // Чистка идёт по одному времени: ей всё равно, чей вызов.
     index('api_request_log_at_idx').on(table.at),
+  ],
+);
+
+/**
+ * Точка вебхука мерчанта: адрес, куда сервис сообщает о переходах его
+ * заявок (docs/adr/0018).
+ *
+ * Секрет лежит открытым текстом, в отличие от ключа API, — и это не
+ * недосмотр: им сервис подписывает каждую доставку, и хеш здесь ни к
+ * чему не пригоден. Показывается он мерчанту один раз, при заведении;
+ * утёкший меняют, заводя точку заново.
+ *
+ * Удалённая точка остаётся строкой с погашенным `is_active`: на неё
+ * ссылаются доставки, а «что мы слали месяц назад» должно отвечаться и
+ * после удаления.
+ */
+export const webhookEndpoints = pgTable(
+  'webhook_endpoints',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchants.id),
+    /** Только `https` на публичный хост — проверяет ядро при заведении. */
+    url: text('url').notNull(),
+    secret: text('secret').notNull(),
+    events: webhookEventEnum('events').array().notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    /**
+     * Пауза мерчантом: новые события точке не пишутся, уже заведённые
+     * доставки ждут снятия паузы.
+     */
+    pausedAt: timestamp('paused_at', { withTimezone: true }),
+    /**
+     * С какого момента точка не отвечает: ставится после пятой
+     * неудачной попытки доставки вместе с письмом мерчанту, снимается
+     * первой удачной. Пока стоит — второго письма нет: одно на
+     * приступ, а не на каждое событие.
+     */
+    failingSince: timestamp('failing_since', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('webhook_endpoints_merchant_idx').on(table.merchantId, table.createdAt)],
+);
+
+/**
+ * Исходящая очередь доставок (docs/adr/0018).
+ *
+ * Строка пишется в той же транзакции, что и переход заявки: доставка,
+ * заведённая после коммита, терялась бы на падении процесса между
+ * ними, а заведённая до — сообщала бы о переходе, которого не случилось.
+ * Забирает строки воркер кабинета — `for update skip locked`, чтобы
+ * два процесса не слали одно и то же.
+ *
+ * Тело собрано один раз и хранится строкой: повтор уходит байт в байт,
+ * с той же подписью и тем же `id` события — по нему приёмник и
+ * отбрасывает дубли. Идентификатор события — сама строка доставки.
+ */
+export const webhookDeliveries = pgTable(
+  'webhook_deliveries',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    endpointId: uuid('endpoint_id')
+      .notNull()
+      .references(() => webhookEndpoints.id),
+    event: webhookEventEnum('event').notNull(),
+    /** Пусто у пробного `ping`: заявки за ним нет. */
+    requestId: uuid('request_id').references(() => exchangeRequests.id),
+    body: text('body').notNull(),
+    status: webhookDeliveryStatusEnum('status').default('pending').notNull(),
+    /** Сколько попыток уже сделано. Пятая неудачная — последняя. */
+    attempt: smallint('attempt').default(0).notNull(),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow().notNull(),
+    responseStatus: smallint('response_status'),
+    /** Первые байты ответа приёмника: по ним видно, чем он подавился. */
+    responseBody: text('response_body'),
+    durationMs: integer('duration_ms'),
+    /** Слова о последней неудаче: срок, отказ соединения, не 2xx. */
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  },
+  (table) => [
+    // Воркер берёт строки, у которых подошло время, — по этому индексу.
+    index('webhook_deliveries_due_idx').on(table.status, table.nextAttemptAt),
+    // История точки в кабинете — свежие первыми.
+    index('webhook_deliveries_endpoint_idx').on(table.endpointId, table.createdAt, table.id),
+    index('webhook_deliveries_request_idx').on(table.requestId),
   ],
 );
 

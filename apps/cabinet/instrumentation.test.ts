@@ -14,8 +14,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  */
 
 const getCore = vi.hoisted(() => vi.fn());
+const startWebhookWorkerFromEnvironment = vi.hoisted(() => vi.fn());
 
 vi.mock('./lib/core', () => ({ getCore }));
+vi.mock('./lib/webhooks/start', () => ({ startWebhookWorkerFromEnvironment }));
 
 /*
  * Сбрасывается не только счёт вызовов, но и подменённое поведение:
@@ -40,6 +42,16 @@ describe('register', () => {
     expect(getCore).toHaveBeenCalledOnce();
   });
 
+  /** Очередь доставок в базе разбирает воркер, и заводит его тот же старт. */
+  it('заводит воркер вебхуков вместе с операциями', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+
+    const { register } = await import('./instrumentation');
+    await register();
+
+    expect(startWebhookWorkerFromEnvironment).toHaveBeenCalledOnce();
+  });
+
   /*
    * Next зовёт этот хук в каждом рантайме, в котором собрано приложение.
    * Маршруты здесь объявлены `nodejs`, и в остальных заводить нечего:
@@ -52,6 +64,7 @@ describe('register', () => {
     await register();
 
     expect(getCore).not.toHaveBeenCalled();
+    expect(startWebhookWorkerFromEnvironment).not.toHaveBeenCalled();
   });
 
   /*

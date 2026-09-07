@@ -1,4 +1,5 @@
-import { isFailedApiStatus, type ApiRequestLogEntry } from '@nemo/core';
+import type { ApiRequestLogEntry } from '@nemo/core';
+import { isFailedApiStatus } from '@nemo/types';
 
 /**
  * Строка журнала вызовов для экрана — датами-строками, как и заявки:

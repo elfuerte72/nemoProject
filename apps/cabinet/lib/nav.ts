@@ -26,9 +26,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     title: 'Интеграция',
     items: [
       { href: '/keys', label: 'API', icon: 'key' },
+      { href: '/webhooks', label: 'Вебхуки', icon: 'plug' },
       { href: '/calls', label: 'Журнал вызовов', icon: 'log' },
       { href: '/docs', label: 'Документация', icon: 'book' },
-      { href: '/sandbox', label: 'Песочница', icon: 'plug' },
+      { href: '/sandbox', label: 'Песочница', icon: 'spark' },
     ],
   },
   {

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import { apiKeys, merchants } from '@nemo/db';
 import { requireMerchant, requireStaff, type Actor } from './actor.js';
@@ -6,6 +6,7 @@ import type { CoreConfig } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
 import { requireActiveMerchant } from './merchants.js';
 import { toMerchant, type Notification } from './notifications.js';
+import { randomAlphanumeric } from './secrets.js';
 
 /**
  * Ключи API мерчанта (docs/adr/0017): чем его система подписывает
@@ -83,28 +84,11 @@ export function isApiKeyPrefix(value: string): value is ApiKeyPrefix {
 const MAX_LABEL = 60;
 
 /**
- * Секрет — тридцать два знака из букв и цифр: около 190 бит
- * случайности, столько не перебрать, и поэтому хеш быстрый, а не
- * argon2id, как у пароля. Без дефисов и подчёркиваний нарочно: ключ
- * копируют двойным щелчком, и на дефисе выделение обрывается.
+ * Секрет — тридцать два знака из букв и цифр (`secrets.ts`): около
+ * 190 бит случайности, столько не перебрать, и поэтому хеш быстрый, а
+ * не argon2id, как у пароля.
  */
 const SECRET_LENGTH = 32;
-const SECRET_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-
-function randomSecretBody(): string {
-  // Байты от 248 отбрасываются: 256 не делится на 62 нацело, и без
-  // этого первые восемь букв алфавита выпадали бы чаще остальных.
-  const limit = 256 - (256 % SECRET_ALPHABET.length);
-  let body = '';
-  while (body.length < SECRET_LENGTH) {
-    for (const byte of randomBytes(SECRET_LENGTH)) {
-      if (byte >= limit) continue;
-      body += SECRET_ALPHABET[byte % SECRET_ALPHABET.length];
-      if (body.length === SECRET_LENGTH) break;
-    }
-  }
-  return body;
-}
 
 /**
  * Как часто обновлять отметку «ходили в последний раз». Запись на
@@ -174,7 +158,7 @@ export async function issueApiKey(
   // а оно открывается одобрением анкеты и закрывается отключением.
   const merchant = await requireActiveMerchant(ctx.db, merchantId);
 
-  const secret = `${prefix}${randomSecretBody()}`;
+  const secret = `${prefix}${randomAlphanumeric(SECRET_LENGTH)}`;
   const hint = apiKeyHint(secret, prefix);
 
   const [row] = await ctx.db

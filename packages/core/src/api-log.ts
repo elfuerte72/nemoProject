@@ -1,5 +1,6 @@
 import { and, count, desc, eq, gte, lt, or, sql, type SQL } from 'drizzle-orm';
 import { apiKeys, apiRequestLog } from '@nemo/db';
+import { isFailedApiStatus } from '@nemo/types';
 import { requireMerchant, type Actor } from './actor.js';
 import type { CoreConfig } from './context.js';
 import { InvalidInputError } from './errors.js';
@@ -66,13 +67,8 @@ export interface ApiRequestLogSummary {
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
-/** Ответы короче 400 — успех. Граница та же, что у HTTP. */
+/** Ответы короче 400 — успех: та же граница, что у `isFailedApiStatus` в `@nemo/types`. */
 const FIRST_ERROR_STATUS = 400;
-
-/** Считается ли ответ отказом — одним правилом для плиток, табов и строк. */
-export function isFailedApiStatus(status: number): boolean {
-  return status >= FIRST_ERROR_STATUS;
-}
 
 /** Слова отказа в журнале режутся: он про то, что случилось, а не про весь текст. */
 const MAX_ERROR = 300;

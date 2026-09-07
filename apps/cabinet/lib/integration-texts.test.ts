@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { slopComplaints } from '@nemo/core';
 import { loadApiDoc } from './openapi';
-import { CALLS_HOW_TO, KEYS_HOW_TO, SANDBOX_HOW_TO } from './integration-texts';
+import { CALLS_HOW_TO, KEYS_HOW_TO, SANDBOX_HOW_TO, WEBHOOKS_HOW_TO } from './integration-texts';
 
 /**
  * Подсказки кабинета и договор API читает мерчант, и машинный ритм в
@@ -14,6 +14,7 @@ describe('тексты интеграции набраны человеком', 
     ['API', KEYS_HOW_TO],
     ['Журнал вызовов', CALLS_HOW_TO],
     ['Песочница', SANDBOX_HOW_TO],
+    ['Вебхуки', WEBHOOKS_HOW_TO],
   ] as const)('подсказка «%s»', (_name, items) => {
     for (const item of items) {
       expect(slopComplaints(`${item.title}\n${item.detail}`)).toEqual([]);
