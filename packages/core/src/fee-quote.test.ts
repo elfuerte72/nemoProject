@@ -48,6 +48,13 @@ const WALLET_TIERS = [
   { upToUsd: null, rateBps: 350 },
 ];
 
+/** Сетка юаня на кошелёк из ТЗ владельца: у него ступеней три. */
+const YUAN_TIERS = [
+  { upToUsd: '500', fixedUsd: '10' },
+  { upToUsd: '2000', rateBps: 200 },
+  { upToUsd: null, rateBps: 100 },
+];
+
 /** Рубль по сотой доллара, бат по тридцать за доллар — числа круглые нарочно. */
 const RATES = { 'RUB/USDT': '0.01', 'USDT/THB': '30', 'USDT/RUB': '100' };
 
@@ -110,6 +117,34 @@ describe('котировка по сетке комиссии', () => {
     // Тысяча долларов в кошелёк — 5,5%, то есть 55 $. Остаётся 945 $ —
     // 28 350 ฿ против 28 650 ฿ банковских.
     expect(wallet?.toAmount).toBe('28350');
+  });
+
+  it('берёт сетку валюты, пока запись не выбрана', async () => {
+    /*
+     * Цену экран показывает раньше, чем клиент выберет запись, а способ
+     * до тех пор не назван. Подставленный банк отдавал юань по наценке
+     * в 2%: сетки на банк у него нет и быть не может — приходит он
+     * только на Alipay. Клиент видел 13,52 ₽ за юань, выбирал Alipay и
+     * получал 14,07 (жалоба владельца от 7 сентября 2026).
+     */
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'CNY' });
+    await givenFeeSchedule({ toCode: 'CNY', payoutMethod: 'wallet', tiers: YUAN_TIERS });
+    await givenServiceSettings({ markupBps: 200 });
+    const core = createCore({ db, rateSource: givenRates({ ...RATES, 'USDT/CNY': '7' }) });
+
+    const unnamed = await core.getQuote({ fromCode: 'RUB', toCode: 'CNY', fromAmount: '100000' });
+
+    // 100 000 ₽ — тысяча долларов, ступень до двух тысяч: 2%, то есть
+    // 20 $. Остаётся 980 $ по семь юаней — 6 860 ¥. По наценке вышло бы
+    // 6 860 тоже, поэтому сумма взята на ступени фикса ниже.
+    expect(unnamed?.toAmount).toBe('6860');
+
+    const small = await core.getQuote({ fromCode: 'RUB', toCode: 'CNY', fromAmount: '10000' });
+
+    // 10 000 ₽ — сто долларов, ступень фикса: 10 $, остаётся 90 $ —
+    // 630 ¥. Наценка в 2% дала бы 686 ¥, которых сервис не отдаёт.
+    expect(small?.toAmount).toBe('630');
+    expect(small?.markupBps).toBe(0);
   });
 
   it('не применяет наценку сверх комиссии', async () => {

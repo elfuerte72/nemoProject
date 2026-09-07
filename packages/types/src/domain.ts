@@ -243,6 +243,41 @@ export function payoutMethodOf(record: {
   }
 }
 
+/**
+ * Каким способом валюта уходит клиенту, пока запись не выбрана.
+ *
+ * Цену экран показывает раньше выбора записи — курс стоит на черте до
+ * того, как набрана сумма, — а ставка зависит от способа. Подставленный
+ * молча банк называл цену, которой у валюты нет: юань приходит только
+ * на Alipay, сетки на банк у него не заведено, и котировка откатывалась
+ * на общую наценку. Клиент видел один курс, а заявка уходила по
+ * другому, хуже на четыре процента (жалоба владельца от 7 сентября
+ * 2026).
+ *
+ * Способ называется, только когда он у валюты один: у бата счёт
+ * банковский, а PromptPay бывает и кошельком — выбрать за клиента
+ * значит назвать цену наугад. Там, где способов два или записей нет
+ * вовсе, остаётся банк: им валюты выдавались до появления сеток, и
+ * сетки на них заведены тем же способом.
+ *
+ * Живёт рядом с `payoutMethodOf` и выводится из него же: два правила о
+ * том, куда уходит валюта, разошлись бы при первой новой записи.
+ */
+export function defaultPayoutMethodFor(currencyCode: string): PayoutMethod {
+  const methods = new Set<PayoutMethod>();
+  for (const kind of requisiteKindsFor(currencyCode)) {
+    if (kind === 'promptpay') {
+      // Способ у него внутри QR, и до записи его не узнать: оба.
+      methods.add('bank');
+      methods.add('wallet');
+      continue;
+    }
+    methods.add(payoutMethodOf({ kind, promptpayIdType: null }));
+  }
+  const [only] = [...methods];
+  return methods.size === 1 && only ? only : 'bank';
+}
+
 /** Валюта бывает фиатной и криптовалютной: от этого зависит, куда её отправлять. */
 export const currencyKinds = ['fiat', 'crypto'] as const;
 export const currencyKindSchema = z.enum(currencyKinds);

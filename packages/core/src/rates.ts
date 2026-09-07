@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { currencies, currencyPairs } from '@nemo/db';
 import {
+  defaultPayoutMethodFor,
   Money,
   payoutAfterFee,
   roundRate,
@@ -224,8 +225,13 @@ export async function getQuote(
    * Способ выдачи говорит и о виде сделки: наличные не приходят ни на
    * карту, ни на кошелёк, и заявка с ними — наличная. Поэтому пара
    * ищется того же вида, а не всегда безналичная.
+   *
+   * Не назван он до того, как клиент выбрал запись, — а курс экран
+   * показывает раньше. Тогда его называет валюта, если способ у неё
+   * один: банк по умолчанию отдавал юань по наценке, потому что сетки
+   * на банк у него нет и быть не может.
    */
-  const payoutMethod = input.payoutMethod ?? 'bank';
+  const payoutMethod = input.payoutMethod ?? defaultPayoutMethodFor(input.toCode);
   const cash = payoutMethod === 'cash';
   if (!(await hasActivePair(ctx.db, input, cash ? 'cash' : 'electronic'))) return null;
 
