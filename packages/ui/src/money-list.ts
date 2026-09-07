@@ -1,5 +1,5 @@
 import { Money, type Amount } from '@nemo/types';
-import { formatAmount } from '@nemo/ui/format';
+import { formatAmount } from './format.js';
 
 /**
  * Деньги по валютам — строкой, без суммирования между собой.

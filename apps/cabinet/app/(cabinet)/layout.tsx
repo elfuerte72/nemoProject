@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import type { MerchantSession } from '@nemo/core';
 import { Brand, Sidebar, Topbar } from '@nemo/ui';
+import { TZ_COOKIE } from '@nemo/ui/period';
 import type { MerchantActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import { NAV_COLLAPSED_KEY, NAV_GROUPS } from '@/lib/nav';
@@ -55,6 +56,7 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
           items={[{ href: '/settings', label: 'Настройки', icon: 'settings' }]}
           logoutPath="/api/auth/logout"
           afterLogout="/login"
+          timeZoneCookie={TZ_COOKIE}
         />
         {children}
       </div>

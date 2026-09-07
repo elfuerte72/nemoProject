@@ -8,7 +8,7 @@ import { toClientCardData } from '@/lib/client-card';
 import { getCore } from '@/lib/core';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
 import { pillClass } from '@/lib/labels';
-import { formatByCurrency } from '@/lib/money-list';
+import { formatByCurrency } from '@nemo/ui/money-list';
 import { ClientCard } from '@/app/ui/client-card';
 
 export const dynamic = 'force-dynamic';

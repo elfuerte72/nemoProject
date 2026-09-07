@@ -9,7 +9,7 @@ import { panelCounts } from '@/lib/counts';
 import { coreFilterFor, toExchangeRow, type DeskFilter } from '@/lib/exchange-rows';
 import { HowToRunRequest } from '@/app/ui/how-to';
 import { TABLE_PREFS_COOKIE, readTablePrefs } from '@/lib/table-prefs';
-import { TZ_COOKIE, readTzOffset, resolvePeriod } from '@/lib/period';
+import { TZ_COOKIE, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 import { DeskHead } from './desk-head';
 import { ExchangeTable } from './exchange-table';
 import { TablePrefsSheet } from './table-prefs-sheet';

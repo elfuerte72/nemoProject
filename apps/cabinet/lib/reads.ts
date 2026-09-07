@@ -1,5 +1,5 @@
 import { cache } from 'react';
-import { CoreError } from '@nemo/core';
+import { CoreError, type AnalyticsPeriod, type MerchantStats } from '@nemo/core';
 import type { ExchangeRequestStatus } from '@nemo/types';
 import { requireViewer, type MerchantViewer } from '@/lib/auth';
 import { getCore } from '@/lib/core';
@@ -53,6 +53,19 @@ export const requestCounts = cache(
   async (): Promise<Readonly<Record<ExchangeRequestStatus, number>>> => {
     const { actor } = await viewer();
     return getCore().countExchangeRequestsByStatus(actor);
+  },
+);
+
+/**
+ * Сводка за период — один пакет запросов на страницу. Ключ памяти —
+ * границы периода и смещение: `cache` сравнивает аргументы по ссылке,
+ * и датами в объекте он бы не сошёлся.
+ */
+export const merchantStats = cache(
+  async (from: number, to: number, offsetMinutes: number): Promise<MerchantStats> => {
+    const { actor } = await viewer();
+    const period: AnalyticsPeriod = { from: new Date(from), to: new Date(to) };
+    return getCore().summarizeMerchant(actor, actor.merchantId, period, { offsetMinutes });
   },
 );
 

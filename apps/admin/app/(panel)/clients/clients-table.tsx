@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import type { ClientTab } from '@nemo/core';
 import { Moment } from '@nemo/ui';
 import type { ClientRowDto } from '@/lib/client-rows';
-import { formatByCurrency } from '@/lib/money-list';
+import { formatByCurrency } from '@nemo/ui/money-list';
 import { mergePages } from '@nemo/ui/paging';
 
 /**

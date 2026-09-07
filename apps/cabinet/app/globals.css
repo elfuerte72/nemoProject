@@ -551,3 +551,78 @@
 .table--rates {
   --cols: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
 }
+
+/* ── Обзор: столбики по дням ─────────────────────────────────────── */
+
+/*
+ * Две недели по два столбика: подано и исполнено. Высоты — от самого
+ * высокого дня, пустой день стоит на своём месте пустым.
+ */
+.bars {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 6px;
+  height: 120px;
+  margin-top: 6px;
+}
+
+.bars__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+  gap: 4px;
+}
+
+.bars__pair {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.bars__bar {
+  flex: 1;
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--surface-soft-strong);
+}
+
+.bars__bar--done {
+  background: var(--gold, #e2b050);
+}
+
+/* Нулевой день — пустое место, а не точка: точка читалась бы как «одна». */
+.bars__bar--none {
+  min-height: 0;
+}
+
+.bars__label {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.bars__legend {
+  margin: 10px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.bars__key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--surface-soft-strong);
+}
+
+.bars__key--done {
+  margin-left: 8px;
+  background: var(--gold, #e2b050);
+}

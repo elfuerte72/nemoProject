@@ -85,6 +85,11 @@ import {
 import { pingDatabase } from './health.js';
 import { getQuote, type QuoteInput } from './rates.js';
 import {
+  merchantActivitySince,
+  summarizeMerchant,
+  type MerchantStatsOptions,
+} from './merchant-stats.js';
+import {
   authenticateApiKey,
   issueApiKey,
   listApiKeys,
@@ -308,6 +313,14 @@ export function createCore(ctx: CoreConfig) {
     getMerchantCard: (actor: Actor, merchantId: string) =>
       getMerchantCard(ctx, actor, merchantId),
     merchantSupportUsername: () => merchantSupportUsername(ctx),
+    /** Сводка мерчанта по правилам аналитики: ему самому и сотруднику. */
+    summarizeMerchant: (
+      actor: Actor,
+      merchantId: string,
+      period: AnalyticsPeriod,
+      options?: MerchantStatsOptions,
+    ) => summarizeMerchant(ctx, actor, merchantId, period, options),
+    merchantActivitySince: (actor: Actor, since: Date) => merchantActivitySince(ctx, actor, since),
     /** Заявки мерчанта — все, а не только те, что в работе. */
     listMerchantExchangeRequests: (
       actor: Actor,
@@ -708,6 +721,12 @@ export type {
 export { inquiryTopics, isInquiryTopic } from './inquiries.js';
 export type { InquiryTopic, SubmitInquiryInput } from './inquiries.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
+export type {
+  MerchantActivity,
+  MerchantDay,
+  MerchantPeriodSummary,
+  MerchantStats,
+} from './merchant-stats.js';
 export type {
   SaveServiceAccountInput,
   ServiceAccountFields,

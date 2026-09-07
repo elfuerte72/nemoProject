@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { csvCell, toCsv } from './csv';
+import { csvCell, toCsv } from './csv.js';
 
 describe('выгрузка CSV', () => {
   it('точка с запятой внутри значения экранируется кавычками', () => {

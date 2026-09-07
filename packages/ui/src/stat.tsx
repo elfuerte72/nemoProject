@@ -53,3 +53,16 @@ export function Stat({
     <div className={className}>{body}</div>
   );
 }
+
+/**
+ * Тон плитки по сравнению с прошлым периодом: больше — зелёное, меньше
+ * — красное, столько же — нейтральное. Одно правило на аналитику
+ * панели, карточку мерчанта и обзор кабинета. Для чисел, у которых
+ * рост — плохо (отменено), вызывающий выбирает тон сам.
+ */
+export function trendTone(now: number | null, before: number | null): StatTone {
+  if (now === null || before === null) return 'plain';
+  if (now > before) return 'up';
+  if (now < before) return 'down';
+  return 'plain';
+}

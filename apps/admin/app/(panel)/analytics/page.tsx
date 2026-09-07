@@ -1,14 +1,22 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { CoreError, type ExchangeSummary } from '@nemo/core';
-import { HowTo, Moment, Stat, Stats, type StatTone } from '@nemo/ui';
+import {
+  ExchangeCountTiles,
+  HowTo,
+  Moment,
+  MoneyCompare,
+  PeriodChips,
+  Stat,
+  Stats,
+  trendTone,
+} from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { STATUS_LABELS } from '@/lib/exchange-request-labels';
-import { averageByCurrency, compareByCurrency, formatByCurrency } from '@/lib/money-list';
-import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@/lib/period';
+import { averageByCurrency, formatByCurrency } from '@nemo/ui/money-list';
+import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 import { Funnel } from '@/app/ui/funnel';
-import { PeriodChips } from './period-chips';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,29 +113,13 @@ export default async function AnalyticsPage({
 
         <PeriodChips
           current={period.key}
+          basePath="/analytics"
           from={dayOf(period.from, offset)}
           to={dayOf(lastDay, offset)}
         />
 
         <Stats>
-          <Stat
-            label="Подано"
-            value={current.submitted}
-            note={was(previous.submitted, 'заявок')}
-            tone={trend(current.submitted, previous.submitted)}
-          />
-          <Stat
-            label="Исполнено"
-            value={current.completed}
-            note={was(previous.completed, 'по дате исполнения')}
-            tone={trend(current.completed, previous.completed)}
-          />
-          <Stat
-            label="Отменено"
-            value={current.cancelled}
-            note={was(previous.cancelled, 'по дате отмены')}
-            tone={current.cancelled > previous.cancelled ? 'down' : 'plain'}
-          />
+          <ExchangeCountTiles current={current} previous={previous} />
           <Stat
             label="Конверсия"
             value={percent(current.conversion)}
@@ -136,22 +128,7 @@ export default async function AnalyticsPage({
                 ? 'поданных в период нет'
                 : `исполнено из поданных · было ${percent(previous.conversion)}`
             }
-            tone={trendNullable(current.conversion, previous.conversion)}
-          />
-          <Stat
-            label="В работе"
-            value={current.open}
-            note="из поданных в период"
-            tone={current.open ? 'wait' : 'plain'}
-          />
-          <Stat
-            label="До исполнения"
-            value={minutes(current.averageMinutesToComplete)}
-            note={
-              previous.averageMinutesToComplete === null
-                ? 'в среднем от подачи до исполнения'
-                : `в среднем · было ${minutes(previous.averageMinutesToComplete)}`
-            }
+            tone={trendTone(current.conversion, previous.conversion)}
           />
         </Stats>
 
@@ -326,24 +303,11 @@ function MoneyCard({
   before: ExchangeSummary;
   pick: (summary: ExchangeSummary) => ExchangeSummary['turnover'];
 }) {
-  const lines = pick(now);
-  const compared = compareByCurrency(lines, pick(before));
   return (
     <section className="card">
       <h2 className="card__title">{title}</h2>
       <p className="card__note">{note}</p>
-      <p className="money">{formatByCurrency(lines)}</p>
-      {compared.length ? (
-        <ul className="rows rows--tight">
-          {compared.map((one) => (
-            <li key={one.code} className={`delta delta--${one.delta}`}>
-              {one.code}: было {formatByCurrency([{ code: one.code, amount: one.before }])}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted">было {formatByCurrency(pick(before))}</p>
-      )}
+      <MoneyCompare now={pick(now)} before={pick(before)} />
     </section>
   );
 }
@@ -353,29 +317,6 @@ function single(value: string | string[] | undefined): string | undefined {
   return one?.trim() || undefined;
 }
 
-function was(before: number, what: string): string {
-  return `${what} · было ${before}`;
-}
-
-function trend(now: number, before: number): StatTone {
-  if (now > before) return 'up';
-  if (now < before) return 'down';
-  return 'plain';
-}
-
-function trendNullable(now: number | null, before: number | null): StatTone {
-  if (now === null || before === null) return 'plain';
-  return trend(now, before);
-}
-
 function percent(value: number | null): string {
   return value === null ? '—' : `${Math.round(value * 100)} %`;
-}
-
-function minutes(value: number | null): string {
-  if (value === null) return '—';
-  if (value < 60) return `${Math.round(value)} мин`;
-  const hours = value / 60;
-  if (hours < 48) return `${hours.toFixed(1).replace('.', ',')} ч`;
-  return `${(hours / 24).toFixed(1).replace('.', ',')} дн`;
 }

@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
@@ -6,7 +7,17 @@ import {
   WEBHOOK_ENDPOINT_STATE_LABELS,
   WEBHOOK_EVENT_LABELS,
 } from '@nemo/types';
-import { EmptyState, Moment } from '@nemo/ui';
+import {
+  EmptyState,
+  ExchangeCountTiles,
+  firstParam,
+  IntegrationTiles,
+  Moment,
+  MoneyCompare,
+  PeriodChips,
+  Stats,
+} from '@nemo/ui';
+import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { toExchangeRow } from '@/lib/exchange-rows';
@@ -25,15 +36,31 @@ export const dynamic = 'force-dynamic';
  * кнопка при этом не разграничение доступа, а его видимость: отказывает
  * сама операция, и маршрут отвечает менеджеру тем же отказом.
  *
- * Статистика встанет сюда позже — её дописывает свой тикет.
+ * Числа за период — той же операцией и по тем же правилам, что обзор
+ * в кабинете мерчанта (docs/adr/0013): сотрудник и мерчант смотрят на
+ * одни числа. Период живёт в адресе, «сегодня» — по часам сотрудника.
  */
-export default async function MerchantPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function MerchantPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const actor = await requireStaffActorOrNull();
   if (!actor) {
     redirect('/login');
   }
 
   const { id } = await params;
+  const query = await searchParams;
+  const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
+  const now = new Date();
+  const period = resolvePeriod(
+    { period: firstParam(query.period), from: firstParam(query.from), to: firstParam(query.to) },
+    now,
+    offset,
+  );
   const core = getCore();
 
   const merchant = await core.getMerchantCard(actor, id).catch((error: unknown) => {
@@ -49,11 +76,14 @@ export default async function MerchantPage({ params }: { params: Promise<{ id: s
    * остальными менеджер идёт в стол по ссылке — там курсор и «показать
    * ещё».
    */
-  const [requests, keys, hooks] = await Promise.all([
+  const [requests, keys, hooks, stats] = await Promise.all([
     core.listMerchantExchangeRequests(actor, id, { limit: 10 }),
     core.listMerchantApiKeys(actor, id),
     core.listMerchantWebhookEndpoints(actor, id),
+    core.summarizeMerchant(actor, id, period, { offsetMinutes: offset, now }),
   ]);
+  const { current, previous } = stats;
+  const lastDay = new Date(period.to.getTime() - 1);
 
   return (
     <main className="page">
@@ -101,6 +131,39 @@ export default async function MerchantPage({ params }: { params: Promise<{ id: s
           {actor.role === 'admin' ? (
             <MerchantActions merchantId={merchant.id} status={merchant.status} />
           ) : undefined}
+
+          {/*
+            Те же числа, что мерчант видит в обзоре кабинета, за тот же
+            период: заявки по подаче, деньги по исполнению, валюты
+            раздельно. Плитка с вызовами API и доставками отвечает на
+            «у нас интеграция встала» раньше, чем об этом спросят.
+          */}
+          <section className="section">
+            <div className="section__head">
+              <h2 className="section__title">
+                {PERIOD_LABELS[period.key]}: <Moment at={period.from.toISOString()} mode="day" />{' '}
+                — <Moment at={lastDay.toISOString()} mode="day" />
+              </h2>
+              <span className="section__rule" />
+            </div>
+            <PeriodChips
+              current={period.key}
+              basePath={`/merchants/${merchant.id}`}
+              from={dayOf(period.from, offset)}
+              to={dayOf(lastDay, offset)}
+            />
+            <Stats>
+              <ExchangeCountTiles current={current} previous={previous} />
+              <IntegrationTiles
+                apiCalls={current.apiCalls}
+                webhookDeliveries={current.webhookDeliveries}
+              />
+            </Stats>
+            <div className="field">
+              <span className="label">Оборот по исполненным — по каждой валюте отдельно</span>
+              <MoneyCompare now={current.turnover} before={previous.turnover} />
+            </div>
+          </section>
 
           {/*
             Ключи без секретов — их нет и у нас — и последняя активность:

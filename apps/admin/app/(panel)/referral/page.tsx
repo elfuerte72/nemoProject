@@ -3,12 +3,11 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { formatAmount } from '@nemo/ui/format';
-import { HowTo, Moment, Stat, Stats } from '@nemo/ui';
+import { HowTo, Moment, PeriodChips, Stat, Stats } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { bpsToPercent } from '@/lib/percent';
-import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@/lib/period';
-import { PeriodChips } from '../analytics/period-chips';
+import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 
 export const dynamic = 'force-dynamic';
 

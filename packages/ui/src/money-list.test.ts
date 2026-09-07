@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Money } from '@nemo/types';
-import { formatAmount } from '@nemo/ui/format';
-import { averageByCurrency, compareByCurrency, formatByCurrency } from './money-list';
+import { formatAmount } from './format.js';
+import { averageByCurrency, compareByCurrency, formatByCurrency } from './money-list.js';
 
 const line = (code: string, amount: string, count?: number) => ({
   code,

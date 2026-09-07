@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayOf, localMidnight, readTzOffset, resolvePeriod } from './period';
+import { dayOf, localMidnight, readTzOffset, resolvePeriod } from './period.js';
 
 /**
  * «Сегодня» — по часам того, кто смотрит, а не сервера: сервер в UTC, а

@@ -1,6 +1,10 @@
+import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { EmptyState, HowTo, Moment, Tabs } from '@nemo/ui';
+import { formatByCurrency } from '@nemo/ui/money-list';
+import { TZ_COOKIE, readTzOffset, resolvePeriod } from '@nemo/ui/period';
+import type { MerchantActivity } from '@nemo/core';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { MERCHANT_TABS, MERCHANT_TAB_LABELS, pickMerchantStatus } from '@/lib/merchant-rows';
@@ -64,8 +68,13 @@ export default async function MerchantsPage({
   const status = pickMerchantStatus(single(params.status)) ?? 'pending';
 
   const core = getCore();
-  const [rows, ...counts] = await Promise.all([
+  // Активность за тридцать дней — одним запросом на всех, не по строке;
+  // окно — то же, что у чипа «30 дней» в карточке: от местной полуночи.
+  const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
+  const since = resolvePeriod({ period: '30d' }, new Date(), offset).from;
+  const [rows, activity, ...counts] = await Promise.all([
     core.listMerchants(actor, { status, ...(query ? { query } : {}) }),
+    core.merchantActivitySince(actor, since),
     ...MERCHANT_TABS.map((one) =>
       core.countMerchants(actor, { status: one, ...(query ? { query } : {}) }),
     ),
@@ -121,6 +130,11 @@ export default async function MerchantsPage({
                   {merchant.email} · {merchant.contactName} · подана{' '}
                   <Moment at={merchant.createdAt.toISOString()} mode="day" />
                 </span>
+                {/*
+                  Исполнено за тридцать дней и оборот по валютам: по ним
+                  видно, кто из активных работает, а кто только одобрен.
+                */}
+                <span className="row__meta">{activityLine(activity.get(merchant.id))}</span>
               </Link>
               <span className={merchantPillClass(merchant.status)}>
                 {MERCHANT_STATUS_LABELS[merchant.status]}
@@ -131,6 +145,13 @@ export default async function MerchantsPage({
       )}
     </main>
   );
+}
+
+/** Исполнено за тридцать дней и оборот по валютам — или честное «нет». */
+function activityLine(done: MerchantActivity | undefined): string {
+  return done
+    ? `за 30 дней исполнено ${done.completed} · оборот ${formatByCurrency(done.turnover)}`
+    : 'за 30 дней исполненных заявок нет';
 }
 
 function single(value: string | string[] | undefined): string {

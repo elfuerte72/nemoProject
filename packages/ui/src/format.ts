@@ -147,3 +147,16 @@ function dayBefore(key: string): string {
 function year(value: Date, timeZone: string): string {
   return value.toLocaleDateString('en-CA', { timeZone, year: 'numeric' });
 }
+
+/**
+ * Срок в минутах — словами, в той единице, в которой он читается:
+ * минуты до часа, часы до двух суток, дальше дни. Пусто — прочерк:
+ * «0 мин» значило бы «мгновенно», а не «нечего мерить».
+ */
+export function formatMinutes(value: number | null): string {
+  if (value === null) return '—';
+  if (value < 60) return `${Math.round(value)} мин`;
+  const hours = value / 60;
+  if (hours < 48) return `${hours.toFixed(1).replace('.', ',')} ч`;
+  return `${(hours / 24).toFixed(1).replace('.', ',')} дн`;
+}

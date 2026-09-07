@@ -5,7 +5,7 @@ import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
 import { panelCounts } from '@/lib/counts';
 import { ROLE_LABELS } from '@/lib/labels';
 import { NAV_COLLAPSED_KEY, NAV_GROUPS } from '@/lib/nav';
-import { TZ_COOKIE } from '@/lib/period';
+import { TZ_COOKIE } from '@nemo/ui/period';
 import { PaletteSearch } from '@/app/ui/palette-search';
 
 export const dynamic = 'force-dynamic';

@@ -1,5 +1,5 @@
 import type { ClientRow, ClientTab } from '@nemo/core';
-import type { MoneyLine } from '@/lib/money-list';
+import type { MoneyLine } from '@nemo/ui/money-list';
 
 /**
  * Строка клиента, какой она едет в клиентский компонент: `bigint` и

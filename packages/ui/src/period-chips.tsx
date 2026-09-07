@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { PERIOD_LABELS, type PeriodKey } from '@/lib/period';
+import { PERIOD_LABELS, type PeriodKey } from './period.js';
 
 /**
- * Чипы периода и свой отрезок датами.
+ * Чипы периода и свой отрезок датами — в аналитике панели, в карточке
+ * мерчанта и в обзоре кабинета.
  *
  * Выбор живёт в адресе: сводку считает сервер, а ссылку на «прошлые
  * тридцать дней» можно переслать и открыть кнопкой браузера.
@@ -15,11 +16,11 @@ export function PeriodChips({
   current,
   from,
   to,
-  basePath = '/analytics',
+  basePath,
 }: {
   current: PeriodKey;
-  /** Раздел, в адрес которого уходит период. */
-  basePath?: string;
+  /** Раздел, в адрес которого уходит период: у каждого экрана свой. */
+  basePath: string;
   /** Границы своего периода днями «2026-09-02» — для полей. */
   from: string;
   to: string;

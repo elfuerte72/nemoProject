@@ -10,6 +10,9 @@
     "./format": "./src/format.ts",
     "./live": "./src/live.ts",
     "./nav": "./src/nav.ts",
+    "./period": "./src/period.ts",
+    "./money-list": "./src/money-list.ts",
+    "./csv": "./src/csv.ts",
     "./paging": "./src/paging.ts",
     "./styles.css": "./styles/base.css"
   },

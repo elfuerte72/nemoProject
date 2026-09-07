@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, lt, sql, sum } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, lt, sql, sum, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { exchangeRequests, staff } from '@nemo/db';
 import {
@@ -71,7 +71,7 @@ export interface ExchangeAnalytics {
   readonly previous: ExchangeSummary;
 }
 
-function requirePeriod(period: AnalyticsPeriod): AnalyticsPeriod {
+export function requirePeriod(period: AnalyticsPeriod): AnalyticsPeriod {
   if (!(period.from < period.to)) {
     throw new InvalidInputError('Начало периода должно быть раньше конца');
   }
@@ -84,38 +84,89 @@ export function previousPeriod(period: AnalyticsPeriod): AnalyticsPeriod {
   return { from: new Date(period.from.getTime() - length), to: period.from };
 }
 
-async function countsFor(ctx: CoreConfig, period: AnalyticsPeriod): Promise<ExchangeCounts> {
-  const submittedIn = and(
+/*
+ * Условия правил ADR-0013 — одним набором на сводку панели и сводку
+ * мерчанта: два счёта одних и тех же заявок разошлись бы при первой
+ * правке — например, колонки, по которой считается отмена. Условия —
+ * типизированными операторами, а не сырым `sql` с датой: без колонки
+ * рядом драйвер не знает, что перед ним дата.
+ */
+
+/** Подана в период — по дате подачи. */
+export function submittedWithin(period: AnalyticsPeriod): SQL {
+  return and(
     gte(exchangeRequests.createdAt, period.from),
     lt(exchangeRequests.createdAt, period.to),
-  );
+  )!;
+}
+
+/** Исполнена в период — по дате исполнения. */
+export function completedWithin(period: AnalyticsPeriod): SQL {
+  return and(
+    eq(exchangeRequests.status, 'completed'),
+    gte(exchangeRequests.completedAt, period.from),
+    lt(exchangeRequests.completedAt, period.to),
+  )!;
+}
+
+/** Отменена в период. Отмена — последнее, что случается с заявкой: её время — `updated_at`. */
+export function cancelledWithin(period: AnalyticsPeriod): SQL {
+  return and(
+    eq(exchangeRequests.status, 'cancelled'),
+    gte(exchangeRequests.updatedAt, period.from),
+    lt(exchangeRequests.updatedAt, period.to),
+  )!;
+}
+
+/** Ещё в работе: не исполнена и не отменена. */
+export const stillOpen: SQL = sql`${exchangeRequests.status} not in ('completed', 'cancelled')`;
+
+/** От подачи до исполнения, минуты, — среднее по строкам под условием. */
+export const minutesToComplete: SQL<string | null> = sql<
+  string | null
+>`avg(extract(epoch from (${exchangeRequests.completedAt} - ${exchangeRequests.createdAt})) / 60)`;
+
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Смещение часового пояса того, кто смотрит: целые минуты, не дальше четырнадцати часов. */
+export function requireOffset(offsetMinutes: number | undefined): number {
+  const offset = Math.trunc(offsetMinutes ?? 0);
+  if (!Number.isFinite(offset) || Math.abs(offset) > 14 * 60) {
+    throw new InvalidInputError('Смещение часового пояса неправдоподобно');
+  }
+  return offset;
+}
+
+/**
+ * День колонки по местному времени — выражением для `select` и
+ * `group by`. Смещение подставляется литералом, а не параметром: одно и
+ * то же выражение стоит в обоих местах, и с двумя разными параметрами
+ * Postgres не признаёт их одинаковыми. Целое число из своего кода — не
+ * ввод снаружи (`requireOffset` его уже проверил). День берётся от
+ * момента в UTC, а не по поясу сессии базы: сервер и база живут где
+ * угодно, а смещение уже учтено интервалом.
+ */
+export function localDayOf(column: AnyPgColumn, offset: number): SQL<string> {
+  // `at time zone 'UTC'` — явно: `to_char` от `timestamptz` считает по
+  // поясу сессии базы, и «день по UTC» уезжал бы вместе с ним.
+  return sql<string>`to_char((${column} at time zone 'UTC') + make_interval(mins => ${sql.raw(String(offset))}), 'YYYY-MM-DD')`;
+}
+
+/** День по местному времени: смещение в минутах к востоку от UTC. */
+export function dayKey(date: Date, offsetMinutes: number): string {
+  return new Date(date.getTime() + offsetMinutes * 60_000).toISOString().slice(0, 10);
+}
+
+async function countsFor(ctx: CoreConfig, period: AnalyticsPeriod): Promise<ExchangeCounts> {
+  const submittedIn = submittedWithin(period);
   const [submitted, completed, cancelled, open] = await Promise.all([
     ctx.db.select({ n: count() }).from(exchangeRequests).where(submittedIn),
+    ctx.db.select({ n: count() }).from(exchangeRequests).where(completedWithin(period)),
+    ctx.db.select({ n: count() }).from(exchangeRequests).where(cancelledWithin(period)),
     ctx.db
       .select({ n: count() })
       .from(exchangeRequests)
-      .where(
-        and(
-          eq(exchangeRequests.status, 'completed'),
-          gte(exchangeRequests.completedAt, period.from),
-          lt(exchangeRequests.completedAt, period.to),
-        ),
-      ),
-    // Отмена — последнее, что случается с заявкой: её время — `updated_at`.
-    ctx.db
-      .select({ n: count() })
-      .from(exchangeRequests)
-      .where(
-        and(
-          eq(exchangeRequests.status, 'cancelled'),
-          gte(exchangeRequests.updatedAt, period.from),
-          lt(exchangeRequests.updatedAt, period.to),
-        ),
-      ),
-    ctx.db
-      .select({ n: count() })
-      .from(exchangeRequests)
-      .where(and(submittedIn, sql`${exchangeRequests.status} not in ('completed', 'cancelled')`)),
+      .where(and(submittedIn, stillOpen)),
   ]);
   return {
     submitted: submitted[0]?.n ?? 0,
@@ -126,15 +177,8 @@ async function countsFor(ctx: CoreConfig, period: AnalyticsPeriod): Promise<Exch
 }
 
 async function summaryFor(ctx: CoreConfig, period: AnalyticsPeriod): Promise<ExchangeSummary> {
-  const submittedIn = and(
-    gte(exchangeRequests.createdAt, period.from),
-    lt(exchangeRequests.createdAt, period.to),
-  );
-  const completedIn = and(
-    eq(exchangeRequests.status, 'completed'),
-    gte(exchangeRequests.completedAt, period.from),
-    lt(exchangeRequests.completedAt, period.to),
-  );
+  const submittedIn = submittedWithin(period);
+  const completedIn = completedWithin(period);
 
   const [counts, turnover, income, timing, completedOfSubmitted, funnel] = await Promise.all([
     countsFor(ctx, period),
@@ -156,14 +200,7 @@ async function summaryFor(ctx: CoreConfig, period: AnalyticsPeriod): Promise<Exc
       .from(exchangeRequests)
       .where(completedIn)
       .groupBy(exchangeRequests.serviceIncomeCode),
-    ctx.db
-      .select({
-        minutes: sql<
-          string | null
-        >`avg(extract(epoch from (${exchangeRequests.completedAt} - ${exchangeRequests.createdAt})) / 60)`,
-      })
-      .from(exchangeRequests)
-      .where(completedIn),
+    ctx.db.select({ minutes: minutesToComplete }).from(exchangeRequests).where(completedIn),
     ctx.db
       .select({ n: count() })
       .from(exchangeRequests)
@@ -263,13 +300,6 @@ export interface ExchangeBreakdowns {
   readonly byManager: readonly ManagerBreakdown[];
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** День по местному времени: смещение в минутах к востоку от UTC. */
-function dayKey(date: Date, offsetMinutes: number): string {
-  return new Date(date.getTime() + offsetMinutes * 60_000).toISOString().slice(0, 10);
-}
-
 /**
  * Разрезы по дням и по менеджерам — администратору.
  *
@@ -286,33 +316,12 @@ export async function breakdownExchangeRequests(
 ): Promise<ExchangeBreakdowns> {
   requireAdmin(actor);
   const { from, to } = requirePeriod(period);
-  /*
-   * Смещение подставляется в запрос литералом, а не параметром: одно и
-   * то же выражение стоит в `select` и в `group by`, и с двумя разными
-   * параметрами Postgres не признаёт их одинаковыми. Целое число из
-   * своего кода — не ввод снаружи.
-   */
-  const offset = Math.trunc(options.offsetMinutes ?? 0);
-  if (!Number.isFinite(offset) || Math.abs(offset) > 14 * 60) {
-    throw new InvalidInputError('Смещение часового пояса неправдоподобно');
-  }
-  const localDay = (column: AnyPgColumn) =>
-    sql<string>`to_char(${column} + make_interval(mins => ${sql.raw(String(offset))}), 'YYYY-MM-DD')`;
+  const offset = requireOffset(options.offsetMinutes);
+  const localDay = (column: AnyPgColumn) => localDayOf(column, offset);
 
-  const submittedIn = and(
-    gte(exchangeRequests.createdAt, from),
-    lt(exchangeRequests.createdAt, to),
-  );
-  const completedIn = and(
-    eq(exchangeRequests.status, 'completed'),
-    gte(exchangeRequests.completedAt, from),
-    lt(exchangeRequests.completedAt, to),
-  );
-  const cancelledIn = and(
-    eq(exchangeRequests.status, 'cancelled'),
-    gte(exchangeRequests.updatedAt, from),
-    lt(exchangeRequests.updatedAt, to),
-  );
+  const submittedIn = submittedWithin(period);
+  const completedIn = completedWithin(period);
+  const cancelledIn = cancelledWithin(period);
 
   const submittedDay = localDay(exchangeRequests.createdAt);
   const completedDay = localDay(exchangeRequests.completedAt);
