@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import type { Actor, MerchantSession } from '@nemo/core';
 import { getCore } from '@/lib/core';
-import { readToken, SESSION_COOKIE, sessionSecret } from '@/lib/session';
+import { readToken, SESSION_COOKIE, sessionSecret, viewerOrElse } from '@/lib/session';
 
 export type MerchantActor = Actor & { type: 'merchant' };
 
@@ -35,8 +35,13 @@ export async function requireActor(): Promise<MerchantActor> {
   return (await requireViewer()).actor;
 }
 
-/*
- * Тот же вход, но с `null` вместо отказа, — в `lib/reads.ts`: экранам
- * он нужен поверх памяти запроса, иначе каркас и раздел под ним читают
- * сессию дважды.
+/**
+ * Тот же вход, но с `null` вместо отказа — для страницы входа: `null`
+ * значит «показать форму», а вошедшего она отправляет в кабинет.
+ * Разделам кабинета это не годится: им без сессии нужно на вход, и
+ * читают они через `viewer` из `lib/reads.ts` — поверх памяти запроса,
+ * иначе каркас и раздел под ним ходили бы за сессией дважды.
  */
+export async function viewerOrNull(): Promise<MerchantViewer | null> {
+  return viewerOrElse(requireViewer, () => null);
+}
