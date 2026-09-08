@@ -15,10 +15,19 @@ import type { Amount } from './money.js';
  * разошлась бы с ядром молча — на экране одно число, в заявке другое.
  *
  * Ставка берётся со всей суммы, а не с превышения над порогом. Отсюда
- * обрывы на границах: отдавший 500,01 доллара получает заметно меньше
- * отдавшего ровно 500. Это решение владельца при названной цене
- * (`.scratch/exchange-pricing/spec.md`), а не недосмотр, и закреплено
- * тестом — «починка» ломает договорённость, а не ошибку.
+ * скачки на границах: отдавший 2 001 доллар получает заметно больше
+ * отдавшего ровно 2 000 — ставка упала на процентный пункт. Это решение
+ * владельца (`.scratch/exchange-pricing/spec.md`), и оно остаётся.
+ *
+ * Обратный скачок — когда отдавший больше получает меньше — с 8 сентября
+ * 2026 не принимается. Так была устроена нижняя ступень бата: фикс в 5 $
+ * до пятисот и 4,5 % дальше, и клиент с 300 $ платил 1,7 %, а с 600 $ —
+ * 4,5 %. Владелец прочёл это как ошибку, а не как цену решения: «чем
+ * меньше сумма, тем хуже курс», и никогда наоборот. Правило держит
+ * `feeScheduleSchema`: на каждой границе комиссия ступени до неё не
+ * меньше комиссии ступени после — за ту же сумму. Арифметика ниже
+ * правил не проверяет: она считает по тому, что ей дали, а проверяет
+ * сохранение.
  */
 
 /**
@@ -96,9 +105,83 @@ export const feeScheduleSchema = z
         );
       }),
     { message: 'Пороги ступеней должны возрастать' },
-  );
+  )
+  .superRefine((tiers, ctx) => {
+    const complaint = boundaryComplaint(tiers);
+    if (complaint !== null) ctx.addIssue({ code: 'custom', message: complaint });
+  });
 
 export type FeeSchedule = z.infer<typeof feeScheduleSchema>;
+
+/** Долларовая часть комиссии ступени за названную сумму: фикс плюс доля. */
+function usdFeeOf(tier: FeeTier, usdAmount: Amount): Amount {
+  return Money.add(tier.fixedUsd ?? Money.ZERO, Money.percentOf(usdAmount, tier.rateBps ?? 0));
+}
+
+/** Доллары словами для отказа: «22,50», «5», без хвоста из нулей. */
+function sayUsd(value: Amount): string {
+  const fixed = Money.format(value, 2);
+  return (fixed.endsWith('.00') ? fixed.slice(0, -3) : fixed).replace('.', ',');
+}
+
+/**
+ * Граница, на которой большая сумма стоит дороже меньшей, — или `null`,
+ * если такой нет.
+ *
+ * Сравнивается комиссия за одну и ту же сумму — сам порог — по ступени
+ * до него и по ступени после: как только вторая меньше первой, клиент,
+ * отдавший на цент больше, получает больше не на цент, а на всю разницу
+ * ставок, и на экране это читается как «на меньшую сумму курс лучше».
+ * Знак границы (`thresholdInclusive`) тут не важен: с любым знаком
+ * ступени сходятся на пороге. Долларовая часть сравнивается в долларах,
+ * фикс в валюте выдачи — отдельно и в своей валюте: перевести его в
+ * доллары нечем, а сравнить между собой можно.
+ *
+ * Равенство — не рост: у юаня фикс в 10 $ на пятистах и есть 2 %
+ * следующей ступени, и такая сетка годится.
+ */
+function boundaryComplaint(tiers: readonly FeeTier[]): string | null {
+  for (let index = 0; index + 1 < tiers.length; index += 1) {
+    const lower = tiers[index]!;
+    const upper = tiers[index + 1]!;
+    const threshold = lower.upToUsd;
+    if (threshold === null) continue;
+
+    const before = usdFeeOf(lower, threshold);
+    const after = usdFeeOf(upper, threshold);
+    if (Money.compare(before, after) < 0) {
+      return (
+        `На границе ${sayUsd(threshold)} $ ступень до неё берёт ${sayUsd(before)} $, ` +
+        `ступень после ${sayUsd(after)} $: меньшая сумма получила бы лучший курс`
+      );
+    }
+
+    const payoutBefore = lower.fixedPayout ?? Money.ZERO;
+    const payoutAfter = upper.fixedPayout ?? Money.ZERO;
+    if (Money.compare(payoutBefore, payoutAfter) < 0) {
+      return (
+        `На границе ${sayUsd(threshold)} $ фикс в валюте выдачи растёт ` +
+        `с ${sayUsd(payoutBefore)} до ${sayUsd(payoutAfter)}: меньшая сумма получила бы лучший курс`
+      );
+    }
+  }
+  return null;
+}
+
+/**
+ * Чем сетка не годится — словами, или `null`, если годится.
+ *
+ * Одни и те же слова читают ядро при сохранении и форма панели до
+ * нажатия: правило одно и живёт в схеме выше, а не пересказывается в
+ * разметке. Служебные замечания zod по-английски администратору не
+ * показываются — он правит проценты, а не разбирает разбор.
+ */
+export function feeScheduleComplaint(input: unknown): string | null {
+  const parsed = feeScheduleSchema.safeParse(input);
+  if (parsed.success) return null;
+  const first = parsed.error.issues[0]?.message;
+  return first !== undefined && /[а-яё]/i.test(first) ? first : 'Ступени сетки заданы неверно';
+}
 
 /**
  * Как читать порог ступени: «до 2 000 включительно» или «до 2 000, не
@@ -149,8 +232,7 @@ export function feeFor(
   options?: FeeOptions,
 ): Amount {
   const tier = tierFor(usdAmount, schedule, options);
-  if (!tier) return Money.ZERO;
-  return Money.add(tier.fixedUsd ?? Money.ZERO, Money.percentOf(usdAmount, tier.rateBps ?? 0));
+  return tier ? usdFeeOf(tier, usdAmount) : Money.ZERO;
 }
 
 /**

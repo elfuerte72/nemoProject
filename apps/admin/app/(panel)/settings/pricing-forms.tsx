@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { DirectionView, FeeScheduleView, NetworkView } from '@nemo/core';
-import type { PayoutMethod } from '@nemo/types';
+import { feeScheduleComplaint, type PayoutMethod } from '@nemo/types';
 import { KIND_LABELS } from '@/lib/exchange-request-labels';
 import { FEE_PAYOUT_LABELS, pillClass } from '@/lib/labels';
 import { bpsToPercent, percentToBps } from '@/lib/percent';
@@ -116,9 +116,14 @@ interface TierDraft {
  * устройство сетки, и четыре ступени с фиксом на нижней — это форма, о
  * которой уже договорились с владельцем. Числа он поправит под свою
  * валюту, а порядок «фикс, потом убывающие проценты» останется.
+ *
+ * На нижней ступени фикс стоит вместе с долей, а не вместо неё: один
+ * фикс в 5 $ на пятистах — это 1 %, и следующая ступень с 4,5 % делала
+ * бы меньшую сумму дешевле большей. Такую сетку схема с 8 сентября 2026
+ * не принимает, и заготовка не должна начинаться с отказа.
  */
 const DEFAULT_TIERS: readonly TierDraft[] = [
-  { upToUsd: '500', rate: '', fixed: '5', fixedIn: 'usd' },
+  { upToUsd: '500', rate: '4.5', fixed: '5', fixedIn: 'usd' },
   { upToUsd: '2000', rate: '4.5', fixed: '', fixedIn: 'usd' },
   { upToUsd: '5000', rate: '3.5', fixed: '', fixedIn: 'usd' },
   { upToUsd: '', rate: '2.5', fixed: '', fixedIn: 'usd' },
@@ -150,9 +155,11 @@ function isAmount(value: string): boolean {
 /**
  * Кнопка гаснет на недобранной сетке: отправленная, она вернулась бы
  * отказом ядра, а администратор видит перед собой поле, в котором
- * опечатка. Возрастание порогов здесь не проверяется — это правило
- * домена, и отвечает за него операция: два места, где оно записано,
- * однажды разойдутся.
+ * опечатка. Здесь проверяется только набор — есть ли число в поле.
+ * Правила домена (возрастание порогов, цена, не растущая с суммой)
+ * тут не пересказываются: их спрашивают у той же схемы, что и ядро
+ * (`feeScheduleComplaint`), иначе два места, где правило записано,
+ * однажды разошлись бы.
  */
 function draftsReady(drafts: readonly TierDraft[]): boolean {
   // Пустая сетка — не «всё в порядке»: у `every` пустой набор истинен, и
@@ -345,6 +352,14 @@ function FeeScheduleCard({
     minUsd.trim() === '' ||
     (isAmount(minUsd) && Number(minUsd.replace(',', '.')) > 0);
 
+  /*
+   * Чем сетка не годится, говорится до нажатия и теми же словами, что
+   * вернул бы отказ ядра: правило одно и живёт в `@nemo/types`. Пока
+   * поля не добраны, схему не спрашивают — о пустом поле она сказала бы
+   * по-своему, а администратор ещё набирает.
+   */
+  const complaint = draftsReady(drafts) ? feeScheduleComplaint(toTiers(drafts)) : null;
+
   return (
     <div className="row row--stack">
       <div className="row__side" style={{ justifyContent: 'space-between' }}>
@@ -476,6 +491,8 @@ function FeeScheduleCard({
         );
       })}
 
+      {complaint ? <p className="error">{complaint}</p> : undefined}
+
       <div className="row__actions">
         <button
           type="button"
@@ -495,7 +512,7 @@ function FeeScheduleCard({
         </button>
         <button
           type="button"
-          disabled={busy || !draftsReady(drafts) || !minReady}
+          disabled={busy || !draftsReady(drafts) || !minReady || complaint !== null}
           className="btn btn--gold"
           onClick={() =>
             onSend('/api/fee-schedules', {
