@@ -1,5 +1,6 @@
 import { createDatabase } from '@nemo/core';
 import { feeScheduleTiers, feeSchedules } from '@nemo/db';
+import { feeScheduleComplaint } from '@nemo/types';
 
 /**
  * Завести сетки комиссии из ТЗ владельца.
@@ -13,6 +14,11 @@ import { feeScheduleTiers, feeSchedules } from '@nemo/db';
  * разбор противоречия — в `.scratch/exchange-pricing/spec.md`. Ступень
  * берётся от всей суммы, пороги в долларах.
  *
+ * Пишет он в таблицы напрямую, минуя операцию, и потому проверяет сетки
+ * тем же правилом, что и она (`feeScheduleComplaint`), до первой записи:
+ * чего панель не сохранит, того и скрипт не заведёт — иначе свежий
+ * контур начинался бы с сетки, которую панель показывает красным.
+ *
  * Запуск: pnpm seed-fee-schedules
  */
 
@@ -23,13 +29,21 @@ import { feeScheduleTiers, feeSchedules } from '@nemo/db';
  * экономика направлений. Валюты, на которые письма не приходили, здесь
  * не заводятся вовсе: они считаются наценкой сервиса, и назначать за
  * владельца цену бата для рупии нельзя.
+ *
+ * Нижняя ступень бата в письме была одним фиксом — 5 $ на банк и 10 $
+ * на кошелёк до пятисот, — и при 4,5 % и 5,5 % следом меньшая сумма
+ * выходила дешевле большей; 8 сентября 2026 владелец назвал это ошибкой,
+ * и такую сетку панель больше не сохраняет. Здесь стоит то, что ему
+ * предложено взамен: доля следующей ступени и тот же фикс разом. Число
+ * за владельцем (`.scratch/nail-story-call/issues/01`); ответит иначе —
+ * править здесь и в панели.
  */
 const SCHEDULES = [
   {
     toCode: 'THB',
     payoutMethod: 'bank' as const,
     tiers: [
-      { upToUsd: '500', fixedUsd: '5' },
+      { upToUsd: '500', rateBps: 450, fixedUsd: '5' },
       { upToUsd: '2000', rateBps: 450 },
       { upToUsd: '5000', rateBps: 350 },
       { upToUsd: null, rateBps: 250 },
@@ -39,7 +53,7 @@ const SCHEDULES = [
     toCode: 'THB',
     payoutMethod: 'wallet' as const,
     tiers: [
-      { upToUsd: '500', fixedUsd: '10' },
+      { upToUsd: '500', rateBps: 550, fixedUsd: '10' },
       { upToUsd: '2000', rateBps: 550 },
       { upToUsd: '5000', rateBps: 450 },
       { upToUsd: null, rateBps: 350 },
@@ -57,6 +71,17 @@ const SCHEDULES = [
 ];
 
 async function main(): Promise<void> {
+  // Сначала все сетки, потом первая запись: негодная третья сетка не
+  // должна оставлять в базе две заведённые и одну ненаписанную.
+  for (const schedule of SCHEDULES) {
+    const complaint = feeScheduleComplaint(schedule.tiers);
+    if (complaint !== null) {
+      console.error(`${schedule.toCode} (${schedule.payoutMethod}): ${complaint}`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   const url = process.env.DATABASE_URL;
   if (!url) {
     console.error('Не задан DATABASE_URL');

@@ -109,8 +109,8 @@ interface TierDraft {
 }
 
 /**
- * С чего начинается новая сетка — ступени бата на банк, те самые, что
- * заводит скрипт развёртывания.
+ * С чего начинается новая сетка — ступени бата на банк, те же, что в
+ * `scripts/seed-fee-schedules.mts`.
  *
  * Не «пустая форма»: администратор правит цифры, а не изобретает
  * устройство сетки, и четыре ступени с фиксом на нижней — это форма, о
@@ -356,9 +356,11 @@ function FeeScheduleCard({
    * Чем сетка не годится, говорится до нажатия и теми же словами, что
    * вернул бы отказ ядра: правило одно и живёт в `@nemo/types`. Пока
    * поля не добраны, схему не спрашивают — о пустом поле она сказала бы
-   * по-своему, а администратор ещё набирает.
+   * по-своему, а администратор ещё набирает. Ступени собираются один
+   * раз: те, что проверила схема, те и уходят на сервер.
    */
-  const complaint = draftsReady(drafts) ? feeScheduleComplaint(toTiers(drafts)) : null;
+  const tiers = draftsReady(drafts) ? toTiers(drafts) : null;
+  const complaint = tiers === null ? null : feeScheduleComplaint(tiers);
 
   return (
     <div className="row row--stack">
@@ -512,10 +514,11 @@ function FeeScheduleCard({
         </button>
         <button
           type="button"
-          disabled={busy || !draftsReady(drafts) || !minReady || complaint !== null}
+          disabled={busy || tiers === null || !minReady || complaint !== null}
           className="btn btn--gold"
-          onClick={() =>
-            onSend('/api/fee-schedules', {
+          onClick={() => {
+            if (tiers === null) return;
+            void onSend('/api/fee-schedules', {
               action: 'save',
               toCode: schedule.toCode,
               payoutMethod: schedule.payoutMethod,
@@ -525,9 +528,9 @@ function FeeScheduleCard({
                 ? {}
                 : { minUsd: minUsd.replace(',', '.').trim() }),
               thresholdInclusive: inclusive,
-              tiers: toTiers(drafts),
-            })
-          }
+              tiers,
+            });
+          }}
         >
           Сохранить ставки
         </button>

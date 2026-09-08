@@ -24,10 +24,11 @@ import type { Amount } from './money.js';
  * до пятисот и 4,5 % дальше, и клиент с 300 $ платил 1,7 %, а с 600 $ —
  * 4,5 %. Владелец прочёл это как ошибку, а не как цену решения: «чем
  * меньше сумма, тем хуже курс», и никогда наоборот. Правило держит
- * `feeScheduleSchema`: на каждой границе комиссия ступени до неё не
- * меньше комиссии ступени после — за ту же сумму. Арифметика ниже
- * правил не проверяет: она считает по тому, что ей дали, а проверяет
- * сохранение.
+ * `feeSchedulePriceComplaint`: на каждой границе комиссия ступени до
+ * неё не меньше комиссии ступени после — за ту же сумму. Спрашивают его
+ * при сохранении (`parseFeeSchedule`), а не при чтении: арифметика ниже
+ * считает по тому, что ей дали, и сохранённые до правила сетки считаются
+ * как считались.
  */
 
 /**
@@ -83,9 +84,11 @@ export type FeeTier = z.infer<typeof feeTierSchema>;
 /**
  * Сетка целиком: ступени по возрастанию порога, последняя без границы.
  *
- * Проверяется здесь, а не только в базе, потому что по этой же сетке
- * считает экран: приехавшая с сервера сетка с дырой между ступенями
- * дала бы клиенту выдачу, которой не будет.
+ * Это устройство сетки, а не её цена. Годится ли цена, решает
+ * `feeSchedulePriceComplaint`, и вместе их спрашивает `parseFeeSchedule`
+ * при сохранении. Разделены нарочно: сохранённую сетку при чтении никто
+ * не разбирает, и правило о цене, появившееся позже самой сетки, не
+ * должно превращать уже записанные ступени в «курс назовёт менеджер».
  */
 export const feeScheduleSchema = z
   .array(feeTierSchema)
@@ -105,11 +108,7 @@ export const feeScheduleSchema = z
         );
       }),
     { message: 'Пороги ступеней должны возрастать' },
-  )
-  .superRefine((tiers, ctx) => {
-    const complaint = boundaryComplaint(tiers);
-    if (complaint !== null) ctx.addIssue({ code: 'custom', message: complaint });
-  });
+  );
 
 export type FeeSchedule = z.infer<typeof feeScheduleSchema>;
 
@@ -118,69 +117,112 @@ function usdFeeOf(tier: FeeTier, usdAmount: Amount): Amount {
   return Money.add(tier.fixedUsd ?? Money.ZERO, Money.percentOf(usdAmount, tier.rateBps ?? 0));
 }
 
-/** Доллары словами для отказа: «22,50», «5», без хвоста из нулей. */
-function sayUsd(value: Amount): string {
-  const fixed = Money.format(value, 2);
-  return (fixed.endsWith('.00') ? fixed.slice(0, -3) : fixed).replace('.', ',');
+/**
+ * Число словами для отказа: «22,50», «5», «14,996517».
+ *
+ * Копейки показываются двумя знаками, хвост длиннее — целиком: две
+ * комиссии, различные в третьем знаке, обрезанные до сотых читались бы
+ * администратору как одно и то же число с необъяснимым отказом.
+ */
+function sayAmount(value: Amount): string {
+  const [whole = '0', fraction = ''] = Money.format(value, 8).split('.');
+  const digits = fraction.replace(/0+$/, '');
+  if (digits.length === 0) return whole;
+  return `${whole},${digits.length === 1 ? `${digits}0` : digits}`;
 }
 
 /**
- * Граница, на которой большая сумма стоит дороже меньшей, — или `null`,
- * если такой нет.
+ * Чем цена сетки не годится — словами, или `null`, если годится.
  *
- * Сравнивается комиссия за одну и ту же сумму — сам порог — по ступени
- * до него и по ступени после: как только вторая меньше первой, клиент,
- * отдавший на цент больше, получает больше не на цент, а на всю разницу
- * ставок, и на экране это читается как «на меньшую сумму курс лучше».
- * Знак границы (`thresholdInclusive`) тут не важен: с любым знаком
- * ступени сходятся на пороге. Долларовая часть сравнивается в долларах,
- * фикс в валюте выдачи — отдельно и в своей валюте: перевести его в
- * доллары нечем, а сравнить между собой можно.
+ * Правило владельца от 8 сентября 2026: большая сумма не стоит дороже
+ * меньшей. Проверяется на каждой границе за одну и ту же сумму — сам
+ * порог: комиссия ступени до него не меньше комиссии ступени после. Как
+ * только она меньше, отдавший на цент больше получает больше не на
+ * цент, а на всю разницу ставок, и на экране это читается как «на
+ * меньшую сумму курс лучше». Знак границы (`thresholdInclusive`) тут не
+ * важен: с любым знаком ступени сходятся на пороге. Равенство — не
+ * рост: у юаня фикс в 10 $ на пятистах и есть 2 % следующей ступени.
  *
- * Равенство — не рост: у юаня фикс в 10 $ на пятистах и есть 2 %
- * следующей ступени, и такая сетка годится.
+ * Комиссия состоит из двух частей в разных валютах: долларовой (фикс и
+ * доля) и фикса в валюте выдачи. Сложить их без курса нечем, а курс
+ * меняется каждую минуту — сетка, годная утром, к вечеру стала бы
+ * негодной. Поэтому части сравниваются порознь. Обе не растут — сетка
+ * годится. Растёт долларовая при неубывающей второй или растёт вторая
+ * при равной долларовой — не годится, и отказ называет числа. Одна
+ * растёт, другая падает — сверить нельзя, и отказ говорит это прямо.
+ *
+ * Ступени сюда приходят проверенными по устройству (`feeScheduleSchema`):
+ * доля целая и неотрицательная, пороги по порядку. Без этого правило
+ * падало бы на арифметике вместо ответа словами — потому его и зовёт
+ * `parseFeeSchedule` вторым, а не сама схема.
  */
-function boundaryComplaint(tiers: readonly FeeTier[]): string | null {
+export function feeSchedulePriceComplaint(tiers: readonly FeeTier[]): string | null {
   for (let index = 0; index + 1 < tiers.length; index += 1) {
     const lower = tiers[index]!;
     const upper = tiers[index + 1]!;
     const threshold = lower.upToUsd;
     if (threshold === null) continue;
 
-    const before = usdFeeOf(lower, threshold);
-    const after = usdFeeOf(upper, threshold);
-    if (Money.compare(before, after) < 0) {
-      return (
-        `На границе ${sayUsd(threshold)} $ ступень до неё берёт ${sayUsd(before)} $, ` +
-        `ступень после ${sayUsd(after)} $: меньшая сумма получила бы лучший курс`
-      );
-    }
-
+    const usdBefore = usdFeeOf(lower, threshold);
+    const usdAfter = usdFeeOf(upper, threshold);
     const payoutBefore = lower.fixedPayout ?? Money.ZERO;
     const payoutAfter = upper.fixedPayout ?? Money.ZERO;
-    if (Money.compare(payoutBefore, payoutAfter) < 0) {
+    const usd = Money.compare(usdBefore, usdAfter);
+    const payout = Money.compare(payoutBefore, payoutAfter);
+    if (usd >= 0 && payout >= 0) continue;
+
+    const at = `На границе ${sayAmount(threshold)} $`;
+    if (usd < 0 && payout <= 0) {
       return (
-        `На границе ${sayUsd(threshold)} $ фикс в валюте выдачи растёт ` +
-        `с ${sayUsd(payoutBefore)} до ${sayUsd(payoutAfter)}: меньшая сумма получила бы лучший курс`
+        `${at} ступень до неё берёт ${sayAmount(usdBefore)} $, ступень после ` +
+        `${sayAmount(usdAfter)} $: меньшая сумма получила бы лучший курс`
       );
     }
+    if (payout < 0 && usd === 0) {
+      return (
+        `${at} фикс в валюте выдачи растёт с ${sayAmount(payoutBefore)} до ` +
+        `${sayAmount(payoutAfter)}: меньшая сумма получила бы лучший курс`
+      );
+    }
+    return (
+      `${at} одна часть комиссии растёт, другая падает, и без курса не сверить, ` +
+      `что большая сумма не выходит дешевле: задайте фикс в валюте выдачи одинаковым ` +
+      `на обеих ступенях`
+    );
   }
   return null;
 }
 
+export type ParsedFeeSchedule =
+  | { readonly ok: true; readonly tiers: FeeSchedule }
+  | { readonly ok: false; readonly complaint: string };
+
 /**
- * Чем сетка не годится — словами, или `null`, если годится.
+ * Разбор сетки для сохранения: сначала устройство, потом цена.
  *
- * Одни и те же слова читают ядро при сохранении и форма панели до
- * нажатия: правило одно и живёт в схеме выше, а не пересказывается в
- * разметке. Служебные замечания zod по-английски администратору не
- * показываются — он правит проценты, а не разбирает разбор.
+ * Разбор один на ядро и форму панели: ядро берёт из него ступени и
+ * пишет их, форма — слова отказа до нажатия; два разбора разошлись бы
+ * при первой правке. Служебные замечания zod по-английски администратору
+ * не показываются — он правит проценты, а не разбирает разбор.
  */
-export function feeScheduleComplaint(input: unknown): string | null {
+export function parseFeeSchedule(input: unknown): ParsedFeeSchedule {
   const parsed = feeScheduleSchema.safeParse(input);
-  if (parsed.success) return null;
-  const first = parsed.error.issues[0]?.message;
-  return first !== undefined && /[а-яё]/i.test(first) ? first : 'Ступени сетки заданы неверно';
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]?.message;
+    return {
+      ok: false,
+      complaint:
+        first !== undefined && /[а-яё]/i.test(first) ? first : 'Ступени сетки заданы неверно',
+    };
+  }
+  const complaint = feeSchedulePriceComplaint(parsed.data);
+  return complaint === null ? { ok: true, tiers: parsed.data } : { ok: false, complaint };
+}
+
+/** Чем сетка не годится — словами, или `null`, если годится. */
+export function feeScheduleComplaint(input: unknown): string | null {
+  const parsed = parseFeeSchedule(input);
+  return parsed.ok ? null : parsed.complaint;
 }
 
 /**

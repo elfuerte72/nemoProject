@@ -1,9 +1,8 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { currencies, feeScheduleTiers, feeSchedules } from '@nemo/db';
 import {
-  feeScheduleComplaint,
-  feeScheduleSchema,
   Money,
+  parseFeeSchedule,
   payoutMethodSchema,
   type Amount,
   type FeeTier,
@@ -192,13 +191,13 @@ function requireValidTiers(input: SaveFeeScheduleInput['tiers']): readonly FeeTi
   }
 
   /*
-   * Слова отказа — из `@nemo/types`, те же, что форма панели показывает
-   * до нажатия: правило одно, и пересказывать его здесь значило бы
-   * завести второе.
+   * Разбор один — тот же, которым форма панели проверяет ступени до
+   * нажатия: слова отказа те же, а ступени берутся из этого же разбора,
+   * а не из второго прохода по той же схеме.
    */
-  const complaint = feeScheduleComplaint(input);
-  if (complaint !== null) throw new InvalidInputError(complaint);
-  return feeScheduleSchema.parse(input);
+  const parsed = parseFeeSchedule(input);
+  if (!parsed.ok) throw new InvalidInputError(parsed.complaint);
+  return parsed.tiers;
 }
 
 /**
