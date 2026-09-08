@@ -2191,6 +2191,221 @@ button.tile:hover {
  * Ставка линии — под числом приглашённых, медью. Она и есть ответ на
  * единственный вопрос к реферальной программе: сколько за это платят.
  */
+/* ── Реферальный кабинет: уровень, статистика, рефералы ──────────── */
+
+/*
+ * Уровень и ставки — одной карточкой: вопрос к программе один, «сколько
+ * мне за это платят», и ответ на него — строка на линию с источником
+ * ставки, а не два числа в плашке.
+ */
+.tier {
+  padding: 18px 20px;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift);
+}
+
+.tier__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tier__name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--gold-light);
+}
+
+.tier__lines {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.tier__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.tier__line {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* «Первая линия» — с заглавной только первое слово: capitalize задел бы оба. */
+.tier__line::first-letter {
+  text-transform: uppercase;
+}
+
+.tier__count {
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+.tier__rate {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gold-light);
+  text-align: right;
+}
+
+.tier__source {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/*
+ * Полоса до следующего уровня: ширина — доля активных от порога. Со своим
+ * префиксом: `.progress` уже занят шагами заявки, и полоса под общим
+ * именем не рисовалась вовсе — ширина уходила в ноль.
+ */
+.tier-progress {
+  margin-top: 14px;
+}
+
+.tier-progress__track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  overflow: hidden;
+}
+
+.tier-progress__bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gold-face-soft);
+  transition: width 0.3s ease;
+}
+
+.tier-progress__note {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* Плитки статистики — две в ряд: на телефоне четыре подряд не читаются. */
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-tile);
+  box-shadow: var(--lift);
+  min-width: 0;
+}
+
+.stat-tile__label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stat-tile__value {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-tile__note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.stat-tile__note--up {
+  color: var(--up);
+}
+
+.stat-tile__note--down {
+  color: var(--down);
+}
+
+/*
+ * Столбики по дням — разметкой: высота из числа, пустой день — пустой
+ * столбик на своём месте. Библиотека графиков ради одной полосы в
+ * бандл не едет.
+ */
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 84px;
+  margin-top: 14px;
+  padding: 0 2px;
+}
+
+.bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+
+.bar__track {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.bar__fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--gold-face-soft);
+}
+
+.bar__joined {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.bar__joined--none {
+  color: var(--text-faint);
+}
+
+.bars__note {
+  margin-top: 8px;
+}
+
+.link--block {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  text-align: center;
+}
+
 .split__rate {
   margin-top: 6px;
   font-size: 12px;

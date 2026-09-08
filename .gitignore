@@ -17,3 +17,6 @@ coverage/
 
 .claude/settings.local.json
 *.tsbuildinfo
+
+# Песочница для просмотра компонентов Mini App глазами (см. тикет 04 рефералки)
+apps/miniapp/.sandbox/

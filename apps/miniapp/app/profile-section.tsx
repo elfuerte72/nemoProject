@@ -1,8 +1,8 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { BonusAccountView, ClientView, RequisitesView, WithdrawalRequestView } from '@nemo/core';
-import { describeRequisites, isServiceCurrencyRequisiteKind, Money, REQUISITE_KIND_LABELS, referralLineName } from '@nemo/types';
+import { describeRequisites, isServiceCurrencyRequisiteKind, Money, REQUISITE_KIND_LABELS } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { referralLink } from '@/lib/referral';
 import { formatAmount, formatBps, formatMonth, parseAmount } from '@/lib/format';
@@ -18,6 +18,7 @@ import { Failure } from './ui/failure';
 import { Loading } from './ui/loading';
 import { useCopied } from './ui/use-copied';
 import { MarketingConsentToggle } from './marketing-consent';
+import { ReferralsBlock, ReferralStats, TierCard } from './referral-cabinet';
 import { RequisitesSheet } from './requisites-section';
 import { NoticeSheet, Sheet } from './ui/sheet';
 
@@ -211,23 +212,11 @@ export function ProfileSection({
       </div>
 
       {/*
-        Сколько привёл и по какой ставке. Ставка стоит рядом с числом
-        приглашённых, а не в тексте где-то ниже: без неё в этой плашке
-        два числа, которые ни о чём не говорят, — а вопрос к
-        реферальной программе один, «сколько мне за это платят».
+        Уровень и ставка каждой линии — рядом с числом приглашённых, а не
+        в тексте где-то ниже: вопрос к реферальной программе один,
+        «сколько мне за это платят».
       */}
-      <div className="split">
-        {account.lines.map((line, index) => (
-          <Fragment key={line.line}>
-            {index > 0 ? <div className="split__rule" /> : undefined}
-            <div className="split__cell">
-              <div className="split__value">{line.count}</div>
-              <div className="split__label">{referralLineName(line.line)} линия</div>
-              <div className="split__rate">{formatBps(line.rateBps)} с их обменов</div>
-            </div>
-          </Fragment>
-        ))}
-      </div>
+      <TierCard account={account} />
 
       {link ? (
         <button type="button" onClick={copyLink} className="tile bonus__link">
@@ -240,6 +229,9 @@ export function ProfileSection({
       ) : (
         <p className="empty">Реферальная ссылка появится, когда бот будет настроен.</p>
       )}
+
+      <ReferralStats revisit={revisit} />
+      <ReferralsBlock revisit={revisit} />
 
       {/*
         Реквизиты — про самого клиента, а не про его баллы: по ним
