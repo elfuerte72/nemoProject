@@ -218,6 +218,13 @@
       "when": 1788762402794,
       "tag": "0030_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788852730805,
+      "tag": "0031_referral_program",
+      "breakpoints": true
     }
   ]
 }

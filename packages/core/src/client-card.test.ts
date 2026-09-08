@@ -131,8 +131,10 @@ describe('рефералы клиента в карточке', () => {
 
     const { stats } = await core.getClientCard(manager, 100n);
 
-    expect(stats.invitedLine1).toBe(2);
-    expect(stats.invitedLine2).toBe(1);
+    expect(stats.invitedByLine).toEqual([
+      { line: 1, count: 2 },
+      { line: 2, count: 1 },
+    ]);
   });
 
   it('называет заработанное реферальной программой за всё время', async () => {
@@ -151,8 +153,10 @@ describe('рефералы клиента в карточке', () => {
 
     const { stats } = await core.getClientCard(manager, 100n);
 
-    expect(stats.invitedLine1).toBe(0);
-    expect(stats.invitedLine2).toBe(0);
+    expect(stats.invitedByLine).toEqual([
+      { line: 1, count: 0 },
+      { line: 2, count: 0 },
+    ]);
     expect(stats.referralEarned).toBe('0');
   });
 });

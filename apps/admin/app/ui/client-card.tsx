@@ -1,3 +1,4 @@
+import { isReferralLine, referralLineName } from '@nemo/types';
 import { formatAmount } from '@nemo/ui/format';
 import { CopyValue, Moment } from '@nemo/ui';
 import { formatByCurrency, type MoneyLine } from '@nemo/ui/money-list';
@@ -18,6 +19,11 @@ import { formatByCurrency, type MoneyLine } from '@nemo/ui/money-list';
  * не переезжают, а карточка стоит и на серверных страницах, и внутри
  * клиентских. Перевод — `toClientCardData` в `lib/client-card.ts`.
  */
+/** «вторая линия» — словом; незнакомую линию называем числом, чтобы не молчать. */
+function lineName(line: number): string {
+  return isReferralLine(line) ? referralLineName(line) : `${line}-я`;
+}
+
 export interface ClientCardStats {
   readonly completed: number;
   readonly open: number;
@@ -25,8 +31,8 @@ export interface ClientCardStats {
   readonly lastRequestAt: string | null;
   readonly turnover: readonly MoneyLine[];
   readonly regular: boolean;
-  readonly invitedLine1: number;
-  readonly invitedLine2: number;
+  /** По оплачиваемым линиям: первая — привёл сам. */
+  readonly invitedByLine: readonly { line: number; count: number }[];
   readonly referralEarned: string;
 }
 
@@ -157,12 +163,16 @@ export function ClientCard({
 
           <div className="field">
             <span className="label">Привёл клиентов</span>
-            {stats.invitedLine1 + stats.invitedLine2 === 0 ? (
+            {stats.invitedByLine.every((one) => one.count === 0) ? (
               <span className="muted">Никого</span>
             ) : (
               <span>
-                {stats.invitedLine1}
-                {stats.invitedLine2 > 0 ? ` · по второй линии ещё ${stats.invitedLine2}` : ''}
+                {stats.invitedByLine[0]?.count ?? 0}
+                {stats.invitedByLine
+                  .slice(1)
+                  .filter((one) => one.count > 0)
+                  .map((one) => ` · ${lineName(one.line)} линия ещё ${one.count}`)
+                  .join('')}
               </span>
             )}
           </div>

@@ -9,6 +9,8 @@ import {
   feeScheduleTiers,
   feeSchedules,
   merchants,
+  referralCodes,
+  referralLineRates,
   referrals,
   serviceAccounts,
   serviceSettings,
@@ -101,13 +103,60 @@ describe('реферальная связь', () => {
     await expect(insertClient(1n, 1n)).rejects.toThrow(/clients_no_self_referral/);
   });
 
-  it('не заходит глубже второй линии', async () => {
+  it('доходит до пятой линии и не глубже', async () => {
     await insertClient(1n);
     await insertClient(2n);
 
+    await db.insert(referrals).values({ referrerId: 1n, referralId: 2n, line: 5 });
     await expect(
-      db.insert(referrals).values({ referrerId: 1n, referralId: 2n, line: 3 }),
+      db.insert(referrals).values({ referrerId: 2n, referralId: 1n, line: 6 }),
     ).rejects.toThrow(/referrals_line_range/);
+  });
+});
+
+describe('реферальные коды', () => {
+  it('не различают регистр и не повторяются между видами', async () => {
+    await insertClient(1n);
+    await insertClient(2n);
+    await db
+      .insert(referralCodes)
+      .values({ clientId: 1n, code: 'Summer26', kind: 'promo', label: 'лето' });
+
+    await expect(
+      db
+        .insert(referralCodes)
+        .values({ clientId: 2n, code: 'SUMMER26', kind: 'link', label: 'канал' }),
+    ).rejects.toThrow(/referral_codes_code_unique/);
+  });
+
+  it('новый клиент заводится без кода в прежней колонке', async () => {
+    // Коды с миграции 0031 живут таблицей; перенос старых кодов в неё
+    // проверен на базе разработки руками — в тестах база до миграции
+    // пуста, и проверять там нечего.
+    const [row] = await db
+      .insert(clients)
+      .values({ telegramUserId: 7n })
+      .returning({ referralCode: clients.referralCode });
+    expect(row?.referralCode).toBeNull();
+  });
+});
+
+describe('ставки линий', () => {
+  it('после очистки базы стоят две базовые — те же, что переносит миграция', async () => {
+    const rows = await db.select().from(referralLineRates).orderBy(referralLineRates.line);
+    expect(rows.map((one) => [one.line, one.rateBps])).toEqual([
+      [1, 500],
+      [2, 200],
+    ]);
+  });
+
+  it('не заходят глубже пятой линии и выше ста процентов', async () => {
+    await expect(
+      db.insert(referralLineRates).values({ line: 6, rateBps: 100 }),
+    ).rejects.toThrow(/referral_line_rates_line_range/);
+    await expect(
+      db.insert(referralLineRates).values({ line: 3, rateBps: 10_001 }),
+    ).rejects.toThrow(/referral_line_rates_rate_range/);
   });
 });
 
@@ -375,7 +424,7 @@ describe('настройки сервиса', () => {
     const [settings] = await db.select().from(serviceSettings);
 
     expect(settings).toBeDefined();
-    expect(settings!.referralLine1Bps).toBeGreaterThan(0);
+    expect(settings!.markupBps).toBeGreaterThanOrEqual(0);
   });
 
   it('существуют в единственном экземпляре', async () => {

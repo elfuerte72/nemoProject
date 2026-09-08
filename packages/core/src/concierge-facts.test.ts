@@ -21,16 +21,16 @@ beforeEach(async () => {
 afterAll(() => closeTestDatabase());
 
 describe('ставки рефералки', () => {
-  it('называет проценты обеих линий из настроек', async () => {
+  it('называет проценты линий из программы', async () => {
     // Решение владельца от 10 августа 2026: проценты публичны. Живой
     // строкой из настроек, а не статьёй: администратор поменял ставку —
     // бот называет новую тем же днём.
     const admin = await givenStaff({ role: 'admin', telegramUserId: 903n });
     const core = createCore({ db, conciergeQuietMs: 0 });
-    await core.updateServiceSettings(admin, {
-      referralLine1Bps: 500,
-      referralLine2Bps: 250,
-    });
+    await core.updateReferralLines(admin, [
+      { line: 1, rateBps: 500 },
+      { line: 2, rateBps: 250 },
+    ]);
 
     const facts = await conciergeFacts({ db }, 100n);
 

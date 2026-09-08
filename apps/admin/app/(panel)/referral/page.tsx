@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { referralLineName, type ReferralLine } from '@nemo/types';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
@@ -23,10 +24,12 @@ export const dynamic = 'force-dynamic';
 
 const HOW_TO = [
   {
-    title: 'Две линии',
+    title: 'Линии',
     detail:
-      'Первая — кто привёл клиента, вторая — кто привёл приведшего. Каждой начисляется свой ' +
-      'процент от дохода сервиса по заявке реферала; глубже второй линии баллы не идут.',
+      'Первая — кто привёл клиента, вторая — кто привёл приведшего, и так до пятой. Сколько ' +
+      'линий оплачивается и по какой ставке, задаёт администратор; каждой начисляется свой ' +
+      'процент от дохода сервиса по заявке реферала. Поверх базовых ставок — уровни по числу ' +
+      'активных рефералов и личные ставки клиента: личная выше уровня, уровень выше базовой.',
   },
   {
     title: 'Когда начисляется',
@@ -38,7 +41,7 @@ const HOW_TO = [
     title: 'Ставка в строке',
     detail:
       'Смена ставок прошлое не переписывает: у каждого начисления записана ставка, по ' +
-      'которой оно посчитано. Здесь показаны текущие ставки — из настроек.',
+      'которой оно посчитано. Здесь показаны текущие базовые ставки программы.',
   },
   {
     title: 'Выплаты',
@@ -47,6 +50,12 @@ const HOW_TO = [
       'открытых заявок; «выплачено» — списанное за период.',
   },
 ];
+
+/** «Первая линия» — подпись плитки с заглавной. */
+function lineTitle(line: ReferralLine): string {
+  const name = referralLineName(line);
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 export default async function ReferralPage({
   searchParams,
@@ -68,12 +77,12 @@ export default async function ReferralPage({
 
   try {
     const core = getCore();
-    const [summary, settings] = await Promise.all([
+    const [summary, program, settings] = await Promise.all([
       core.summarizeReferrals(actor, period),
+      core.getReferralProgram(actor),
       core.getServiceSettings(actor),
     ]);
     const lastDay = new Date(period.to.getTime() - 1);
-    const [line1, line2] = summary.accrued;
 
     return (
       <main className="page page--wide">
@@ -99,16 +108,18 @@ export default async function ReferralPage({
         />
 
         <Stats>
-          <Stat
-            label="Первая линия"
-            value={`${bpsToPercent(settings.referralLine1Bps)} %`}
-            note="от дохода сервиса по заявке реферала"
-          />
-          <Stat
-            label="Вторая линия"
-            value={`${bpsToPercent(settings.referralLine2Bps)} %`}
-            note="от дохода по заявке реферала реферала"
-          />
+          {program.lines.map((line) => (
+            <Stat
+              key={line.line}
+              label={`${lineTitle(line.line)} линия`}
+              value={`${bpsToPercent(line.rateBps)} %`}
+              note={
+                line.line === 1
+                  ? 'от дохода сервиса по заявке реферала'
+                  : `базовая ставка; уровней — ${program.tiers.length}`
+              }
+            />
+          ))}
           <Stat
             label="Минимум на вывод"
             value={formatAmount(settings.minWithdrawalAmount)}
@@ -129,18 +140,15 @@ export default async function ReferralPage({
         />
 
         <Stats>
-          <Stat
-            label="Начислено · 1 линия"
-            value={formatAmount(line1?.amount ?? '0')}
-            note={`${line1?.count ?? 0} начислений за период`}
-            tone={line1?.count ? 'up' : 'plain'}
-          />
-          <Stat
-            label="Начислено · 2 линия"
-            value={formatAmount(line2?.amount ?? '0')}
-            note={`${line2?.count ?? 0} начислений за период`}
-            tone={line2?.count ? 'up' : 'plain'}
-          />
+          {summary.accrued.map((line) => (
+            <Stat
+              key={line.line}
+              label={`Начислено · ${line.line} линия`}
+              value={formatAmount(line.amount)}
+              note={`${line.count} начислений за период`}
+              tone={line.count ? 'up' : 'plain'}
+            />
+          ))}
           <Stat label="Выплачено" value={formatAmount(summary.paid)} note="списано за период" />
           <Stat
             label="Ждёт выплаты"

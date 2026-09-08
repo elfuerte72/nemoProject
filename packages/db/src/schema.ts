@@ -144,6 +144,9 @@ export const bonusTransactionKindEnum = pgEnum('bonus_transaction_kind', [
   'adjustment', // ручная правка администратором
 ]);
 
+/** Вид реферального кода: ссылка со сгенерированным кодом или промокод-слово. */
+export const referralCodeKindEnum = pgEnum('referral_code_kind', ['link', 'promo']);
+
 export const actorTypeEnum = pgEnum('actor_type', [
   'system',
   'client',
@@ -232,10 +235,8 @@ export const serviceSettings = pgTable(
   'service_settings',
   {
     id: smallint('id').primaryKey().default(1),
-    /** Ставка первой линии в базисных пунктах: 100 bps = 1%. */
-    referralLine1Bps: integer('referral_line1_bps').default(500).notNull(),
-    /** Ставка второй линии в базисных пунктах. */
-    referralLine2Bps: integer('referral_line2_bps').default(200).notNull(),
+    // Ставки линий с 8 сентября 2026 лежат в `referral_line_rates`:
+    // линий стало до пяти, и число колонок задавало бы глубину программы.
     /** Ниже этой суммы заявка на вывод не принимается. */
     minWithdrawalAmount: money('min_withdrawal_amount').default('1000').notNull(),
     /**
@@ -298,15 +299,6 @@ export const serviceSettings = pgTable(
   },
   (table) => [
     check('service_settings_singleton', sql`${table.id} = 1`),
-    // Ставка выше 100% отдавала бы рефереру больше, чем сервис заработал.
-    check(
-      'service_settings_line1_range',
-      sql`${table.referralLine1Bps} between 0 and 10000`,
-    ),
-    check(
-      'service_settings_line2_range',
-      sql`${table.referralLine2Bps} between 0 and 10000`,
-    ),
     check('service_settings_min_withdrawal_non_negative', sql`${table.minWithdrawalAmount} >= 0`),
     // Наценка в 100% означала бы курс, по которому клиент не получает
     // ничего: это не настройка доходности, а опечатка.
@@ -390,7 +382,21 @@ export const clients = pgTable(
       withTimezone: true,
     }),
     referrerId: bigint('referrer_id', { mode: 'bigint' }),
-    referralCode: text('referral_code').notNull().unique(),
+    /**
+     * Код, по которому пришёл: ссылка или промокод реферера. Пусто у
+     * пришедших без кода и у всех, кто зарегистрирован до 8 сентября
+     * 2026, — тогда коды лежали колонкой ниже.
+     */
+    referredViaCodeId: uuid('referred_via_code_id').references(
+      (): AnyPgColumn => referralCodes.id,
+    ),
+    /**
+     * Прежняя колонка кода. С 8 сентября 2026 коды живут в
+     * `referral_codes`, и сюда ничего не пишется; колонка остаётся на
+     * одну выкатку, чтобы Mini App старой сборки дочитал её до своей
+     * пересборки, и удаляется следующей миграцией (`backlog.md`).
+     */
+    referralCode: text('referral_code').unique(),
     /**
      * Когда разговор перешёл к человеку. Пока отметка стоит, консьерж
      * молчит: два голоса в одном чате — худшее из возможного, и клиент,
@@ -1297,9 +1303,11 @@ export const exchangeRequestEvents = pgTable(
 );
 
 /**
- * Реферальные связи обеих линий, развёрнутые явно: строка первой линии
- * создаётся при регистрации по ссылке, строка второй — когда реферал
- * приводит своего. Глубже второй линии связи не пишутся.
+ * Реферальные связи, развёрнутые явно: при регистрации по коду пишется
+ * строка на каждого предка до пятой линии (docs/adr/0019). Сколько из
+ * них оплачивается, задаёт `referral_line_rates`; цепочка хранится на
+ * всю возможную глубину, чтобы углубление программы позже не оставило
+ * старые цепочки без третьей линии.
  */
 export const referrals = pgTable(
   'referrals',
@@ -1316,8 +1324,111 @@ export const referrals = pgTable(
   (table) => [
     primaryKey({ columns: [table.referrerId, table.referralId] }),
     index('referrals_referral_idx').on(table.referralId),
-    check('referrals_line_range', sql`${table.line} in (1, 2)`),
+    check('referrals_line_range', sql`${table.line} between 1 and 5`),
     check('referrals_not_self', sql`${table.referrerId} <> ${table.referralId}`),
+  ],
+);
+
+/**
+ * Базовые ставки линий. Строки задают глубину программы: сколько их,
+ * столько линий сервис оплачивает. До 8 сентября 2026 ставки двух линий
+ * лежали колонками `service_settings`; число колонок задавало бы
+ * глубину, а её теперь выбирает администратор.
+ */
+export const referralLineRates = pgTable(
+  'referral_line_rates',
+  {
+    line: smallint('line').primaryKey(),
+    /** В базисных пунктах: 100 bps = 1%. */
+    rateBps: integer('rate_bps').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('referral_line_rates_line_range', sql`${table.line} between 1 and 5`),
+    // Ставка выше 100% отдавала бы рефереру больше, чем сервис заработал.
+    check('referral_line_rates_rate_range', sql`${table.rateBps} between 0 and 10000`),
+  ],
+);
+
+/**
+ * Уровень программы: порог по числу активных рефералов первой линии и
+ * свои ставки линий. Порог уникален — два уровня с одним порогом не
+ * дали бы правила, какой из них действует.
+ */
+export const referralTiers = pgTable(
+  'referral_tiers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
+    minActiveReferrals: integer('min_active_referrals').notNull().unique(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('referral_tiers_threshold_positive', sql`${table.minActiveReferrals} >= 1`),
+  ],
+);
+
+/** Ставки уровня по линиям; линия без строки наследует базовую ставку. */
+export const referralTierRates = pgTable(
+  'referral_tier_rates',
+  {
+    tierId: uuid('tier_id')
+      .notNull()
+      .references(() => referralTiers.id, { onDelete: 'cascade' }),
+    line: smallint('line').notNull(),
+    rateBps: integer('rate_bps').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.tierId, table.line] }),
+    check('referral_tier_rates_line_range', sql`${table.line} between 1 and 5`),
+    check('referral_tier_rates_rate_range', sql`${table.rateBps} between 0 and 10000`),
+  ],
+);
+
+/**
+ * Личные ставки клиента — поверх уровня и базовых, по каждой линии
+ * отдельно. Назначает администратор из карточки клиента.
+ */
+export const clientReferralRates = pgTable(
+  'client_referral_rates',
+  {
+    clientId: bigint('client_id', { mode: 'bigint' })
+      .notNull()
+      .references(() => clients.telegramUserId, { onDelete: 'cascade' }),
+    line: smallint('line').notNull(),
+    rateBps: integer('rate_bps').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.clientId, table.line] }),
+    check('client_referral_rates_line_range', sql`${table.line} between 1 and 5`),
+    check('client_referral_rates_rate_range', sql`${table.rateBps} between 0 and 10000`),
+  ],
+);
+
+/**
+ * Реферальные коды клиента: ссылки и промокоды, у каждого название.
+ * Архив вместо удаления — на код ссылаются приведённые им клиенты.
+ */
+export const referralCodes = pgTable(
+  'referral_codes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    clientId: bigint('client_id', { mode: 'bigint' })
+      .notNull()
+      .references(() => clients.telegramUserId, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    kind: referralCodeKindEnum('kind').notNull(),
+    label: text('label').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('referral_codes_client_idx').on(table.clientId),
+    // Без учёта регистра и для обоих видов разом: промокод набирают
+    // руками, а ссылка и промокод с одним словом привели бы к разным
+    // реферерам.
+    uniqueIndex('referral_codes_code_unique').on(sql`upper(${table.code})`),
   ],
 );
 
@@ -1342,6 +1453,8 @@ export const bonusTransactions = pgTable(
       () => withdrawalRequests.id,
     ),
     comment: text('comment'),
+    /** Кто правил баллы руками; у начислений и списаний пусто. */
+    staffId: uuid('staff_id').references(() => staff.id),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

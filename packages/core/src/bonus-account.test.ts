@@ -126,10 +126,10 @@ describe('размер сети', () => {
 
     const account = await core.getBonusAccount(asClient(1n));
 
-    expect({ line1: account.line1Count, line2: account.line2Count }).toEqual({
-      line1: 2,
-      line2: 2,
-    });
+    expect(account.lines.map((one) => [one.line, one.count])).toEqual([
+      [1, 2],
+      [2, 2],
+    ]);
   });
 
   it('не раскрывает, кто эти люди', async () => {
@@ -152,14 +152,14 @@ describe('ставки линий', () => {
 
     const account = await core.getBonusAccount(asClient(1n));
 
-    // Те самые, по которым начисляет ядро, — из настроек сервиса, а не
-    // числом в приложении: разойдясь, они пообещали бы клиенту не то,
-    // что он получит.
-    const settings = await core.getServiceSettings(await givenStaff({ role: 'admin' }));
-    expect({ line1: account.line1Bps, line2: account.line2Bps }).toEqual({
-      line1: settings.referralLine1Bps,
-      line2: settings.referralLine2Bps,
-    });
+    // Те самые, по которым начисляет ядро, — из программы, а не числом в
+    // приложении: разойдясь, они пообещали бы клиенту не то, что он
+    // получит.
+    const program = await core.getReferralProgram(await givenStaff({ role: 'admin' }));
+    expect(account.lines.map((one) => one.rateBps)).toEqual(
+      program.lines.map((one) => one.rateBps),
+    );
+    expect(account.lines.every((one) => one.source === 'base')).toBe(true);
   });
 });
 

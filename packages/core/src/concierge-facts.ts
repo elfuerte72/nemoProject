@@ -5,7 +5,8 @@ import { bonusBalance } from './bonus-account.js';
 import type { CoreConfig } from './context.js';
 import { getExchangeTerms } from './exchange-requests.js';
 import { getQuote } from './rates.js';
-import { readServiceSettings } from './settings.js';
+import { readReferralProgram, type ReferralLineRate } from './referral-program.js';
+import { referralLineWord } from '@nemo/types';
 
 /**
  * Справка: всё, что консьерж знает, когда отвечает этому клиенту.
@@ -40,12 +41,12 @@ const STATUS_WORDS: Readonly<Record<string, string>> = {
 };
 
 export async function conciergeFacts(ctx: CoreConfig, clientId: bigint): Promise<string> {
-  const [knowledge, requests, balance, terms, settings] = await Promise.all([
+  const [knowledge, requests, balance, terms, program] = await Promise.all([
     readKnowledge(ctx),
     readOpenRequests(ctx, clientId),
     bonusBalance(ctx.db, clientId),
     getExchangeTerms(ctx),
-    readServiceSettings(ctx.db),
+    readReferralProgram(ctx.db),
   ]);
 
   const rates = await readRates(ctx, terms.pairs);
@@ -69,8 +70,7 @@ export async function conciergeFacts(ctx: CoreConfig, clientId: bigint): Promise
      * назвать её иначе значило бы пообещать чужие деньги.
      */
     '# Ставки реферальной программы',
-    `Первая линия: ${percent(settings.referralLine1Bps)} от дохода сервиса по обмену приглашённого. `
-      + `Вторая линия, приглашённые ими: ${percent(settings.referralLine2Bps)}.`,
+    referralRatesLine(program.lines),
     '',
     '# Курсы сейчас',
     rates.length > 0
@@ -162,4 +162,22 @@ async function readRates(
   );
 
   return quoted.filter((one): one is string => one !== undefined);
+}
+
+/**
+ * Ставки по линиям одной строкой: «Первая линия: 5% от дохода сервиса по
+ * обмену приглашённого. Вторая линия: 2%. Третья линия: 1%.» Линий
+ * столько, сколько оплачивается: про неоплачиваемые модель знать не
+ * должна — иначе назовёт.
+ */
+function referralRatesLine(lines: readonly ReferralLineRate[]): string {
+  return lines
+    .map((one, index) => {
+      const word = referralLineWord(one.line);
+      const name = word.charAt(0).toUpperCase() + word.slice(1);
+      return index === 0
+        ? `${name} линия: ${percent(one.rateBps)} от дохода сервиса по обмену приглашённого.`
+        : `${name} линия: ${percent(one.rateBps)}.`;
+    })
+    .join(' ');
 }

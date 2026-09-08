@@ -41,7 +41,13 @@ let merchant: Actor & { type: 'merchant' };
 const URL_OK = 'https://shop.example/hooks/tobee';
 const PAYOUT = { kind: 'card', bankName: 'Сбербанк', cardNumber: '4111111111111111' } as const;
 
-const T0 = new Date('2026-09-07T10:00:00Z');
+/*
+ * Точка отсчёта — чуть впереди часов машины, а не дата в кавычках:
+ * пробная доставка встаёт в очередь на «сейчас», и день, записанный
+ * числом, назавтра оказывался в прошлом — забор по нему ничего не
+ * находил. Так и случилось 8 сентября 2026 с датой 7-го.
+ */
+const T0 = new Date(Date.now() + 60_000);
 const minutesLater = (minutes: number) => new Date(T0.getTime() + minutes * 60_000);
 
 beforeEach(async () => {

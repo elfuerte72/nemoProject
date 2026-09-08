@@ -6,17 +6,10 @@ import { bpsToPercent, percentToBps } from '@/lib/percent';
 import { useSettingsSend } from './use-settings-send';
 
 /**
- * Экономика сервиса: наценка, минимум обмена, срок оплаты, ставки
- * реферальных линий и порог вывода.
- *
- * Смена ставок действует вперёд: уже сделанные начисления не
- * пересчитываются, потому что ставка, по которой начислено, хранится в
- * самом движении баллов. Экран говорит об этом прямо — иначе
- * администратор ждал бы пересчёта и не понимал, почему его нет.
- *
- * Две карточки на одной странице: наценка, минимум и срок складываются
- * в доход сервиса, ставки линий из него же выплачиваются, и
- * разнесённые по разным подразделам они не читались бы вместе.
+ * Экономика сервиса: наценка, минимум обмена, срок оплаты и порог
+ * вывода баллов. Ставки реферальных линий с 8 сентября 2026 — в
+ * реферальной программе: линий стало до пяти, а с ними уровни и личные
+ * ставки, и двумя полями это уже не выразить.
  */
 export function EconomyForms({ settings }: { settings: ServiceSettingsView }) {
   const { error, busy, send } = useSettingsSend();
@@ -25,8 +18,6 @@ export function EconomyForms({ settings }: { settings: ServiceSettingsView }) {
   const [minExchange, setMinExchange] = useState<string>(settings.minExchangeAmount);
   const [ttlMinutes, setTtlMinutes] = useState(String(settings.unpaidExchangeRequestTtlMinutes));
 
-  const [line1, setLine1] = useState(bpsToPercent(settings.referralLine1Bps));
-  const [line2, setLine2] = useState(bpsToPercent(settings.referralLine2Bps));
   const [minWithdrawal, setMinWithdrawal] = useState<string>(settings.minWithdrawalAmount);
 
   return (
@@ -91,31 +82,12 @@ export function EconomyForms({ settings }: { settings: ServiceSettingsView }) {
       </section>
 
       <section className="card">
-        <h2 className="card__title">Ставки линий и вывод</h2>
+        <h2 className="card__title">Вывод баллов</h2>
         <p className="card__note">
-          Ставка задаётся в процентах от дохода сервиса по заявке; шаг — сотая процента.
-          Уже сделанные начисления от смены ставки не меняются — заявка исполнена на тех
-          условиях, что действовали в момент её исполнения.
+          Ниже этого порога заявка на вывод не принимается; клиент видит порог рядом с
+          балансом. Ставки линий, уровни и личные ставки — в реферальной программе.
         </p>
         <div className="form-row">
-          <label className="field">
-            <span className="label">Первая линия, %</span>
-            <input
-              className="input"
-              value={line1}
-              onChange={(event) => setLine1(event.target.value)}
-              inputMode="decimal"
-            />
-          </label>
-          <label className="field">
-            <span className="label">Вторая линия, %</span>
-            <input
-              className="input"
-              value={line2}
-              onChange={(event) => setLine2(event.target.value)}
-              inputMode="decimal"
-            />
-          </label>
           <label className="field">
             <span className="label">Минимум на вывод, баллов</span>
             <input
@@ -127,19 +99,12 @@ export function EconomyForms({ settings }: { settings: ServiceSettingsView }) {
           </label>
         </div>
         <div className="row__actions">
-          {/*
-            Кнопка гаснет на нечисловой ставке: отправленная, она
-            вернулась бы отказом ядра про неверное значение — а
-            администратор видит перед собой поле, в котором опечатка.
-          */}
           <button
             type="button"
-            disabled={busy || percentToBps(line1) === null || percentToBps(line2) === null}
+            disabled={busy}
             className="btn btn--gold"
             onClick={() =>
               send('/api/settings', {
-                referralLine1Bps: percentToBps(line1),
-                referralLine2Bps: percentToBps(line2),
                 minWithdrawalAmount: minWithdrawal.replace(',', '.').trim(),
               })
             }

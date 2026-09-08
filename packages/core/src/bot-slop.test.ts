@@ -141,6 +141,7 @@ const MERCHANT = toMerchant({ id: 'm', email: 'shop@example.com' });
 const EVERY_NOTIFICATION: readonly Notification[] = [
   { kind: 'referral-joined', to: 1n, line: 1 },
   { kind: 'referral-joined', to: 1n, line: 2 },
+  { kind: 'referral-joined', to: 1n, line: 5 },
   { kind: 'exchange-request-status', to: toClient(1n), requestId: 'r', status: 'new' },
   { kind: 'exchange-request-status', to: toClient(1n), requestId: 'r', status: 'in_progress' },
   {

@@ -29,8 +29,7 @@ export function toClientCardData(card: ClientCardView): ClientCardData {
         count: line.count,
       })),
       regular: card.stats.regular,
-      invitedLine1: card.stats.invitedLine1,
-      invitedLine2: card.stats.invitedLine2,
+      invitedByLine: card.stats.invitedByLine.map((one) => ({ line: one.line, count: one.count })),
       referralEarned: card.stats.referralEarned,
     },
   };

@@ -80,23 +80,28 @@ describe('реферальная привязка', () => {
     );
   });
 
-  it('глубже второй линии никого не привязывает', async () => {
-    const top = await core.registerClient({ telegramUserId: 100n });
-    const second = await core.registerClient({
-      telegramUserId: 200n,
-      referralCode: top.client.referralCode,
-    });
-    const third = await core.registerClient({
-      telegramUserId: 300n,
-      referralCode: second.client.referralCode,
-    });
+  it('привязывает всю цепочку предков — до пятой линии, не глубже', async () => {
+    // Цепочка хранится глубже, чем платится (docs/adr/0019): сколько
+    // линий оплачивается, решает программа при начислении.
+    let code = (await core.registerClient({ telegramUserId: 100n })).client.referralCode;
+    for (const id of [200n, 300n, 400n, 500n, 600n]) {
+      code = (await core.registerClient({ telegramUserId: id, referralCode: code })).client
+        .referralCode;
+    }
 
-    const fourth = await core.registerClient({
-      telegramUserId: 400n,
-      referralCode: third.client.referralCode,
-    });
+    const seventh = await core.registerClient({ telegramUserId: 700n, referralCode: code });
 
-    expect(fourth.notifications.map((notification) => notification.to)).toEqual([300n, 200n]);
+    expect(
+      seventh.notifications.map((notification) =>
+        notification.kind === 'referral-joined' ? [notification.to, notification.line] : notification.kind,
+      ),
+    ).toEqual([
+      [600n, 1],
+      [500n, 2],
+      [400n, 3],
+      [300n, 4],
+      [200n, 5],
+    ]);
   });
 
   it('не меняет реферера при повторном запуске по чужой ссылке', async () => {

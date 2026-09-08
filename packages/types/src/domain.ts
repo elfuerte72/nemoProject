@@ -965,11 +965,6 @@ export const bonusTransactionKinds = [
 export const bonusTransactionKindSchema = z.enum(bonusTransactionKinds);
 export type BonusTransactionKind = z.infer<typeof bonusTransactionKindSchema>;
 
-/** Линия реферальной сети. Глубже второй начисления не идут. */
-export const referralLines = [1, 2] as const;
-export const referralLineSchema = z.union([z.literal(1), z.literal(2)]);
-export type ReferralLine = z.infer<typeof referralLineSchema>;
-
 /**
  * Кто выполнил действие. Система ставит только начальные состояния;
  * клиент подаёт заявку на обмен и отменяет её, пока она новая; всё

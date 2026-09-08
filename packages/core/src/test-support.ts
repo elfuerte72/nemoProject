@@ -6,6 +6,9 @@ import {
   feeScheduleTiers,
   feeSchedules,
   merchants,
+  referralLineRates,
+  referralTierRates,
+  referralTiers,
   serviceAccounts,
   serviceSettings,
   staff,
@@ -274,4 +277,33 @@ export async function givenFeeSchedule(options: {
       ...(tier.fixedPayout === undefined ? {} : { fixedPayout: tier.fixedPayout }),
     })),
   );
+}
+
+/**
+ * Базовые ставки линий по порядку: глубина программы — длина списка.
+ * Заменяет две строки, которые ставит очистка базы.
+ */
+export async function givenReferralLines(rates: readonly number[]): Promise<void> {
+  await db.delete(referralLineRates);
+  await db
+    .insert(referralLineRates)
+    .values(rates.map((rateBps, index) => ({ line: index + 1, rateBps })));
+}
+
+/** Уровень программы со своими ставками; линия без ставки наследует базовую. */
+export async function givenReferralTier(options: {
+  name: string;
+  minActiveReferrals: number;
+  rates: readonly { line: number; rateBps: number }[];
+}): Promise<string> {
+  const [tier] = await db
+    .insert(referralTiers)
+    .values({ name: options.name, minActiveReferrals: options.minActiveReferrals })
+    .returning({ id: referralTiers.id });
+  if (options.rates.length > 0) {
+    await db
+      .insert(referralTierRates)
+      .values(options.rates.map((one) => ({ tierId: tier!.id, ...one })));
+  }
+  return tier!.id;
 }
