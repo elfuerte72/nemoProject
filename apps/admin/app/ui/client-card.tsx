@@ -1,4 +1,5 @@
-import { isReferralLine, referralLineName } from '@nemo/types';
+import { referralLineTitle } from '@nemo/types';
+import { bpsToPercent } from '@/lib/percent';
 import { formatAmount } from '@nemo/ui/format';
 import { CopyValue, Moment } from '@nemo/ui';
 import { formatByCurrency, type MoneyLine } from '@nemo/ui/money-list';
@@ -19,11 +20,6 @@ import { formatByCurrency, type MoneyLine } from '@nemo/ui/money-list';
  * не переезжают, а карточка стоит и на серверных страницах, и внутри
  * клиентских. Перевод — `toClientCardData` в `lib/client-card.ts`.
  */
-/** «вторая линия» — словом; незнакомую линию называем числом, чтобы не молчать. */
-function lineName(line: number): string {
-  return isReferralLine(line) ? referralLineName(line) : `${line}-я`;
-}
-
 export interface ClientCardStats {
   readonly completed: number;
   readonly open: number;
@@ -36,15 +32,48 @@ export interface ClientCardStats {
   readonly referralEarned: string;
 }
 
+/** Клиент в реферальной программе — строками, как и всё в карточке. */
+export interface ClientReferralData {
+  /** Пусто — уровней в программе нет. */
+  readonly tier: {
+    readonly name: string | null;
+    readonly activeReferrals: number;
+    readonly nextName: string | null;
+    readonly toNext: number;
+  } | null;
+  readonly lines: readonly {
+    readonly line: number;
+    readonly rateBps: number;
+    readonly source: 'individual' | 'tier' | 'base';
+    readonly tierName: string | null;
+  }[];
+  readonly individual: readonly { readonly line: number; readonly rateBps: number }[];
+  readonly codes: readonly {
+    readonly id: string;
+    readonly kind: 'link' | 'promo';
+    readonly label: string;
+    readonly code: string;
+  }[];
+}
+
 export interface ClientCardData {
   readonly telegramUserId: string;
   readonly username: string | null;
   readonly createdAt: string;
-  readonly referralCode: string;
   readonly referrerId: string | null;
   readonly referrerUsername: string | null;
   readonly marketingConsent: boolean;
   readonly stats: ClientCardStats;
+  readonly referral: ClientReferralData;
+}
+
+const SOURCE_WORDS = { individual: 'личная', tier: 'уровень', base: 'базовая' } as const;
+
+/** «8 % · уровень «Серебро»» — ставка линии с источником (не курс: у того своё `sayRate`). */
+function sayLineRate(rate: ClientReferralData['lines'][number]): string {
+  const percent = `${bpsToPercent(rate.rateBps)} %`;
+  if (rate.source === 'tier' && rate.tierName) return `${percent} · уровень «${rate.tierName}»`;
+  return `${percent} · ${SOURCE_WORDS[rate.source]}`;
 }
 
 /**
@@ -167,12 +196,11 @@ export function ClientCard({
               <span className="muted">Никого</span>
             ) : (
               <span>
-                {stats.invitedByLine[0]?.count ?? 0}
-                {stats.invitedByLine
-                  .slice(1)
-                  .filter((one) => one.count > 0)
-                  .map((one) => ` · ${lineName(one.line)} линия ещё ${one.count}`)
-                  .join('')}
+                {stats.invitedByLine.map((one) => (
+                  <span key={one.line} className="who__line">
+                    {referralLineTitle(one.line)} линия: {one.count}
+                  </span>
+                ))}
               </span>
             )}
           </div>
@@ -189,9 +217,43 @@ export function ClientCard({
             <span>{client.marketingConsent ? 'Согласен' : 'Не согласен'}</span>
           </div>
 
+          {client.referral.tier ? (
+            <div className="field">
+              <span className="label">Уровень</span>
+              <span>
+                {client.referral.tier.name ?? 'пока без уровня'} · активных рефералов:{' '}
+                {client.referral.tier.activeReferrals}
+                {client.referral.tier.nextName
+                  ? ` · до «${client.referral.tier.nextName}» ещё ${client.referral.tier.toNext}`
+                  : ''}
+              </span>
+            </div>
+          ) : undefined}
+
           <div className="field">
-            <span className="label">Реферальный код</span>
-            <CopyValue value={client.referralCode} />
+            <span className="label">Ставки линий</span>
+            <span>
+              {client.referral.lines.map((rate) => (
+                <span key={rate.line} className="who__line">
+                  {referralLineTitle(rate.line)}: {sayLineRate(rate)}
+                </span>
+              ))}
+            </span>
+          </div>
+
+          <div className="field">
+            <span className="label">Коды</span>
+            <span>
+              {client.referral.codes.map((code) => (
+                <span key={code.id} className="who__line">
+                  <span className="muted">
+                    {code.label}
+                    {code.kind === 'promo' ? ' · промокод' : ''}
+                  </span>
+                  <CopyValue value={code.code} />
+                </span>
+              ))}
+            </span>
           </div>
         </>
       ) : (

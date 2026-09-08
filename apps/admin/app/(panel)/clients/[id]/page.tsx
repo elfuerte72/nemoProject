@@ -10,6 +10,7 @@ import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request
 import { pillClass } from '@/lib/labels';
 import { formatByCurrency } from '@nemo/ui/money-list';
 import { ClientCard } from '@/app/ui/client-card';
+import { ReferralAdmin } from './referral-admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -164,6 +165,14 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               </>
             )}
           </section>
+
+          {actor.role === 'admin' ? (
+            <ReferralAdmin
+              key={`${id}:${card.referral.lines.length}`}
+              clientId={id}
+              referral={toClientCardData(card).referral}
+            />
+          ) : undefined}
         </div>
 
         <ClientCard

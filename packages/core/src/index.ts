@@ -720,7 +720,7 @@ export type {
   RegisterClientInput,
   RegisterClientResult,
 } from './clients.js';
-export type { ClientCardView, ClientStats } from './client-card.js';
+export type { ClientCardView, ClientReferralView, ClientStats } from './client-card.js';
 export type {
   MerchantFilter,
   MerchantResult,

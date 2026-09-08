@@ -57,6 +57,11 @@ export function referralLineName(line: ReferralLine): string {
   return LINE_NAMES[line];
 }
 
+/** То же для числа с экрана: незнакомую линию называем числом, чтобы не молчать. */
+export function referralLineTitle(line: number): string {
+  return isReferralLine(line) ? referralLineName(line) : `${line}-я`;
+}
+
 /**
  * Вид кода: ссылка — сгенерированный код в `startapp`, промокод — слово,
  * которое клиент выбрал сам и которое знакомый вводит руками.

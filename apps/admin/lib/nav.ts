@@ -84,7 +84,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     href: '/settings/economy',
     label: 'Экономика',
-    sub: 'Наценка, минимум обмена, срок оплаты, ставки линий и порог вывода.',
+    sub: 'Наценка, минимум обмена и срок оплаты.',
+  },
+  {
+    href: '/settings/referral',
+    label: 'Рефералка',
+    sub: 'Линии и базовые ставки, уровни, личные ставки в карточке клиента, порог вывода.',
   },
   {
     href: '/settings/pricing',

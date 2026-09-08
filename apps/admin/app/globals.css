@@ -420,6 +420,31 @@
   top: calc(var(--topbar) + 24px);
 }
 
+/* Строка в поле карточки: ставка линии, код — каждая с новой строки. */
+.who__line {
+  display: block;
+}
+
+/*
+ * Подтверждение необратимого — раскрытием строки под кнопками: поле с
+ * причиной или суммой и красная кнопка. Сверху черта, чтобы читалось
+ * продолжением, а не новой карточкой.
+ */
+.confirm {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* Уровень программы — своей полосой в карточке уровней. */
+.tier-editor {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
 .who__link {
   color: var(--gold-light);
   font-weight: 600;

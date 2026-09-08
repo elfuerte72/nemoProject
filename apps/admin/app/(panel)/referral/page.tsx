@@ -95,8 +95,8 @@ export default async function ReferralPage({
             </p>
           </div>
           <div className="page__actions">
-            <Link href="/settings" className="btn btn--ghost">
-              Изменить ставки в настройках
+            <Link href="/settings/referral" className="btn btn--ghost">
+              Линии и уровни в настройках
             </Link>
           </div>
         </header>
@@ -113,13 +113,18 @@ export default async function ReferralPage({
               key={line.line}
               label={`${lineTitle(line.line)} линия`}
               value={`${bpsToPercent(line.rateBps)} %`}
-              note={
-                line.line === 1
-                  ? 'от дохода сервиса по заявке реферала'
-                  : `базовая ставка; уровней — ${program.tiers.length}`
-              }
+              note={line.line === 1 ? 'от дохода сервиса по заявке реферала' : 'базовая ставка'}
             />
           ))}
+          <Stat
+            label="Уровней"
+            value={program.tiers.length}
+            note={
+              program.tiers.length === 0
+                ? 'всем действуют базовые ставки'
+                : `порог первого — ${program.tiers[0]?.minActiveReferrals ?? 0} активных`
+            }
+          />
           <Stat
             label="Минимум на вывод"
             value={formatAmount(settings.minWithdrawalAmount)}
