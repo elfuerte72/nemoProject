@@ -41,7 +41,14 @@ let merchant: Actor & { type: 'merchant' };
 const URL_OK = 'https://shop.example/hooks/tobee';
 const PAYOUT = { kind: 'card', bankName: 'Сбербанк', cardNumber: '4111111111111111' } as const;
 
-const T0 = new Date('2026-09-07T10:00:00Z');
+/*
+ * Точка отсчёта — чуть впереди часов машины, а не дата в кавычках:
+ * пробная доставка встаёт в очередь на «сейчас», и день, записанный
+ * числом, назавтра оказывался в прошлом — забор по нему ничего не
+ * находил. Так и случилось 7 сентября 2026 в 10:02 UTC: прогон по dev
+ * начался через две минуты после записанного T0 и упал.
+ */
+const T0 = new Date(Date.now() + 60_000);
 const minutesLater = (minutes: number) => new Date(T0.getTime() + minutes * 60_000);
 
 beforeEach(async () => {
