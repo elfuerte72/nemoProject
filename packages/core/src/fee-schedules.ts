@@ -1,8 +1,8 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { currencies, feeScheduleTiers, feeSchedules } from '@nemo/db';
 import {
-  feeScheduleSchema,
   Money,
+  parseFeeSchedule,
   payoutMethodSchema,
   type Amount,
   type FeeTier,
@@ -190,18 +190,14 @@ function requireValidTiers(input: SaveFeeScheduleInput['tiers']): readonly FeeTi
     throw new InvalidInputError('В сетке нет ни одной ступени: цена по ней не считается');
   }
 
-  const parsed = feeScheduleSchema.safeParse(input);
-  if (parsed.success) return parsed.data;
-
   /*
-   * Доменные правила объяснены по-русски в самой схеме, а служебные
-   * замечания zod — по-английски. Показывать администратору
-   * «Invalid input» незачем: он правит проценты, а не разбирает разбор.
+   * Разбор один — тот же, которым форма панели проверяет ступени до
+   * нажатия: слова отказа те же, а ступени берутся из этого же разбора,
+   * а не из второго прохода по той же схеме.
    */
-  const first = parsed.error.issues[0]?.message;
-  throw new InvalidInputError(
-    first !== undefined && /[а-яё]/i.test(first) ? first : 'Ступени сетки заданы неверно',
-  );
+  const parsed = parseFeeSchedule(input);
+  if (!parsed.ok) throw new InvalidInputError(parsed.complaint);
+  return parsed.tiers;
 }
 
 /**

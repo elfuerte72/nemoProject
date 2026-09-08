@@ -57,8 +57,21 @@ const RATES = {
   'USDT/EUR': '0.8649',
 };
 
-/** Сетка бата на банк из ТЗ владельца — та, что заводится скриптом. */
+/**
+ * Сетка бата на банк по ТЗ владельца, с нижней ступенью, какой её
+ * предложили ему 8 сентября 2026: доля и фикс разом. Один фикс в 5 $ до
+ * пятисот при 4,5 % дальше делал меньшую сумму дешевле большей, и такую
+ * сетку операция теперь отвергает (`BANK_TIERS_AS_SENT` ниже).
+ */
 const BANK_TIERS = [
+  { upToUsd: '500', rateBps: 450, fixedUsd: '5' },
+  { upToUsd: '2000', rateBps: 450 },
+  { upToUsd: '5000', rateBps: 350 },
+  { upToUsd: null, rateBps: 250 },
+];
+
+/** Та же сетка, как она пришла письмом 10 августа 2026 и стояла на проде. */
+const BANK_TIERS_AS_SENT = [
   { upToUsd: '500', fixedUsd: '5' },
   { upToUsd: '2000', rateBps: 450 },
   { upToUsd: '5000', rateBps: 350 },
@@ -89,7 +102,7 @@ describe('сетки комиссии в панели', () => {
     expect(schedule?.payoutMethod).toBe('bank');
     expect(schedule?.isActive).toBe(true);
     expect(schedule?.tiers).toEqual([
-      { upToUsd: '500', fixedUsd: '5' },
+      { upToUsd: '500', rateBps: 450, fixedUsd: '5' },
       { upToUsd: '2000', rateBps: 450 },
       { upToUsd: '5000', rateBps: 350 },
       { upToUsd: null, rateBps: 250 },
@@ -201,6 +214,33 @@ describe('сетки комиссии в панели', () => {
           { upToUsd: '500', fixedUsd: '5' },
           { upToUsd: null, rateBps: 250 },
         ],
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('отвергает сетку, в которой большая сумма стоит дороже меньшей', async () => {
+    /*
+     * Сетка бата с прода: фикс 5 $ до пятисот, 4,5 % дальше. На 300 $
+     * клиент платил 1,7 %, на 600 $ — 4,5 %, и владелец 8 сентября 2026
+     * прочёл это у клиента как «на меньшую сумму курс лучше». Отказ
+     * называет границу и обе комиссии — администратору есть что править.
+     */
+    await givenCurrency('THB');
+
+    await expect(
+      core.saveFeeSchedule(admin, {
+        toCode: 'THB',
+        payoutMethod: 'bank',
+        tiers: BANK_TIERS_AS_SENT,
+      }),
+    ).rejects.toThrow(
+      'На границе 500 $ ступень до неё берёт 5 $, ступень после 22,50 $: меньшая сумма получила бы лучший курс',
+    );
+    await expect(
+      core.saveFeeSchedule(admin, {
+        toCode: 'THB',
+        payoutMethod: 'bank',
+        tiers: BANK_TIERS_AS_SENT,
       }),
     ).rejects.toThrow(InvalidInputError);
   });
