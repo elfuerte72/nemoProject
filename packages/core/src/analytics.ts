@@ -118,6 +118,14 @@ export function cancelledWithin(period: AnalyticsPeriod): SQL {
   )!;
 }
 
+/**
+ * Момент колонки в периоде — типизированными операторами: сырой `sql` с
+ * датой без колонки рядом драйвер отправляет строкой без типа.
+ */
+export function periodOf(column: AnyPgColumn, period: AnalyticsPeriod): SQL {
+  return and(gte(column, period.from), lt(column, period.to))!;
+}
+
 /** Ещё в работе: не исполнена и не отменена. */
 export const stillOpen: SQL = sql`${exchangeRequests.status} not in ('completed', 'cancelled')`;
 
@@ -150,6 +158,13 @@ export function localDayOf(column: AnyPgColumn, offset: number): SQL<string> {
   // `at time zone 'UTC'` — явно: `to_char` от `timestamptz` считает по
   // поясу сессии базы, и «день по UTC» уезжал бы вместе с ним.
   return sql<string>`to_char((${column} at time zone 'UTC') + make_interval(mins => ${sql.raw(String(offset))}), 'YYYY-MM-DD')`;
+}
+
+/** Местная полночь сегодняшнего дня — моментом UTC. */
+export function localMidnight(now: Date, offsetMinutes: number): Date {
+  const shifted = new Date(now.getTime() + offsetMinutes * 60_000);
+  shifted.setUTCHours(0, 0, 0, 0);
+  return new Date(shifted.getTime() - offsetMinutes * 60_000);
 }
 
 /** День по местному времени: смещение в минутах к востоку от UTC. */

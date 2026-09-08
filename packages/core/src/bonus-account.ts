@@ -9,8 +9,9 @@ import {
 } from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
 import { CLIENT_HISTORY_LIMIT } from './client-history.js';
+import { promoBindingObstacle } from './clients.js';
 import type { CoreConfig, Executor } from './context.js';
-import { primaryReferralCode } from './referral-codes.js';
+import { activeReferralCodes, primaryReferralCode, type ReferralCodeView } from './referral-codes.js';
 import {
   effectiveReferralRates,
   readReferralProgram,
@@ -84,6 +85,14 @@ export interface BonusAccountView {
   readonly lines: readonly BonusLineView[];
   /** Уровень: текущий, следующий, активных рефералов. Пусто — уровней нет. */
   readonly tier: TierStanding | null;
+  /** Действующие коды: ссылки и промокоды, в порядке заведения. */
+  readonly codes: readonly ReferralCodeView[];
+  /**
+   * Можно ли ввести чужой промокод: реферера ещё нет и заявок не было
+   * (docs/adr/0019). Экран показывает поле по этому признаку, а
+   * решает всё равно операция.
+   */
+  readonly canEnterPromo: boolean;
   /**
    * Минимальная сумма вывода — та же, по которой отказывает операция.
    *
@@ -191,20 +200,25 @@ export async function getBonusAccount(
   const clientId = requireClient(actor);
 
   const program = await readReferralProgram(ctx.db);
-  const [balance, earned, counts, history, settings, rates, referralCode] = await Promise.all([
-    bonusBalance(ctx.db, clientId),
-    bonusEarned(ctx.db, clientId),
-    countReferralsByLine(ctx.db, clientId),
-    listBonusTransactions(ctx.db, clientId),
-    readServiceSettings(ctx.db),
-    effectiveReferralRates(ctx.db, clientId, program),
-    primaryReferralCode(ctx.db, clientId),
-  ]);
+  const [balance, earned, counts, history, settings, rates, referralCode, codes, promo] =
+    await Promise.all([
+      bonusBalance(ctx.db, clientId),
+      bonusEarned(ctx.db, clientId),
+      countReferralsByLine(ctx.db, clientId),
+      listBonusTransactions(ctx.db, clientId),
+      readServiceSettings(ctx.db),
+      effectiveReferralRates(ctx.db, clientId, program),
+      primaryReferralCode(ctx.db, clientId),
+      activeReferralCodes(ctx.db, clientId),
+      promoBindingObstacle(ctx.db, clientId),
+    ]);
 
   return {
     balance,
     earned,
     referralCode,
+    codes,
+    canEnterPromo: promo === null,
     lines: rates.lines.map((rate) => ({
       line: rate.line,
       count: counts.get(rate.line) ?? 0,

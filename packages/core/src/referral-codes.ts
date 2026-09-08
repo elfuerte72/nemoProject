@@ -152,12 +152,30 @@ export async function insertPrimaryCode(executor: Executor, clientId: bigint): P
   return (await insertLink(executor, clientId, PRIMARY_CODE_LABEL)).code;
 }
 
+/** Действующие коды клиента видом — для счёта и сводки, где актор уже проверен. */
+export async function activeReferralCodes(
+  executor: Executor,
+  clientId: bigint,
+): Promise<readonly ReferralCodeView[]> {
+  return (await activeCodes(executor, clientId)).map(toView);
+}
+
+/**
+ * Действующий код по слову — без актора: по нему маршрут Mini App рисует
+ * QR ссылки, а ссылка и так публична. Отдаётся только код как записан,
+ * чтобы картинка совпадала с экраном; владельца маршрут не узнаёт —
+ * потому и не `findActiveCode` напрямую.
+ */
+export async function lookupReferralCode(ctx: CoreConfig, code: string): Promise<string | null> {
+  const row = await findActiveCode(ctx.db, code);
+  return row?.code ?? null;
+}
+
 export async function listReferralCodes(
   ctx: CoreConfig,
   actor: Actor,
 ): Promise<readonly ReferralCodeView[]> {
-  const rows = await activeCodes(ctx.db, requireClient(actor));
-  return rows.map(toView);
+  return activeReferralCodes(ctx.db, requireClient(actor));
 }
 
 export async function createReferralCode(

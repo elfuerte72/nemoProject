@@ -9,19 +9,21 @@ import {
 import { Money } from '@nemo/types';
 import { requireStaff, type Actor } from './actor.js';
 import {
+  type AnalyticsPeriod,
+  DAY_MS,
+  type MoneyByCurrency,
   cancelledWithin,
   completedWithin,
-  DAY_MS,
   dayKey,
   localDayOf,
+  localMidnight,
   minutesToComplete,
+  periodOf,
   previousPeriod,
   requireOffset,
   requirePeriod,
   stillOpen,
   submittedWithin,
-  type AnalyticsPeriod,
-  type MoneyByCurrency,
 } from './analytics.js';
 import type { CoreConfig } from './context.js';
 import { NotFoundError } from './errors.js';
@@ -148,13 +150,6 @@ interface Counted {
   readonly minutes: string | null;
 }
 
-/** Местная полночь сегодняшнего дня — моментом UTC. */
-function localMidnight(now: Date, offset: number): Date {
-  const shifted = new Date(now.getTime() + offset * 60_000);
-  shifted.setUTCHours(0, 0, 0, 0);
-  return new Date(shifted.getTime() - offset * 60_000);
-}
-
 export async function summarizeMerchant(
   ctx: CoreConfig,
   actor: Actor,
@@ -173,10 +168,6 @@ export async function summarizeMerchant(
   const window = { from: new Date(tomorrow.getTime() - BY_DAY_DAYS * DAY_MS), to: tomorrow };
 
   const mine = eq(exchangeRequests.merchantId, merchantId);
-  // Типизированными операторами, как и условия по заявкам: сырой `sql`
-  // с датой без колонки рядом драйвер отправляет строкой.
-  const periodOf = (column: typeof apiRequestLog.at | typeof webhookDeliveries.createdAt, one: AnalyticsPeriod) =>
-    and(gte(column, one.from), lt(column, one.to))!;
   const submittedDay = localDayOf(exchangeRequests.createdAt, offset);
   const completedDay = localDayOf(exchangeRequests.completedAt, offset);
 

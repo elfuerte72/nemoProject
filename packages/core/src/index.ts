@@ -219,9 +219,16 @@ import {
 import { listColleagues, reassignExchangeRequest } from './exchange-reassign.js';
 import { summarizeReferrals } from './referral-summary.js';
 import {
+  listMyReferrals,
+  summarizeReferralCabinet,
+  type ListMyReferralsInput,
+  type ReferralCabinetStatsOptions,
+} from './referral-cabinet-stats.js';
+import {
   archiveReferralCode,
   createReferralCode,
   listReferralCodes,
+  lookupReferralCode,
   type CreateReferralCodeInput,
 } from './referral-codes.js';
 import {
@@ -442,11 +449,20 @@ export function createCore(ctx: CoreConfig) {
       setMarketingConsent(ctx, actor, consent),
 
     getBonusAccount: (actor: Actor) => getBonusAccount(ctx, actor),
+    /** Сводка кабинета за период и обезличенный список рефералов. */
+    summarizeReferralCabinet: (
+      actor: Actor,
+      period: AnalyticsPeriod,
+      options?: ReferralCabinetStatsOptions,
+    ) => summarizeReferralCabinet(ctx, actor, period, options),
+    listMyReferrals: (actor: Actor, input?: ListMyReferralsInput) =>
+      listMyReferrals(ctx, actor, input),
     /** Коды клиента: ссылки и промокоды, привязка промокодом после регистрации. */
     listReferralCodes: (actor: Actor) => listReferralCodes(ctx, actor),
     createReferralCode: (actor: Actor, input: CreateReferralCodeInput) =>
       createReferralCode(ctx, actor, input),
     archiveReferralCode: (actor: Actor, id: string) => archiveReferralCode(ctx, actor, id),
+    lookupReferralCode: (code: string) => lookupReferralCode(ctx, code),
     bindReferrerByPromoCode: (actor: Actor, code: string) =>
       bindReferrerByPromoCode(ctx, actor, code),
     submitWithdrawalRequest: (actor: Actor, input: SubmitWithdrawalInput) =>
@@ -786,6 +802,16 @@ export { slopComplaints } from './bot-slop.js';
 export type { BonusAccountView, BonusLineView, BonusTransactionView } from './bonus-account.js';
 export type { AdjustBonusInput } from './bonus-adjustments.js';
 export type { CreateReferralCodeInput, ReferralCodeView } from './referral-codes.js';
+export type {
+  ListMyReferralsInput,
+  MyReferralView,
+  MyReferralsPage,
+  ReferralCabinetDay,
+  ReferralCabinetStats,
+  ReferralCabinetStatsOptions,
+  ReferralCodeStats,
+  ReferralPeriodSummary,
+} from './referral-cabinet-stats.js';
 export type {
   EffectiveLineRate,
   EffectiveReferralRates,

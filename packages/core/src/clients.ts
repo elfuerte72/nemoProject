@@ -1,4 +1,4 @@
-import { count, eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { clients, exchangeRequests, referrals } from '@nemo/db';
 import { MAX_REFERRAL_DEPTH, isReferralLine } from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
@@ -180,6 +180,29 @@ async function linkChain(
   return notifications;
 }
 
+/**
+ * Что мешает клиенту ввести чужой промокод — словами, или `null`, когда
+ * ничего. Одно правило на операцию привязки и на признак в счёте: экран
+ * показывает поле по нему, а решает всё равно операция (docs/adr/0019).
+ */
+export async function promoBindingObstacle(
+  executor: Executor,
+  clientId: bigint,
+): Promise<string | null> {
+  const [row] = await executor
+    .select({
+      referrerId: clients.referrerId,
+      requests: sql<number>`(select count(*) from ${exchangeRequests} where ${exchangeRequests.clientId} = ${clients.telegramUserId})::int`,
+    })
+    .from(clients)
+    .where(eq(clients.telegramUserId, clientId))
+    .limit(1);
+  if (!row) return 'Клиент не найден';
+  if (row.referrerId !== null) return 'Вас уже пригласили: кто привёл, не меняется';
+  if (row.requests > 0) return 'Промокод вводят до первой заявки, а у вас она уже есть';
+  return null;
+}
+
 /** Стоит ли `clientId` среди предков `descendant` — по `referrer_id` вверх до корня. */
 async function isAncestor(executor: Executor, clientId: bigint, descendant: ClientRow): Promise<boolean> {
   let current: ClientRow | undefined = descendant;
@@ -212,8 +235,10 @@ export async function bindReferrerByPromoCode(
 ): Promise<RegisterClientResult> {
   const clientId = requireClient(actor);
   return ctx.db.transaction(async (tx) => {
+    // Строка под замком до проверки: подача заявки в ту же секунду иначе
+    // прошла бы между счётом заявок и записью реферера.
     const [row] = await tx
-      .select()
+      .select({ id: clients.telegramUserId })
       .from(clients)
       .where(eq(clients.telegramUserId, clientId))
       .limit(1)
@@ -221,15 +246,9 @@ export async function bindReferrerByPromoCode(
     if (!row) {
       throw new NotFoundError('Клиент не найден');
     }
-    if (row.referrerId !== null) {
-      throw new InvalidInputError('Вас уже пригласили: кто привёл, не меняется');
-    }
-    const [requests] = await tx
-      .select({ n: count() })
-      .from(exchangeRequests)
-      .where(eq(exchangeRequests.clientId, clientId));
-    if ((requests?.n ?? 0) > 0) {
-      throw new InvalidInputError('Промокод вводят до первой заявки, а у вас она уже есть');
+    const obstacle = await promoBindingObstacle(tx, clientId);
+    if (obstacle !== null) {
+      throw new InvalidInputError(obstacle);
     }
 
     const found = await findActiveCode(tx, code);
