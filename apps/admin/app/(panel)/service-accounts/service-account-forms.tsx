@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { SaveServiceAccountInput, ServiceAccountView } from '@nemo/core';
+import { BankChips } from '@nemo/ui';
 import {
   looksLikeCardNumber,
   looksLikePhone,
@@ -310,15 +311,32 @@ export function ServiceAccountForms({
             </div>
           ) : (
             <>
-              <div className="form-row">
-                <label className="field">
-                  <span className="label">Банк</span>
+              <div className="form-row form-row--top">
+                <div className="field">
+                  <label className="label" htmlFor="service-account-bank">
+                    Банк
+                  </label>
                   <input
+                    id="service-account-bank"
                     className="input"
                     value={draft.bankName}
                     onChange={(event) => setDraft({ ...draft, bankName: event.target.value })}
                   />
-                </label>
+                  {/*
+                    Ярлыки банков — те же, что видит клиент в Mini App:
+                    счёт заводится один раз, зато имя банка с него потом
+                    уезжает клиенту в реквизитах, и «Т-Банк» против
+                    «Тинькофф» — это два банка на сверке.
+
+                    Подпись держится меткой `for`, а не обёрткой: кнопка
+                    внутри `label` нажималась бы вместе с ним.
+                  */}
+                  <BankChips
+                    currency={draft.currencyCode}
+                    value={draft.bankName}
+                    onPick={(bank) => setDraft({ ...draft, bankName: bank })}
+                  />
+                </div>
                 <label className="field">
                   <span className="label">Получатель — его имя увидит клиент</span>
                   <input
