@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { ManagerCardApplicationView } from '@nemo/core';
@@ -113,7 +114,7 @@ export function CardList({
         <span>Подана</span>
         <span>Номер у провайдера</span>
         <span>Состояние</span>
-        <span>Перевести в</span>
+        <span>Что сделать</span>
       </div>
 
       <ul className="table table--cards">
@@ -180,7 +181,20 @@ export function CardList({
                   тот сообщил, — выбирать из полного списка ему незачем.
                 */}
                 <span className="cell cell--actions">
-                  <span className="cell__label">Перевести в</span>
+                  <span className="cell__label">Что сделать</span>
+                  {/*
+                    Разговор — первым и всегда: переходы зависят от того,
+                    что сообщил провайдер, и меняются местами, а
+                    «спросить у клиента» доступно на любом шаге. До 9
+                    сентября 2026 из этой очереди к клиенту не вёл ни
+                    один путь: менеджер искал его в «Обращениях» по нику.
+                  */}
+                  <Link
+                    href={`/conversations/${application.clientId}`}
+                    className="btn btn--ghost"
+                  >
+                    Написать
+                  </Link>
                   {transitions.map((next) =>
                     next === 'rejected' ? (
                       // Кнопка не гасится открытым подтверждением:

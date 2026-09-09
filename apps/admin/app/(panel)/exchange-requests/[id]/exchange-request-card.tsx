@@ -263,9 +263,26 @@ export function ExchangeRequestCard({
               : ''}
           </p>
         </div>
-        <span className={pillClass(STATUS_TONES[request.status])}>
-          {STATUS_LABELS[request.status]}
-        </span>
+        <div className="page__actions">
+          {/*
+            Переписка — в заголовке, а не только в карточке клиента
+            внизу: на телефоне карточка идёт после работы, и менеджер,
+            которому надо спросить у клиента одну вещь, прокручивал
+            заявку до конца. У заявки мерчанта переписки нет вовсе —
+            ему пишут почтой из его карточки (docs/adr/0017).
+          */}
+          {request.owner.kind === 'client' ? (
+            <Link
+              href={`/conversations/${request.owner.clientId}?request=${request.id}`}
+              className="btn btn--soft"
+            >
+              Написать клиенту
+            </Link>
+          ) : undefined}
+          <span className={pillClass(STATUS_TONES[request.status])}>
+            {STATUS_LABELS[request.status]}
+          </span>
+        </div>
       </header>
 
       {error ? (

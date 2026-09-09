@@ -33,6 +33,7 @@ export function Dialog({
   messages,
   draft,
   onReply,
+  onSendFile,
   onTyping,
   head,
 }: {
@@ -40,6 +41,12 @@ export function Dialog({
   /** Что уже стоит в поле ответа: номер заявки, если писать из карточки. */
   readonly draft?: string | undefined;
   readonly onReply?: ((body: string) => Promise<void>) | undefined;
+  /**
+   * Отправить файл — тем же ботом, каким уходит ответ словами. Слова из
+   * поля идут к нему подписью: чек с пояснением и чек без пояснения —
+   * одно сообщение, а не два.
+   */
+  readonly onSendFile?: ((file: File, body: string) => Promise<void>) | undefined;
   /**
    * В поле ответа что-то набрано. Наружу — чтобы тихое обновление
    * страницы подождало: перерисовка посреди набранного ответа отнимает
@@ -51,6 +58,10 @@ export function Dialog({
 }) {
   const [body, setBody] = useState(draft ?? '');
   const [busy, setBusy] = useState(false);
+  /** Выбранный файл — до отправки он никуда не уходит. */
+  const [file, setFile] = useState<File | null>(null);
+  /** Чем не годится выбранный файл. Своё, а не с сервера: до отправки. */
+  const [complaint, setComplaint] = useState<string>();
   const feed = useRef<HTMLDivElement>(null);
   /*
    * Пояс браузера известен только браузеру: разделители дней считаются
@@ -69,13 +80,47 @@ export function Dialog({
     if (node) node.scrollTop = node.scrollHeight;
   }, [messages.length, zone]);
 
+  // Выбранный файл — то же незаконченное дело, что и набранный текст:
+  // тихое обновление страницы унесло бы его вместе с полем.
   useEffect(() => {
-    onTyping?.(hasUnsentText(body, draft));
-  }, [body, draft, onTyping]);
+    onTyping?.(hasUnsentText(body, draft) || file !== null);
+  }, [body, draft, file, onTyping]);
+
+  /**
+   * Файл к отправке. Крупнее предела Telegram его брать незачем: такой
+   * уйдёт клиенту, но обратно панели Telegram его не отдаст, и менеджер
+   * не откроет в переписке то, что сам же и послал.
+   */
+  function choose(chosen: File | undefined): void {
+    if (!chosen) return;
+    if (chosen.size > ATTACHMENT_DOWNLOAD_LIMIT_BYTES) {
+      setComplaint(
+        `Файл больше ${formatFileSize(ATTACHMENT_DOWNLOAD_LIMIT_BYTES)} — столько Telegram не отдаёт обратно, и в панели он не откроется.`,
+      );
+      return;
+    }
+    setComplaint(undefined);
+    setFile(chosen);
+  }
 
   async function send() {
     const text = body.trim();
-    if (!onReply || !text || busy) return;
+    if (busy) return;
+    // Отказ по отброшенному файлу висел бы над лентой и после того, как
+    // менеджер махнул на него рукой и ответил словами.
+    setComplaint(undefined);
+    if (file && onSendFile) {
+      setBusy(true);
+      try {
+        await onSendFile(file, text);
+        setFile(null);
+        setBody('');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (!onReply || !text) return;
     setBusy(true);
     try {
       await onReply(text);
@@ -103,7 +148,26 @@ export function Dialog({
   const now = new Date();
 
   return (
-    <div className="chat">
+    <div
+      className="chat"
+      /*
+        Файл берётся и перетаскиванием, и целится он в окно переписки
+        целиком, а не в поле ответа: чек приходит менеджеру в соседнем
+        окне, и путь «сохранить, найти, выбрать» на каждом шаге стоит
+        дольше самой отправки. Без обработчика браузер открыл бы
+        брошенный файл вместо панели — и увёл бы менеджера со страницы
+        вместе с набранным.
+      */
+      onDragOver={onSendFile ? (event) => event.preventDefault() : undefined}
+      onDrop={
+        onSendFile
+          ? (event) => {
+              event.preventDefault();
+              choose(event.dataTransfer.files[0]);
+            }
+          : undefined
+      }
+    >
       {head}
 
       <div className="chat__feed" ref={feed}>
@@ -166,23 +230,83 @@ export function Dialog({
             value={body}
             onChange={(event) => setBody(event.target.value)}
             onKeyDown={onKeyDown}
+            // Снимок экрана живёт в буфере, а не в файле: сохранять его
+            // на диск ради отправки — лишний круг, и в папке «Загрузки»
+            // после смены остаётся десяток чужих чеков.
+            onPaste={
+              onSendFile
+                ? (event) => {
+                    const pasted = event.clipboardData.files[0];
+                    if (!pasted) return;
+                    event.preventDefault();
+                    choose(pasted);
+                  }
+                : undefined
+            }
             placeholder="Ответ клиенту — придёт ему в чат бота"
             aria-label="Ответ клиенту"
           />
+
+          {file ? (
+            <p className="chat__file">
+              {file.name} · {formatFileSize(file.size)}
+              <button
+                type="button"
+                className="btn btn--ghost btn--tiny"
+                aria-label="Убрать файл"
+                disabled={busy}
+                onClick={() => setFile(null)}
+              >
+                ✕
+              </button>
+            </p>
+          ) : undefined}
+
+          {complaint ? (
+            <p className="chat__complaint" role="alert">
+              {complaint}
+            </p>
+          ) : undefined}
+
           <div className="chat__bar">
             <span className="chat__hint">
               Enter — отправить, Shift+Enter — новая строка. Клиент увидит ответ с подписью
-              «[Оператор]».
+              «[Оператор]». Файл можно перетащить в окно или вставить из буфера.
             </span>
-            <button
-              type="submit"
-              // Пустой ответ отправлять некуда: операция его отвергнет, а
-              // погашенная кнопка говорит об этом до нажатия.
-              disabled={busy || !body.trim()}
-              className="btn btn--gold"
-            >
-              {busy ? 'Отправляю…' : 'Отправить'}
-            </button>
+            <span className="chat__send">
+              {onSendFile ? (
+                /*
+                  Поле выбора внутри подписи: своего вида у него нет ни в
+                  одном браузере, и оформить его как остальные кнопки
+                  панели иначе нечем. Тот же приём — у приёма документа
+                  в базу знаний.
+                */
+                <label className={`btn btn--soft${busy ? ' btn--disabled' : ''}`}>
+                  {file ? 'Другой файл' : 'Файл'}
+                  <input
+                    type="file"
+                    className="sr-only"
+                    disabled={busy}
+                    onChange={(event) => {
+                      choose(event.target.files?.[0]);
+                      // Тот же файл, выбранный снова, иначе не вызвал бы
+                      // событие: поле помнит прошлый выбор.
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+              ) : undefined}
+              <button
+                type="submit"
+                // Пустой ответ отправлять некуда: операция его отвергнет, а
+                // погашенная кнопка говорит об этом до нажатия. Файл сам по
+                // себе ответ — с ним пустое поле кнопку не гасит.
+                disabled={busy || (!body.trim() && !file)}
+                className="btn btn--gold"
+              >
+                {busy ? 'Отправляю…' : 'Отправить'}
+              </button>
+            </span>
           </div>
         </form>
       ) : undefined}

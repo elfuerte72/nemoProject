@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { canTransitionWithdrawal } from '@nemo/types';
@@ -192,6 +193,22 @@ export function WithdrawalList({
 
                 <span className="cell cell--actions">
                   <span className="cell__label">Что сделать</span>
+                  {/*
+                    Разговор — первым и всегда: остальные кнопки зависят
+                    от состояния и меняются местами, а «спросить у
+                    клиента» доступно на любом шаге и должно стоять там,
+                    где его ищут не глядя. До 9 сентября 2026 из очереди
+                    выплат к клиенту вёл только показ реквизитов, и
+                    менеджер, которому надо было уточнить сеть кошелька,
+                    искал его в разделе «Обращения» по нику.
+                  */}
+                  <Link
+                    href={`/conversations/${request.clientId}`}
+                    className="btn btn--ghost"
+                  >
+                    Написать
+                  </Link>
+
                   {destinations[request.id] === undefined ? (
                     <button
                       type="button"
