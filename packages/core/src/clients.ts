@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { clients, referrals } from '@nemo/db';
-import { requireClient, type Actor } from './actor.js';
+import { requireClient, requireStaff, type Actor } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
@@ -170,6 +170,28 @@ async function updateUsername(
     throw new NotFoundError('Клиент не найден');
   }
   return row;
+}
+
+/**
+ * Заведён ли такой клиент — вопрос сотрудника, а не самого клиента.
+ *
+ * Нужен там, где доставка идёт раньше записи: файл менеджера уходит в
+ * Telegram, чтобы получить идентификатор, и только потом ложится в
+ * ленту. Отправить его тому, кого в базе нет, значило бы послать файл
+ * в чат, о котором у сервиса не останется ни строки.
+ */
+export async function clientExists(
+  ctx: CoreConfig,
+  actor: Actor,
+  telegramUserId: bigint,
+): Promise<boolean> {
+  requireStaff(actor);
+  const [row] = await ctx.db
+    .select({ id: clients.telegramUserId })
+    .from(clients)
+    .where(eq(clients.telegramUserId, telegramUserId))
+    .limit(1);
+  return row !== undefined;
 }
 
 /**

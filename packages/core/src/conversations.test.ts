@@ -161,6 +161,70 @@ describe('ответ менеджера', () => {
   });
 });
 
+/*
+ * Файл от менеджера клиенту — то же сообщение ленты, что и ответ
+ * словами, но пришедшее в неё задом наперёд: байты уходят в Telegram
+ * раньше, чем строка ложится в базу, потому что до отправки у файла нет
+ * идентификатора, а хранить сам файл сервис не берётся. Отсюда и
+ * разница в уведомлениях: доставлять нечего, всё уже доставлено.
+ */
+describe('файл от менеджера', () => {
+  const receipt = { fileId: 'BQACAgIAAxkBAAI', kind: 'document', mime: 'application/pdf', name: 'chek.pdf', size: 240_000 } as const;
+
+  it('сохраняется исходящим вместе с подписью', async () => {
+    await core.replyToClient(manager, {
+      clientId: 100n,
+      body: 'Вот квитанция',
+      attachment: receipt,
+    });
+
+    const feed = await core.listConversation(manager, 100n);
+    expect(feed.at(-1)).toMatchObject({
+      direction: 'outgoing',
+      body: 'Вот квитанция',
+      authorName: 'Пётр',
+      attachment: { kind: 'document', name: 'chek.pdf', size: 240_000, downloadable: true },
+    });
+  });
+
+  it('уходит и без подписи: файл бывает сам себе ответ', async () => {
+    await core.replyToClient(manager, { clientId: 100n, attachment: receipt });
+
+    const feed = await core.listConversation(manager, 100n);
+    expect(feed.at(-1)).toMatchObject({ direction: 'outgoing', body: null });
+  });
+
+  it('уведомления не порождает: файл ушёл клиенту до записи', async () => {
+    const { notifications } = await core.replyToClient(manager, {
+      clientId: 100n,
+      body: 'Вот квитанция',
+      attachment: receipt,
+    });
+
+    expect(notifications).toEqual([]);
+  });
+
+  it('без файла и без слов не отправляется', async () => {
+    await expect(core.replyToClient(manager, { clientId: 100n })).rejects.toThrow(
+      InvalidInputError,
+    );
+  });
+
+  it('в журнал доступа не пишется: файл свой, а журнал про чужое', async () => {
+    // Тем же журналом закрыт номер карты клиента: он отвечает на вопрос
+    // «кто из сотрудников видел чужое». Файл, который менеджер сам же и
+    // отправил, он видел до отправки, и строка о нём журнал только
+    // разбавляет.
+    const admin = await givenStaff({ role: 'admin' });
+    await core.replyToClient(manager, { clientId: 100n, attachment: receipt });
+    const [message] = await core.listConversation(manager, 100n);
+
+    await core.logMessageAttachmentView(manager, message!.id);
+
+    expect(await core.listRequisiteAccessLog(admin)).toEqual([]);
+  });
+});
+
 describe('чужая переписка', () => {
   it('не читается клиентом: пути чтения у него нет вовсе', async () => {
     // Клиент читает разговор в Telegram, а не в приложении, и операции

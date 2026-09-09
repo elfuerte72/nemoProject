@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { BankChips } from '@nemo/ui';
 import {
   payoutMethodOf,
   PROMPTPAY_ID_LABELS,
@@ -249,16 +250,35 @@ export function RecipientFields({
       )}
 
       {kind === 'phone' || kind === 'card' || kind === 'account' ? (
-        <label className="field">
-          <span className="label">Банк</span>
+        <div className="field">
+          <label className="label" htmlFor="recipient-bank">
+            Банк
+          </label>
           <input
+            id="recipient-bank"
             className="input"
             value={bankName}
             onChange={(event) => setBankName(event.target.value)}
             placeholder={kind === 'account' ? 'Например, Kasikornbank' : 'Например, Сбербанк'}
             disabled={disabled}
           />
-        </label>
+          {/*
+            Ярлыки под полем, а не список вместо него: мерчант заводит
+            покупателей десятками, и латиница тайского банка набирается
+            на клавиатуре дольше всего остального в форме. Банка, для
+            которого ярлыка нет, это не касается — поле осталось
+            свободным.
+
+            Подпись при этом отвязана от поля меткой `for`, а не
+            обёрткой: кнопки внутри `label` нажимались бы вместе с ним.
+          */}
+          <BankChips
+            currency={currency}
+            value={bankName}
+            onPick={setBankName}
+            disabled={disabled}
+          />
+        </div>
       ) : undefined}
 
       {kind === 'phone' ? (

@@ -63,6 +63,38 @@ export function ConversationView({
   }
 
   /**
+   * Отправить клиенту файл.
+   *
+   * Уходит он не тем же запросом, что ответ словами: файл едет телом
+   * формы, а не строкой JSON, и путь у него свой. Слова из поля идут
+   * подписью к файлу — вторым сообщением тот же текст читался бы
+   * повтором.
+   */
+  async function sendFile(file: File, text: string) {
+    setError(undefined);
+    const form = new FormData();
+    form.set('clientId', clientId);
+    form.set('file', file, file.name);
+    if (text) form.set('body', text);
+    if (requestId) form.set('exchangeRequestId', requestId);
+
+    try {
+      const response = await fetch('/api/conversations/attachments', {
+        method: 'POST',
+        body: form,
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        setError(payload.error ?? 'Файл не отправлен');
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError('Не удалось связаться с сервером. Повторите попытку.');
+    }
+  }
+
+  /**
    * Передать разговор человеку или вернуть помощнику.
    *
    * Кнопка не гаснет на время запроса, а сообщает о работе подписью:
@@ -116,6 +148,7 @@ export function ConversationView({
         // иначе он ищет в своей истории строку, которой там нет.
         {...(requestId ? { draft: `По заявке № ${requestId.slice(0, 6)}: ` } : {})}
         onReply={reply}
+        onSendFile={sendFile}
         onTyping={onTyping}
         head={
           /*

@@ -16,7 +16,12 @@ import {
  * Отправка идёт прямым запросом к Bot API, без библиотеки бота:
  * обновления здесь не принимаются, нужна одна команда из всего
  * интерфейса.
+ *
+ * Файл клиенту уходит отдельным путём (`files.ts`): байты уведомлением
+ * не описать, и отправка там идёт раньше записи, а не после неё.
  */
+
+export { sendClientFile, type SendFileOptions } from './files.js';
 
 export interface DeliveryOptions {
   readonly botToken: string;

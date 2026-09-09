@@ -11,6 +11,7 @@
  * первым, до собственного `globals.css` приложения.
  */
 
+export { BankChips } from './bank-chips.js';
 export { Brand, TobeeMark } from './brand.js';
 export { CopyValue } from './copy.js';
 export { EmptyState } from './empty.js';

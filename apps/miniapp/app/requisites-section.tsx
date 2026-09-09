@@ -21,6 +21,7 @@ import {
   type RequisiteKind,
 } from '@nemo/types';
 import { ApiError, del, post } from '@/lib/client-api';
+import { BankField } from './ui/bank-chips';
 import { CurrencyFlag } from './ui/flags';
 import { TrashIcon } from './ui/icons';
 import { addressLabel, NetworkPicker } from './ui/network-picker';
@@ -461,15 +462,12 @@ function RequisitesForm({
       {kind ? (
         <div className="form">
           {kind === 'phone' || kind === 'card' || kind === 'account' ? (
-            <label className="field">
-              <span className="field__label">Банк</span>
-              <input
-                value={bankName}
-                onChange={(event) => setBankName(event.target.value)}
-                placeholder={kind === 'account' ? 'Например, Kasikornbank' : 'Например, Сбербанк'}
-                className="input"
-              />
-            </label>
+            <BankField
+              currency={code}
+              value={bankName}
+              placeholder={kind === 'account' ? 'Например, Kasikornbank' : 'Например, Сбербанк'}
+              onChange={setBankName}
+            />
           ) : undefined}
 
           {kind === 'phone' ? (
@@ -595,6 +593,18 @@ function RequisitesForm({
                     </span>
                   </span>
                 </div>
+              ) : undefined}
+              {/*
+                Названия кошельков — подсказкой, а не в подписи поля:
+                подпись набрана прописными, и «PROMPTPAY-QR ИЗ БАНКА ИЛИ
+                КОШЕЛЬКА — TRUEMONEY, DEEPPOCKET» на телефоне заняло бы
+                три строки. Сказать это всё же нужно: клиент, у которого
+                деньги в кошельке, не знает, что его QR тоже подойдёт.
+              */}
+              {kind === 'promptpay' && !qr ? (
+                <p className="hint">
+                  Подойдёт QR из приложения банка или кошелька — TrueMoney, DeepPocket.
+                </p>
               ) : undefined}
               {qr ? (
                 <p className="hint">Если это не ваш QR, выберите другой.</p>

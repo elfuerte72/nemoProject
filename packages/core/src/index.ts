@@ -31,7 +31,7 @@ import {
   updateCardApplicationStatus,
   type UpdateCardApplicationInput,
 } from './card-applications.js';
-import { getClient, registerClient, type RegisterClientInput } from './clients.js';
+import { clientExists, getClient, registerClient, type RegisterClientInput } from './clients.js';
 import { getClientCard } from './client-card.js';
 import {
   approveMerchant,
@@ -270,6 +270,7 @@ import type { ReassignExchangeRequestInput } from './exchange-reassign.js';
 export function createCore(ctx: CoreConfig) {
   return {
     registerClient: (input: RegisterClientInput) => registerClient(ctx, input),
+    clientExists: (actor: Actor, clientId: bigint) => clientExists(ctx, actor, clientId),
     getClient: (actor: Actor) => getClient(ctx, actor),
     /** Карточка клиента для сотрудника: с кем идёт разговор. */
     getClientCard: (actor: Actor, clientId: bigint) => getClientCard(ctx, actor, clientId),
@@ -813,6 +814,7 @@ export {
   type MerchantMail,
 } from './merchant-mails.js';
 export {
+  operatorCaption,
   renderNotification,
   toClient,
   toMerchant,
