@@ -1,6 +1,6 @@
 # Документы и выкатка
 
-Status: ready-for-agent
+Status: done
 Спека: `../spec.md`
 Blocked by: 06
 
@@ -24,3 +24,7 @@ Blocked by: 06
   амбассадора; на прод через `pnpm release` после слова Пенкина.
   Перед выкатом — `/setdomain` на адрес кабинета, иначе кнопка Telegram
   на витрине молчит.
+
+## Итог
+
+Сделано: ADR 0022, термин в `CONTEXT.md`, записи в `CHANGELOG.md`, переменные и `/setdomain` в `README`, записи в `backlog.md`. Выкачено на прод 10 сентября 2026 (`main = b4c3fbc`); `/setdomain` клиентскому боту сделан владельцем, кнопка Telegram на витрине живая.
