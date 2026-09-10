@@ -61,6 +61,8 @@ async function notInProgram(): Promise<ReactNode> {
   return (
     <StateScreen
       title="Вас нет в программе"
+      eyebrow="амбассадор"
+      signOut={{ path: '/api/auth/ambassador/logout', after: '/' }}
       support={await supportUsername()}
       lines={[
         'Кабинет амбассадора открыт тем, кого сервис позвал в программу поимённо: каналам, ' +
