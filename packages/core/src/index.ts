@@ -788,6 +788,7 @@ export {
   WEBHOOK_RESPONSE_CHARS,
   WEBHOOK_RETRY_MINUTES,
   WEBHOOK_TIMEOUT_MS,
+  webhookEventBody,
 } from './webhooks.js';
 export type {
   AddedWebhookEndpoint,

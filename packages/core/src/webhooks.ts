@@ -456,6 +456,33 @@ export async function getWebhookDelivery(
   return found;
 }
 
+/**
+ * Тело события — тонкое и одно на всех: `id` доставки, тип, номер
+ * заявки, её состояние и время перехода. Больше в нём нет ничего
+ * намеренно: подробности мерчант забирает по API, а суммы и реквизиты
+ * в чужих журналах доставок делать нечего.
+ *
+ * Отдельной функцией, а не строкой внутри вставки, потому что это же
+ * тело показывает кабинет в примерах на странице «как встроить».
+ * Пример, набранный руками, проверял бы представление о формате, а не
+ * формат: разошлись бы они молча и в первую же правку.
+ */
+export function webhookEventBody(input: {
+  readonly id: string;
+  readonly event: WebhookEvent;
+  readonly requestId: string | null;
+  readonly status: ExchangeRequestStatus | null;
+  readonly at: Date;
+}): string {
+  return JSON.stringify({
+    id: input.id,
+    type: input.event,
+    requestId: input.requestId,
+    status: input.status,
+    at: input.at.toISOString(),
+  });
+}
+
 function deliveryRow(input: {
   endpointId: string;
   event: WebhookEvent;
@@ -466,13 +493,7 @@ function deliveryRow(input: {
   // Идентификатор события — сама строка: он уходит в тело, поэтому
   // берётся до вставки.
   const id = randomUUID();
-  const body = JSON.stringify({
-    id,
-    type: input.event,
-    requestId: input.requestId,
-    status: input.status,
-    at: input.at.toISOString(),
-  });
+  const body = webhookEventBody({ ...input, id });
   return {
     id,
     endpointId: input.endpointId,

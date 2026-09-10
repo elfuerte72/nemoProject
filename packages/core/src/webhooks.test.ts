@@ -8,6 +8,7 @@ import {
   createCore,
   looksLikeWebhookUrl,
   signWebhookBody,
+  webhookEventBody,
   WEBHOOK_LEASE_MS,
   WEBHOOK_MAX_ATTEMPTS,
   WEBHOOK_RETRY_MINUTES,
@@ -196,6 +197,29 @@ describe('очередь доставок', () => {
     });
     const [confirmed] = await core.listWebhookDeliveries(merchant);
     expect(confirmed).toMatchObject({ event: 'exchange_request.rate_confirmed', requestId: request.id });
+  });
+
+  it('тело собирается той же функцией, что и пример на экране «как встроить»', async () => {
+    // Пример в кабинете строится `webhookEventBody`, а не набран руками:
+    // сочинённый по памяти о формате, он проверял бы представление о
+    // теле, а не тело. Сверка побайтовая — порядок ключей тоже договор.
+    await core.addWebhookEndpoint(merchant, {
+      url: URL_OK,
+      events: ['exchange_request.created'],
+    });
+
+    const { request } = await submit();
+    const [created] = await core.listWebhookDeliveries(merchant);
+    const at = (JSON.parse(created!.body) as { at: string }).at;
+    expect(created!.body).toBe(
+      webhookEventBody({
+        id: created!.id,
+        event: 'exchange_request.created',
+        requestId: request.id,
+        status: 'new',
+        at: new Date(at),
+      }),
+    );
   });
 
   it('без подписки на событие, у клиента и у точки на паузе доставки нет', async () => {
