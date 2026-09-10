@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: 'Вход — кабинет Tobee' }
  */
 export default async function LoginPage() {
   if (await viewerOrNull()) {
-    redirect('/');
+    redirect('/dashboard');
   }
   return <LoginForm />;
 }

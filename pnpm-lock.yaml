@@ -133,6 +133,9 @@ importers:
       '@nemo/rates':
         specifier: workspace:^
         version: link:../../packages/rates
+      '@nemo/telegram':
+        specifier: workspace:*
+        version: link:../../packages/telegram
       '@nemo/types':
         specifier: workspace:*
         version: link:../../packages/types

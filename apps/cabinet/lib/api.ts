@@ -3,6 +3,7 @@ import {
   unauthorizedResponse,
   unexpectedErrorResponse,
 } from '@nemo/http';
+import { TelegramLoginError } from '@nemo/telegram/login';
 import { SessionError } from '@/lib/session';
 
 /**
@@ -14,7 +15,7 @@ import { SessionError } from '@/lib/session';
  * остановился.
  */
 export function errorResponse(error: unknown): Response {
-  if (error instanceof SessionError) {
+  if (error instanceof SessionError || error instanceof TelegramLoginError) {
     return unauthorizedResponse('Требуется вход');
   }
   return coreErrorResponse(error) ?? unexpectedErrorResponse(error);

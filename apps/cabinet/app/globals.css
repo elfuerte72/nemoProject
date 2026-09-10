@@ -626,3 +626,158 @@
   margin-left: 8px;
   background: var(--gold, #e2b050);
 }
+
+/* ── Витрина ─────────────────────────────────────────────────────── */
+
+/*
+ * Одна страница на две двери: бизнесу и амбассадору. Собрана теми же
+ * токенами, что кабинет за ней, — это один сервис, и человек, вошедший
+ * отсюда, не должен решить, что попал в другое место.
+ *
+ * Свечение сверху — тот же приём, что на карточке входа и на первом
+ * экране Mini App: единственный источник цвета на пустом экране.
+ */
+.entry {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.entry::before {
+  content: '';
+  position: absolute;
+  top: -200px;
+  left: 50%;
+  margin-left: -260px;
+  width: 520px;
+  height: 420px;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(249, 160, 60, 0.16), rgba(249, 160, 60, 0));
+  pointer-events: none;
+}
+
+.entry__inner {
+  position: relative;
+  width: 100%;
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  animation: nm-fade-up 0.32s var(--ease) both;
+}
+
+.entry__head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.entry__title {
+  margin: 6px 0 0;
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.6px;
+}
+
+.entry__lead {
+  margin: 0;
+  max-width: 60ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/*
+ * Две колонки равной ширины: ни одна дверь не главная. На узком экране
+ * ряд складывается сам — телефон здесь редкость, но амбассадор с
+ * телефона заходит чаще мерчанта.
+ */
+.entry__doors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+.door {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 24px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+}
+
+.door__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-inner);
+  background: var(--surface-soft-strong);
+  color: var(--gold-light);
+}
+
+.door__title {
+  margin: 2px 0 0;
+  font-size: 19px;
+  letter-spacing: -0.2px;
+}
+
+.door__text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* Кнопка и виджет прижаты к низу карточки: двери разной высоты, а
+   входы у них должны стоять на одной линии. */
+.door > .btn,
+.door__widget {
+  margin-top: auto;
+}
+
+/*
+ * Кнопки витрины крупнее рабочих: сорока пикселей хватает курсору, а
+ * сюда заходят и с телефона — амбассадор чаще мерчанта, — и палец
+ * требует сорока четырёх.
+ */
+.door > .btn {
+  width: 100%;
+  min-height: 44px;
+}
+
+/* Место под кнопку Telegram держится заранее: её рисует чужой скрипт,
+   и без запаса страница дёргалась бы, когда он доедет. */
+.door__widget {
+  min-height: 44px;
+  padding-top: 4px;
+}
+
+.door__note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.door__note a,
+.entry__link {
+  color: var(--gold-light);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.entry__foot {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}

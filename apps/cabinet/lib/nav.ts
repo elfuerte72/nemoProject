@@ -18,7 +18,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     key: 'work',
     title: 'Работа',
     items: [
-      { href: '/', label: 'Обзор', icon: 'home' },
+      { href: '/dashboard', label: 'Обзор', icon: 'home' },
       { href: '/requests/new', label: 'Новая заявка', icon: 'plus' },
       { href: '/requests', label: 'Заявки', icon: 'exchange', count: 'active' },
       { href: '/recipients', label: 'Получатели', icon: 'card' },
