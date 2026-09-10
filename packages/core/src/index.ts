@@ -34,6 +34,7 @@ import {
 } from './card-applications.js';
 import {
   bindReferrerByPromoCode,
+  clientExists,
   getClient,
   registerClient,
   type RegisterClientInput,
@@ -298,6 +299,7 @@ import type { ReassignExchangeRequestInput } from './exchange-reassign.js';
 export function createCore(ctx: CoreConfig) {
   return {
     registerClient: (input: RegisterClientInput) => registerClient(ctx, input),
+    clientExists: (actor: Actor, clientId: bigint) => clientExists(ctx, actor, clientId),
     getClient: (actor: Actor) => getClient(ctx, actor),
     /** Карточка клиента для сотрудника: с кем идёт разговор. */
     getClientCard: (actor: Actor, clientId: bigint) => getClientCard(ctx, actor, clientId),
@@ -529,7 +531,7 @@ export function createCore(ctx: CoreConfig) {
     listColleagues: (actor: Actor) => listColleagues(ctx, actor),
     summarizeReferrals: (actor: Actor, period: AnalyticsPeriod) =>
       summarizeReferrals(ctx, actor, period),
-    /** Реферальная программа: глубина, уровни, личные ставки, правка баллов (docs/adr/0019). */
+    /** Реферальная программа: глубина, уровни, личные ставки, правка баллов (docs/adr/0021). */
     getReferralProgram: (actor: Actor) => getReferralProgram(ctx, actor),
     updateReferralLines: (actor: Actor, lines: readonly ReferralRateInput[]) =>
       updateReferralLines(ctx, actor, lines),
@@ -891,6 +893,7 @@ export {
   type MerchantMail,
 } from './merchant-mails.js';
 export {
+  operatorCaption,
   renderNotification,
   toClient,
   toMerchant,

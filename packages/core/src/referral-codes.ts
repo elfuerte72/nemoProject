@@ -12,7 +12,7 @@ import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
 import { generateReferralCode } from './referral-code.js';
 
 /**
- * Реферальные коды клиента: ссылки и промокоды (docs/adr/0019).
+ * Реферальные коды клиента: ссылки и промокоды (docs/adr/0021).
  *
  * Кодов несколько, у каждого название — «сторис», «канал», — чтобы по
  * ним читалась статистика: откуда приходят. Ссылка получает

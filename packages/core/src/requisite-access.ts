@@ -192,6 +192,11 @@ export async function describeMessageAttachment(
  * сотрудника по тому же сообщению в пределах окна следа не оставляет;
  * первое обращение записывается всегда, и обойти журнал, попросив файл
  * кусками, нельзя.
+ *
+ * Свой файл в журнал не идёт — тем же правилом, каким в него не идут
+ * счета сервиса: журнал про чужое. Файл, отправленный менеджером
+ * клиенту, он видел до отправки, и запись о его просмотре разбавляла бы
+ * ответ на вопрос, ради которого журнал ведётся.
  */
 export async function logMessageAttachmentView(
   ctx: CoreConfig,
@@ -202,13 +207,14 @@ export async function logMessageAttachmentView(
 
   await ctx.db.transaction(async (tx) => {
     const [row] = await tx
-      .select({ clientId: clientMessages.clientId })
+      .select({ clientId: clientMessages.clientId, direction: clientMessages.direction })
       .from(clientMessages)
       .where(eq(clientMessages.id, messageId))
       .limit(1);
     if (!row) {
       throw new NotFoundError('Сообщение не найдено');
     }
+    if (row.direction === 'outgoing') return;
 
     /*
      * Два куска, пришедших одновременно, оба могут не найти записи и оба

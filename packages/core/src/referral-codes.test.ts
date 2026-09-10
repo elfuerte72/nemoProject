@@ -8,7 +8,7 @@ import { asClient, givenCurrencyPair } from './test-support.js';
 
 /**
  * Реферальные коды: несколько ссылок и промокодов у клиента, привязка по
- * промокоду после регистрации (docs/adr/0019).
+ * промокоду после регистрации (docs/adr/0021).
  */
 
 const db = testDatabase();

@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { clients, exchangeRequests, referrals } from '@nemo/db';
 import { MAX_REFERRAL_DEPTH, isReferralLine } from '@nemo/types';
-import { requireClient, type Actor } from './actor.js';
+import { requireClient, requireStaff, type Actor } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
@@ -155,7 +155,7 @@ async function findReferrerByCode(
  * начислении: обход зависел бы от того, что связи никто не менял, а
  * начисление должно опираться на факт, зафиксированный в момент
  * привязки. Хранится глубже, чем платится: углубление программы позже
- * доходит и до старых цепочек (docs/adr/0019).
+ * доходит и до старых цепочек (docs/adr/0021).
  */
 async function linkChain(
   executor: Executor,
@@ -183,7 +183,7 @@ async function linkChain(
 /**
  * Что мешает клиенту ввести чужой промокод — словами, или `null`, когда
  * ничего. Одно правило на операцию привязки и на признак в счёте: экран
- * показывает поле по нему, а решает всё равно операция (docs/adr/0019).
+ * показывает поле по нему, а решает всё равно операция (docs/adr/0021).
  */
 export async function promoBindingObstacle(
   executor: Executor,
@@ -223,7 +223,7 @@ async function isAncestor(executor: Executor, clientId: bigint, descendant: Clie
  * реферер закрепляется при первом запуске. Поэтому привязка разрешена
  * тому, у кого ещё нет ни реферера, ни заявок: клиент с заявками — уже
  * клиент сервиса, и приписывать его рефереру задним числом значило бы
- * платить за того, кого никто не приводил (docs/adr/0019).
+ * платить за того, кого никто не приводил (docs/adr/0021).
  *
  * К своему рефералу привязаться нельзя: цепочка замкнулась бы в кольцо,
  * и предки считались бы по кругу.
@@ -294,6 +294,28 @@ async function updateUsername(
     throw new NotFoundError('Клиент не найден');
   }
   return row;
+}
+
+/**
+ * Заведён ли такой клиент — вопрос сотрудника, а не самого клиента.
+ *
+ * Нужен там, где доставка идёт раньше записи: файл менеджера уходит в
+ * Telegram, чтобы получить идентификатор, и только потом ложится в
+ * ленту. Отправить его тому, кого в базе нет, значило бы послать файл
+ * в чат, о котором у сервиса не останется ни строки.
+ */
+export async function clientExists(
+  ctx: CoreConfig,
+  actor: Actor,
+  telegramUserId: bigint,
+): Promise<boolean> {
+  requireStaff(actor);
+  const [row] = await ctx.db
+    .select({ id: clients.telegramUserId })
+    .from(clients)
+    .where(eq(clients.telegramUserId, telegramUserId))
+    .limit(1);
+  return row !== undefined;
 }
 
 /**

@@ -1,0 +1,3065 @@
+/*
+ * Визуальный язык клиентского приложения.
+ *
+ * Один файл, а не модуль на экран: экранов три, и они делят почти все
+ * поверхности — карточку, пилюлю, ряд списка, нижний лист. Разложенные
+ * по модулям, эти правила разошлись бы при первой же правке.
+ *
+ * Тема фиксированно тёмная. Telegram отдаёт цвета своего оформления, но
+ * приложение на них не опирается: светлый вариант этого макета не
+ * рисовался, и подстановка чужой палитры сломала бы контраст меди.
+ *
+ * Палитра — фирменная: индиго под медовым акцентом. Она не украшение, а
+ * то же, чем сервис подписан снаружи, — знак, талисман, полотна. Две
+ * разных правды о том, как выглядит TOBEE, стоят дороже любой из них.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /*
+   * Фон — индиго, а не чёрный. Знак и талисман нарисованы на нём же, и
+   * на чёрном их подложка читалась бы прямоугольником вокруг картинки.
+   * Поверхности набраны тем же тоном посветлее, а не белым по прозрачной
+   * подложке: белое поверх фиолетового уводит карточки в серый.
+   */
+  --bg: #171226;
+  --bg-lift: #2b2552;
+  --bg-mid: #1d1835;
+  /* Тот же переход нужен и странице, и заставке поверх неё: разойдись
+     они хоть на тон, на её уходе мигнул бы весь экран. */
+  --bg-field: radial-gradient(142% 76% at 50% 44%, var(--bg-lift) 0%, var(--bg-mid) 44%, var(--bg) 82%);
+  --surface: #272148;
+  --surface-soft: rgba(158, 146, 214, 0.09);
+  --surface-soft-strong: rgba(158, 146, 214, 0.14);
+  --surface-soft-hover: rgba(158, 146, 214, 0.17);
+  --hairline: rgba(158, 146, 214, 0.16);
+  --hairline-soft: rgba(158, 146, 214, 0.12);
+
+  --text: #f4f1fb;
+  --text-dim: #c6c0dd;
+  --text-muted: #928bab;
+  /*
+   * Самый тусклый из тёмных — подсказка в пустом поле и ноль на месте
+   * ненабранной суммы. Поднят с прежнего: на поверхности карточки он
+   * давал 2,15 к одному, то есть не дотягивал даже до порога для
+   * крупного текста. А ноль в строке «получаю» — не украшение поля: это
+   * значение, которое читают.
+   */
+  --text-faint: #7d7699;
+
+  /*
+   * Медовый акцент бренда. Имена оставлены золотыми: цвет сменился,
+   * а роль — «то, чего ждут от клиента, и то, что сервис обещает» —
+   * та же, и переименование задело бы полсотни правил ради синонима.
+   */
+  --gold: #f9a03c;
+  --gold-light: #ffc46b;
+  --gold-ink: #241a08;
+  --gold-face: linear-gradient(150deg, #ffcf7d, #f9a03c 62%, #ee8a24);
+  --gold-face-soft: linear-gradient(150deg, #ffc76f, #f9a03c);
+
+  --up: #4fc08a;
+  --down: #f2685f;
+
+  --lift: inset 0 1px 0 rgba(214, 205, 255, 0.09);
+  --lift-strong: inset 0 1px 0 rgba(214, 205, 255, 0.13);
+  --drop: 0 18px 40px -28px rgba(8, 5, 20, 1);
+
+  --gutter: 22px;
+  --radius-card: 22px;
+  --radius-tile: 18px;
+  --radius-control: 16px;
+  --radius-inner: 12px;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /*
+   * Свет собран к середине экрана — тем же переходом и теми же тремя
+   * тонами, что на фирменных полотнах. Точки взяты с них пипеткой, а не
+   * подобраны на глаз: талисман снят на таком фоне и вырезан вместе со
+   * своей подсветкой, и там, где приложение темнее полотна, вокруг него
+   * читался бы светлый круг.
+   *
+   * Оттого переход и трёхточечный: двух тонов на этот профиль не
+   * хватает — свет спадает от середины медленно, а у самого края резко,
+   * и прямой переход между крайними даёт вместо полотна воронку.
+   *
+   * Закреплён относительно окна, а не страницы: разделы прокручиваются
+   * внутри себя, и уезжающее вместе с ними пятно читалось бы как
+   * подсветка содержимого, а не как фон приложения.
+   */
+  background: var(--bg);
+  background-image: var(--bg-field);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font-ui), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Mini App разворачивается на весь экран: тянуть страницу целиком
+     некуда, а резиновый скролл под нижней панелью выглядит поломкой. */
+  overscroll-behavior: none;
+}
+
+input,
+select,
+button,
+textarea {
+  font-family: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+}
+
+@keyframes nm-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes nm-swap-down {
+  from {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes nm-swap-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Те же две — под вторым именем. Дубль здесь не небрежность: перезапуск
+ * анимации без пересборки узла делается сменой её имени, а другого
+ * способа выразить «то же самое, но заново» в CSS нет.
+ */
+@keyframes nm-swap-down-again {
+  from {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes nm-swap-up-again {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes nm-sheet-in {
+  from {
+    transform: translateY(18px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Оболочка ────────────────────────────────────────────────────── */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  position: relative;
+  overflow: hidden;
+}
+
+/*
+ * Тёплое свечение под шапкой — единственное тёплое пятно на холодном
+ * фоне. Приглушено: фон теперь сам со светом, и прежняя сила читалась
+ * поверх него не подсветкой, а грязью.
+ */
+.app__glow {
+  position: absolute;
+  top: -140px;
+  left: 50%;
+  margin-left: -180px;
+  width: 360px;
+  height: 300px;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(249, 160, 60, 0.08), rgba(249, 160, 60, 0));
+  pointer-events: none;
+}
+
+/*
+ * Сверху приложение обходит две полосы: системную (часы, вырез) и ту,
+ * что Telegram оставляет себе под кнопки «закрыть» и «меню» в
+ * полноэкранном режиме. Вторая приходит переменной и равна нулю, пока
+ * режим не включён, — поэтому одно правило работает в обоих случаях.
+ *
+ * Содержимого у полосы нет: знак сервиса и кнопка помощи из шапки
+ * убраны. Осталась она затем, ради чего и считалась, — чтобы первый
+ * экран не уезжал под вырез и под кнопки Telegram.
+ */
+.app__safe-top {
+  flex-shrink: 0;
+  height: calc(max(14px, env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px)) + var(--tg-content-safe-area-inset-top, 0px));
+}
+
+/*
+ * Кадр, в котором виден один раздел из трёх. Ряд шире него втрое и
+ * ездит под ним: обрезает его этот кадр, а не окно, — иначе нижний лист
+ * и вопрос о новостях, лежащие выше по дереву, обрезались бы вместе с
+ * ним.
+ */
+.frame {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.track {
+  display: flex;
+  height: 100%;
+  transition: transform 0.34s var(--ease);
+  /*
+   * Ряд — единственное, что здесь ездит, и ездит он постоянно: и под
+   * пальцем, и доводкой после него. Обещание держит его отдельным слоем,
+   * и перенос достаётся компоновщику, а не пересчёту разметки. Обычно
+   * такое обещание дают на время движения и снимают после — здесь снимать
+   * не за чем: слой один, размером в три экрана, а движение начинается
+   * от любого касания.
+   */
+  will-change: transform;
+}
+
+/* Под пальцем ряд идёт за ним, а не догоняет его доводкой. */
+.track[data-dragging] {
+  transition: none;
+}
+
+.track__slot {
+  flex: 0 0 100%;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 10px var(--gutter) 116px;
+  scrollbar-width: none;
+  /*
+   * Вертикаль остаётся браузеру, горизонталь берёт на себя приложение.
+   * Без этого браузер начинает прокрутку по диагонали одновременно с
+   * переносом, и ряд едет вместе с содержимым раздела.
+   */
+  touch-action: pan-y;
+  /*
+   * Раздел отвечает сам за себя: что бы в нём ни поменялось, пересчёт и
+   * перерисовка не выходят за его края. Обрезка при этом не новая —
+   * прокрутка обрезала его и раньше.
+   */
+  contain: layout paint;
+}
+
+.track__slot::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/*
+ * Место под нижнюю панель остаётся и без панели.
+ *
+ * Раньше отступ снизу ужимался с появлением клавиатуры — «панели нет,
+ * незачем и место», — но менялся он в тот самый момент, когда клиент
+ * попадает в поле: раскладка пересчитывалась под пальцем, и содержимое
+ * дёргалось вверх на восемьдесят пикселей. Лишний отступ при этом
+ * прячется под самой клавиатурой, то есть не виден вовсе.
+ */
+
+.app__center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 var(--gutter);
+  text-align: center;
+}
+
+/* ── Заставка ────────────────────────────────────────────────────── */
+
+/*
+ * Заставка лежит поверх приложения, а не на месте его первого экрана.
+ *
+ * Так первый экран успевает собраться под ней: он спрашивает своё всё
+ * то время, пока идёт приветствие, и к его концу показывать ему уже
+ * есть что. Стояла бы она вместо него — экран начинал бы грузиться
+ * только после её ухода, и приветствие оканчивалось бы строкой
+ * «загружаем направления обмена» на пустом поле.
+ *
+ * Оттого ей и нужен свой фон: под ней не пусто. Тот же, что у страницы,
+ * и потому одной переменной на обоих — свой на каждом разошёлся бы при
+ * первой же правке, и уход заставки читался бы сменой освещения.
+ */
+.splash {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--bg);
+  background-image: var(--bg-field);
+  /*
+   * Сама заставка не появляется ничем: её части проступают по очереди —
+   * свет, талисман, подпись, строка состояния, — и общий наплыв поверх
+   * этой очереди сдвигал бы всё разом, стирая её.
+   */
+}
+
+/*
+ * Короткое приветствие — то, что клиент видит, зайдя второй раз за день.
+ *
+ * Очередь появления снята: она длиннее полутора секунд, а показ здесь
+ * втрое короче — приветствие обрывалось бы на полуслове. Части
+ * проступают разом и быстро; заставка при этом остаётся собой, потому
+ * что дело её тут другое — прикрыть сборку первого экрана, а не
+ * знакомить.
+ */
+.splash--brief .splash__halo {
+  animation:
+    nm-halo-in 0.35s var(--ease) both,
+    nm-breathe var(--turn) 0.35s ease-in-out infinite;
+}
+
+.splash--brief .splash__mark {
+  animation-duration: 0.3s;
+  animation-delay: 0.05s;
+}
+
+.splash--brief .splash__wordmark,
+.splash--brief .splash__note {
+  animation: nm-fade-up 0.3s var(--ease) 0.1s both;
+}
+
+/*
+ * Кадр знака. Держит его собственный размер, свет вокруг и отсвет под
+ * ним — всё, что на повороте выходит за габарит самого знака.
+ *
+ * Размер задан от ширины окна с потолком: на телефоне знак должен быть
+ * крупным — он тут единственный герой, — но на планшете, где заставка та
+ * же, доля ширины разнесла бы его на пол-экрана.
+ */
+.splash__scene {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(76vw, 340px);
+  aspect-ratio: 1;
+  /*
+   * Период оборота. Живёт на кадре, а не на самом знаке, потому что по
+   * нему же дышит свет вокруг: два близких, но разных периода задавали
+   * бы медленное биение, которому на экране нет причины.
+   */
+  --turn: 2.5s;
+}
+
+/*
+ * Свет позади знака.
+ *
+ * Медовый, а не холодный. Холодным он был при талисмане: тот вырезан
+ * вместе с фиолетовой подсветкой полотна, и тёплое пятно её не
+ * продолжало бы, а обрывало — ровно по краю картинки, кругом. Знак
+ * светит сам и светит медью, и свет вокруг него — его собственный
+ * отблеск, а не подложка под картинку. Фиолетовое в нём остаётся дальним
+ * краем: там он сходится с фоном приложения.
+ *
+ * Шире знака вдвое и без резкой границы: он не столько светит, сколько
+ * сводит края поворота с фоном, и всякий заметный предел у него сам стал
+ * бы той границей, которую он убирает.
+ *
+ * Дышит в такт обороту. Цикличность ему не в укор: у света нет ни формы,
+ * ни направления, и повтор в нём не читается — замечают яркость, а не
+ * траекторию.
+ */
+.splash__halo {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  border-radius: 999px;
+  background: radial-gradient(
+    closest-side,
+    rgba(249, 160, 60, 0.26) 0%,
+    rgba(226, 138, 52, 0.12) 28%,
+    rgba(112, 88, 180, 0.1) 48%,
+    rgba(58, 50, 108, 0) 68%
+  );
+  pointer-events: none;
+  /*
+   * Сперва разгорается, потом дышит. Разгорание кончается ровно там,
+   * откуда дыхание начинается, — иначе на стыке двух анимаций свет
+   * дёргается, и заметен как раз этот дефект, а не сам переход.
+   *
+   * Длится оно почти всю жизнь заставки, и это не про красоту света, а
+   * про то, что происходит после него. Короткое разгорание кончалось
+   * раньше подписи, и открывшаяся пауза читалась не как задуманная, а
+   * как подгрузка чего-то ещё: свет уже на месте, а экран всё собирается.
+   * Растянутое, оно идёт сквозь всю очередь — и собираться экрану уже не
+   * «между», а «во время».
+   */
+  animation:
+    nm-halo-in 1.9s cubic-bezier(0.33, 0, 0.2, 1) both,
+    nm-breathe var(--turn) 1.9s ease-in-out infinite;
+}
+
+@keyframes nm-halo-in {
+  from {
+    opacity: 0;
+    transform: scale(0.62);
+  }
+  to {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+}
+
+/*
+ * Толчок и откат, а не ровная синусоида: свет набирает яркость быстрее,
+ * чем отдаёт её, и слегка отыгрывает назад на спаде. Ровное дыхание
+ * туда-обратно — то же мигание, только медленное.
+ */
+@keyframes nm-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  38% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  52% {
+    opacity: 0.8;
+    transform: scale(1.02);
+  }
+}
+
+/*
+ * Отсвет под знаком — вместо тени на полу.
+ *
+ * Пола на заставке нет, и тень ронять некуда, а вес знаку нужен: без
+ * опоры внизу он не висит, а плавает, и поворот читается заставкой из
+ * фотобанка. Эллипс размыт до предела и не повторяет контур: это отблеск
+ * на несуществующей поверхности, а не силуэт.
+ */
+.splash__pool {
+  position: absolute;
+  top: 76%;
+  width: 54%;
+  height: 11%;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(255, 196, 107, 0.22), rgba(255, 196, 107, 0));
+  filter: blur(5px);
+  pointer-events: none;
+  animation: nm-fade-up 0.8s var(--ease) 0.5s both;
+}
+
+/*
+ * Знак проступает в уже разгоревшемся свете — отсюда задержка. Порядок
+ * тут и есть половина анимации: сначала включается свет, потом в нём
+ * проявляется тот, кого он освещает. Появись оба разом, это была бы
+ * картинка, включённая рубильником.
+ */
+.splash__mark {
+  position: relative;
+  /*
+   * Высота от ширины окна с потолком — по той же причине, по которой
+   * ограничен кадр вокруг. Ширину знак берёт из своего габарита: она
+   * приходит вместе с контуром, и подбирать её на глаз значило бы
+   * растянуть знак.
+   */
+  --mark-height: min(42vw, 186px);
+  /* Торец — тёмная медь: он не освещён ничем, кроме кромки. Тёмный он и
+     затем, чтобы на ребре, где видны одни кромки слоёв, знак уходил в
+     тень, а не рассыпался светлым гребнем. */
+  --mark-edge: linear-gradient(#a86818, #4f2d0c);
+  height: var(--mark-height);
+  aspect-ratio: var(--mark-ratio);
+  animation: nm-mark-in 1.05s var(--ease) 0.32s both;
+}
+
+/*
+ * Угасание на ребре — и заодно тот узел, что держит перспективу.
+ *
+ * Держит её именно он, а не кадр снаружи: прозрачность заставляет
+ * браузер собрать поддерево в готовую картинку, и схождение, заданное
+ * выше, до слоёв уже не доходит — они спроецировались бы без него,
+ * чертёжной проекцией.
+ *
+ * Схождение слабое. Знак — пластина шириной с палец, и сильная
+ * перспектива дала бы аттракцион: ближняя грань разъезжается, дальняя
+ * сходится в точку, и предмет читается воронкой.
+ */
+.splash__mark-edge {
+  position: absolute;
+  inset: 0;
+  perspective: 640px;
+  animation: nm-mark-edge var(--turn) linear infinite;
+}
+
+/*
+ * Гаснет знак дважды за оборот — там, где повёрнут ребром: на четверти
+ * и на трёх четвертях хода. Окно узкое: гасить с шестидесяти градусов
+ * значило бы приглушать кадр, в котором знак ещё отлично читается.
+ */
+@keyframes nm-mark-edge {
+  0%,
+  28% {
+    opacity: 1;
+  }
+  33% {
+    opacity: 0.42;
+  }
+  38%,
+  61% {
+    opacity: 1;
+  }
+  66% {
+    opacity: 0.42;
+  }
+  71%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes nm-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.splash__mark-sway,
+.splash__mark-spin {
+  position: absolute;
+  inset: 0;
+  /* Без этого стопка слоёв сплющивается в один: браузер по умолчанию
+     проецирует детей на плоскость родителя, и вся толща схлопывается. */
+  transform-style: preserve-3d;
+}
+
+/*
+ * Качание — наклон и подъём тем же периодом, что оборот.
+ *
+ * Одно оно читалось бы циклом, как когда-то качался талисман. Поверх
+ * оборота — не читается: глаз занят стороной, которой знак повёрнут, а
+ * качание сообщает только, что предмет не закреплён на оси.
+ */
+.splash__mark-sway {
+  animation: nm-mark-sway var(--turn) linear infinite;
+}
+
+@keyframes nm-mark-sway {
+  0%,
+  100% {
+    transform: translateY(3%) rotateX(-1.7deg);
+  }
+  25% {
+    transform: translateY(0) rotateX(4deg);
+  }
+  50% {
+    transform: translateY(-3%) rotateX(-1.7deg);
+  }
+  75% {
+    transform: translateY(0) rotateX(-7.4deg);
+  }
+}
+
+.splash__mark-spin {
+  animation: nm-mark-spin var(--turn) linear infinite;
+}
+
+/*
+ * Оборот идёт неравномерно: знак придерживается лицом и проскакивает
+ * изнанку.
+ *
+ * Ровный оборот читается заводным — и держит зеркальную спинку ровно
+ * столько же, сколько сам знак, хотя узнают сервис по лицу. Придержанное
+ * лицо даёт паузу, в которую и попадает блик.
+ *
+ * Шаги здесь — та же кривая, что в макете, снятая по десятым доли
+ * оборота; между ними ход линейный, потому что сглаживание на каждом
+ * шаге дало бы десять маленьких разгонов и остановок вместо одного
+ * долгого хода.
+ */
+@keyframes nm-mark-spin {
+  0% {
+    transform: rotateY(0deg);
+  }
+  10% {
+    transform: rotateY(17.5deg);
+  }
+  20% {
+    transform: rotateY(42deg);
+  }
+  30% {
+    transform: rotateY(78deg);
+  }
+  40% {
+    transform: rotateY(125.5deg);
+  }
+  50% {
+    transform: rotateY(180deg);
+  }
+  60% {
+    transform: rotateY(234.5deg);
+  }
+  70% {
+    transform: rotateY(282deg);
+  }
+  80% {
+    transform: rotateY(318deg);
+  }
+  90% {
+    transform: rotateY(342.5deg);
+  }
+  100% {
+    transform: rotateY(360deg);
+  }
+}
+
+/*
+ * Слой толщи. Вырезан маской по контуру знака и отодвинут от середины
+ * стопки на свой шаг — так знак вращается вокруг собственной толщи, а не
+ * вокруг лицевой грани.
+ */
+.splash__slab {
+  position: absolute;
+  inset: 0;
+  background: var(--mark-edge);
+  -webkit-mask: var(--mark) center / 100% 100% no-repeat;
+  mask: var(--mark) center / 100% 100% no-repeat;
+  transform: translateZ(calc((var(--mark-mid) - var(--i)) * var(--mark-step)));
+}
+
+/* Лицевая грань — тем же переходом, каким знак залит везде: светлое
+   сверху, тёмное снизу, как у металлической грани. */
+.splash__slab--face {
+  background: var(--gold-face);
+}
+
+/* Изнанка — она же, приглушённая: свет стоит спереди, и одинаково
+   яркие стороны означали бы два источника, которых на заставке нет. */
+.splash__slab--back {
+  background: linear-gradient(150deg, #e0912f, #a86118);
+}
+
+/*
+ * Блик по лицевой грани.
+ *
+ * Полоса, а не свечение целиком: металл отдаёт свет краем, и ровная
+ * подсветка всей грани прочиталась бы включённой лампой под ней. Идёт
+ * поперёк знака и вспыхивает в той четверти оборота, где лицо ещё
+ * повёрнуто к зрителю, — на торце и на изнанке скользить ему не по чему.
+ *
+ * Смешивания не просит: экранный режим внутри объёмной сцены заставляет
+ * браузер сплющить её в плоскость, и вся толща схлопнулась бы ради
+ * одного блика.
+ */
+.splash__gleam {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  -webkit-mask: var(--mark) center / 100% 100% no-repeat;
+  mask: var(--mark) center / 100% 100% no-repeat;
+  /* Над лицевой гранью, а не в ней: в самой грани он спорил бы с её
+     переходом и гас. */
+  transform: translateZ(calc(var(--mark-mid) * var(--mark-step) + 0.4px));
+  pointer-events: none;
+}
+
+/*
+ * Едет полоса, а маска стоит.
+ *
+ * Наоборот — сдвигом самого света внутри маскированного слоя — заставка
+ * перерисовывала бы вырезку по контуру знака каждый кадр. Кадров этих
+ * шестьдесят в секунду, и приходятся они ровно на тот момент, когда
+ * телефон занят сборкой первого экрана.
+ */
+.splash__gleam-band {
+  position: absolute;
+  top: -10%;
+  bottom: -10%;
+  width: 55%;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 246, 226, 0) 0%,
+    rgba(255, 246, 226, 0.75) 50%,
+    rgba(255, 246, 226, 0) 100%
+  );
+  opacity: 0;
+  animation: nm-mark-gleam var(--turn) linear infinite;
+}
+
+@keyframes nm-mark-gleam {
+  0% {
+    opacity: 0;
+    transform: translateX(210%);
+  }
+  6% {
+    opacity: 0.9;
+  }
+  20% {
+    opacity: 0;
+  }
+  26%,
+  100% {
+    opacity: 0;
+    transform: translateX(-160%);
+  }
+}
+
+/*
+ * Подпись приходит третьей — после света и талисмана. Очередь тут
+ * работает вместо движения: экран собирается на глазах, и это и есть
+ * анимация загрузки, а не картинка, которую заставили ездить.
+ */
+.splash__wordmark {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  animation: nm-fade-up 0.65s var(--ease) 0.95s both;
+}
+
+/*
+ * Половина слова набрана жирным и медью — так сервис подписан снаружи,
+ * и заставка повторяет ту же подпись, а не сочиняет свою.
+ */
+.splash__word {
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  /* Регистр — оформление: тексты переживают его, набранные строчными. */
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.splash__word b {
+  font-weight: 800;
+  color: var(--gold-light);
+}
+
+.splash__note {
+  position: relative;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  /* Не самым тусклым из тёмных: это единственная строка на экране, и
+     прочитать её должно быть можно, а не догадаться о ней. */
+  color: var(--text-muted);
+  /* Замыкает очередь: сперва клиент узнаёт, куда попал, и только потом —
+     что происходит. Появись обе строки разом, читались бы они как одна
+     надпись под картинкой. */
+  animation: nm-fade-up 0.65s var(--ease) 1.4s both;
+}
+
+/* ── Ожидание внутри раздела ─────────────────────────────────────── */
+
+/*
+ * Та же пара — талисман и свет, — что на заставке, но меньше и без
+ * подписи: там приветствие, здесь пауза. Приходит с задержкой: раздел
+ * обычно отвечает быстрее, и мигнувший талисман читался бы сбоем
+ * отрисовки, а не ожиданием.
+ */
+.loading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(48vw, 190px);
+  aspect-ratio: 1;
+  /* Отступ сверху долей высоты: раздел в этот момент пуст, и талисман,
+     прижатый к его началу, читался бы не паузой, а содержимым. */
+  margin: max(26px, 12vh) auto 26px;
+  animation: nm-fade-up 0.45s var(--ease) 0.22s both;
+}
+
+.loading__halo {
+  position: absolute;
+  width: 190%;
+  height: 190%;
+  border-radius: 999px;
+  background: radial-gradient(
+    closest-side,
+    rgba(96, 84, 168, 0.3) 0%,
+    rgba(74, 64, 134, 0.14) 34%,
+    rgba(58, 50, 108, 0) 66%
+  );
+  pointer-events: none;
+  animation: nm-breathe 3.6s ease-in-out infinite;
+}
+
+.loading__mascot {
+  position: relative;
+  width: 100%;
+  height: auto;
+}
+
+/*
+ * Слово для диктора и только для него: талисман ему ничего не говорит,
+ * а на экране слово было бы ровно тем, что этот талисман и заменил.
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Нижняя панель ───────────────────────────────────────────────── */
+
+.tabbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  padding: 12px var(--gutter)
+    max(26px, env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
+  /*
+   * Фон панели непрозрачен — под ней проезжает содержимое раздела. Но
+   * взят он не плоской заливкой: фон приложения теперь с переходом, и
+   * ровный прямоугольник поверх него дал бы шов по верхней кромке.
+   */
+  background: linear-gradient(to bottom, rgba(22, 18, 36, 0.86), var(--bg) 40%);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--hairline);
+}
+
+.tabbar__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 52px;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+
+.tabbar__item[aria-current='page'] {
+  color: var(--gold-light);
+}
+
+/*
+  Плашка выбора валюты: карточка со строками внутри нижнего листа.
+
+  Строки лежат на своей поверхности, а не прямо на листе: так видно, что
+  это один список, из которого выбирают, а не разделы листа. Отмеченная
+  строка обведена медью и подсвечена ею же — тем самым правилом, по
+  которому золотом красится всё, чего сервис ждёт от клиента.
+*/
+.pick {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 6px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-tile);
+  box-shadow: var(--lift);
+}
+
+.pick__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-inner);
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+/* Черта между строками, но не под отмеченной: её рамка и есть граница. */
+.pick li + li .pick__item {
+  border-top-color: var(--hairline-soft);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.pick__item:hover {
+  background: var(--surface-soft-hover);
+}
+
+.pick__item[aria-pressed='true'],
+.pick li + li .pick__item[aria-pressed='true'] {
+  background: rgba(249, 160, 60, 0.14);
+  border-color: rgba(249, 160, 60, 0.55);
+  border-radius: var(--radius-inner);
+  color: var(--gold-light);
+}
+
+.pick__mark {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.pick__code {
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+/*
+  Страна уходит к правому краю и остаётся приглушённой даже у отмеченной
+  строки: медью здесь отвечает код валюты, а не подпись к нему.
+*/
+.pick__place {
+  margin-left: auto;
+  padding-left: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/*
+  Флаг в пилюле стоит у самого её края: поле пилюли рассчитано на текст,
+  а круг рядом с ним читается как отступ вдвое больше нужного.
+*/
+.chip > .flag,
+.chip--static > .flag {
+  margin-left: -4px;
+}
+
+.flag {
+  flex-shrink: 0;
+  display: block;
+}
+
+/*
+ * Знаки раскрытия и перехода. Приглушены в одном месте на всё
+ * приложение: их четыре штуки в разных строках, и вписанный в фигуру
+ * цвет расходился бы с окружением при первой же смене поверхности.
+ */
+.chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+
+/* ── Типографика ─────────────────────────────────────────────────── */
+
+/*
+ * Табличные цифры — всюду, где число меняется само. Сумма
+ * пересчитывается на каждое нажатие, курс — на каждый ответ котировок:
+ * цифры разной ширины дёргали бы строку, за которой в этот момент и
+ * следят.
+ *
+ * Списком, а не по классу в каждом правиле: это одно решение, и когда
+ * появится следующее меняющееся число, его припишут сюда.
+ */
+.calc__amount,
+.calc__rate,
+.balance__number,
+.split__value,
+.row__amount,
+.active__sum,
+.plastic__number {
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.muted {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.hint {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: center;
+  text-wrap: pretty;
+}
+
+.error {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--down);
+  text-wrap: pretty;
+}
+
+/*
+ * Условие, которое пока не выполнено: слишком малая сумма, невыбранные
+ * реквизиты. Медью, а не красным: ничего не сломалось и никто не
+ * ошибся — сервису просто нужно ещё одно действие, и красный на этом
+ * месте пугал бы там, где надо позвать.
+ */
+.notice {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--gold-light);
+  text-align: center;
+  text-wrap: pretty;
+}
+
+.section-title {
+  margin: 30px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── Поверхности ─────────────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift), var(--drop);
+}
+
+.tile {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  background: var(--surface-soft);
+  border: none;
+  border-radius: var(--radius-tile);
+  padding: 14px 16px;
+  color: var(--text);
+  box-shadow: var(--lift);
+  transition: background 0.15s ease;
+}
+
+button.tile {
+  cursor: pointer;
+}
+
+/*
+ * Плитки, стоящие подряд, разделены зазором: вплотную они читаются одной
+ * сдвоенной поверхностью, и граница между двумя разными делами
+ * пропадает.
+ */
+.tile + .tile {
+  margin-top: 10px;
+}
+
+button.tile:hover {
+  background: var(--surface-soft-hover);
+}
+
+.tile__icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-inner);
+  background: rgba(249, 160, 60, 0.12);
+  color: var(--gold-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tile__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tile__label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.tile__value {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Кнопки ──────────────────────────────────────────────────────── */
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  padding: 18px;
+  border: none;
+  border-radius: var(--radius-control);
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition:
+    filter 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+/*
+  Кнопка-ярлык с невидимым полем файла внутри: фокус получает поле, а
+  видно должно быть кнопку — иначе с клавиатуры выбор картинки слепой.
+*/
+.btn:focus-within:has(.sr-only:focus-visible) {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.btn--gold {
+  background: var(--gold-face);
+  color: var(--gold-ink);
+}
+
+.btn--gold:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn--soft {
+  min-height: 48px;
+  padding: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--surface-soft-strong);
+  color: var(--text);
+}
+
+.btn--soft:hover:not(:disabled) {
+  background: rgba(214, 205, 255, 0.16);
+}
+
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold-light);
+  cursor: pointer;
+}
+
+.link:hover {
+  color: #ffd694;
+}
+
+/* ── Быстрые действия ────────────────────────────────────────────── */
+
+.quick-row {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  margin: 22px 0 24px;
+}
+
+/*
+ * Быстрое действие: знак в кружке и подпись под ним. Цвет знака берётся
+ * из палитры, а не подобран рядом с ней: прежний тёплый бежевый не
+ * встречался в приложении больше нигде и жил сам по себе.
+ */
+.quick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--gold-light);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition:
+    transform 0.15s ease,
+    color 0.15s ease;
+}
+
+.quick:hover {
+  color: var(--text);
+}
+
+.quick:active {
+  transform: scale(0.96);
+}
+
+.quick__circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: rgba(214, 205, 255, 0.09);
+  box-shadow:
+    var(--lift-strong),
+    0 10px 20px -14px rgba(8, 5, 20, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quick__label {
+  color: var(--text-dim);
+}
+
+/* ── Калькулятор обмена ──────────────────────────────────────────── */
+
+.calc {
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  padding: 4px;
+  box-shadow: var(--lift), var(--drop);
+}
+
+.calc__give {
+  padding: 18px 18px 14px;
+}
+
+.calc__get {
+  padding: 14px 18px 18px;
+}
+
+.calc__line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/*
+ * Разворот направления. Имён у каждой анимации два, и они чередуются:
+ * строку эту нельзя пересобирать ради перезапуска — она несёт поле
+ * ввода, и пересборка уносила бы фокус вместе с клавиатурой, — а одно и
+ * то же имя браузер вторично не проигрывает.
+ */
+.calc__line--give-a {
+  animation: nm-swap-down 0.34s var(--ease) both;
+}
+
+.calc__line--give-b {
+  animation: nm-swap-down-again 0.34s var(--ease) both;
+}
+
+.calc__line--get-a {
+  animation: nm-swap-up 0.34s var(--ease) both;
+}
+
+.calc__line--get-b {
+  animation: nm-swap-up-again 0.34s var(--ease) both;
+}
+
+.calc__amount {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -1.2px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calc__amount::placeholder {
+  color: var(--text-faint);
+}
+
+.calc__amount:focus {
+  outline: none;
+}
+
+/*
+ * Ступени набора для длинных сумм.
+ *
+ * Обратный счёт — «сколько отдать, чтобы вышло ровно столько» — даёт
+ * восемь знаков после запятой, и такое число в кегль, рассчитанный на
+ * «100», не помещается. Обрезать его нельзя: это ровно та сумма, которую
+ * клиент отдаёт, и увиденная наполовину она хуже, чем набранная мельче.
+ */
+.calc__amount--small {
+  font-size: 26px;
+  letter-spacing: -0.8px;
+}
+
+.calc__amount--tiny {
+  font-size: 21px;
+  letter-spacing: -0.4px;
+}
+
+.calc__divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+}
+
+/*
+ * Курс между строками калькулятора.
+ *
+ * Стоит на самой черте, разделяющей отданное и полученное: она и есть
+ * место, где одно превращается в другое. Отдельной строкой под карточкой
+ * он читался бы примечанием, а курс — то, ради чего обменник и
+ * открывают: сумма получения отвечает «сколько дадут», но не «дорого ли
+ * это», и сравнивают сервисы именно им.
+ *
+ * Пустая строка убирается совсем, а не гасится: у ряда есть зазор, и
+ * схлопнутый до нуля span оставил бы его дважды — черта отъехала бы от
+ * кнопки на ровном месте.
+ */
+.calc__rate {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.calc__rate:empty {
+  display: none;
+}
+
+/* Отсутствие курса — не число, и весом оно с ним не спорит. */
+.calc__rate--absent {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.calc__rule {
+  flex: 1;
+  min-width: 0;
+  height: 1px;
+  background: var(--hairline);
+}
+
+.swap {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: none;
+  background: var(--gold-face-soft);
+  color: var(--gold-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    filter 0.15s ease,
+    transform 0.15s ease;
+}
+
+.swap:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.swap:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.swap:disabled {
+  cursor: default;
+  background: var(--surface-soft-strong);
+  color: var(--text-muted);
+}
+
+.swap__icon {
+  display: flex;
+  transition: transform 0.42s var(--ease);
+}
+
+/*
+ * Пилюля валюты в строке калькулятора: флаг, код и знак раскрытия.
+ *
+ * Набрана крупно и в полный цвет: это не подпись к сумме, а орган
+ * управления направлением сделки — тот же по весу, что и само число
+ * рядом.
+ */
+.chip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 15px;
+  border-radius: 999px;
+  border: none;
+  background: var(--surface-soft-strong);
+  box-shadow: var(--lift-strong);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+/*
+ * Отзывается только та пилюля, которую можно нажать. Неподвижная
+ * отличается классом, а не тегом: правило, писанное на `button`,
+ * пришлось бы держать в уме при каждой смене разметки.
+ */
+.chip:not(.chip--static):hover:not(:disabled) {
+  background: rgba(214, 205, 255, 0.16);
+}
+
+.chip:not(.chip--static):active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.chip:disabled {
+  cursor: default;
+}
+
+/*
+ * Та же пилюля, но без обещания, что на неё нажимают: ставится рядом с
+ * `.chip`, а не вместо него, и потому описывает одни отличия. Своей
+ * копией всех свойств она была, пока курсор над ней оставался пальцем —
+ * то самое обещание он и держал.
+ */
+.chip--static {
+  cursor: default;
+}
+
+/* ── Переключатель способа ───────────────────────────────────────── */
+
+.segment {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 4px;
+  background: rgba(214, 205, 255, 0.08);
+  border-radius: 999px;
+}
+
+.segment__item {
+  flex: 1;
+  min-height: 44px;
+  padding: 12px;
+  border: none;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.segment__item[aria-pressed='true'] {
+  background: rgba(214, 205, 255, 0.13);
+  color: var(--text);
+}
+
+/* ── Карточка со своим содержимым ────────────────────────────────── */
+
+.panel {
+  margin-top: 26px;
+  padding: 16px;
+}
+
+.panel__title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.panel__text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.panel__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ── Активная заявка ─────────────────────────────────────────────── */
+
+.active__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.active__state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--gold-light);
+}
+
+.active__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--gold-light);
+}
+
+.active__id {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.active__sum {
+  margin-top: 12px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  text-wrap: balance;
+}
+
+.progress {
+  display: flex;
+  gap: 5px;
+  margin-top: 16px;
+}
+
+.progress__bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(214, 205, 255, 0.18);
+}
+
+.progress__bar--done {
+  background: var(--gold-light);
+}
+
+.active__step {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.active__step-title {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.active__step-count {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.active__note {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.active__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/*
+ * Выход в чат с менеджером снизу карточки. Строкой и по центру: это не
+ * третье действие над заявкой, а уход из приложения — по весу он ниже
+ * оплаты и отмены, и стоять с ними в ряду не должен.
+ */
+.active__support {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 6px 0;
+  text-align: center;
+}
+
+/* Тайл и кнопка подачи идут следом за калькулятором, а не сами по себе. */
+.exchange__requisites,
+.bonus__link {
+  margin-top: 12px;
+}
+
+.exchange__submit {
+  margin-top: 16px;
+}
+
+/* ── За границей ─────────────────────────────────────────────────── */
+
+/*
+ * Что сервис делает, когда российская карта за границей не работает.
+ *
+ * Сеткой, а не строками: строк было бы три по семьдесят пикселей, и на
+ * экране с карточкой заявки блок уезжал бы за нижний край. Колонок две,
+ * а не три: в треть узкого экрана «Иностранная карта» переносится в три
+ * строки и плитки перестают быть одного роста.
+ *
+ * Ряд у плиток заведомо не заполнен целиком — третья стоит одна. Это не
+ * дефект сетки: пунктов здесь ровно столько, сколько сервис умеет, и
+ * четвёртый ради симметрии был бы обещанием.
+ */
+.abroad {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.abroad__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 104px;
+  padding: 14px;
+  border: none;
+  border-radius: var(--radius-tile);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.abroad__item:hover {
+  background: var(--surface-soft-hover);
+}
+
+.abroad__item:active {
+  background: var(--surface-soft-strong);
+}
+
+.abroad__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  /* 12 + 12 отступа плитки: внешний радиус плитки на два больше суммы,
+     и на глаз угол внутри её угла лежит ровно. */
+  border-radius: var(--radius-inner);
+  background: rgba(249, 160, 60, 0.12);
+  color: var(--gold-light);
+}
+
+.abroad__label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+
+/* Состояние есть только там, где оно есть: у поданной заявки на карту. */
+.abroad__state {
+  margin-top: -4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold-light);
+}
+
+/* ── Ряды списков ────────────────────────────────────────────────── */
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+
+/*
+ * Ряд, из-под которого выезжает удаление.
+ *
+ * Поля переезжают внутрь съезжающего слоя: уходя, ряд должен уносить их
+ * с собой, а черта под ним остаётся на месте — иначе список во время
+ * жеста разъезжается. Лишнее прячется краем ряда: плашка стоит справа
+ * за его пределами и появляется ровно настолько, насколько ряд ушёл.
+ */
+.row--swipe {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+}
+
+.row__slide {
+  /* Позиционирован, чтобы лежать поверх плашки: непозиционированный
+     ряд браузер рисует под ней, и слой её не прикрывал. */
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 15px 0;
+  /* Своя подложка — цвета листа, в котором ряд лежит: без неё плашка
+     просвечивала бы сквозь ряд, стоящий на месте. */
+  background: var(--surface);
+  /* Возврат недотянутого ряда на место. Под пальцем доводки нет. */
+  transition: transform 0.22s var(--ease);
+}
+
+.row__slide[data-dragging] {
+  transition: none;
+}
+
+/*
+ * Пока плашка открыта, знака удаления в ряду нет: он уезжает вместе с
+ * рядом и встаёт вплотную к плашке — две кнопки одного действия рядом, из
+ * которых вторая ещё и мельче. Гаснет, а не снимается: снятый, он менял
+ * бы ширину ряда посреди движения.
+ */
+.row__slide[data-open] .row__remove {
+  opacity: 0;
+}
+
+/*
+ * Плашка удаления. Красная и приглушённая: приложение обходится
+ * полупрозрачными поверхностями, и сплошной красный был бы здесь
+ * единственным на все три экрана. Ведро со словом, а не одно ведро:
+ * плашку видят раз в жизни, и догадываться, что она делает, клиенту
+ * незачем.
+ */
+.row__plate {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius-inner);
+  background: rgba(242, 104, 95, 0.18);
+  color: var(--down);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.row__plate:active {
+  background: rgba(242, 104, 95, 0.28);
+}
+
+/*
+ * Удаление в самом ряду — знак, а не слово.
+ *
+ * Слово «Удалить» стояло рядом с названием записи и читалось раньше
+ * неё: подпись, набранная тем же, чем и всё остальное, спорит за
+ * внимание с тем, к чему приписана. Знак узнаётся, не читаясь, и
+ * красным сказано ровно то, что нужно сказать о нём заранее.
+ *
+ * Кружок меньше цели нажатия — тем же приёмом, что у крестика листа:
+ * фон отрезан по внутреннему полю, а сорок пикселей остаются полем под
+ * палец.
+ */
+.row__remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-right: -3px;
+  padding: 4px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(242, 104, 95, 0.12);
+  background-clip: content-box;
+  color: var(--down);
+  cursor: pointer;
+  transition: opacity 0.16s var(--ease);
+}
+
+.row__remove:active:not(:disabled) {
+  background-color: rgba(242, 104, 95, 0.24);
+}
+
+.row__remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.row__body {
+  min-width: 0;
+}
+
+.row__title {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.row__title--dim {
+  color: var(--text-muted);
+}
+
+.row__sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.row__state {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.row__amount {
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gold-light);
+}
+
+.row__amount--out {
+  color: var(--text-muted);
+}
+
+.empty {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/*
+ * Разделу нечего показать: запрос не дошёл. Стоит по центру и с отступом
+ * сверху — на месте содержимого, а не поверх него: содержимого в этот
+ * момент нет вовсе.
+ */
+.failure {
+  margin: max(26px, 12vh) 0 0;
+  text-align: center;
+}
+
+.failure__retry {
+  width: auto;
+  min-width: 200px;
+  margin: 18px auto 0;
+}
+
+/* ── История ─────────────────────────────────────────────────────── */
+
+/*
+ * Отбор ленты. Лежит в строку с прокруткой, а не переносится: перенос
+ * на узком экране двигал бы ленту вниз при каждом появлении четвёртого
+ * чипа, а их число со временем меняется.
+ *
+ * Имя своё, а не общее с пилюлей валюты и с выбором сети: три разные
+ * вещи под одним классом уже разъезжались — последнее правило в файле
+ * молча перекрашивало пилюлю на экране обмена в этот самый отбор.
+ *
+ * Ряд выходит за поля раздела и возвращает их себе отступом: чип у края
+ * должен доезжать до края экрана, иначе прокрутка выглядит обрезанной.
+ */
+.filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 2px calc(-1 * var(--gutter)) 4px;
+  padding: 2px var(--gutter) 6px;
+  scrollbar-width: none;
+}
+
+.filters::-webkit-scrollbar {
+  display: none;
+}
+
+.filter {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filter[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--gold-face-soft);
+  color: var(--gold-ink);
+}
+
+/*
+ * Нажимаемая строка ленты. Занимает всю ширину и остаётся строкой:
+ * кнопка внутри списка не должна выглядеть кнопкой — она обещала бы
+ * действие, а ведёт всего лишь на главную.
+ */
+.row__tap {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Незакрытая заявка — единственное в ленте, что ещё требует внимания. */
+.row__state--live {
+  color: var(--gold-light);
+  font-weight: 600;
+}
+
+/* ── Профиль ─────────────────────────────────────────────────────── */
+
+/*
+ * Кто вошёл. Стоит первым в разделе и набрано скромно: это подпись, а
+ * не заголовок — клиент пришёл сюда за баллами и реквизитами, а имя
+ * лишь отвечает на вопрос, тот ли это аккаунт.
+ */
+.whoami {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 4px 0 18px;
+}
+
+.whoami__photo {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface);
+}
+
+/* Без фотографии — первая буква имени: пустой кружок читается как сбой. */
+.whoami__photo--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--gold-light);
+  border: 1px solid var(--hairline);
+}
+
+.whoami__body {
+  min-width: 0;
+}
+
+.whoami__name {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.whoami__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* ── Бонусы ──────────────────────────────────────────────────────── */
+
+.balance {
+  text-align: center;
+  padding: 16px 0 4px;
+}
+
+.balance__value {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 8px;
+}
+
+.balance__number {
+  font-size: 46px;
+  font-weight: 700;
+  letter-spacing: -2px;
+}
+
+.balance__unit {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.balance__note {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/*
+ * Заработанное за всё время. Подписью под остатком, а не вторым крупным
+ * числом: распоряжаются балансом, а это — ответ на вопрос «сколько
+ * принесла рефералка». Подчёркнуто, потому что ведёт в историю: серая
+ * строка того же размера, что и соседние, нажимаемой не выглядит.
+ */
+.balance__earned {
+  margin: 8px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-decoration-color: var(--hairline);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.balance__earned:hover {
+  color: var(--gold-light);
+}
+
+.split {
+  display: flex;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--lift);
+}
+
+.split__cell {
+  flex: 1;
+  padding: 20px;
+}
+
+.split__rule {
+  width: 1px;
+  background: var(--hairline);
+}
+
+.split__value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+}
+
+.split__label {
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/*
+ * Ставка линии — под числом приглашённых, медью. Она и есть ответ на
+ * единственный вопрос к реферальной программе: сколько за это платят.
+ */
+/* ── Реферальный кабинет: уровень, статистика, рефералы ──────────── */
+
+/*
+ * Уровень и ставки — одной карточкой: вопрос к программе один, «сколько
+ * мне за это платят», и ответ на него — строка на линию с источником
+ * ставки, а не два числа в плашке.
+ */
+.tier {
+  padding: 18px 20px;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift);
+}
+
+.tier__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tier__name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--gold-light);
+}
+
+.tier__lines {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.tier__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.tier__line {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* «Первая линия» — с заглавной только первое слово: capitalize задел бы оба. */
+.tier__line::first-letter {
+  text-transform: uppercase;
+}
+
+.tier__count {
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+.tier__rate {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gold-light);
+  text-align: right;
+}
+
+.tier__source {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Полоса до следующего уровня: ширина — доля активных от порога. */
+.tier-progress {
+  margin-top: 14px;
+}
+
+.tier-progress__track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  overflow: hidden;
+}
+
+.tier-progress__bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gold-face-soft);
+  transition: width 0.3s ease;
+}
+
+.tier-progress__note {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* Плитки статистики — две в ряд: на телефоне четыре подряд не читаются. */
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-tile);
+  box-shadow: var(--lift);
+  min-width: 0;
+}
+
+.stat-tile__label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stat-tile__value {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-tile__note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.stat-tile__note--up {
+  color: var(--up);
+}
+
+.stat-tile__note--down {
+  color: var(--down);
+}
+
+/*
+ * Столбики по дням — разметкой: высота из числа, пустой день — пустой
+ * столбик на своём месте. Библиотека графиков ради одной полосы в
+ * бандл не едет.
+ */
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 84px;
+  margin-top: 14px;
+  padding: 0 2px;
+}
+
+.bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+
+.bar__track {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.bar__fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--gold-face-soft);
+}
+
+.bar__joined {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.bar__joined--none {
+  color: var(--text-faint);
+}
+
+.bars__note {
+  margin-top: 8px;
+}
+
+.link--block {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  text-align: center;
+}
+
+.split__rate {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--gold-light);
+  text-wrap: pretty;
+}
+
+/* ── Партнёр ─────────────────────────────────────────────────────── */
+
+/*
+ * Полотно партнёра в листе. Во всю ширину поля и своей пропорцией:
+ * картинка нарисована как полотно, и подрезанная по чужой рамке она
+ * потеряла бы и знак, и подпись под ним. Радиус — как у поверхностей
+ * листа: чужая графика на своём экране должна лежать в своих углах.
+ */
+.partner__banner {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 4px;
+  border-radius: var(--radius-tile);
+}
+
+/* ── Карта ───────────────────────────────────────────────────────── */
+
+/*
+ * Плашка карты — меньше поля листа, но той же пропорции, что банковский
+ * пластик (85,6 × 54 мм). Уменьшена шириной, а не высотой: показывать на
+ * ней нечего — ни номера, ни имени держателя, — и во всю ширину она
+ * занимала треть экрана пустым полем, вытесняя вниз состояние заявки, за
+ * которым лист и открывают. Сжатая же по одной высоте, она перестала бы
+ * читаться картой.
+ */
+.plastic {
+  border-radius: 20px;
+  padding: 20px;
+  width: 88%;
+  margin: 0 auto;
+  aspect-ratio: 85.6 / 54;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  /* Темнее фона, а не светлее: пластик лежит на приложении, и подложка
+     светлее той, на которой он лежит, читалась бы дырой в экране. */
+  background: linear-gradient(145deg, #362d63 0%, #120e20 45%, #251c46 100%);
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px rgba(249, 160, 60, 0.16),
+    0 26px 50px -30px rgba(8, 5, 20, 1);
+}
+
+.plastic__glow {
+  position: absolute;
+  top: -60px;
+  right: -40px;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(closest-side, rgba(249, 160, 60, 0.2), rgba(249, 160, 60, 0));
+}
+
+.plastic__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plastic__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--gold-light);
+}
+
+.plastic__status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(214, 205, 255, 0.62);
+  text-align: right;
+}
+
+.plastic__body {
+  position: relative;
+}
+
+.plastic__number {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 3.5px;
+  color: rgba(214, 205, 255, 0.92);
+}
+
+.plastic__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.plastic__holder {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 1.6px;
+  /* Прописные задаются здесь, а не набираются в разметке: регистр —
+     оформление, и однажды его меняют, не переписывая тексты. */
+  text-transform: uppercase;
+  color: rgba(214, 205, 255, 0.78);
+}
+
+.plastic__marks {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.plastic__mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(249, 160, 60, 0.85);
+}
+
+.plastic__mark + .plastic__mark {
+  background: rgba(214, 205, 255, 0.55);
+  margin-left: -9px;
+}
+
+.steps {
+  margin-top: 14px;
+}
+
+.steps__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.steps__title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.steps__title--reached {
+  color: var(--text);
+}
+
+.steps__mark {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.steps__mark--now {
+  color: var(--gold-light);
+}
+
+/* ── Нижний лист ─────────────────────────────────────────────────── */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(11, 8, 24, 0.72);
+  display: flex;
+  align-items: flex-end;
+  animation: nm-fade-up 0.2s ease both;
+}
+
+.sheet-open .track__slot {
+  overflow: hidden;
+}
+
+.sheet__panel {
+  width: 100%;
+  max-height: 88dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  padding: 22px var(--gutter) max(32px, env(safe-area-inset-bottom));
+  box-shadow: inset 0 1px 0 rgba(214, 205, 255, 0.12);
+  animation: nm-sheet-in 0.26s var(--ease) both;
+  scrollbar-width: none;
+  /* Возврат недотянутого листа на место. Под пальцем доводки нет. */
+  transition: transform 0.22s var(--ease);
+}
+
+.sheet__panel[data-dragging] {
+  transition: none;
+}
+
+.sheet__panel::-webkit-scrollbar {
+  width: 0;
+}
+
+/* Панель получает фокус ради экранного диктора; рамка вокруг всего
+   листа при этом ничего не подсказывает — кнопки внутри свою сохраняют. */
+.sheet__panel:focus-visible {
+  outline: none;
+}
+
+/*
+ * За что лист тянут вниз. Полоска высотой в четыре пикселя целью быть не
+ * может, поэтому ловит жест поле вокруг неё — во всю ширину панели и с
+ * запасом сверху, где палец и оказывается, потянув от края.
+ *
+ * `touch-action: none` — чтобы браузер не забрал движение себе под
+ * прокрутку: лист прокручивается, и без этого он поехал бы содержимым
+ * вместо того, чтобы закрываться.
+ */
+.sheet__grip {
+  margin: -22px calc(-1 * var(--gutter)) 0;
+  padding: 22px var(--gutter) 8px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.sheet__grip:active {
+  cursor: grabbing;
+}
+
+.sheet__grabber {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(214, 205, 255, 0.22);
+  margin: 0 auto 10px;
+}
+
+/*
+ * Заголовок и выход из листа в одной строке. Крестик справа — там, где
+ * его ищут; заголовок при этом остаётся первым для экранного диктора.
+ */
+/*
+ * Заголовок и выход в одной строке. По центру, а не по верхнему краю:
+ * кнопка выше строки заголовка, и выровненная по верху она садится
+ * ниже его середины — глаз ловит этот сдвиг как перекос.
+ */
+.sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sheet__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  text-wrap: balance;
+}
+
+/*
+ * Цель под палец, а не под курсор. Сорок четыре пикселя — та мера, к
+ * которой сведены и остальные цели приложения: пилюля валюты, кнопка
+ * разворота, ряд списка. Крестик внутри мельче самой кнопки, и поле
+ * вокруг него работает так же, как он сам.
+ *
+ * Видимый кружок при этом меньше цели: круг во все сорок четыре
+ * пикселя весит рядом с заголовком больше, чем выход из листа того
+ * стоит, — а поле нажатия от этого не убывает. Фон отрезан по
+ * внутреннему полю, а не задан размером: размер здесь — это цель под
+ * палец, и уменьшать её нельзя.
+ */
+.sheet__close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  /* Вправо до края поля листа: справа от неё пустого места быть не должно. */
+  margin-right: -6px;
+  padding: 5px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(214, 205, 255, 0.08);
+  background-clip: content-box;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+/* Цветом, а не сокращением: сокращение вернуло бы фону границу кнопки,
+   и кружок под пальцем раздувался бы до всей цели нажатия. */
+.sheet__close:active {
+  background-color: rgba(214, 205, 255, 0.16);
+  color: var(--text);
+}
+
+.sheet__body {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+/*
+ * Тело листа, набранное менеджером, — реквизиты для оплаты.
+ *
+ * Переносы строк сохраняются: «Сбербанк», номер карты и имя держателя
+ * набраны в три строки, и слипшиеся в одну они читаются как сплошное
+ * число. Свои переносы браузеру при этом оставлены — на узком экране
+ * длинная строка иначе уехала бы за край.
+ *
+ * Набрано в полный цвет и крупнее обычного текста листа: это данные,
+ * которые сверяют по цифре, а не пояснение к ним. По той же причине
+ * лежит на своей поверхности — так видно, где реквизит начинается и где
+ * кончается.
+ */
+.sheet__body--data {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius-inner);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  color: var(--text);
+  font-size: 15px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  text-wrap: initial;
+  /* Номер карты сверяют по группам цифр: табличные держат их ровно. */
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet__tile {
+  margin-top: 16px;
+}
+
+/* В листе ссылку показывают, чтобы её прочитали, — обрывать её нечем. */
+.sheet__tile .tile__value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.sheet__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.sheet__actions .btn {
+  margin-top: 0;
+}
+
+/* ── Сводка перед подачей ────────────────────────────────────────── */
+
+/*
+ * Что клиент подтверждает: стороны сделки, курс, способ и куда придут
+ * деньги. Подпись слева приглушена, значение справа в полный цвет —
+ * сверяют значения, а подписи только называют, что именно сверяют.
+ *
+ * Суммы набраны крупнее прочего: ошибиться можно в любой строке, но
+ * дорого — только в них.
+ */
+.summary {
+  margin-top: 18px;
+}
+
+.summary__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.summary__row:first-child {
+  border-top: none;
+}
+
+.summary__label {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.summary__value {
+  font-size: 14.5px;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.summary__value--strong {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Выбор одного из многих ──────────────────────────────────────── */
+
+/*
+ * Ряд равнозначных вариантов внутри формы — сети перевода. В отличие от
+ * отбора ленты, переносится: список короткий, лежит в листе, и прокрутка
+ * вбок там читалась бы как продолжение самой формы.
+ */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chips__item {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+/* Чипса с флагом: флаг и код стоят вплотную, как в строке выбора валюты. */
+.chips__item--flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chips__item:hover {
+  color: var(--text);
+}
+
+.chips__item[aria-pressed='true'] {
+  background: rgba(249, 160, 60, 0.14);
+  border-color: rgba(249, 160, 60, 0.55);
+  color: var(--gold-light);
+}
+
+/* ── Переключатель ───────────────────────────────────────────────── */
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  margin-top: 26px;
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--radius-tile);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.toggle:hover:not(:disabled) {
+  background: var(--surface-soft-hover);
+}
+
+.toggle:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.toggle__label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.toggle__note {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.toggle__track {
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(214, 205, 255, 0.16);
+  padding: 3px;
+  transition: background 0.18s ease;
+}
+
+.toggle[aria-pressed='true'] .toggle__track {
+  background: var(--gold-face-soft);
+}
+
+.toggle__knob {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #f4f1fb;
+  box-shadow: 0 2px 6px -2px rgba(8, 5, 20, 0.8);
+  transition: transform 0.18s var(--ease);
+}
+
+.toggle[aria-pressed='true'] .toggle__knob {
+  transform: translateX(18px);
+}
+
+/* ── Формы ───────────────────────────────────────────────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field__label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.input {
+  width: 100%;
+  min-height: 52px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-inner);
+  background: rgba(214, 205, 255, 0.07);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/*
+ * Подсказка в поле формы приглушена слабее, чем ноль в калькуляторе, и
+ * это не разнобой: там она набрана тридцатью двумя пикселями, а здесь
+ * шестнадцатью, и порог читаемости у крупного и обычного текста разный.
+ * Один цвет на оба места не проходил бы ни там, ни тут — или проходил бы
+ * ценой подсказки, неотличимой от набранного.
+ */
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+/*
+ * Поле в несколько строк — просьба оплатить бронь или покупку. Растёт
+ * оно только по воле клиента: сама форма живёт в листе, который и так
+ * прокручивается, и поле, растущее под набором, двигало бы кнопку
+ * отправки из-под пальца.
+ */
+.input--area {
+  min-height: 96px;
+  padding: 12px 16px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.input:focus {
+  outline: none;
+  border-color: rgba(249, 160, 60, 0.55);
+}
+
+/*
+ * Поле, в котором набрано непохожее на правду. Красной рамкой, а не
+ * заливкой: набранное надо перечитать, и подложка под цифрами этому
+ * мешает. Держится и в фокусе — вернувшийся в поле клиент пришёл
+ * исправлять, и снимать отметку под его пальцем значит говорить, что
+ * всё в порядке.
+ */
+.input--wrong,
+.input--wrong:focus {
+  border-color: rgba(242, 104, 95, 0.6);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 16px 4px;
+  border: none;
+  border-top: 1px solid var(--hairline-soft);
+  background: none;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.option:hover {
+  color: var(--gold-light);
+}
+
+.option[aria-pressed='true'] {
+  color: var(--gold-light);
+}
+
+.option__note {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/*
+  Строка списка сохранённых реквизитов: выбор — нажатием на саму запись,
+  удаление — отдельной кнопкой справа. Черта у строки уже есть, и своя у
+  кнопки выбора удвоила бы её.
+*/
+.option--flush {
+  min-height: 0;
+  padding: 0;
+  border-top: none;
+}
+
+/*
+ * «Вывести всё» под полем суммы. Ссылкой, а не кнопкой: это не действие
+ * над заявкой, а подстановка числа — того самого, что стоит строкой
+ * выше.
+ */
+.withdraw__all {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 4px 0;
+}

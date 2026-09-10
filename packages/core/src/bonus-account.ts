@@ -89,7 +89,7 @@ export interface BonusAccountView {
   readonly codes: readonly ReferralCodeView[];
   /**
    * Можно ли ввести чужой промокод: реферера ещё нет и заявок не было
-   * (docs/adr/0019). Экран показывает поле по этому признаку, а
+   * (docs/adr/0021). Экран показывает поле по этому признаку, а
    * решает всё равно операция.
    */
   readonly canEnterPromo: boolean;

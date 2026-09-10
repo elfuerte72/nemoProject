@@ -1,5 +1,6 @@
 export * from './api.js';
 export * from './attachments.js';
+export * from './banks.js';
 export * from './currencies.js';
 export * from './domain.js';
 export * from './fee.js';

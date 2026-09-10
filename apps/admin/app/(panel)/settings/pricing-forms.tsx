@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { DirectionView, FeeScheduleView, NetworkView } from '@nemo/core';
-import type { PayoutMethod } from '@nemo/types';
+import { feeScheduleComplaint, type PayoutMethod } from '@nemo/types';
 import { KIND_LABELS } from '@/lib/exchange-request-labels';
 import { FEE_PAYOUT_LABELS, pillClass } from '@/lib/labels';
 import { bpsToPercent, percentToBps } from '@/lib/percent';
@@ -109,16 +109,21 @@ interface TierDraft {
 }
 
 /**
- * С чего начинается новая сетка — ступени бата на банк, те самые, что
- * заводит скрипт развёртывания.
+ * С чего начинается новая сетка — ступени бата на банк, те же, что в
+ * `scripts/seed-fee-schedules.mts`.
  *
  * Не «пустая форма»: администратор правит цифры, а не изобретает
  * устройство сетки, и четыре ступени с фиксом на нижней — это форма, о
  * которой уже договорились с владельцем. Числа он поправит под свою
  * валюту, а порядок «фикс, потом убывающие проценты» останется.
+ *
+ * На нижней ступени фикс стоит вместе с долей, а не вместо неё: один
+ * фикс в 5 $ на пятистах — это 1 %, и следующая ступень с 4,5 % делала
+ * бы меньшую сумму дешевле большей. Такую сетку схема с 8 сентября 2026
+ * не принимает, и заготовка не должна начинаться с отказа.
  */
 const DEFAULT_TIERS: readonly TierDraft[] = [
-  { upToUsd: '500', rate: '', fixed: '5', fixedIn: 'usd' },
+  { upToUsd: '500', rate: '4.5', fixed: '5', fixedIn: 'usd' },
   { upToUsd: '2000', rate: '4.5', fixed: '', fixedIn: 'usd' },
   { upToUsd: '5000', rate: '3.5', fixed: '', fixedIn: 'usd' },
   { upToUsd: '', rate: '2.5', fixed: '', fixedIn: 'usd' },
@@ -150,9 +155,11 @@ function isAmount(value: string): boolean {
 /**
  * Кнопка гаснет на недобранной сетке: отправленная, она вернулась бы
  * отказом ядра, а администратор видит перед собой поле, в котором
- * опечатка. Возрастание порогов здесь не проверяется — это правило
- * домена, и отвечает за него операция: два места, где оно записано,
- * однажды разойдутся.
+ * опечатка. Здесь проверяется только набор — есть ли число в поле.
+ * Правила домена (возрастание порогов, цена, не растущая с суммой)
+ * тут не пересказываются: их спрашивают у той же схемы, что и ядро
+ * (`feeScheduleComplaint`), иначе два места, где правило записано,
+ * однажды разошлись бы.
  */
 function draftsReady(drafts: readonly TierDraft[]): boolean {
   // Пустая сетка — не «всё в порядке»: у `every` пустой набор истинен, и
@@ -229,7 +236,11 @@ export function FeeSchedules({
         ступень действует на всё, что выше. У ступени доля и фикс заполняются порознь или
         вместе — «3,3 % и 10 EUR сверху» задаётся одной строкой. Фикс в долларах
         вычитается до перевода по курсу, фикс в валюте выдачи — после: десять евро
-        остаются десятью при любом курсе. Там, где сетки нет, цену назначает наценка;
+        остаются десятью при любом курсе. Большая сумма никогда не стоит дороже
+        меньшей: на границе комиссия ступени до неё не меньше комиссии ступени после,
+        иначе сетка не сохранится — форма назовёт границу и обе комиссии, как только
+        числа набраны. Один фикс на нижней ступени этому правилу обычно не отвечает:
+        ставьте его вместе с долей следующей ступени. Там, где сетки нет, цену назначает наценка;
         выключенная сетка к ней и возвращает, а не закрывает направление. Новая сетка
         заводится выключенной со ступенями бата — поправьте числа под свою валюту и
         включите: включённая сразу меняет цену тем, кто в эту минуту считает обмен.
@@ -344,6 +355,16 @@ function FeeScheduleCard({
   const minReady =
     minUsd.trim() === '' ||
     (isAmount(minUsd) && Number(minUsd.replace(',', '.')) > 0);
+
+  /*
+   * Чем сетка не годится, говорится до нажатия и теми же словами, что
+   * вернул бы отказ ядра: правило одно и живёт в `@nemo/types`. Пока
+   * поля не добраны, схему не спрашивают — о пустом поле она сказала бы
+   * по-своему, а администратор ещё набирает. Ступени собираются один
+   * раз: те, что проверила схема, те и уходят на сервер.
+   */
+  const tiers = draftsReady(drafts) ? toTiers(drafts) : null;
+  const complaint = tiers === null ? null : feeScheduleComplaint(tiers);
 
   return (
     <div className="row row--stack">
@@ -476,6 +497,8 @@ function FeeScheduleCard({
         );
       })}
 
+      {complaint ? <p className="error">{complaint}</p> : undefined}
+
       <div className="row__actions">
         <button
           type="button"
@@ -495,10 +518,11 @@ function FeeScheduleCard({
         </button>
         <button
           type="button"
-          disabled={busy || !draftsReady(drafts) || !minReady}
+          disabled={busy || tiers === null || !minReady || complaint !== null}
           className="btn btn--gold"
-          onClick={() =>
-            onSend('/api/fee-schedules', {
+          onClick={() => {
+            if (tiers === null) return;
+            void onSend('/api/fee-schedules', {
               action: 'save',
               toCode: schedule.toCode,
               payoutMethod: schedule.payoutMethod,
@@ -508,9 +532,9 @@ function FeeScheduleCard({
                 ? {}
                 : { minUsd: minUsd.replace(',', '.').trim() }),
               thresholdInclusive: inclusive,
-              tiers: toTiers(drafts),
-            })
-          }
+              tiers,
+            });
+          }}
         >
           Сохранить ставки
         </button>

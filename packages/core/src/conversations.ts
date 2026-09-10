@@ -126,7 +126,22 @@ export interface ReceiveMessageResult {
 
 export interface ReplyInput {
   readonly clientId: bigint;
-  readonly body: string;
+  /**
+   * Слова менеджера. У файла их может не быть: квитанция и снимок
+   * экрана бывают сами себе ответом, и подпись «вот файл» к ним ничего
+   * не добавляет.
+   */
+  readonly body?: string | undefined;
+  /**
+   * Файл, который менеджер уже отправил клиенту, — идентификатором у
+   * Telegram и описанием, как и файл клиента.
+   *
+   * Именно «уже отправил»: до отправки идентификатора у файла нет, а
+   * хранить сам файл сервис не берётся (docs/adr/0020). Поэтому порядок
+   * здесь обратный обычному — доставка идёт раньше записи, — и
+   * уведомления такое сообщение не порождает: доставлять нечего.
+   */
+  readonly attachment?: MessageAttachmentInput | undefined;
   /** Заявка, о которой речь. Ленту не делит — только помечает сообщение. */
   readonly exchangeRequestId?: string | undefined;
 }
@@ -317,8 +332,8 @@ export async function replyToClient(
   input: ReplyInput,
 ): Promise<{ message: MessageView; notifications: readonly Notification[] }> {
   const staffActor = requireStaff(actor);
-  const body = input.body.trim();
-  if (!body) {
+  const body = input.body?.trim() || undefined;
+  if (!body && !input.attachment) {
     throw new InvalidInputError('Пустой ответ клиенту не отправляется');
   }
 
@@ -337,7 +352,12 @@ export async function replyToClient(
       .values({
         clientId: input.clientId,
         direction: 'outgoing',
-        body,
+        body: body ?? null,
+        attachmentFileId: input.attachment?.fileId ?? null,
+        attachmentKind: input.attachment?.kind ?? null,
+        attachmentMime: input.attachment?.mime ?? null,
+        attachmentName: input.attachment?.name ?? null,
+        attachmentSize: input.attachment?.size ?? null,
         authorStaffId: staffActor.staffId,
         exchangeRequestId: input.exchangeRequestId ?? null,
       })
@@ -352,9 +372,15 @@ export async function replyToClient(
 
     return {
       message: toView(row!),
-      notifications: [
-        { kind: 'manager-message', to: input.clientId, body },
-      ],
+      /*
+       * Файл доставлен до записи, и подпись ушла вместе с ним: второе
+       * сообщение с тем же текстом клиент прочёл бы как повтор. Ответ
+       * словами доставляется по-прежнему уведомлением — операция
+       * называет его, отправляет адаптер.
+       */
+      notifications: input.attachment
+        ? []
+        : [{ kind: 'manager-message', to: input.clientId, body: body! }],
     };
   });
 }

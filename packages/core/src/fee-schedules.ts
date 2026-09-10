@@ -1,8 +1,8 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { currencies, feeScheduleTiers, feeSchedules } from '@nemo/db';
 import {
-  feeScheduleSchema,
   Money,
+  parseFeeSchedule,
   payoutMethodSchema,
   type Amount,
   type FeeTier,
@@ -178,30 +178,27 @@ async function readSchedules(
 }
 
 /**
- * Проверка сетки целиком — той же схемой, которой её проверяет экран
- * клиента.
+ * Проверка сетки целиком — тем же разбором, что и форма панели
+ * (`parseFeeSchedule`): сначала устройство, потом цена.
  *
- * Своей копии правил здесь нет намеренно: по этой сетке считает и ядро,
- * и калькулятор в Mini App, и разойдись они — клиент увидел бы сумму,
- * которой не будет.
+ * Своей копии правил здесь нет намеренно: правило одно на операцию,
+ * форму и скрипт сида, и разойдись они — администратор читал бы одни
+ * слова до нажатия и другие после, а сид заводил бы сетку, которую
+ * панель показывает красным (docs/adr/0019).
  */
 function requireValidTiers(input: SaveFeeScheduleInput['tiers']): readonly FeeTier[] {
   if (input.length === 0) {
     throw new InvalidInputError('В сетке нет ни одной ступени: цена по ней не считается');
   }
 
-  const parsed = feeScheduleSchema.safeParse(input);
-  if (parsed.success) return parsed.data;
-
   /*
-   * Доменные правила объяснены по-русски в самой схеме, а служебные
-   * замечания zod — по-английски. Показывать администратору
-   * «Invalid input» незачем: он правит проценты, а не разбирает разбор.
+   * Разбор один — тот же, которым форма панели проверяет ступени до
+   * нажатия: слова отказа те же, а ступени берутся из этого же разбора,
+   * а не из второго прохода по той же схеме.
    */
-  const first = parsed.error.issues[0]?.message;
-  throw new InvalidInputError(
-    first !== undefined && /[а-яё]/i.test(first) ? first : 'Ступени сетки заданы неверно',
-  );
+  const parsed = parseFeeSchedule(input);
+  if (!parsed.ok) throw new InvalidInputError(parsed.complaint);
+  return parsed.tiers;
 }
 
 /**
