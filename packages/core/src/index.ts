@@ -230,6 +230,7 @@ import { listColleagues, reassignExchangeRequest } from './exchange-reassign.js'
 import { summarizeReferrals } from './referral-summary.js';
 import {
   listMyReferrals,
+  listReferralServices,
   summarizeReferralCabinet,
   type ListMyReferralsInput,
   type ReferralCabinetStatsOptions,
@@ -468,6 +469,9 @@ export function createCore(ctx: CoreConfig) {
     ) => summarizeReferralCabinet(ctx, actor, period, options),
     listMyReferrals: (actor: Actor, input?: ListMyReferralsInput) =>
       listMyReferrals(ctx, actor, input),
+    /** Чем пользовались приведённые: направления по числу заявок. */
+    listReferralServices: (actor: Actor, period: AnalyticsPeriod) =>
+      listReferralServices(ctx, actor, period),
     /** Коды клиента: ссылки и промокоды, привязка промокодом после регистрации. */
     listReferralCodes: (actor: Actor) => listReferralCodes(ctx, actor),
     createReferralCode: (actor: Actor, input: CreateReferralCodeInput) =>
@@ -843,6 +847,7 @@ export type {
   ReferralCabinetStatsOptions,
   ReferralCodeStats,
   ReferralPeriodSummary,
+  ReferralServiceView,
 } from './referral-cabinet-stats.js';
 export type {
   EffectiveLineRate,

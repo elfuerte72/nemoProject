@@ -413,3 +413,61 @@ export async function listMyReferrals(
     nextOffset: rows.length > limit ? offset + limit : null,
   };
 }
+
+/** Направление обмена, которым пользовались приведённые. */
+export interface ReferralServiceView {
+  readonly fromCode: string;
+  readonly toCode: string;
+  /** Исполненных заявок за период. */
+  readonly count: number;
+  /** Скольких приведённых это касается: одна активная пара — не то же, что десять человек. */
+  readonly clients: number;
+}
+
+/**
+ * Чем пользовались приведённые — направления по числу исполненных
+ * заявок за период.
+ *
+ * Сумм здесь нет намеренно: валюты не складываются (docs/adr/0013), а
+ * столбец «оборот» по каждому направлению в своей валюте отвечал бы на
+ * вопрос, которого никто не задавал. Спрашивают другое — что берут:
+ * баты перед поездкой или рубли на карту.
+ *
+ * Считаются заявки приведённых по всем оплачиваемым линиям: заявка
+ * человека из второй линии — тоже след того, что привёл амбассадор.
+ */
+export async function listReferralServices(
+  ctx: CoreConfig,
+  actor: Actor,
+  period: AnalyticsPeriod,
+): Promise<readonly ReferralServiceView[]> {
+  const clientId = requireClient(actor);
+  const current = requirePeriod(period);
+  const program = await readReferralProgram(ctx.db);
+
+  const rows = await ctx.db
+    .select({
+      fromCode: exchangeRequests.fromCode,
+      toCode: exchangeRequests.toCode,
+      n: count(),
+      clients: sql`count(distinct ${exchangeRequests.clientId})`.mapWith(Number),
+    })
+    .from(exchangeRequests)
+    .innerJoin(referrals, eq(referrals.referralId, exchangeRequests.clientId))
+    .where(
+      and(
+        eq(referrals.referrerId, clientId),
+        lte(referrals.line, program.depth),
+        completedWithin(current),
+      ),
+    )
+    .groupBy(exchangeRequests.fromCode, exchangeRequests.toCode)
+    .orderBy(desc(count()), asc(exchangeRequests.fromCode));
+
+  return rows.map((row) => ({
+    fromCode: row.fromCode,
+    toCode: row.toCode,
+    count: row.n,
+    clients: row.clients,
+  }));
+}

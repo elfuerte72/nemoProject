@@ -317,3 +317,42 @@ describe('счёт с кодами и промокодом', () => {
     expect((await core.getBonusAccount(asClient(3n))).canEnterPromo).toBe(false);
   });
 });
+
+/**
+ * Чем пользовались приведённые — ответ на вопрос владельца «какие
+ * услуги выбирали». Направления по числу исполненных заявок, без имён
+ * и без сумм в одной валюте: складывать баты с рублями нечем.
+ */
+describe('услуги приведённых', () => {
+  it('считает направления по исполненным заявкам, чужие не берёт', async () => {
+    const period = { from: at(7, 0), to: at(0, 0) };
+    const me = await givenClient(1n);
+    const mine = await givenClient(2n, me, at(5));
+    await givenClient(3n, me, at(5));
+    // Чужой реферал: приведён другим, и в мою сводку попасть не должен.
+    const stranger = await givenClient(10n);
+    await givenClient(11n, stranger, at(5));
+
+    await givenCompleted(2n, { completedAt: at(4) });
+    await givenCompleted(2n, { completedAt: at(3) });
+    await givenCompleted(3n, { fromCode: 'RUB', toCode: 'USDT', completedAt: at(2) });
+    await givenCompleted(11n, { completedAt: at(2) });
+    // За пределами периода — не считается.
+    await givenCompleted(2n, { completedAt: at(20) });
+
+    const services = await core.listReferralServices(asClient(1n), period);
+
+    expect(services).toEqual([
+      { fromCode: 'USDT', toCode: 'RUB', count: 2, clients: 1 },
+      { fromCode: 'RUB', toCode: 'USDT', count: 1, clients: 1 },
+    ]);
+    expect(mine).toBeDefined();
+  });
+
+  it('без приведённых — пустой список, а не отказ', async () => {
+    await givenClient(1n);
+    await expect(
+      core.listReferralServices(asClient(1n), { from: at(7, 0), to: at(0, 0) }),
+    ).resolves.toEqual([]);
+  });
+});

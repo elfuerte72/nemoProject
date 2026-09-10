@@ -29,6 +29,24 @@ describe('период аналитики', () => {
     expect(period.to.toISOString()).toBe('2026-09-03T00:00:00.000Z');
   });
 
+  /*
+   * Пятнадцать, сорок пять и сто восемьдесят дней спрашивает кабинет
+   * амбассадора: столько назвал владелец в своих отчётах. Панели они
+   * не нужны, и в её чипы не ставятся — набор чипов у каждого экрана
+   * свой, а разбор адреса один.
+   */
+  it('знает периоды кабинета амбассадора', () => {
+    expect(resolvePeriod({ period: '15d' }, now, 0).from.toISOString()).toBe(
+      '2026-08-19T00:00:00.000Z',
+    );
+    expect(resolvePeriod({ period: '45d' }, now, 0).from.toISOString()).toBe(
+      '2026-07-20T00:00:00.000Z',
+    );
+    const half = resolvePeriod({ period: '180d' }, now, 0);
+    expect(half.key).toBe('180d');
+    expect(half.to.toISOString()).toBe('2026-09-03T00:00:00.000Z');
+  });
+
   it('свой период включает последний день целиком', () => {
     const period = resolvePeriod({ period: 'custom', from: '2026-08-01', to: '2026-08-31' }, now, 0);
     expect(period.from.toISOString()).toBe('2026-08-01T00:00:00.000Z');
