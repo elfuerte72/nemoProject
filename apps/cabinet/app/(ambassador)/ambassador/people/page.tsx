@@ -33,7 +33,13 @@ export default async function AmbassadorPeople({
   const { actor } = await ambassadorPage();
   const params = await searchParams;
   const line = Number(firstParam(params.line));
-  const offset = Number(firstParam(params.offset)) || 0;
+  /*
+   * Смещение из адреса чинится здесь, а не отказом ядра: параметр
+   * приходит из адресной строки, и «-1» должен показать первую
+   * страницу, а не страницу аварии.
+   */
+  const asked = Number(firstParam(params.offset));
+  const offset = Number.isInteger(asked) && asked > 0 ? asked : 0;
 
   const [page, account] = await Promise.all([
     getCore().listMyReferrals(actor, {
@@ -104,8 +110,13 @@ export default async function AmbassadorPeople({
                 </tr>
               </thead>
               <tbody>
-                {page.items.map((row) => (
-                  <tr key={`${row.joinedAt.toISOString()}-${row.line}-${row.completedCount}`}>
+                {/*
+                  Ключ — место в списке: имени и идентификатора у
+                  строки нет намеренно, а дата с линией у двоих
+                  совпадают, если их привязали в одну миллисекунду.
+                */}
+                {page.items.map((row, at) => (
+                  <tr key={offset + at}>
                     <td>
                       <Moment at={row.joinedAt.toISOString()} mode="day" />
                     </td>

@@ -180,10 +180,13 @@ describe('список амбассадоров', () => {
     expect(all.find((one) => one.clientId === 525n)!.revokedAt).toBeInstanceOf(Date);
   });
 
-  it('длинная строка цифр — пустой список, а не отказ базы', async () => {
-    // Столько цифр `bigint` не держит: набранное случайно число должно
-    // просто ничего не найти.
+  it('число сверх bigint — пустой список, а не отказ базы', async () => {
+    // Ни тридцать цифр, ни девятнадцать сверх предела `bigint` не
+    // должны уходить в запрос: человек просто ошибся при наборе.
     await expect(core.listAmbassadors(admin, { query: '9'.repeat(30) })).resolves.toEqual([]);
+    await expect(
+      core.listAmbassadors(admin, { query: '9999999999999999999' }),
+    ).resolves.toEqual([]);
   });
 
   it('список — администратору', async () => {

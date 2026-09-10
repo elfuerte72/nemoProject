@@ -29,16 +29,10 @@ export default async function AmbassadorWithdrawal() {
     core.listActiveNetworks(),
   ]);
 
-  /*
-   * Доступно — остаток за вычетом уже поданных заявок, тем же счётом,
-   * каким считает операция: показать полный остаток значило бы
-   * предложить подать вторую заявку на те же баллы и получить отказ
-   * после нажатия.
-   */
-  const held = requests
-    .filter((one) => one.status === 'new' || one.status === 'approved')
-    .reduce((total, one) => Money.add(total, one.amount), Money.ZERO);
-  const available = Money.subtract(account.balance, held);
+  // Доступное считает ядро тем же счётом, каким проверяет подачу
+  // (`bonus-account.ts`); держат остаток открытые заявки, и сколько
+  // именно — разница между остатком и доступным.
+  const held = Money.subtract(account.balance, account.available);
 
   return (
     <main className="page">
@@ -56,7 +50,7 @@ export default async function AmbassadorWithdrawal() {
       />
 
       <Withdrawal
-        balance={available}
+        balance={account.available}
         held={held}
         minAmount={account.minWithdrawalAmount}
         requisites={requisites.map(toRecipientRow)}

@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { clients, exchangeRequests, referrals } from '@nemo/db';
 import { MAX_REFERRAL_DEPTH, isReferralLine } from '@nemo/types';
 import { requireClient, requireStaff, type Actor } from './actor.js';
+import { readReferralProgram } from './referral-program.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import type { Notification } from './notifications.js';
@@ -163,6 +164,9 @@ async function linkChain(
   referralId: bigint,
 ): Promise<Notification[]> {
   const notifications: Notification[] = [];
+  // Сколько линий оплачивается сейчас: строка пишется до пятой всегда,
+  // а сообщается только о той, за которую платят.
+  const { depth } = await readReferralProgram(executor);
   let ancestor: ClientRow | undefined = referrer;
   for (let line = 1; ancestor && line <= MAX_REFERRAL_DEPTH; line += 1) {
     if (!isReferralLine(line)) break;
@@ -171,7 +175,15 @@ async function linkChain(
       referralId,
       line,
     });
-    notifications.push({ kind: 'referral-joined', to: ancestor.telegramUserId, line });
+    /*
+     * «У вас новый реферал пятой линии» тому, кому за пятую линию не
+     * начислят ни балла, — это обещание, которого сервис не давал: в
+     * его собственном кабинете такой линии нет вовсе, и сверить
+     * сообщение будет не с чем.
+     */
+    if (line <= depth) {
+      notifications.push({ kind: 'referral-joined', to: ancestor.telegramUserId, line });
+    }
     ancestor =
       ancestor.referrerId === null
         ? undefined

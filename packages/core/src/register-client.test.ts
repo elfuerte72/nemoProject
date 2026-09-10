@@ -1,7 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { asc, eq } from 'drizzle-orm';
+import { referrals } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, ForbiddenError, NotFoundError } from './index.js';
-import { asClient, givenStaff } from './test-support.js';
+import { asClient, givenReferralLines, givenStaff } from './test-support.js';
 
 /**
  * Регистрация клиента и реферальная привязка.
@@ -12,7 +14,8 @@ import { asClient, givenStaff } from './test-support.js';
  * ровно один раз и ровно у того, кто пригласил.
  */
 
-const core = createCore({ db: testDatabase() });
+const db = testDatabase();
+const core = createCore({ db });
 
 beforeEach(() => resetDatabase());
 afterAll(() => closeTestDatabase());
@@ -89,18 +92,49 @@ describe('реферальная привязка', () => {
         .referralCode;
     }
 
-    const seventh = await core.registerClient({ telegramUserId: 700n, referralCode: code });
+    await core.registerClient({ telegramUserId: 700n, referralCode: code });
 
-    expect(
-      seventh.notifications.map((notification) =>
-        notification.kind === 'referral-joined' ? [notification.to, notification.line] : notification.kind,
-      ),
-    ).toEqual([
+    const rows = await db
+      .select({ referrerId: referrals.referrerId, line: referrals.line })
+      .from(referrals)
+      .where(eq(referrals.referralId, 700n))
+      .orderBy(asc(referrals.line));
+
+    expect(rows.map((row) => [row.referrerId, row.line])).toEqual([
       [600n, 1],
       [500n, 2],
       [400n, 3],
       [300n, 4],
       [200n, 5],
+    ]);
+  });
+
+  it('сообщает только тем, кому за эту линию платят', async () => {
+    /*
+     * Строка цепочки пишется до пятой линии всегда, а уведомление
+     * уходит по глубине программы: «У вас новый реферал пятой линии»
+     * тому, кому за неё не начислят ни балла, — это обещание, которого
+     * сервис не давал. По той же причине справка помощника не называет
+     * неоплачиваемые линии.
+     */
+    await givenReferralLines([500, 200]);
+    let code = (await core.registerClient({ telegramUserId: 100n })).client.referralCode;
+    for (const id of [200n, 300n, 400n]) {
+      code = (await core.registerClient({ telegramUserId: id, referralCode: code })).client
+        .referralCode;
+    }
+
+    const fifth = await core.registerClient({ telegramUserId: 500n, referralCode: code });
+
+    expect(
+      fifth.notifications.map((notification) =>
+        notification.kind === 'referral-joined'
+          ? [notification.to, notification.line]
+          : notification.kind,
+      ),
+    ).toEqual([
+      [400n, 1],
+      [300n, 2],
     ]);
   });
 

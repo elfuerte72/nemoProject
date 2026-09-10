@@ -1,8 +1,10 @@
-import { and, count, desc, eq, sql } from 'drizzle-orm';
-import { bonusTransactions, referrals } from '@nemo/db';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import { bonusTransactions, referrals, withdrawalRequests } from '@nemo/db';
 import {
   Money,
   isReferralLine,
+  isWithdrawalOpen,
+  withdrawalRequestStatuses,
   type Amount,
   type BonusTransactionKind,
   type ReferralLine,
@@ -65,6 +67,13 @@ export interface BonusLineView {
 
 export interface BonusAccountView {
   readonly balance: Amount;
+  /**
+   * Сколько из остатка можно забрать сейчас: он же за вычетом уже
+   * поданных заявок. Считается тем же счётом, каким проверяет подача, —
+   * иначе экран предлагал бы подать заявку на баллы, обещанные другой,
+   * и отказ приходил бы после нажатия.
+   */
+  readonly available: Amount;
   /**
    * Сколько начислено за всё время. Баланс — это остаток, и выведший
    * половину заработанного видит в нём половину; на вопрос «сколько мне
@@ -160,6 +169,34 @@ async function bonusEarned(executor: Executor, clientId: bigint): Promise<Amount
   return row?.total === null || row?.total === undefined ? Money.ZERO : Money.toAmount(row.total);
 }
 
+/** Состояния, в которых заявка ещё держит баллы: одно правило на ядро. */
+const OPEN_WITHDRAWAL_STATUSES = withdrawalRequestStatuses.filter(isWithdrawalOpen);
+
+/**
+ * Сколько баллов держат поданные заявки на вывод.
+ *
+ * Запросом, а не сложением списка заявок: список у клиента ограничен
+ * потолком истории, и открытая заявка старше этого потолка выпала бы
+ * из счёта — экран показал бы больше, чем разрешит подача, а отказ
+ * пришёл бы уже после нажатия.
+ */
+export async function heldByWithdrawals(
+  executor: Executor,
+  clientId: bigint,
+): Promise<Amount> {
+  const [row] = await executor
+    .select({ total: sql<string | null>`sum(${withdrawalRequests.amount})` })
+    .from(withdrawalRequests)
+    .where(
+      and(
+        eq(withdrawalRequests.clientId, clientId),
+        inArray(withdrawalRequests.status, OPEN_WITHDRAWAL_STATUSES),
+      ),
+    );
+
+  return row?.total == null ? Money.ZERO : Money.toAmount(row.total);
+}
+
 async function countReferralsByLine(
   executor: Executor,
   clientId: bigint,
@@ -200,10 +237,11 @@ export async function getBonusAccount(
   const clientId = requireClient(actor);
 
   const program = await readReferralProgram(ctx.db);
-  const [balance, earned, counts, history, settings, rates, referralCode, codes, promo] =
+  const [balance, earned, held, counts, history, settings, rates, referralCode, codes, promo] =
     await Promise.all([
       bonusBalance(ctx.db, clientId),
       bonusEarned(ctx.db, clientId),
+      heldByWithdrawals(ctx.db, clientId),
       countReferralsByLine(ctx.db, clientId),
       listBonusTransactions(ctx.db, clientId),
       readServiceSettings(ctx.db),
@@ -215,6 +253,7 @@ export async function getBonusAccount(
 
   return {
     balance,
+    available: Money.subtract(balance, held),
     earned,
     referralCode,
     codes,

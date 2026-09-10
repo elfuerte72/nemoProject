@@ -66,6 +66,22 @@ export interface ListAmbassadorsInput {
   readonly query?: string | undefined;
 }
 
+/** Верх `bigint` в Postgres: больше — не идентификатор, а опечатка. */
+const MAX_BIGINT = 9_223_372_036_854_775_807n;
+
+/**
+ * Строка цифр как идентификатор Telegram — или пусто.
+ *
+ * Число сверх `bigint` в запрос не уходит: база ответила бы отказом
+ * там, где человек просто ошибся при наборе, а пустой список — это и
+ * есть честный ответ «такого нет».
+ */
+function telegramIdOrNull(query: string): bigint | null {
+  if (!/^\d+$/.test(query)) return null;
+  const value = BigInt(query);
+  return value > 0n && value <= MAX_BIGINT ? value : null;
+}
+
 function requireTitle(raw: string): string {
   const title = raw.trim();
   if (!title) {
@@ -247,11 +263,7 @@ export async function listAmbassadors(
 
   // Подпись русская, а база сервиса собрана с локалью `C`: без явной
   // коллации «Пхукет» не находится на «пхукет» (`search.ts`).
-  //
-  // Цифр не больше девятнадцати: столько держит `bigint`, а набранное
-  // случайно число длиннее ушло бы в базу и вернулось отказом вместо
-  // пустого списка.
-  const digits = /^\d{1,19}$/.test(query) ? BigInt(query) : null;
+  const digits = telegramIdOrNull(query);
   return read(
     ctx.db,
     or(

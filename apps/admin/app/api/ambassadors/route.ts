@@ -12,10 +12,17 @@ export const dynamic = 'force-dynamic';
  * Кому это можно, решает операция, а не маршрут.
  */
 
+/** Верх `bigint` в Postgres: больше — не идентификатор, а опечатка. */
+const MAX_BIGINT = 9_223_372_036_854_775_807n;
+
 const telegramId = z
   .string()
   .trim()
-  .regex(/^\d{1,19}$/, 'Telegram ID — только цифры');
+  .regex(/^\d+$/, 'Telegram ID — только цифры')
+  .refine((value) => {
+    const id = BigInt(value);
+    return id > 0n && id <= MAX_BIGINT;
+  }, 'Telegram ID слишком длинный: проверьте число');
 
 const actionSchema = z.discriminatedUnion('action', [
   z.object({
