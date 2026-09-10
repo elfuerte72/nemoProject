@@ -15,6 +15,7 @@ import {
 import { EmptyState, Moment } from '@nemo/ui';
 import { formatAmount } from '@nemo/ui/format';
 import { EMPTY_DRAFT, RecipientFields, type RecipientDraft } from '@/app/ui/recipient-fields';
+import { WITHDRAWAL_STATUS_LABELS } from '@/lib/labels';
 import type { RecipientRow } from '@/lib/recipient-rows';
 import { send } from '@/app/ui/send';
 
@@ -34,13 +35,6 @@ import { send } from '@/app/ui/send';
  * закрывается ничем: закрытое на полпути, оно оставило бы без ответа о
  * том, чем всё кончилось.
  */
-
-const STATUS_LABELS: Record<WithdrawalRequestStatus, string> = {
-  new: 'Новая — ждёт менеджера',
-  approved: 'Одобрена — готовим выплату',
-  paid: 'Выплачена',
-  rejected: 'Отклонена',
-};
 
 export interface WithdrawalRow {
   readonly id: string;
@@ -247,7 +241,7 @@ export function Withdrawal({
                     <td>{row.destinationHint ?? '—'}</td>
                     <td>
                       <div className="cell">
-                        <span>{STATUS_LABELS[row.status]}</span>
+                        <span>{WITHDRAWAL_STATUS_LABELS[row.status]}</span>
                         {row.rejectReason ? (
                           <span className="cell__note">{row.rejectReason}</span>
                         ) : row.paidAt ? (

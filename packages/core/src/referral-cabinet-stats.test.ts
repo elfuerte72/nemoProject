@@ -327,7 +327,7 @@ describe('услуги приведённых', () => {
   it('считает направления по исполненным заявкам, чужие не берёт', async () => {
     const period = { from: at(7, 0), to: at(0, 0) };
     const me = await givenClient(1n);
-    const mine = await givenClient(2n, me, at(5));
+    await givenClient(2n, me, at(5));
     await givenClient(3n, me, at(5));
     // Чужой реферал: приведён другим, и в мою сводку попасть не должен.
     const stranger = await givenClient(10n);
@@ -346,7 +346,6 @@ describe('услуги приведённых', () => {
       { fromCode: 'USDT', toCode: 'RUB', count: 2, clients: 1 },
       { fromCode: 'RUB', toCode: 'USDT', count: 1, clients: 1 },
     ]);
-    expect(mine).toBeDefined();
   });
 
   it('без приведённых — пустой список, а не отказ', async () => {

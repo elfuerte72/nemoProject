@@ -1,9 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { bonusTransactions } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { ForbiddenError, NotFoundError } from './errors.js';
 import { createCore } from './index.js';
-import { asClient, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
 import type { Actor } from './actor.js';
 
 /**
@@ -18,18 +17,40 @@ import type { Actor } from './actor.js';
  * но не трогает начисленного; вход решает ядро, а не маршрут.
  */
 
-const db = testDatabase();
-const core = createCore({ db });
+const core = createCore({ db: testDatabase() });
 let admin: Actor & { type: 'staff' };
+let manager: Actor & { type: 'staff' };
 
-/** Начисление рефералки — то, что копится амбассадору за приведённых. */
-async function givenAccrual(clientId: bigint, amount: string): Promise<void> {
-  await db.insert(bonusTransactions).values({ clientId, kind: 'accrual', amount, line: 1 });
+/**
+ * Исполненная заявка приведённого — тем же путём, каким она проходит в
+ * жизни: подача, курс, оплата, исполнение с доходом. Начисление
+ * рефереру делает ядро, и в счёт амбассадора оно попадает так же, как
+ * попадёт на проде.
+ */
+async function givenCompletedRequest(clientId: bigint, serviceIncome: string): Promise<void> {
+  const { request } = await core.submitExchangeRequest(asClient(clientId), {
+    kind: 'cash',
+    fromCode: 'USDT',
+    toCode: 'RUB',
+    fromAmount: '100000',
+  });
+  await core.claimExchangeRequest(manager, request.id);
+  await core.confirmExchangeRate(manager, request.id, {
+    finalRate: '95',
+    paymentInstructions: 'наличными в офисе',
+  });
+  await core.markPaymentReceived(manager, request.id);
+  await core.completeExchangeRequest(manager, request.id, {
+    serviceIncome,
+    serviceIncomeCode: 'RUB',
+  });
 }
 
 beforeEach(async () => {
   await resetDatabase();
+  await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
   admin = await givenStaff({ role: 'admin' });
+  manager = await givenStaff();
 });
 afterAll(() => closeTestDatabase());
 
@@ -140,7 +161,8 @@ describe('список амбассадоров', () => {
     await core.registerClient({ telegramUserId: 521n, referralCode: codes[0]!.code });
     const second = await core.listReferralCodes(asClient(521n));
     await core.registerClient({ telegramUserId: 522n, referralCode: second[0]!.code });
-    await givenAccrual(520n, '120');
+    // Заявка приведённого первой линии: 5 % от дохода в 2 400 — это 120.
+    await givenCompletedRequest(521n, '2400');
     // Правка баллов руками — не заработок программы, и в «начислено»
     // она не попадает: этим же правилом считает счёт клиента.
     await core.adjustBonus(admin, 520n, { amount: '80', comment: 'компенсация' });
