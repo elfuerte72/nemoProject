@@ -21,6 +21,10 @@ export const metadata: Metadata = { title: 'Обзор — кабинет амб
  * Обзор: сколько заработано всего, сколько можно забрать сейчас и что
  * произошло за период.
  *
+ * «Остаток к выводу» — доступное, а не весь счёт: рядом стоит «ждёт
+ * выплаты», и остаток, включающий уже поданные заявки, читался бы как
+ * «можно подать ещё столько же».
+ *
  * Периоды те, что назвал владелец: пятнадцать, тридцать, сорок пять,
  * девяносто и сто восемьдесят дней. Каждое число сравнивается с равным
  * отрезком прямо перед выбранным, и считает всё сервер — по тем же
@@ -93,9 +97,9 @@ export default async function AmbassadorOverview({
         />
         <Stat
           label="Остаток к выводу"
-          value={formatAmount(account.balance)}
+          value={formatAmount(account.available)}
           note={`минимум на заявку — ${formatAmount(account.minWithdrawalAmount)}`}
-          tone={account.balance !== '0' ? 'up' : 'plain'}
+          tone={account.available !== '0' ? 'up' : 'plain'}
           href="/ambassador/withdrawal"
         />
         <Stat
