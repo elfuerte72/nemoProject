@@ -125,6 +125,27 @@ describe('looksLikeWalletAddress', () => {
     expect(looksLikeWalletAddress('TON', 'EQCD39VS5jcptHL8vMjEXrzGaRcCVYto7HUn')).toBe(false);
   });
 
+  it('принимает адрес BEP-20', () => {
+    expect(looksLikeWalletAddress('BEP20', '0x71C7656EC7ab88b098defB751B7401B5f6d8976F')).toBe(
+      true,
+    );
+    // Регистр знаков в шестнадцатеричной части не значит ничего: кошелёк
+    // отдаёт адрес и строчными, и в виде EIP-55 с заглавными.
+    expect(looksLikeWalletAddress('BEP20', '0x71c7656ec7ab88b098defb751b7401b5f6d8976f')).toBe(
+      true,
+    );
+  });
+
+  it('отвергает в сети BEP-20 обрезанный адрес и чужой формат', () => {
+    // На знак короче сорока: недокопированный из буфера адрес.
+    expect(looksLikeWalletAddress('BEP20', '0x71C7656EC7ab88b098defB751B7401B5f6d8976')).toBe(
+      false,
+    );
+    expect(looksLikeWalletAddress('BEP20', '71C7656EC7ab88b098defB751B7401B5f6d8976F')).toBe(false);
+    // Адрес Tron, вставленный в поле сети BSC.
+    expect(looksLikeWalletAddress('BEP20', 'TN1sKgqPzVTQ7dxUCiP5bkfEsBLK7SnbMD')).toBe(false);
+  });
+
   it('не мешает сети, которой не знает', () => {
     // Администратор заводит сеть в справочнике, а не в коде: незнакомая
     // не должна переставать работать до того, как её впишут сюда.
