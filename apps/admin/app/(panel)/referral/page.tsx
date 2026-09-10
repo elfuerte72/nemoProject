@@ -95,6 +95,9 @@ export default async function ReferralPage({
             </p>
           </div>
           <div className="page__actions">
+            <Link href="/referral/ambassadors" className="btn btn--gold">
+              Премиальные партнёры
+            </Link>
             <Link href="/settings/referral" className="btn btn--ghost">
               Линии и уровни в настройках
             </Link>

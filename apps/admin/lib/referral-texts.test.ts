@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { slopComplaints } from '@nemo/core';
-import { CLIENT_REFERRAL_HOW_TO, REFERRAL_PROGRAM_HOW_TO } from './referral-texts';
+import {
+  AMBASSADORS_HOW_TO,
+  CLIENT_REFERRAL_HOW_TO,
+  REFERRAL_PROGRAM_HOW_TO,
+} from './referral-texts';
 
 /**
  * Подсказки о реферальной программе читает администратор, и машинный
@@ -11,6 +15,7 @@ describe('тексты реферальной программы набраны 
   it.each([
     ['Рефералка в настройках', REFERRAL_PROGRAM_HOW_TO],
     ['Рефералка в карточке клиента', CLIENT_REFERRAL_HOW_TO],
+    ['Премиальные партнёры', AMBASSADORS_HOW_TO],
   ] as const)('подсказка «%s»', (_name, items) => {
     for (const item of items) {
       expect(slopComplaints(`${item.title}\n${item.detail}`)).toEqual([]);
