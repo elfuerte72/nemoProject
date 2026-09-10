@@ -3,10 +3,10 @@ import { redirect } from 'next/navigation';
 import { Brand, Sidebar, Topbar } from '@nemo/ui';
 import { TZ_COOKIE } from '@nemo/ui/period';
 import { AMBASSADOR_NAV_COLLAPSED_KEY, AMBASSADOR_NAV_GROUPS } from '@/lib/nav';
+import { ambassadorScreen } from '@/lib/ambassador';
 import { ambassadorViewer } from '@/lib/ambassador-reads';
 import { supportUsername } from '@/lib/reads';
 import { StateScreen } from '@/app/ui/state-screen';
-import { isSignedOut } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,18 +14,22 @@ export const dynamic = 'force-dynamic';
  * Каркас кабинета амбассадора: те же детали, что у мерчанта, — меню,
  * шапка, раздел под ней, — и свой состав разделов.
  *
- * Вошедшего без отметки сюда не приводят: право входа решает ядро, и
- * снятому оно откажет на первом же запросе. Отказ этот означает не
- * «войдите заново», а «вас нет в программе» — и говорится словами, тем
- * же экраном, каким кабинет отвечает нерассмотренной анкете мерчанта.
+ * Отказы здесь двух родов, и отвечают им по-разному. Не вошёл — на
+ * витрину: там дверь, в которую ему и нужно. Вошёл, а отметки нет или
+ * она снята — экран «вас нет в программе» со ссылкой на поддержку, тем
+ * же способом, каким кабинет отвечает нерассмотренной анкете мерчанта.
+ * Право входа при этом решает ядро, а не эта страница.
  */
 export default async function AmbassadorLayout({ children }: { children: ReactNode }) {
   let session;
   try {
     session = (await ambassadorViewer()).session;
   } catch (error) {
-    if (!isSignedOut(error)) throw error;
-    return await notInProgram();
+    const screen = ambassadorScreen(error);
+    // Не вошёл — на витрину: там дверь, в которую ему и нужно.
+    if (screen === 'entry') redirect('/');
+    if (screen === 'not-in-program') return await notInProgram();
+    throw error;
   }
 
   return (

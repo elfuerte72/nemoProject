@@ -1,8 +1,9 @@
 import { cookies } from 'next/headers';
 import type { Actor, AmbassadorSession } from '@nemo/core';
+import { isCoreError } from '@nemo/http';
 import { getCore } from '@/lib/core';
 import { AMBASSADOR_COOKIE, readAmbassadorToken } from '@/lib/ambassador-session';
-import { sessionSecret, viewerOrElse } from '@/lib/session';
+import { SessionError, sessionSecret, viewerOrElse } from '@/lib/session';
 
 /**
  * Кто смотрит кабинет амбассадора.
@@ -35,6 +36,20 @@ export async function requireAmbassador(): Promise<AmbassadorViewer> {
   // Право входа решает ядро: кука подтверждает только сам вход.
   const session = await getCore().signInAmbassador(clientId);
   return { actor: { type: 'client', telegramUserId: session.clientId }, session };
+}
+
+/**
+ * Чем кабинет отвечает на отказ чтения.
+ *
+ * «Не вошёл» и «вошёл, но не в программе» — разные состояния, и одним
+ * экраном на них не ответить: первому нужна дверь, а отказ «вас нет в
+ * программе» не говорит, куда нажимать. Чужая ошибка не подменяется
+ * ничем — страница аварии честнее выдуманного объяснения.
+ */
+export function ambassadorScreen(error: unknown): 'entry' | 'not-in-program' | null {
+  if (error instanceof SessionError) return 'entry';
+  if (isCoreError(error) && error.code === 'forbidden') return 'not-in-program';
+  return null;
 }
 
 /** Тот же вход, но с `null` вместо отказа — витрине и странице входа. */

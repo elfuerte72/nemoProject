@@ -1,6 +1,9 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ForbiddenError } from '@nemo/core';
+import { ambassadorScreen } from './ambassador';
+import { SessionError } from './session';
 
 /**
  * Третий путь к клиентскому `Actor`.
@@ -48,5 +51,25 @@ describe('мимо этого модуля актора не собирают', 
 
   it.each(files)('%s', (name) => {
     expect(readFileSync(join(app, name), 'utf8')).not.toMatch(/type:\s*'client'/);
+  });
+});
+
+/**
+ * «Не вошёл» и «вошёл, но не в программе» — разные состояния, и
+ * отвечать на них одним экраном нельзя: первому нужна дверь, а он
+ * получал бы отказ и не понимал, куда нажимать.
+ */
+describe('чем отвечает кабинет на отказ', () => {
+  it('без куки и с истёкшей — на витрину', () => {
+    expect(ambassadorScreen(new SessionError('Нет сессии'))).toBe('entry');
+    expect(ambassadorScreen(new SessionError('Сессия истекла'))).toBe('entry');
+  });
+
+  it('вошёл, но отметки нет или снята — экран «вас нет в программе»', () => {
+    expect(ambassadorScreen(new ForbiddenError('Вас нет в программе'))).toBe('not-in-program');
+  });
+
+  it('чужую ошибку отдаёт наружу: страница аварии честнее подменённого экрана', () => {
+    expect(ambassadorScreen(new Error('база не ответила'))).toBeNull();
   });
 });
