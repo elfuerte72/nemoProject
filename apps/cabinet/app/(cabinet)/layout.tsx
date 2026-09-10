@@ -42,6 +42,7 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
         counts={{ active: openCount(counts) }}
         storageKey={NAV_COLLAPSED_KEY}
         brand={<Brand eyebrow="кабинет" />}
+        homeHref="/dashboard"
         homeLabel="Tobee, кабинет мерчанта — на обзор"
       />
       <div className="shell__main">

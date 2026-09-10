@@ -1,13 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { BonusAccountView, ClientView, RequisitesView, WithdrawalRequestView } from '@nemo/core';
-import {
-  describeRequisites,
-  isServiceCurrencyRequisiteKind,
-  Money,
-  REQUISITE_KIND_LABELS,
-} from '@nemo/types';
+import { describeRequisites, isServiceCurrencyRequisiteKind, Money, REQUISITE_KIND_LABELS, referralLineName } from '@nemo/types';
 import { ApiError, get, post } from '@/lib/client-api';
 import { referralLink } from '@/lib/referral';
 import { formatAmount, formatBps, formatMonth, parseAmount } from '@/lib/format';
@@ -222,17 +217,16 @@ export function ProfileSection({
         реферальной программе один, «сколько мне за это платят».
       */}
       <div className="split">
-        <div className="split__cell">
-          <div className="split__value">{account.line1Count}</div>
-          <div className="split__label">первая линия</div>
-          <div className="split__rate">{formatBps(account.line1Bps)} с их обменов</div>
-        </div>
-        <div className="split__rule" />
-        <div className="split__cell">
-          <div className="split__value">{account.line2Count}</div>
-          <div className="split__label">вторая линия</div>
-          <div className="split__rate">{formatBps(account.line2Bps)} с их обменов</div>
-        </div>
+        {account.lines.map((line, index) => (
+          <Fragment key={line.line}>
+            {index > 0 ? <div className="split__rule" /> : undefined}
+            <div className="split__cell">
+              <div className="split__value">{line.count}</div>
+              <div className="split__label">{referralLineName(line.line)} линия</div>
+              <div className="split__rate">{formatBps(line.rateBps)} с их обменов</div>
+            </div>
+          </Fragment>
+        ))}
       </div>
 
       {link ? (
@@ -320,9 +314,12 @@ export function ProfileSection({
           */}
           <p className="sheet__body">
             Отправьте свою ссылку в любой чат. Когда приглашённый обменяет — вам начислится{' '}
-            {formatBps(account.line1Bps)} того, что сервис заработал на его заявке. С обменов
-            тех, кого приведёт он, начисляется {formatBps(account.line2Bps)}. Баллы выводятся
-            деньгами на любой из ваших реквизитов.
+            {formatBps(account.lines[0]?.rateBps ?? 0)} того, что сервис заработал на его
+            заявке.
+            {account.lines[1]
+              ? ` С обменов тех, кого приведёт он, начисляется ${formatBps(account.lines[1].rateBps)}.`
+              : ''}{' '}
+            Баллы выводятся деньгами на любой из ваших реквизитов.
           </p>
           {link ? (
             <>

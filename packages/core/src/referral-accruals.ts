@@ -1,9 +1,9 @@
 import { asc, eq } from 'drizzle-orm';
 import { bonusTransactions, referrals } from '@nemo/db';
-import { Money, type Amount, type ReferralLine } from '@nemo/types';
+import { Money, isReferralLine, type Amount, type ReferralLine } from '@nemo/types';
 import type { Executor } from './context.js';
 import type { Notification } from './notifications.js';
-import { readServiceSettings } from './settings.js';
+import { effectiveReferralRates, readReferralProgram } from './referral-program.js';
 
 /**
  * Начисление реферальных баллов — следствие исполнения заявки на обмен и
@@ -14,10 +14,11 @@ import { readServiceSettings } from './settings.js';
  * платить рефереру процент от миллиона означало бы платить больше, чем
  * заработано.
  *
- * Ставка, по которой начислено, сохраняется в самой строке движения.
- * Иначе смена ставок задним числом переписывала бы уже сделанные
- * начисления: клиент, приведший реферала на прежних условиях, обнаружил
- * бы у себя другую сумму за заявку, исполненную давным-давно.
+ * Линии — по цепочке предков, записанной при регистрации, но не глубже
+ * настроенной глубины программы; ставка каждой — по старшинству «личная
+ * → уровень → базовая» на момент исполнения (docs/adr/0021). Ставка, по
+ * которой начислено, сохраняется в самой строке движения: иначе смена
+ * ставок задним числом переписывала бы уже сделанные начисления.
  *
  * Валюты у балла нет: баланс — сумма движений в баллах, а перевод дохода
  * в баллы по курсу ждёт блокера B3 («цена балла»). Пока доход и балл
@@ -42,7 +43,8 @@ interface AccrualInput {
 }
 
 /**
- * Начислить обеим линиям реферера того, чья заявка исполнена.
+ * Начислить реферерам того, чья заявка исполнена, — каждой оплачиваемой
+ * линии.
  *
  * Вызывается только из транзакции перехода в «исполнена»: начисление
  * без исполненной заявки создаёт деньги из воздуха, а исполнение без
@@ -52,13 +54,9 @@ export async function accrueReferralBonuses(
   executor: Executor,
   input: AccrualInput,
 ): Promise<readonly Notification[]> {
-  const settings = await readServiceSettings(executor);
-  const rateByLine: Record<ReferralLine, number> = {
-    1: settings.referralLine1Bps,
-    2: settings.referralLine2Bps,
-  };
+  const program = await readReferralProgram(executor);
 
-  const lines = await executor
+  const chain = await executor
     .select({ referrerId: referrals.referrerId, line: referrals.line })
     .from(referrals)
     .where(eq(referrals.referralId, input.clientId))
@@ -66,12 +64,14 @@ export async function accrueReferralBonuses(
 
   const notifications: Notification[] = [];
 
-  for (const { referrerId, line } of lines) {
-    // Схема допускает только 1 и 2 (`referrals_line_range`), но колонка
-    // остаётся числом, и сузить её тип может лишь проверка здесь.
-    if (line !== 1 && line !== 2) continue;
+  for (const { referrerId, line } of chain) {
+    // Схема допускает 1..5 (`referrals_line_range`), но колонка остаётся
+    // числом, и сузить её тип может лишь проверка здесь. Цепочка
+    // хранится глубже, чем платится: линии за глубиной молчат.
+    if (!isReferralLine(line) || line > program.depth) continue;
 
-    const rateBps = rateByLine[line];
+    const rates = await effectiveReferralRates(executor, referrerId, program);
+    const rateBps = rates.lines.find((one) => one.line === line)?.rateBps ?? 0;
     const amount = Money.percentOf(input.serviceIncome, rateBps);
     // Нулевое начисление — не движение баллов, а строка, которая ничего
     // не меняет в балансе и засоряет историю клиенту.

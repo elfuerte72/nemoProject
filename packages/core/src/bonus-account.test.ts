@@ -116,6 +116,56 @@ describe('заработанное за всё время', () => {
   });
 });
 
+/**
+ * Доступное к выводу — остаток за вычетом уже поданных заявок, тем же
+ * счётом, каким считает подача. Разойдись они, кабинет предлагал бы
+ * подать заявку на баллы, которые уже обещаны другой, и отказ приходил
+ * бы после нажатия.
+ */
+describe('доступное к выводу', () => {
+  it('равно остатку, пока открытых заявок нет', async () => {
+    const code = await givenClient(1n);
+    await givenClient(2n, code);
+    await givenCompletedRequest(2n, '40000');
+
+    const account = await core.getBonusAccount(asClient(1n));
+    expect({ balance: account.balance, available: account.available }).toEqual({
+      balance: '2000',
+      available: '2000',
+    });
+  });
+
+  it('меньше остатка на сумму поданных заявок, и выплата этого не меняет', async () => {
+    const code = await givenClient(1n);
+    await givenClient(2n, code);
+    await givenCompletedRequest(2n, '40000');
+    const card = await core.saveRequisites(asClient(1n), {
+      kind: 'card',
+      bankName: 'Сбербанк',
+      cardNumber: '4081781009991000',
+    });
+
+    const { request } = await core.submitWithdrawalRequest(asClient(1n), {
+      amount: '1200',
+      requisitesId: card.id,
+    });
+    const held = await core.getBonusAccount(asClient(1n));
+    expect({ balance: held.balance, available: held.available }).toEqual({
+      balance: '2000',
+      available: '800',
+    });
+
+    // Выплаченная заявка остаток уменьшает, а держать его перестаёт.
+    await core.approveWithdrawalRequest(manager, request.id);
+    await core.markWithdrawalPaid(manager, request.id);
+    const paid = await core.getBonusAccount(asClient(1n));
+    expect({ balance: paid.balance, available: paid.available }).toEqual({
+      balance: '800',
+      available: '800',
+    });
+  });
+});
+
 describe('размер сети', () => {
   it('показан числом рефералов по каждой линии', async () => {
     const first = await givenClient(1n);
@@ -126,10 +176,10 @@ describe('размер сети', () => {
 
     const account = await core.getBonusAccount(asClient(1n));
 
-    expect({ line1: account.line1Count, line2: account.line2Count }).toEqual({
-      line1: 2,
-      line2: 2,
-    });
+    expect(account.lines.map((one) => [one.line, one.count])).toEqual([
+      [1, 2],
+      [2, 2],
+    ]);
   });
 
   it('не раскрывает, кто эти люди', async () => {
@@ -152,14 +202,14 @@ describe('ставки линий', () => {
 
     const account = await core.getBonusAccount(asClient(1n));
 
-    // Те самые, по которым начисляет ядро, — из настроек сервиса, а не
-    // числом в приложении: разойдясь, они пообещали бы клиенту не то,
-    // что он получит.
-    const settings = await core.getServiceSettings(await givenStaff({ role: 'admin' }));
-    expect({ line1: account.line1Bps, line2: account.line2Bps }).toEqual({
-      line1: settings.referralLine1Bps,
-      line2: settings.referralLine2Bps,
-    });
+    // Те самые, по которым начисляет ядро, — из программы, а не числом в
+    // приложении: разойдясь, они пообещали бы клиенту не то, что он
+    // получит.
+    const program = await core.getReferralProgram(await givenStaff({ role: 'admin' }));
+    expect(account.lines.map((one) => one.rateBps)).toEqual(
+      program.lines.map((one) => one.rateBps),
+    );
+    expect(account.lines.every((one) => one.source === 'base')).toBe(true);
   });
 });
 

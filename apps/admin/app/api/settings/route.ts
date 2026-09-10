@@ -8,8 +8,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Настройки сервиса: ставки линий, минимальная сумма вывода, наценка,
- * минимальная сумма обмена и срок жизни неоплаченной заявки.
+ * Настройки сервиса: минимальная сумма вывода, наценка, минимальная
+ * сумма обмена и срок жизни неоплаченной заявки. Реферальная программа
+ * — ставки линий, уровни — правится своими маршрутами.
  *
  * Карточек на экране две, а операция одна: настройки — единственная
  * строка, и разделять её правку по маршрутам значило бы заводить два
@@ -20,8 +21,6 @@ export const dynamic = 'force-dynamic';
  * когда-нибудь разошлось бы с тем, что в ядре.
  */
 const settingsSchema = z.object({
-  referralLine1Bps: z.number().optional(),
-  referralLine2Bps: z.number().optional(),
   // Строкой: денежная величина через `number` теряет точность.
   minWithdrawalAmount: z.string().optional(),
   markupBps: z.number().optional(),
@@ -41,8 +40,6 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const settings = await getCore().updateServiceSettings(actor, {
-      referralLine1Bps: parsed.data.referralLine1Bps,
-      referralLine2Bps: parsed.data.referralLine2Bps,
       minWithdrawalAmount: parsed.data.minWithdrawalAmount,
       markupBps: parsed.data.markupBps,
       minExchangeAmount: parsed.data.minExchangeAmount,

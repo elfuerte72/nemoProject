@@ -14,7 +14,6 @@ export function toClientCardData(card: ClientCardView): ClientCardData {
     telegramUserId: card.telegramUserId.toString(),
     username: card.username,
     createdAt: card.createdAt.toISOString(),
-    referralCode: card.referralCode,
     referrerId: card.referrerId?.toString() ?? null,
     referrerUsername: card.referrerUsername,
     marketingConsent: card.marketingConsent,
@@ -29,9 +28,31 @@ export function toClientCardData(card: ClientCardView): ClientCardData {
         count: line.count,
       })),
       regular: card.stats.regular,
-      invitedLine1: card.stats.invitedLine1,
-      invitedLine2: card.stats.invitedLine2,
+      invitedByLine: card.stats.invitedByLine.map((one) => ({ line: one.line, count: one.count })),
       referralEarned: card.stats.referralEarned,
+    },
+    referral: {
+      tier: card.referral.tier
+        ? {
+            name: card.referral.tier.current?.name ?? null,
+            activeReferrals: card.referral.tier.activeReferrals,
+            nextName: card.referral.tier.next?.name ?? null,
+            toNext: card.referral.tier.toNext,
+          }
+        : null,
+      lines: card.referral.lines.map((one) => ({
+        line: one.line,
+        rateBps: one.rateBps,
+        source: one.source,
+        tierName: one.tierName,
+      })),
+      individual: card.referral.individual.map((one) => ({ line: one.line, rateBps: one.rateBps })),
+      codes: card.referral.codes.map((one) => ({
+        id: one.id,
+        kind: one.kind,
+        label: one.label,
+        code: one.code,
+      })),
     },
   };
 }

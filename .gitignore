@@ -17,3 +17,6 @@ coverage/
 
 .claude/settings.local.json
 *.tsbuildinfo
+
+# Песочница вёрстки Mini App: сборка и копия стилей для проверки глазами.
+apps/*/.sandbox/

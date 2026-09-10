@@ -165,7 +165,7 @@ describe('раздел настроек', () => {
     await expect(core.getServiceSettings(manager)).rejects.toThrow(ForbiddenError);
     await expect(core.listStaff(manager)).rejects.toThrow(ForbiddenError);
     await expect(
-      core.updateServiceSettings(manager, { referralLine1Bps: 100 }),
+      core.updateServiceSettings(manager, { markupBps: 100 }),
     ).rejects.toThrow(ForbiddenError);
     await expect(core.listSettingsAuditLog(manager)).rejects.toThrow(ForbiddenError);
   });
@@ -190,42 +190,21 @@ describe('раздел настроек', () => {
   });
 });
 
-describe('ставки линий и минимальная сумма вывода', () => {
-  it('задаются администратором', async () => {
-    const updated = await core.updateServiceSettings(admin, {
-      referralLine1Bps: 700,
-      referralLine2Bps: 300,
-      minWithdrawalAmount: '2500',
-    });
-
-    expect(updated).toMatchObject({
-      referralLine1Bps: 700,
-      referralLine2Bps: 300,
-      minWithdrawalAmount: '2500',
-    });
+describe('минимальная сумма вывода', () => {
+  it('задаётся администратором', async () => {
+    const updated = await core.updateServiceSettings(admin, { minWithdrawalAmount: '2500' });
+    expect(updated).toMatchObject({ minWithdrawalAmount: '2500' });
   });
 
-  it('не смешивают ставку линии с наценкой: правится только названное', async () => {
+  it('не смешивается с наценкой: правится только названное', async () => {
     await core.updateServiceSettings(admin, { markupBps: 350 });
 
     const settings = await core.getServiceSettings(admin);
 
-    expect(settings).toMatchObject({ markupBps: 350, referralLine1Bps: 500 });
+    expect(settings).toMatchObject({ markupBps: 350, minWithdrawalAmount: '1000' });
   });
 
-  it('не принимают ставку выше ста процентов', async () => {
-    await expect(
-      core.updateServiceSettings(admin, { referralLine1Bps: 10_001 }),
-    ).rejects.toThrow(InvalidInputError);
-  });
-
-  it('не принимают дробные базисные пункты', async () => {
-    await expect(
-      core.updateServiceSettings(admin, { referralLine2Bps: 12.5 }),
-    ).rejects.toThrow(InvalidInputError);
-  });
-
-  it('не принимают отрицательную минимальную сумму вывода', async () => {
+  it('не принимает отрицательную минимальную сумму вывода', async () => {
     await expect(
       core.updateServiceSettings(admin, { minWithdrawalAmount: '-1' }),
     ).rejects.toThrow(InvalidInputError);
@@ -306,7 +285,10 @@ describe('прошлые начисления', () => {
     }
 
     await completeRequest();
-    await core.updateServiceSettings(admin, { referralLine1Bps: 1000 });
+    await core.updateReferralLines(admin, [
+      { line: 1, rateBps: 1000 },
+      { line: 2, rateBps: 200 },
+    ]);
     await completeRequest();
 
     // Первая заявка исполнена на 5%, вторая — на 10%: 50 и 100.
@@ -323,7 +305,7 @@ describe('прошлые начисления', () => {
 
 describe('журнал изменений', () => {
   it('записывает, кто и когда менял настройки', async () => {
-    await core.updateServiceSettings(admin, { referralLine1Bps: 700 });
+    await core.updateServiceSettings(admin, { markupBps: 700 });
 
     expect(await core.listSettingsAuditLog(admin)).toEqual([
       expect.objectContaining({
@@ -336,13 +318,13 @@ describe('журнал изменений', () => {
   });
 
   it('хранит, что именно изменилось', async () => {
-    await core.updateServiceSettings(admin, { referralLine1Bps: 700 });
+    await core.updateServiceSettings(admin, { markupBps: 700 });
 
     const [entry] = await core.listSettingsAuditLog(admin);
-    const changes = entry!.changes as { before: { referralLine1Bps: number }; after: { referralLine1Bps: number } };
+    const changes = entry!.changes as { before: { markupBps: number }; after: { markupBps: number } };
 
-    expect(changes.before.referralLine1Bps).toBe(500);
-    expect(changes.after.referralLine1Bps).toBe(700);
+    expect(changes.before.markupBps).toBe(200);
+    expect(changes.after.markupBps).toBe(700);
   });
 
   it('записывает и заведение сотрудника, и смену его роли', async () => {

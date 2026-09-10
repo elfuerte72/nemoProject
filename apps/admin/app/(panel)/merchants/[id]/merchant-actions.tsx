@@ -1,8 +1,8 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { MerchantStatus } from '@nemo/types';
+import { useAction } from '@/lib/use-action';
 
 /**
  * Решения администратора о мерчанте: одобрить, отклонить, отключить,
@@ -24,32 +24,14 @@ export function MerchantActions({
   readonly merchantId: string;
   readonly status: MerchantStatus;
 }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const { busy, error, act: post } = useAction(`/api/merchants/${merchantId}`);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
 
   const act = async (body: Record<string, unknown>) => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const response = await fetch(`/api/merchants/${merchantId}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok) {
-        const said = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(said.error ?? 'Не вышло. Попробуйте ещё раз');
-      }
+    if (await post(body)) {
       setRejecting(false);
       setReason('');
-      router.refresh();
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Не вышло');
-    } finally {
-      setBusy(false);
     }
   };
 

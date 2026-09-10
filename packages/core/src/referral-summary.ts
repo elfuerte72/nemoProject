@@ -1,10 +1,18 @@
 import { and, count, desc, eq, gte, inArray, lt, sql, sum } from 'drizzle-orm';
 import { bonusTransactions, clients, referrals, withdrawalRequests } from '@nemo/db';
-import { Money, isWithdrawalOpen, withdrawalRequestStatuses, type Amount } from '@nemo/types';
+import {
+  Money,
+  isWithdrawalOpen,
+  referralLines,
+  withdrawalRequestStatuses,
+  type Amount,
+  type ReferralLine,
+} from '@nemo/types';
 import { requireAdmin, type Actor } from './actor.js';
 import type { AnalyticsPeriod } from './analytics.js';
 import type { CoreConfig } from './context.js';
 import { InvalidInputError } from './errors.js';
+import { readReferralProgram } from './referral-program.js';
 
 /**
  * Реферальная сводка за период — администратору.
@@ -20,7 +28,7 @@ import { InvalidInputError } from './errors.js';
  */
 
 export interface ReferralLineTotal {
-  readonly line: 1 | 2;
+  readonly line: ReferralLine;
   readonly amount: Amount;
   readonly count: number;
 }
@@ -63,6 +71,7 @@ export async function summarizeReferrals(
     lt(bonusTransactions.createdAt, period.to),
   );
 
+  const program = await readReferralProgram(ctx.db);
   const [byLine, paid, pending, referrers, top] = await Promise.all([
     ctx.db
       .select({ line: bonusTransactions.line, amount: sum(bonusTransactions.amount), n: count() })
@@ -96,7 +105,7 @@ export async function summarizeReferrals(
       .limit(TOP_LIMIT),
   ]);
 
-  const lineTotal = (line: 1 | 2): ReferralLineTotal => {
+  const lineTotal = (line: ReferralLine): ReferralLineTotal => {
     const row = byLine.find((one) => one.line === line);
     return { line, amount: Money.toAmount(row?.amount ?? '0'), count: row?.n ?? 0 };
   };
@@ -104,7 +113,12 @@ export async function summarizeReferrals(
 
   return {
     period,
-    accrued: [lineTotal(1), lineTotal(2)],
+    // Оплачиваемые линии всегда, а сверх глубины — только те, по которым
+    // за период что-то начислено: сузив программу, администратор не
+    // должен потерять из сводки прошлые начисления третьей линии.
+    accrued: referralLines
+      .filter((line) => line <= program.depth || byLine.some((row) => row.line === line))
+      .map(lineTotal),
     paid: Money.isNegative(paidAmount) ? Money.subtract(Money.ZERO, paidAmount) : paidAmount,
     pending: Money.toAmount(pending[0]?.amount ?? '0'),
     referrers: referrers[0]?.n ?? 0,

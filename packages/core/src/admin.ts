@@ -7,7 +7,7 @@ import { requirePublicKey, type CoreConfig, type Executor } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
 import { otpauthUri } from './second-factor.js';
 import { recordSettingsChange } from './settings-audit.js';
-import { readServiceSettings, type ServiceSettingsView } from './settings.js';
+import { type ServiceSettingsView, readServiceSettings, requireBps } from './settings.js';
 
 /**
  * Управление сотрудниками и экономикой сервиса.
@@ -342,8 +342,6 @@ export async function getServiceSettings(
 }
 
 export interface UpdateServiceSettingsInput {
-  readonly referralLine1Bps?: number | undefined;
-  readonly referralLine2Bps?: number | undefined;
   readonly minWithdrawalAmount?: string | undefined;
   readonly markupBps?: number | undefined;
   readonly minExchangeAmount?: string | undefined;
@@ -376,16 +374,6 @@ function requireUsername(value: string): string {
   return trimmed;
 }
 
-/** Ставка выше 100% отдавала бы рефереру больше, чем сервис заработал. */
-function requireBps(value: number, subject: string): number {
-  if (!Number.isInteger(value) || value < 0 || value > 10_000) {
-    throw new InvalidInputError(
-      `${subject}: ожидаются целые базисные пункты от 0 до 10000 (10000 = 100%)`,
-    );
-  }
-  return value;
-}
-
 /**
  * Суточный предел ответов помощника. Ноль законен: им консьерж
  * выключается, не трогая выкатку, — и это единственный способ выключить
@@ -414,12 +402,6 @@ export async function updateServiceSettings(
   const admin = requireAdmin(actor);
 
   const patch: Record<string, number | string> = {};
-  if (input.referralLine1Bps !== undefined) {
-    patch.referralLine1Bps = requireBps(input.referralLine1Bps, 'Ставка первой линии');
-  }
-  if (input.referralLine2Bps !== undefined) {
-    patch.referralLine2Bps = requireBps(input.referralLine2Bps, 'Ставка второй линии');
-  }
   if (input.minWithdrawalAmount !== undefined) {
     patch.minWithdrawalAmount = requireNonNegativeAmount(
       input.minWithdrawalAmount,

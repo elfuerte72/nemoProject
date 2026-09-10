@@ -127,6 +127,29 @@ describe('viewerOrElse', () => {
  * пишет ошибку в журнал — заметит это только тот, кто в журнал
  * заглянет. Тест того же рода, что и проверка порядка запуска в Mini App.
  */
+describe('разделы кабинета амбассадора читают сессию только через ambassadorPage()', () => {
+  const root = join(__dirname, '..', 'app', '(ambassador)');
+  const screens = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((name) =>
+    /(^|\/)(page|layout)\.tsx$/.test(name),
+  );
+
+  it('разделы есть', () => {
+    expect(screens.length).toBeGreaterThan(3);
+  });
+
+  /*
+   * То же правило и по той же причине, что у разделов мерчанта: каркас
+   * и раздел под ним рисуются параллельно, и раздел с прямым
+   * `requireAmbassador` без сессии пишет ошибку в журнал вместо тихого
+   * ухода на витрину. Каркасу читать напрямую можно — он один и сам
+   * решает, что показать без отметки; страницам нельзя.
+   */
+  it.each(screens.filter((name) => name.endsWith('page.tsx')))('%s', (name) => {
+    const source = readFileSync(join(root, name), 'utf8');
+    expect(source).not.toMatch(/\b(requireAmbassador|readAmbassadorToken|ambassadorOrNull)\b/);
+  });
+});
+
 describe('страницы кабинета читают сессию только через viewer()', () => {
   const root = join(__dirname, '..', 'app', '(cabinet)');
   const screens = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((name) =>

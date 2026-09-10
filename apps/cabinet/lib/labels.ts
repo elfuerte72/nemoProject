@@ -1,4 +1,9 @@
-import type { ExchangeKind, ExchangeRequestStatus, MerchantStatus } from '@nemo/types';
+import type {
+  ExchangeKind,
+  ExchangeRequestStatus,
+  MerchantStatus,
+  WithdrawalRequestStatus,
+} from '@nemo/types';
 
 /**
  * Состояния заявки словами из `CONTEXT.md`: те же, что у клиента и у
@@ -12,6 +17,18 @@ export const STATUS_LABELS: Record<ExchangeRequestStatus, string> = {
   payment_received: 'Оплата получена',
   completed: 'Исполнена',
   cancelled: 'Отменена',
+};
+
+/**
+ * Состояния заявки на вывод — теми же словами, какими их называет
+ * клиенту Mini App: у амбассадора и клиента очередь выплат одна, и два
+ * названия одного шага стоили бы менеджеру минуты выяснения.
+ */
+export const WITHDRAWAL_STATUS_LABELS: Record<WithdrawalRequestStatus, string> = {
+  new: 'Новая — ждёт менеджера',
+  approved: 'Одобрена — готовим выплату',
+  paid: 'Выплачена',
+  rejected: 'Отклонена',
 };
 
 export type PillTone = 'plain' | 'wait' | 'done' | 'off';

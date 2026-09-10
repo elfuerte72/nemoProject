@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type Actor } from './index.js';
-import { asClient, givenCurrencyPair, givenStaff } from './test-support.js';
+import { asClient, givenCurrencyPair, givenReferralTier, givenStaff } from './test-support.js';
 
 /**
  * Карточка клиента глазами сотрудника: с кем он имеет дело.
@@ -131,8 +131,10 @@ describe('рефералы клиента в карточке', () => {
 
     const { stats } = await core.getClientCard(manager, 100n);
 
-    expect(stats.invitedLine1).toBe(2);
-    expect(stats.invitedLine2).toBe(1);
+    expect(stats.invitedByLine).toEqual([
+      { line: 1, count: 2 },
+      { line: 2, count: 1 },
+    ]);
   });
 
   it('называет заработанное реферальной программой за всё время', async () => {
@@ -151,8 +153,10 @@ describe('рефералы клиента в карточке', () => {
 
     const { stats } = await core.getClientCard(manager, 100n);
 
-    expect(stats.invitedLine1).toBe(0);
-    expect(stats.invitedLine2).toBe(0);
+    expect(stats.invitedByLine).toEqual([
+      { line: 1, count: 0 },
+      { line: 2, count: 0 },
+    ]);
     expect(stats.referralEarned).toBe('0');
   });
 });
@@ -167,5 +171,42 @@ describe('ожидание ответа в карточке', () => {
     await core.replyToClient(manager, { clientId: 100n, body: 'Здравствуйте! Чем помочь?' });
 
     expect((await core.getClientCard(manager, 100n)).stats.waiting).toBe(false);
+  });
+});
+
+describe('реферальная программа в карточке', () => {
+  it('называет уровень, ставки с источником, личные ставки и коды', async () => {
+    await givenReferralTier({ name: 'Серебро', minActiveReferrals: 1, rates: [{ line: 1, rateBps: 800 }] });
+    const admin = await givenStaff({ role: 'admin' });
+    const code = await givenClient(100n);
+    await givenClient(200n, code);
+    await givenRequest(200n, 'completed');
+    await core.setClientReferralRates(admin, 100n, [{ line: 2, rateBps: 400 }]);
+    await core.createReferralCode(asClient(100n), { kind: 'promo', label: 'Лето', code: 'SUMMER26' });
+
+    const card = await core.getClientCard(manager, 100n);
+
+    expect(card.referral.tier?.current?.name).toBe('Серебро');
+    expect(card.referral.tier?.activeReferrals).toBe(1);
+    expect(card.referral.lines.map((one) => [one.line, one.rateBps, one.source])).toEqual([
+      [1, 800, 'tier'],
+      [2, 400, 'individual'],
+    ]);
+    expect(card.referral.individual).toEqual([{ line: 2, rateBps: 400 }]);
+    expect(card.referral.codes.map((one) => [one.kind, one.label])).toEqual([
+      ['link', 'Основная'],
+      ['promo', 'Лето'],
+    ]);
+  });
+
+  it('у клиента без сети — базовые ставки и одна ссылка', async () => {
+    await givenClient(100n);
+
+    const { referral } = await core.getClientCard(manager, 100n);
+
+    expect(referral.tier).toBeNull();
+    expect(referral.lines.every((one) => one.source === 'base')).toBe(true);
+    expect(referral.individual).toEqual([]);
+    expect(referral.codes).toHaveLength(1);
   });
 });

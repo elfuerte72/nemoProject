@@ -101,7 +101,10 @@ describe('реферальная сводка', () => {
       .update(bonusTransactions)
       .set({ createdAt: at(10) })
       .where(eq(bonusTransactions.clientId, 200n));
-    await core.updateServiceSettings(admin, { referralLine1Bps: 1000 });
+    await core.updateReferralLines(admin, [
+      { line: 1, rateBps: 1000 },
+      { line: 2, rateBps: 200 },
+    ]);
 
     const now = await core.summarizeReferrals(admin, { from: at(1), to: at(-1) });
     const before = await core.summarizeReferrals(admin, { from: at(15), to: at(5) });

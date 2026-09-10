@@ -17,18 +17,24 @@ export function StateScreen({
   lines,
   support,
   action,
+  eyebrow = 'кабинет',
+  signOut,
 }: {
   readonly title: string;
   readonly lines: readonly string[];
   readonly support: string | null;
   /** Что здесь можно сделать, кроме как написать в поддержку. */
   readonly action?: ReactNode;
+  /** Подпись под знаком: у мерчанта кабинет, у амбассадора он сам. */
+  readonly eyebrow?: string;
+  /** Чью куку снимать при выходе: их в кабинете две. */
+  readonly signOut?: { readonly path: string; readonly after: string };
 }) {
   return (
     <main className="state">
       <div className="state__card">
         <div className="login__brand">
-          <Brand eyebrow="кабинет" />
+          <Brand eyebrow={eyebrow} />
         </div>
         <h1 className="state__title">{title}</h1>
         {lines.map((line) => (
@@ -38,7 +44,7 @@ export function StateScreen({
         ))}
         {action}
         <SupportLink username={support} className="btn btn--soft" />
-        <SignOut />
+        <SignOut {...signOut} />
       </div>
     </main>
   );

@@ -12,14 +12,33 @@
 
 export const TZ_COOKIE = 'nemo_tz';
 
-export const periodKeys = ['today', '7d', '30d', '90d', 'custom'] as const;
+/*
+ * Ключи всех экранов сразу. Какие из них показать чипами, решает сам
+ * экран: у панели свои четыре, у кабинета амбассадора — пятнадцать,
+ * тридцать, сорок пять, девяносто и сто восемьдесят дней, как их
+ * назвал владелец. Разбор адреса при этом один: ссылку на период
+ * пересылают, и «45d» должно означать одно и то же везде.
+ */
+export const periodKeys = [
+  'today',
+  '7d',
+  '15d',
+  '30d',
+  '45d',
+  '90d',
+  '180d',
+  'custom',
+] as const;
 export type PeriodKey = (typeof periodKeys)[number];
 
 export const PERIOD_LABELS: Record<PeriodKey, string> = {
   today: 'Сегодня',
   '7d': '7 дней',
+  '15d': '15 дней',
   '30d': '30 дней',
+  '45d': '45 дней',
   '90d': '90 дней',
+  '180d': '180 дней',
   custom: 'Свой период',
 };
 
@@ -71,17 +90,25 @@ export function resolvePeriod(
     }
   }
 
-  switch (params.period) {
-    case 'today':
-      return { key: 'today', from: todayStart, to: tomorrow };
-    case '7d':
-      return { key: '7d', from: new Date(tomorrow.getTime() - 7 * DAY), to: tomorrow };
-    case '90d':
-      return { key: '90d', from: new Date(tomorrow.getTime() - 90 * DAY), to: tomorrow };
-    default:
-      return { key: '30d', from: new Date(tomorrow.getTime() - 30 * DAY), to: tomorrow };
+  if (params.period === 'today') {
+    return { key: 'today', from: todayStart, to: tomorrow };
   }
+  const days = DAYS_BY_KEY[params.period as PeriodKey];
+  if (days) {
+    return { key: params.period as PeriodKey, from: new Date(tomorrow.getTime() - days * DAY), to: tomorrow };
+  }
+  return { key: '30d', from: new Date(tomorrow.getTime() - 30 * DAY), to: tomorrow };
 }
+
+/** Сколько дней в ключе. «Сегодня» и свой период считаются иначе. */
+const DAYS_BY_KEY: Partial<Record<PeriodKey, number>> = {
+  '7d': 7,
+  '15d': 15,
+  '30d': 30,
+  '45d': 45,
+  '90d': 90,
+  '180d': 180,
+};
 
 /** «2026-09-02» → местная полночь этого дня. */
 function parseDay(raw: string | undefined, offsetMinutes: number): Date | null {

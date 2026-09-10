@@ -14,7 +14,17 @@ import {
   type AddStaffInput,
   type UpdateServiceSettingsInput,
 } from './admin.js';
+import {
+  addAmbassador,
+  listAmbassadors,
+  restoreAmbassador,
+  revokeAmbassador,
+  signInAmbassador,
+  type AddAmbassadorInput,
+  type ListAmbassadorsInput,
+} from './ambassadors.js';
 import { getBonusAccount } from './bonus-account.js';
+import { adjustBonus, type AdjustBonusInput } from './bonus-adjustments.js';
 import {
   finishBroadcast,
   listBroadcasts,
@@ -31,7 +41,13 @@ import {
   updateCardApplicationStatus,
   type UpdateCardApplicationInput,
 } from './card-applications.js';
-import { clientExists, getClient, registerClient, type RegisterClientInput } from './clients.js';
+import {
+  bindReferrerByPromoCode,
+  clientExists,
+  getClient,
+  registerClient,
+  type RegisterClientInput,
+} from './clients.js';
 import { getClientCard } from './client-card.js';
 import {
   approveMerchant,
@@ -212,6 +228,29 @@ import {
 } from './exchange-workflow.js';
 import { listColleagues, reassignExchangeRequest } from './exchange-reassign.js';
 import { summarizeReferrals } from './referral-summary.js';
+import {
+  listMyReferrals,
+  listReferralServices,
+  summarizeReferralCabinet,
+  type ListMyReferralsInput,
+  type ReferralCabinetStatsOptions,
+} from './referral-cabinet-stats.js';
+import {
+  archiveReferralCode,
+  createReferralCode,
+  listReferralCodes,
+  lookupReferralCode,
+  type CreateReferralCodeInput,
+} from './referral-codes.js';
+import {
+  deleteReferralTier,
+  getReferralProgram,
+  setClientReferralRates,
+  updateReferralLines,
+  upsertReferralTier,
+  type ReferralRateInput,
+  type UpsertReferralTierInput,
+} from './referral-program.js';
 export type { ReferralLineTotal, ReferralSummary, ReferralTopClient } from './referral-summary.js';
 import {
   countClients,
@@ -422,6 +461,25 @@ export function createCore(ctx: CoreConfig) {
       setMarketingConsent(ctx, actor, consent),
 
     getBonusAccount: (actor: Actor) => getBonusAccount(ctx, actor),
+    /** Сводка кабинета за период и обезличенный список рефералов. */
+    summarizeReferralCabinet: (
+      actor: Actor,
+      period: AnalyticsPeriod,
+      options?: ReferralCabinetStatsOptions,
+    ) => summarizeReferralCabinet(ctx, actor, period, options),
+    listMyReferrals: (actor: Actor, input?: ListMyReferralsInput) =>
+      listMyReferrals(ctx, actor, input),
+    /** Чем пользовались приведённые: направления по числу заявок. */
+    listReferralServices: (actor: Actor, period: AnalyticsPeriod) =>
+      listReferralServices(ctx, actor, period),
+    /** Коды клиента: ссылки и промокоды, привязка промокодом после регистрации. */
+    listReferralCodes: (actor: Actor) => listReferralCodes(ctx, actor),
+    createReferralCode: (actor: Actor, input: CreateReferralCodeInput) =>
+      createReferralCode(ctx, actor, input),
+    archiveReferralCode: (actor: Actor, id: string) => archiveReferralCode(ctx, actor, id),
+    lookupReferralCode: (code: string) => lookupReferralCode(ctx, code),
+    bindReferrerByPromoCode: (actor: Actor, code: string) =>
+      bindReferrerByPromoCode(ctx, actor, code),
     submitWithdrawalRequest: (actor: Actor, input: SubmitWithdrawalInput) =>
       submitWithdrawalRequest(ctx, actor, input),
     listWithdrawalRequests: (actor: Actor) => listWithdrawalRequests(ctx, actor),
@@ -486,6 +544,32 @@ export function createCore(ctx: CoreConfig) {
     listColleagues: (actor: Actor) => listColleagues(ctx, actor),
     summarizeReferrals: (actor: Actor, period: AnalyticsPeriod) =>
       summarizeReferrals(ctx, actor, period),
+    /** Реферальная программа: глубина, уровни, личные ставки, правка баллов (docs/adr/0021). */
+    getReferralProgram: (actor: Actor) => getReferralProgram(ctx, actor),
+    updateReferralLines: (actor: Actor, lines: readonly ReferralRateInput[]) =>
+      updateReferralLines(ctx, actor, lines),
+    upsertReferralTier: (actor: Actor, input: UpsertReferralTierInput) =>
+      upsertReferralTier(ctx, actor, input),
+    deleteReferralTier: (actor: Actor, id: string) => deleteReferralTier(ctx, actor, id),
+    setClientReferralRates: (actor: Actor, clientId: bigint, rates: readonly ReferralRateInput[] | null) =>
+      setClientReferralRates(ctx, actor, clientId, rates),
+    adjustBonus: (actor: Actor, clientId: bigint, input: AdjustBonusInput) =>
+      adjustBonus(ctx, actor, clientId, input),
+    /**
+     * Амбассадоры: отметка на клиенте и вход в его кабинет
+     * (docs/adr/0022). Ставка у амбассадора — та же личная,
+     * `setClientReferralRates`; своей операции у неё нет.
+     */
+    listAmbassadors: (actor: Actor, input?: ListAmbassadorsInput) =>
+      listAmbassadors(ctx, actor, input),
+    addAmbassador: (actor: Actor, input: AddAmbassadorInput) => addAmbassador(ctx, actor, input),
+    revokeAmbassador: (actor: Actor, clientId: bigint) => revokeAmbassador(ctx, actor, clientId),
+    restoreAmbassador: (actor: Actor, clientId: bigint) => restoreAmbassador(ctx, actor, clientId),
+    /**
+     * Вход амбассадора: исполнителя нет — его собирает кабинет по
+     * ответу этой операции, проверив подпись Telegram.
+     */
+    signInAmbassador: (telegramUserId: bigint) => signInAmbassador(ctx, telegramUserId),
     listClients: (actor: Actor, filter?: ClientFilter) => listClients(ctx, actor, filter),
     countClients: (actor: Actor, filter?: ClientFilter) => countClients(ctx, actor, filter),
     summarizeClients: (actor: Actor) => summarizeClients(ctx, actor),
@@ -659,6 +743,12 @@ export type Core = ReturnType<typeof createCore>;
  */
 export { createDatabase, type Database } from '@nemo/db';
 
+export type {
+  AddAmbassadorInput,
+  AmbassadorSession,
+  AmbassadorView,
+  ListAmbassadorsInput,
+} from './ambassadors.js';
 export type { Actor, Owner } from './actor.js';
 export type { CoreConfig } from './context.js';
 export type {
@@ -666,7 +756,7 @@ export type {
   RegisterClientInput,
   RegisterClientResult,
 } from './clients.js';
-export type { ClientCardView, ClientStats } from './client-card.js';
+export type { ClientCardView, ClientReferralView, ClientStats } from './client-card.js';
 export type {
   MerchantFilter,
   MerchantResult,
@@ -745,7 +835,31 @@ export {
 } from './bot-texts.js';
 export type { BotTextKey } from './bot-texts.js';
 export { slopComplaints } from './bot-slop.js';
-export type { BonusAccountView, BonusTransactionView } from './bonus-account.js';
+export type { BonusAccountView, BonusLineView, BonusTransactionView } from './bonus-account.js';
+export type { AdjustBonusInput } from './bonus-adjustments.js';
+export type { CreateReferralCodeInput, ReferralCodeView } from './referral-codes.js';
+export type {
+  ListMyReferralsInput,
+  MyReferralView,
+  MyReferralsPage,
+  ReferralCabinetDay,
+  ReferralCabinetStats,
+  ReferralCabinetStatsOptions,
+  ReferralCodeStats,
+  ReferralPeriodSummary,
+  ReferralServiceView,
+} from './referral-cabinet-stats.js';
+export type {
+  EffectiveLineRate,
+  EffectiveReferralRates,
+  ReferralLineRate,
+  ReferralProgramView,
+  ReferralRateInput,
+  ReferralRateSource,
+  ReferralTierView,
+  TierStanding,
+  UpsertReferralTierInput,
+} from './referral-program.js';
 export type { ClientHistoryEntry, ClientHistoryView } from './history-feed.js';
 export type { ServiceSettingsView } from './settings.js';
 export type { QuoteInput, QuoteView, RatePair, RateQuote, RateSource } from './rates.js';

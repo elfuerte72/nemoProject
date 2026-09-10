@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { PERIOD_LABELS, type PeriodKey } from './period.js';
 
+/** Что показывает панель по умолчанию: смена, неделя, месяц, квартал. */
+const PANEL_QUICK: readonly PeriodKey[] = ['today', '7d', '30d', '90d'];
+
 /**
  * Чипы периода и свой отрезок датами — в аналитике панели, в карточке
  * мерчанта и в обзоре кабинета.
@@ -17,6 +20,7 @@ export function PeriodChips({
   from,
   to,
   basePath,
+  quick = PANEL_QUICK,
 }: {
   current: PeriodKey;
   /** Раздел, в адрес которого уходит период: у каждого экрана свой. */
@@ -24,11 +28,16 @@ export function PeriodChips({
   /** Границы своего периода днями «2026-09-02» — для полей. */
   from: string;
   to: string;
+  /**
+   * Набор чипов. У панели дни смены и месяцы, у кабинета амбассадора —
+   * те пять, что назвал владелец: спрашивают там не «что сегодня», а
+   * «сколько принесло за полгода».
+   */
+  quick?: readonly PeriodKey[];
 }) {
   const router = useRouter();
   const [draftFrom, setDraftFrom] = useState(from);
   const [draftTo, setDraftTo] = useState(to);
-  const quick: PeriodKey[] = ['today', '7d', '30d', '90d'];
 
   return (
     <div className="period">

@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { parseLoginPayload, TelegramLoginError, verifyTelegramLogin } from './telegram-login.js';
+import { parseLoginPayload, TelegramLoginError, verifyTelegramLogin } from './login.js';
 
 const BOT_TOKEN = '123456:TEST-TOKEN';
 const NOW = new Date('2026-08-01T12:00:00Z');

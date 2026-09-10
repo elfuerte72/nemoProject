@@ -32,7 +32,7 @@ export function LoginForm() {
 
     // Адресом, а не router: после появления куки нужен свежий запрос,
     // иначе оболочка приедет из кэша, собранного до входа.
-    window.location.href = '/';
+    window.location.href = '/dashboard';
   }
 
   return (

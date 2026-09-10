@@ -107,6 +107,10 @@ function escapeIdentifier(name: string): string {
  *
  * Настройки сервиса создаются заново со значениями по умолчанию: их
  * строка — часть схемы, операции читают её без проверки на существование.
+ * Так же и базовые ставки линий: после очистки ставятся две — 5 % и 2 %,
+ * значения по умолчанию из миграции `0001`, которые `0031` переносит в
+ * `referral_line_rates`, — иначе программа считалась бы нулевой глубины,
+ * и тест начисления проходил бы молчанием.
  */
 export async function resetDatabase(db: Database = testDatabase()): Promise<void> {
   const tables = await db.execute<{ tablename: string }>(
@@ -124,4 +128,7 @@ export async function resetDatabase(db: Database = testDatabase()): Promise<void
   );
   await db.execute(sql`truncate table ${list} restart identity cascade`);
   await db.execute(sql`insert into service_settings default values`);
+  await db.execute(
+    sql`insert into referral_line_rates (line, rate_bps) values (1, 500), (2, 200)`,
+  );
 }

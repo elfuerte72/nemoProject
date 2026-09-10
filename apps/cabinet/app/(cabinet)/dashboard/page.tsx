@@ -127,7 +127,7 @@ export default async function OverviewPage({
 
         <PeriodChips
           current={period.key}
-          basePath="/"
+          basePath="/dashboard"
           from={dayOf(period.from, offset)}
           to={dayOf(lastDay, offset)}
         />

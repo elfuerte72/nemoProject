@@ -1,10 +1,25 @@
-import { and, count, desc, eq, sql } from 'drizzle-orm';
-import { bonusTransactions, clients, referrals } from '@nemo/db';
-import { Money, type Amount, type BonusTransactionKind, type ReferralLine } from '@nemo/types';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import { bonusTransactions, referrals, withdrawalRequests } from '@nemo/db';
+import {
+  Money,
+  isReferralLine,
+  isWithdrawalOpen,
+  withdrawalRequestStatuses,
+  type Amount,
+  type BonusTransactionKind,
+  type ReferralLine,
+} from '@nemo/types';
 import { requireClient, type Actor } from './actor.js';
 import { CLIENT_HISTORY_LIMIT } from './client-history.js';
+import { promoBindingObstacle } from './clients.js';
 import type { CoreConfig, Executor } from './context.js';
-import { NotFoundError } from './errors.js';
+import { activeReferralCodes, primaryReferralCode, type ReferralCodeView } from './referral-codes.js';
+import {
+  effectiveReferralRates,
+  readReferralProgram,
+  type ReferralRateSource,
+  type TierStanding,
+} from './referral-program.js';
 import { readServiceSettings } from './settings.js';
 
 /**
@@ -34,8 +49,31 @@ export interface BonusTransactionView {
   readonly createdAt: Date;
 }
 
+/** Линия глазами реферера: скольких привёл и по какой ставке платят. */
+export interface BonusLineView {
+  readonly line: ReferralLine;
+  readonly count: number;
+  /**
+   * Ставка в базисных пунктах — та же, по которой начислит ядро: считана
+   * тем же `effectiveReferralRates`, что и начисление. Отдаётся текущая,
+   * а не та, по которой начислено: ставка каждого начисления сохранена
+   * в самом движении, и прошлое от смены настроек не меняется.
+   */
+  readonly rateBps: number;
+  /** Откуда ставка: личная, уровень, базовая. */
+  readonly source: ReferralRateSource;
+  readonly tierName: string | null;
+}
+
 export interface BonusAccountView {
   readonly balance: Amount;
+  /**
+   * Сколько из остатка можно забрать сейчас: он же за вычетом уже
+   * поданных заявок. Считается тем же счётом, каким проверяет подача, —
+   * иначе экран предлагал бы подать заявку на баллы, обещанные другой,
+   * и отказ приходил бы после нажатия.
+   */
+  readonly available: Amount;
   /**
    * Сколько начислено за всё время. Баланс — это остаток, и выведший
    * половину заработанного видит в нём половину; на вопрос «сколько мне
@@ -45,24 +83,25 @@ export interface BonusAccountView {
    * баланс, но заработком реферальной программы не является.
    */
   readonly earned: Amount;
-  /** Полезная нагрузка реферальной ссылки. Саму ссылку собирает приложение. */
+  /** Основной код — самая ранняя действующая ссылка. Саму ссылку собирает приложение. */
   readonly referralCode: string;
-  readonly line1Count: number;
-  readonly line2Count: number;
   /**
-   * Ставки линий в базисных пунктах — те же, по которым начисляет ядро.
-   *
-   * Клиенту их называют: реферальная программа, условий которой не
-   * видно, не работает — звать знакомых, не зная, сколько за это
-   * платят, никто не станет. Приложение переводит их в проценты, как это
-   * делает и панель администратора.
-   *
-   * Отдаются текущие, а не те, по которым начислено: ставка каждого
-   * начисления сохранена в самом движении, и прошлое от смены настроек
-   * не меняется.
+   * Линии по настроенной глубине: скольких привёл и по какой ставке
+   * платят. Клиенту ставки называют: реферальная программа, условий
+   * которой не видно, не работает — звать знакомых, не зная, сколько за
+   * это платят, никто не станет. Приложение переводит их в проценты.
    */
-  readonly line1Bps: number;
-  readonly line2Bps: number;
+  readonly lines: readonly BonusLineView[];
+  /** Уровень: текущий, следующий, активных рефералов. Пусто — уровней нет. */
+  readonly tier: TierStanding | null;
+  /** Действующие коды: ссылки и промокоды, в порядке заведения. */
+  readonly codes: readonly ReferralCodeView[];
+  /**
+   * Можно ли ввести чужой промокод: реферера ещё нет и заявок не было
+   * (docs/adr/0021). Экран показывает поле по этому признаку, а
+   * решает всё равно операция.
+   */
+  readonly canEnterPromo: boolean;
   /**
    * Минимальная сумма вывода — та же, по которой отказывает операция.
    *
@@ -77,12 +116,12 @@ export interface BonusAccountView {
 
 type BonusTransactionRow = typeof bonusTransactions.$inferSelect;
 
-function toView(row: BonusTransactionRow): BonusTransactionView {
+export function toBonusTransactionView(row: BonusTransactionRow): BonusTransactionView {
   return {
     id: row.id,
     kind: row.kind,
     amount: Money.toAmount(row.amount),
-    line: row.line === 1 || row.line === 2 ? row.line : null,
+    line: row.line !== null && isReferralLine(row.line) ? row.line : null,
     rateBps: row.rateBps,
     exchangeRequestId: row.exchangeRequestId,
     comment: row.comment,
@@ -130,16 +169,44 @@ async function bonusEarned(executor: Executor, clientId: bigint): Promise<Amount
   return row?.total === null || row?.total === undefined ? Money.ZERO : Money.toAmount(row.total);
 }
 
-async function countReferrals(
+/** Состояния, в которых заявка ещё держит баллы: одно правило на ядро. */
+const OPEN_WITHDRAWAL_STATUSES = withdrawalRequestStatuses.filter(isWithdrawalOpen);
+
+/**
+ * Сколько баллов держат поданные заявки на вывод.
+ *
+ * Запросом, а не сложением списка заявок: список у клиента ограничен
+ * потолком истории, и открытая заявка старше этого потолка выпала бы
+ * из счёта — экран показал бы больше, чем разрешит подача, а отказ
+ * пришёл бы уже после нажатия.
+ */
+export async function heldByWithdrawals(
   executor: Executor,
   clientId: bigint,
-  line: ReferralLine,
-): Promise<number> {
+): Promise<Amount> {
   const [row] = await executor
-    .select({ value: count() })
+    .select({ total: sql<string | null>`sum(${withdrawalRequests.amount})` })
+    .from(withdrawalRequests)
+    .where(
+      and(
+        eq(withdrawalRequests.clientId, clientId),
+        inArray(withdrawalRequests.status, OPEN_WITHDRAWAL_STATUSES),
+      ),
+    );
+
+  return row?.total == null ? Money.ZERO : Money.toAmount(row.total);
+}
+
+async function countReferralsByLine(
+  executor: Executor,
+  clientId: bigint,
+): Promise<ReadonlyMap<number, number>> {
+  const rows = await executor
+    .select({ line: referrals.line, value: count() })
     .from(referrals)
-    .where(and(eq(referrals.referrerId, clientId), eq(referrals.line, line)));
-  return row?.value ?? 0;
+    .where(eq(referrals.referrerId, clientId))
+    .groupBy(referrals.line);
+  return new Map(rows.map((row) => [row.line, row.value]));
 }
 
 /**
@@ -160,7 +227,7 @@ export async function listBonusTransactions(
     .where(eq(bonusTransactions.clientId, clientId))
     .orderBy(desc(bonusTransactions.createdAt), desc(bonusTransactions.id))
     .limit(CLIENT_HISTORY_LIMIT);
-  return rows.map(toView);
+  return rows.map(toBonusTransactionView);
 }
 
 export async function getBonusAccount(
@@ -169,32 +236,36 @@ export async function getBonusAccount(
 ): Promise<BonusAccountView> {
   const clientId = requireClient(actor);
 
-  const [client] = await ctx.db
-    .select({ referralCode: clients.referralCode })
-    .from(clients)
-    .where(eq(clients.telegramUserId, clientId))
-    .limit(1);
-  if (!client) {
-    throw new NotFoundError('Клиент не найден');
-  }
-
-  const [balance, earned, line1Count, line2Count, history, settings] = await Promise.all([
-    bonusBalance(ctx.db, clientId),
-    bonusEarned(ctx.db, clientId),
-    countReferrals(ctx.db, clientId, 1),
-    countReferrals(ctx.db, clientId, 2),
-    listBonusTransactions(ctx.db, clientId),
-    readServiceSettings(ctx.db),
-  ]);
+  const program = await readReferralProgram(ctx.db);
+  const [balance, earned, held, counts, history, settings, rates, referralCode, codes, promo] =
+    await Promise.all([
+      bonusBalance(ctx.db, clientId),
+      bonusEarned(ctx.db, clientId),
+      heldByWithdrawals(ctx.db, clientId),
+      countReferralsByLine(ctx.db, clientId),
+      listBonusTransactions(ctx.db, clientId),
+      readServiceSettings(ctx.db),
+      effectiveReferralRates(ctx.db, clientId, program),
+      primaryReferralCode(ctx.db, clientId),
+      activeReferralCodes(ctx.db, clientId),
+      promoBindingObstacle(ctx.db, clientId),
+    ]);
 
   return {
     balance,
+    available: Money.subtract(balance, held),
     earned,
-    referralCode: client.referralCode,
-    line1Count,
-    line2Count,
-    line1Bps: settings.referralLine1Bps,
-    line2Bps: settings.referralLine2Bps,
+    referralCode,
+    codes,
+    canEnterPromo: promo === null,
+    lines: rates.lines.map((rate) => ({
+      line: rate.line,
+      count: counts.get(rate.line) ?? 0,
+      rateBps: rate.rateBps,
+      source: rate.source,
+      tierName: rate.tierName,
+    })),
+    tier: rates.tier,
     minWithdrawalAmount: settings.minWithdrawalAmount,
     history,
   };

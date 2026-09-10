@@ -21,7 +21,7 @@ import {
 } from '@nemo/types';
 import { requireClient, requireStaff, type Actor } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
-import { bonusBalance } from './bonus-account.js';
+import { bonusBalance, heldByWithdrawals } from './bonus-account.js';
 import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
 import { InvalidInputError, NotFoundError, TransitionNotAllowedError } from './errors.js';
@@ -193,18 +193,13 @@ async function availableForWithdrawal(
   executor: Executor,
   clientId: bigint,
 ): Promise<Amount> {
-  const balance = await bonusBalance(executor, clientId);
-  const [row] = await executor
-    .select({ total: sql<string | null>`sum(${withdrawalRequests.amount})` })
-    .from(withdrawalRequests)
-    .where(
-      and(
-        eq(withdrawalRequests.clientId, clientId),
-        inArray(withdrawalRequests.status, OPEN_STATUSES),
-      ),
-    );
-
-  const held = row?.total == null ? Money.ZERO : Money.toAmount(row.total);
+  // Тем же счётом, каким доступное показывает счёт баллов
+  // (`bonus-account.ts`): разойдись они, кабинет предлагал бы подать
+  // заявку на баллы, которые уже обещаны другой.
+  const [balance, held] = await Promise.all([
+    bonusBalance(executor, clientId),
+    heldByWithdrawals(executor, clientId),
+  ]);
   return Money.subtract(balance, held);
 }
 

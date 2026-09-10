@@ -147,7 +147,7 @@ describe('начисление второй линии', () => {
     expect((await core.getBonusAccount(asClient(1n))).balance).toBe('20');
   });
 
-  it('не уходит дальше второй линии', async () => {
+  it('не уходит дальше настроенной глубины — по умолчанию двух линий', async () => {
     const first = await givenClient(1n);
     const second = await givenClient(2n, first);
     const third = await givenClient(3n, second);

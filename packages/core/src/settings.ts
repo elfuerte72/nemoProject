@@ -3,10 +3,13 @@ import { serviceSettings } from '@nemo/db';
 import { Money, type Amount } from '@nemo/types';
 import { requireStaff, type Actor } from './actor.js';
 import type { Executor } from './context.js';
+import { InvalidInputError } from './errors.js';
 
 /**
- * Настройки сервиса: ставки реферальных линий, наценка, минимальные
- * суммы и срок жизни неоплаченной заявки.
+ * Настройки сервиса: наценка, минимальные суммы и срок жизни
+ * неоплаченной заявки. Ставки реферальных линий с 8 сентября 2026 —
+ * в `referral-program.ts`: их стало до пяти, и число колонок задавало
+ * бы глубину программы.
  *
  * Всё, что определяет экономику, лежит здесь, а не в коде: доходность
  * сервиса — решение администратора, а не константа сборки, и менять её
@@ -20,9 +23,6 @@ import type { Executor } from './context.js';
  */
 
 export interface ServiceSettingsView {
-  /** Ставка первой линии в базисных пунктах: 100 bps = 1%. */
-  readonly referralLine1Bps: number;
-  readonly referralLine2Bps: number;
   readonly minWithdrawalAmount: Amount;
   /** Наценка к котировке в базисных пунктах — одна на весь сервис. */
   readonly markupBps: number;
@@ -90,8 +90,6 @@ export async function readServiceSettings(
   }
 
   return {
-    referralLine1Bps: row.referralLine1Bps,
-    referralLine2Bps: row.referralLine2Bps,
     minWithdrawalAmount: Money.toAmount(row.minWithdrawalAmount),
     markupBps: row.markupBps,
     minExchangeAmount: Money.toAmount(row.minExchangeAmount),
@@ -101,4 +99,18 @@ export async function readServiceSettings(
     merchantSupportUsername: row.merchantSupportUsername,
     updatedAt: row.updatedAt,
   };
+}
+
+/**
+ * Ставка в базисных пунктах — целая и не выше 100%: ставка выше отдавала
+ * бы рефереру больше, чем сервис заработал. Одна проверка на настройки
+ * сервиса и на реферальную программу.
+ */
+export function requireBps(value: number, subject: string): number {
+  if (!Number.isInteger(value) || value < 0 || value > 10_000) {
+    throw new InvalidInputError(
+      `${subject}: ожидаются целые базисные пункты от 0 до 10000 (10000 = 100%)`,
+    );
+  }
+  return value;
 }

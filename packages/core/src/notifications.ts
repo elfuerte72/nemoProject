@@ -10,6 +10,7 @@ import {
   type WebhookEvent,
   type WithdrawalMethod,
   type WithdrawalRequestStatus,
+  referralLineWord,
 } from '@nemo/types';
 import type { InquiryTopic } from './inquiries.js';
 import { ATTACHMENT_DOWNLOAD_LIMIT_BYTES, formatFileSize } from './attachments.js';
@@ -469,7 +470,8 @@ function renderClientNotification(
       return notification.line === 1
         ? 'По вашей ссылке зарегистрировался новый клиент. ' +
             'Баллы начислятся, когда он совершит обмен.'
-        : 'У вас новый реферал во второй линии: ваш реферал привёл знакомого.';
+        : `У вас новый реферал ${referralLineWord(notification.line)} линии: ` +
+            'знакомого привёл кто-то из вашей сети.';
     case 'exchange-request-status':
       return renderExchangeRequestStatus(notification);
     case 'exchange-request-expiring':
@@ -481,7 +483,7 @@ function renderClientNotification(
     case 'bonus-accrued':
       return (
         `Вам начислено ${notification.amount} баллов за исполненную заявку ` +
-        `реферала ${notification.line === 1 ? 'первой' : 'второй'} линии.`
+        `реферала ${referralLineWord(notification.line)} линии.`
       );
     case 'withdrawal-request-status':
       return renderWithdrawalRequestStatus(notification);
