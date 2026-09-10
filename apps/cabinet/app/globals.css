@@ -876,28 +876,20 @@
  * замирает лицом к зрителю, и это ровно тот кадр, который нужен.
  */
 
+/*
+ * Имя сервиса — единственная строка над дверьми. Заголовок и рассказ
+ * о сервисе отсюда убраны: страница отвечает на «куда мне войти», а
+ * человек, дошедший до неё, уже знает, куда пришёл. Заголовком служит
+ * сам знак, поэтому строка набрана `h1` — экранному диктору нужен
+ * заголовок, даже когда глазу довольно рисунка.
+ */
 .entry__eyebrow {
-  font-size: 11px;
+  margin: 0;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 1.6px;
+  letter-spacing: 1.8px;
   text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-.entry__title {
-  margin: 0;
-  font-size: 44px;
-  line-height: 1.1;
-  letter-spacing: -1px;
-}
-
-.entry__lead {
-  margin: 0;
-  max-width: 54ch;
-  font-size: 15.5px;
-  line-height: 1.6;
-  color: var(--text-dim);
-  text-wrap: pretty;
+  color: var(--text-muted);
 }
 
 /*
@@ -912,6 +904,16 @@
   gap: 18px;
 }
 
+/*
+ * Дверь оживает под курсором: разгорается её кромка и всходит свет
+ * того же цвета, каким подписан вход. Это украшение, и только: ничего,
+ * что нужно прочитать, за наведением не прячется — на телефоне
+ * наводить нечем.
+ *
+ * Цвет двери приходит переменной, а правила ниже одни на обе: медовая
+ * и синяя различаются `--door`, а не своим набором правил, — иначе
+ * третья дверь потребовала бы третьей копии.
+ */
 .door {
   position: relative;
   overflow: hidden;
@@ -923,25 +925,85 @@
   border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--lift), var(--drop);
+  transition:
+    transform 0.22s var(--ease),
+    box-shadow 0.22s var(--ease);
+}
+
+.door--gold {
+  --door: 249, 160, 60;
+}
+
+.door--telegram {
+  --door: 47, 159, 223;
 }
 
 /*
- * Кромка сверху — единственное, чем двери различаются: медовая у
- * бизнеса, синяя у Telegram. Цвет входа назван раньше, чем человек
- * дочитал карточку.
+ * Свет двери: пятно у верхнего края, откуда идёт кромка. Лежит
+ * подложкой под содержимым, а не поверх, — иначе он приглушал бы
+ * текст, который и подсвечивает.
+ */
+.door::before {
+  content: '';
+  position: absolute;
+  inset: -40% 0 auto;
+  height: 150%;
+  background: radial-gradient(
+    60% 50% at 50% 0,
+    rgba(var(--door), 0.16),
+    rgba(var(--door), 0) 70%
+  );
+  opacity: 0;
+  transition: opacity 0.22s var(--ease);
+  pointer-events: none;
+}
+
+/*
+ * Кромка сверху — то, чем двери различаются: медовая у бизнеса, синяя
+ * у Telegram. В покое она приглушена и сходит на нет по краям; под
+ * курсором разгорается и растягивается во всю ширину.
  */
 .door__edge {
   position: absolute;
   inset: 0 0 auto;
   height: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--door), 0),
+    rgba(var(--door), 0.85) 50%,
+    rgba(var(--door), 0)
+  );
+  opacity: 0.65;
+  transform: scaleX(0.6);
+  transition:
+    opacity 0.22s var(--ease),
+    transform 0.32s var(--ease),
+    box-shadow 0.22s var(--ease);
 }
 
-.door__edge--gold {
-  background: linear-gradient(90deg, rgba(249, 160, 60, 0), var(--gold) 50%, rgba(249, 160, 60, 0));
+/*
+ * Клавиатура получает то же самое: `focus-within` ловит фокус на
+ * кнопке внутри двери. Иначе подсветка была бы наградой за мышь.
+ */
+.door:hover,
+.door:focus-within {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--lift),
+    0 26px 54px -30px rgba(8, 5, 20, 1),
+    0 0 0 1px rgba(var(--door), 0.22);
 }
 
-.door__edge--telegram {
-  background: linear-gradient(90deg, rgba(47, 159, 223, 0), #2f9fdf 50%, rgba(47, 159, 223, 0));
+.door:hover::before,
+.door:focus-within::before {
+  opacity: 1;
+}
+
+.door:hover .door__edge,
+.door:focus-within .door__edge {
+  opacity: 1;
+  transform: scaleX(1);
+  box-shadow: 0 0 18px 1px rgba(var(--door), 0.55);
 }
 
 .door__title {
@@ -998,8 +1060,23 @@
   text-underline-offset: 2px;
 }
 
-.entry__foot {
-  margin: 0;
-  font-size: 13px;
-  color: var(--text-muted);
+/*
+ * Дверь клиента: ему сюда входить некуда — он меняет деньги в Mini
+ * App, — и вместо объяснения стоит кнопка прямо в бота. Держится тише
+ * тех двух: это выход со страницы, а не вход в кабинет.
+ */
+.entry__bot {
+  gap: 8px;
+  /* Цель под палец: кнопка тише соседних, но нажимают её так же. */
+  min-height: 44px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.entry__bot:hover {
+  color: var(--text);
+}
+
+.entry__bot svg {
+  color: #2f9fdf;
 }

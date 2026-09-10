@@ -7,7 +7,7 @@ import { EntryMark } from './entry-mark';
 import { send } from '@/app/ui/send';
 
 /**
- * Витрина: знак, строка о сервисе и две двери равного веса.
+ * Витрина: знак и две двери равного веса.
  *
  * Равного — потому что сервис не знает, кто пришёл, и не должен
  * угадывать: мерчант с почтой и паролем и блогер с Telegram в кармане
@@ -20,9 +20,10 @@ import { send } from '@/app/ui/send';
  * которой для него не бывает.
  *
  * Сверху — знак, повёрнутый в толщу (`entry-mark.tsx`): тот же, каким
- * сервис здоровается в Mini App. Витрина — единственная страница
- * кабинета, где сервис говорит о себе, и знак здесь на своём месте;
- * дальше, в рабочих разделах, он живёт подписью в углу меню.
+ * сервис здоровается в Mini App. Ни заголовка, ни рассказа о сервисе
+ * над дверьми нет: страница отвечает на «куда мне войти», и человек,
+ * дошедший до неё, уже знает, куда пришёл, — а знак и надстрочник
+ * говорят это быстрее любой строки.
  */
 export function Entry({ doors }: { readonly doors: EntryDoors }) {
   return (
@@ -30,12 +31,7 @@ export function Entry({ doors }: { readonly doors: EntryDoors }) {
       <div className="entry__inner">
         <header className="entry__head">
           <EntryMark />
-          <span className="entry__eyebrow">tobee · обмен валют</span>
-          <h1 className="entry__title">Кабинет Tobee</h1>
-          <p className="entry__lead">
-            Обмен рублей, USDT и валют выдачи: заявка, курс, выплата получателю. Здесь входят те,
-            кто работает с сервисом, — бизнес и амбассадоры.
-          </p>
+          <h1 className="entry__eyebrow">tobee · обмен валют</h1>
         </header>
 
         <div className="entry__doors">
@@ -43,29 +39,39 @@ export function Entry({ doors }: { readonly doors: EntryDoors }) {
           <AmbassadorDoor doors={doors} />
         </div>
 
-        <p className="entry__foot">
-          Меняете деньги для себя? Кабинет для этого не нужен — всё в Telegram
-          {doors.botUsername ? (
-            <>
-              :{' '}
-              <a className="entry__link" href={botLink(doors.botUsername) ?? '#'}>
-                @{doors.botUsername}
-              </a>
-            </>
-          ) : (
-            ', в боте сервиса'
-          )}
-          .
-        </p>
+        {/*
+          Клиенту здесь входить некуда — он меняет деньги в Mini App, — и
+          вместо объяснения стоит сама дверь: кнопка ведёт прямо в бота.
+          Без имени бота её нет вовсе: ссылка в никуда хуже её
+          отсутствия.
+        */}
+        {doors.botUsername ? (
+          <a
+            className="btn btn--soft entry__bot"
+            href={botLink(doors.botUsername) ?? '#'}
+            title="Обмен для себя — в Telegram"
+          >
+            <TelegramGlyph />@{doors.botUsername}
+          </a>
+        ) : undefined}
       </div>
     </main>
   );
 }
 
+/** Знак Telegram — один на кнопку бота и на подпись двери. */
+function TelegramGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M21.5 4.3 18.6 19.1c-.2 1-.8 1.2-1.6.8l-4.5-3.3-2.2 2.1c-.2.2-.4.4-.9.4l.3-4.6 8.3-7.5c.4-.3-.1-.5-.6-.2L7.2 13l-4.4-1.4c-1-.3-1-1 .2-1.4l17.2-6.6c.8-.3 1.5.2 1.3 1.7Z" />
+    </svg>
+  );
+}
+
 function MerchantDoor() {
   return (
-    <section className="door">
-      <span className="door__edge door__edge--gold" />
+    <section className="door door--gold">
+      <span className="door__edge" />
       <h2 className="door__title">Бизнесу</h2>
       <p className="door__text">
         Заявки от лица компании, получатели, курсы, ключи API и вебхуки. Вход по почте и паролю.
@@ -117,8 +123,8 @@ function AmbassadorDoor({ doors }: { readonly doors: EntryDoors }) {
   }, [doors.botUsername]);
 
   return (
-    <section className="door">
-      <span className="door__edge door__edge--telegram" />
+    <section className="door door--telegram">
+      <span className="door__edge" />
       <h2 className="door__title">Амбассадору</h2>
       <p className="door__text">
         Приведённые, заработок по линиям, что брали ваши люди и вывод на свой реквизит. Вход через
