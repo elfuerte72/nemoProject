@@ -9,7 +9,7 @@ import {
 } from '@/lib/auth/session';
 import { enrollmentQr } from '@/lib/auth/enrollment';
 import { loginBotToken } from '@/lib/auth/login-bot';
-import { parseLoginPayload, verifyTelegramLogin } from '@/lib/auth/telegram-login';
+import { parseLoginPayload, verifyTelegramLogin } from '@nemo/telegram/login';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

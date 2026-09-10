@@ -4,7 +4,7 @@ import {
   unexpectedErrorResponse,
 } from '@nemo/http';
 import { SessionError } from '@/lib/auth/session';
-import { TelegramLoginError } from '@/lib/auth/telegram-login';
+import { TelegramLoginError } from '@nemo/telegram/login';
 
 /**
  * Общая часть маршрутов админки: что ответить, когда операция отказала.

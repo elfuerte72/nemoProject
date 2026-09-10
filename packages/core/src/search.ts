@@ -1,4 +1,4 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { merchants } from '@nemo/db';
 
 /**
@@ -28,16 +28,20 @@ export function likePattern(value: string): string {
 }
 
 /**
- * Название мерчанта без учёта регистра — с явной коллацией ICU.
+ * Русский текст без учёта регистра — с явной коллацией ICU.
  *
  * Обычный `ilike` регистр кириллицы не понимает: база сервиса собрана
  * с локалью `C`, и «Оплатишка» на запрос «оплат» не находится вовсе.
- * Ник клиента этим не задет — он латиницей, — а название мерчанта
- * русское, и менеджер набирает его как придётся.
+ * Ник клиента этим не задет — он латиницей, — а название мерчанта и
+ * подпись амбассадора русские, и набирают их как придётся.
  *
  * Коллация есть у Postgres, собранного с ICU: так собран официальный
  * образ, на котором сервис и работает (README, «Запуск»).
  */
+export function cyrillicLike(column: AnyColumn, pattern: string): SQL {
+  return sql`${column} collate "und-x-icu" ilike ${pattern}`;
+}
+
 export function merchantNameLike(pattern: string): SQL {
-  return sql`${merchants.name} collate "und-x-icu" ilike ${pattern}`;
+  return cyrillicLike(merchants.name, pattern);
 }

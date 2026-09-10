@@ -14,6 +14,15 @@ import {
   type AddStaffInput,
   type UpdateServiceSettingsInput,
 } from './admin.js';
+import {
+  addAmbassador,
+  listAmbassadors,
+  restoreAmbassador,
+  revokeAmbassador,
+  signInAmbassador,
+  type AddAmbassadorInput,
+  type ListAmbassadorsInput,
+} from './ambassadors.js';
 import { getBonusAccount } from './bonus-account.js';
 import { adjustBonus, type AdjustBonusInput } from './bonus-adjustments.js';
 import {
@@ -542,6 +551,21 @@ export function createCore(ctx: CoreConfig) {
       setClientReferralRates(ctx, actor, clientId, rates),
     adjustBonus: (actor: Actor, clientId: bigint, input: AdjustBonusInput) =>
       adjustBonus(ctx, actor, clientId, input),
+    /**
+     * Амбассадоры: отметка на клиенте и вход в его кабинет
+     * (docs/adr/0022). Ставка у амбассадора — та же личная,
+     * `setClientReferralRates`; своей операции у неё нет.
+     */
+    listAmbassadors: (actor: Actor, input?: ListAmbassadorsInput) =>
+      listAmbassadors(ctx, actor, input),
+    addAmbassador: (actor: Actor, input: AddAmbassadorInput) => addAmbassador(ctx, actor, input),
+    revokeAmbassador: (actor: Actor, clientId: bigint) => revokeAmbassador(ctx, actor, clientId),
+    restoreAmbassador: (actor: Actor, clientId: bigint) => restoreAmbassador(ctx, actor, clientId),
+    /**
+     * Вход амбассадора: исполнителя нет — его собирает кабинет по
+     * ответу этой операции, проверив подпись Telegram.
+     */
+    signInAmbassador: (telegramUserId: bigint) => signInAmbassador(ctx, telegramUserId),
     listClients: (actor: Actor, filter?: ClientFilter) => listClients(ctx, actor, filter),
     countClients: (actor: Actor, filter?: ClientFilter) => countClients(ctx, actor, filter),
     summarizeClients: (actor: Actor) => summarizeClients(ctx, actor),
@@ -715,6 +739,12 @@ export type Core = ReturnType<typeof createCore>;
  */
 export { createDatabase, type Database } from '@nemo/db';
 
+export type {
+  AddAmbassadorInput,
+  AmbassadorSession,
+  AmbassadorView,
+  ListAmbassadorsInput,
+} from './ambassadors.js';
 export type { Actor, Owner } from './actor.js';
 export type { CoreConfig } from './context.js';
 export type {
