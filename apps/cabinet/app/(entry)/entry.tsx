@@ -2,25 +2,35 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { Brand, Icon } from '@nemo/ui';
 import { botLink, type EntryDoors } from '@/lib/entry';
+import { EntryMark } from './entry-mark';
 import { send } from '@/app/ui/send';
 
 /**
- * Две двери равного веса: бизнесу и амбассадору.
+ * Витрина: знак, строка о сервисе и две двери равного веса.
  *
  * Равного — потому что сервис не знает, кто пришёл, и не должен
  * угадывать: мерчант с почтой и паролем и блогер с Telegram в кармане
- * заходят одинаково часто. Третьей двери здесь нет: клиент меняет
- * деньги в Mini App, и ему сказано об этом строкой под дверьми — иначе
- * он ищет кнопку «войти», которой для него не бывает.
+ * заходят одинаково часто. Двери стоят парой и одинаковой высоты, а
+ * различают их не размер, а цвет входа: медовый у бизнеса, синий
+ * Telegram у амбассадора.
+ *
+ * Третьей двери здесь нет: клиент меняет деньги в Mini App, и ему
+ * сказано об этом строкой под дверьми — иначе он ищет кнопку «войти»,
+ * которой для него не бывает.
+ *
+ * Сверху — знак, повёрнутый в толщу (`entry-mark.tsx`): тот же, каким
+ * сервис здоровается в Mini App. Витрина — единственная страница
+ * кабинета, где сервис говорит о себе, и знак здесь на своём месте;
+ * дальше, в рабочих разделах, он живёт подписью в углу меню.
  */
 export function Entry({ doors }: { readonly doors: EntryDoors }) {
   return (
     <main className="entry">
       <div className="entry__inner">
         <header className="entry__head">
-          <Brand eyebrow="обмен валют" />
+          <EntryMark />
+          <span className="entry__eyebrow">tobee · обмен валют</span>
           <h1 className="entry__title">Кабинет Tobee</h1>
           <p className="entry__lead">
             Обмен рублей, USDT и валют выдачи: заявка, курс, выплата получателю. Здесь входят те,
@@ -55,9 +65,7 @@ export function Entry({ doors }: { readonly doors: EntryDoors }) {
 function MerchantDoor() {
   return (
     <section className="door">
-      <span className="door__icon" aria-hidden>
-        <Icon name="account" size={20} />
-      </span>
+      <span className="door__edge door__edge--gold" />
       <h2 className="door__title">Бизнесу</h2>
       <p className="door__text">
         Заявки от лица компании, получатели, курсы, ключи API и вебхуки. Вход по почте и паролю.
@@ -73,10 +81,9 @@ function MerchantDoor() {
 }
 
 /**
- * Кнопка Telegram: её рисует чужой скрипт, поэтому место под неё
- * держится заранее — без этого страница дёргалась бы, когда виджет
- * доедет. Пришедшее от него уходит своим маршрутом; он и проверяет
- * подпись.
+ * Кнопку Telegram рисует чужой скрипт, поэтому место под неё держится
+ * заранее — без этого страница дёргалась бы, когда виджет доедет.
+ * Пришедшее от него уходит своим маршрутом; он и проверяет подпись.
  */
 function AmbassadorDoor({ doors }: { readonly doors: EntryDoors }) {
   const slot = useRef<HTMLDivElement>(null);
@@ -111,9 +118,7 @@ function AmbassadorDoor({ doors }: { readonly doors: EntryDoors }) {
 
   return (
     <section className="door">
-      <span className="door__icon" aria-hidden>
-        <Icon name="spark" size={20} />
-      </span>
+      <span className="door__edge door__edge--telegram" />
       <h2 className="door__title">Амбассадору</h2>
       <p className="door__text">
         Приведённые, заработок по линиям, что брали ваши люди и вывод на свой реквизит. Вход через

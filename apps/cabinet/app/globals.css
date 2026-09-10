@@ -634,62 +634,270 @@
  * токенами, что кабинет за ней, — это один сервис, и человек, вошедший
  * отсюда, не должен решить, что попал в другое место.
  *
- * Свечение сверху — тот же приём, что на карточке входа и на первом
- * экране Mini App: единственный источник цвета на пустом экране.
+ * Знак сверху повёрнут в толщу — тем же приёмом, каким сервис
+ * здоровается в Mini App (`entry-mark.tsx`). Оборот его медленнее, чем
+ * там: заставка живёт две секунды и уходит, а здесь знак стоит, пока
+ * человек читает двери, и быстрый оборот рядом с текстом мельтешил бы.
  */
 .entry {
   min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px 16px;
-  position: relative;
-  overflow: hidden;
-}
-
-.entry::before {
-  content: '';
-  position: absolute;
-  top: -200px;
-  left: 50%;
-  margin-left: -260px;
-  width: 520px;
-  height: 420px;
-  border-radius: 999px;
-  background: radial-gradient(closest-side, rgba(249, 160, 60, 0.16), rgba(249, 160, 60, 0));
-  pointer-events: none;
+  padding: 48px 16px;
 }
 
 .entry__inner {
-  position: relative;
   width: 100%;
-  max-width: 860px;
+  max-width: 940px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  align-items: center;
+  gap: 34px;
   animation: nm-fade-up 0.32s var(--ease) both;
 }
 
 .entry__head {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  align-items: flex-start;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+/*
+ * Кадр знака. Период оборота живёт здесь, а не на самом знаке, потому
+ * что по нему же дышит свет вокруг: два близких, но разных периода
+ * задавали бы медленное биение, которому на экране нет причины.
+ */
+.entry__scene {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(38vw, 168px);
+  aspect-ratio: 1;
+  margin-bottom: 2px;
+  --turn: 7.5s;
+}
+
+/*
+ * Свет позади знака — его собственный отблеск, а не подложка: шире
+ * знака вдвое и без резкой границы, иначе всякий заметный предел сам
+ * стал бы той границей, которую он убирает. Дышит в такт обороту:
+ * у света нет ни формы, ни направления, и повтор в нём не читается.
+ */
+.entry__halo {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  border-radius: 999px;
+  background: radial-gradient(
+    closest-side,
+    rgba(249, 160, 60, 0.24) 0%,
+    rgba(226, 138, 52, 0.11) 28%,
+    rgba(112, 88, 180, 0.09) 48%,
+    rgba(58, 50, 108, 0) 68%
+  );
+  opacity: 0.45;
+  pointer-events: none;
+  animation: nm-entry-breathe var(--turn) ease-in-out infinite;
+}
+
+@keyframes nm-entry-breathe {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.42;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+}
+
+.entry__mark {
+  position: relative;
+  /* Высоту знак берёт от ширины окна с потолком; ширина приходит
+     вместе с контуром — подбирать её на глаз значило бы растянуть
+     знак. */
+  --mark-height: min(26vw, 116px);
+  /* Торец — тёмная медь: он не освещён ничем, кроме кромки, и на
+     ребре знак должен уходить в тень, а не рассыпаться светлым
+     гребнем. */
+  --mark-edge: linear-gradient(#a86818, #4f2d0c);
+  height: var(--mark-height);
+  aspect-ratio: var(--mark-ratio);
+}
+
+/*
+ * Угасание на ребре — и заодно тот узел, что держит перспективу:
+ * прозрачность заставляет браузер собрать поддерево в готовую
+ * картинку, и схождение, заданное выше, до слоёв уже не доходит.
+ *
+ * Схождение слабое: знак — пластина шириной с палец, и сильная
+ * перспектива дала бы аттракцион.
+ */
+.entry__mark-edge {
+  position: absolute;
+  inset: 0;
+  perspective: 640px;
+  animation: nm-entry-edge var(--turn) linear infinite;
+}
+
+/* Гаснет дважды за оборот — там, где знак повёрнут ребром. Окно
+   узкое: гасить с шестидесяти градусов значило бы приглушать кадр, в
+   котором знак ещё отлично читается. */
+@keyframes nm-entry-edge {
+  0%,
+  28% {
+    opacity: 1;
+  }
+  33% {
+    opacity: 0.42;
+  }
+  38%,
+  61% {
+    opacity: 1;
+  }
+  66% {
+    opacity: 0.42;
+  }
+  71%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.entry__mark-sway,
+.entry__mark-spin {
+  position: absolute;
+  inset: 0;
+  /* Без этого стопка слоёв сплющивается в один: браузер по умолчанию
+     проецирует детей на плоскость родителя. */
+  transform-style: preserve-3d;
+}
+
+/* Качание поверх оборота: одно оно читалось бы циклом, а вместе с
+   оборотом сообщает только, что предмет не закреплён на оси. */
+.entry__mark-sway {
+  animation: nm-entry-sway var(--turn) linear infinite;
+}
+
+@keyframes nm-entry-sway {
+  0%,
+  100% {
+    transform: translateY(3%) rotateX(-1.7deg);
+  }
+  25% {
+    transform: translateY(0) rotateX(4deg);
+  }
+  50% {
+    transform: translateY(-3%) rotateX(-1.7deg);
+  }
+  75% {
+    transform: translateY(0) rotateX(-7.4deg);
+  }
+}
+
+.entry__mark-spin {
+  animation: nm-entry-spin var(--turn) linear infinite;
+}
+
+/*
+ * Оборот неравномерный: знак придерживается лицом и проскакивает
+ * изнанку. Ровный читался бы заводным и держал бы зеркальную спинку
+ * ровно столько же, сколько лицо, — а узнают сервис по лицу. Шаги —
+ * та же кривая, что на заставке Mini App, снятая по десятым доли
+ * оборота; между ними ход линейный, иначе вышло бы десять маленьких
+ * разгонов вместо одного долгого хода.
+ */
+@keyframes nm-entry-spin {
+  0% {
+    transform: rotateY(0deg);
+  }
+  10% {
+    transform: rotateY(17.5deg);
+  }
+  20% {
+    transform: rotateY(42deg);
+  }
+  30% {
+    transform: rotateY(78deg);
+  }
+  40% {
+    transform: rotateY(125.5deg);
+  }
+  50% {
+    transform: rotateY(180deg);
+  }
+  60% {
+    transform: rotateY(234.5deg);
+  }
+  70% {
+    transform: rotateY(282deg);
+  }
+  80% {
+    transform: rotateY(318deg);
+  }
+  90% {
+    transform: rotateY(342.5deg);
+  }
+  100% {
+    transform: rotateY(360deg);
+  }
+}
+
+/* Слой толщи: вырезан маской по контуру знака и отодвинут от середины
+   стопки на свой шаг — так знак вращается вокруг собственной толщи, а
+   не вокруг лицевой грани. */
+.entry__slab {
+  position: absolute;
+  inset: 0;
+  background: var(--mark-edge);
+  -webkit-mask: var(--mark) center / 100% 100% no-repeat;
+  mask: var(--mark) center / 100% 100% no-repeat;
+  transform: translateZ(calc((var(--mark-mid) - var(--i)) * var(--mark-step)));
+}
+
+.entry__slab--face {
+  background: var(--gold-face);
+}
+
+/* Изнанка — тот же переход, приглушённый: свет стоит спереди, и
+   одинаково яркие стороны означали бы два источника. */
+.entry__slab--back {
+  background: linear-gradient(150deg, #e0912f, #a86118);
+}
+
+/*
+ * Знак крутится, пока страница видна. Тем, кто просил меньше движения,
+ * общее правило `@nemo/ui` обрывает анимацию на первом кадре — знак
+ * замирает лицом к зрителю, и это ровно тот кадр, который нужен.
+ */
+
+.entry__eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 .entry__title {
-  margin: 6px 0 0;
-  font-size: 30px;
-  line-height: 1.15;
-  letter-spacing: -0.6px;
+  margin: 0;
+  font-size: 44px;
+  line-height: 1.1;
+  letter-spacing: -1px;
 }
 
 .entry__lead {
   margin: 0;
-  max-width: 60ch;
-  font-size: 15px;
-  line-height: 1.55;
+  max-width: 54ch;
+  font-size: 15.5px;
+  line-height: 1.6;
   color: var(--text-dim);
+  text-wrap: pretty;
 }
 
 /*
@@ -698,48 +906,62 @@
  * телефона заходит чаще мерчанта.
  */
 .entry__doors {
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .door {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
-  padding: 24px;
+  gap: 12px;
+  padding: 28px;
   border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--lift), var(--drop);
 }
 
-.door__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-inner);
-  background: var(--surface-soft-strong);
-  color: var(--gold-light);
+/*
+ * Кромка сверху — единственное, чем двери различаются: медовая у
+ * бизнеса, синяя у Telegram. Цвет входа назван раньше, чем человек
+ * дочитал карточку.
+ */
+.door__edge {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+}
+
+.door__edge--gold {
+  background: linear-gradient(90deg, rgba(249, 160, 60, 0), var(--gold) 50%, rgba(249, 160, 60, 0));
+}
+
+.door__edge--telegram {
+  background: linear-gradient(90deg, rgba(47, 159, 223, 0), #2f9fdf 50%, rgba(47, 159, 223, 0));
 }
 
 .door__title {
-  margin: 2px 0 0;
-  font-size: 19px;
+  margin: 6px 0 0;
+  font-size: 21px;
   letter-spacing: -0.2px;
 }
 
 .door__text {
   margin: 0;
+  /* Ровно столько, сколько занимает длинная из двух подписей: двери
+     стоят парой, и вход у них должен быть на одной линии. */
+  min-height: 60px;
   font-size: 13.5px;
   line-height: 1.5;
   color: var(--text-dim);
 }
 
-/* Кнопка и виджет прижаты к низу карточки: двери разной высоты, а
-   входы у них должны стоять на одной линии. */
+/* Вход прижат к низу карточки: двери разной высоты, а кнопки у них
+   должны стоять на одной линии. */
 .door > .btn,
 .door__widget {
   margin-top: auto;
@@ -759,7 +981,7 @@
    и без запаса страница дёргалась бы, когда он доедет. */
 .door__widget {
   min-height: 44px;
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .door__note {
