@@ -180,6 +180,12 @@ describe('список амбассадоров', () => {
     expect(all.find((one) => one.clientId === 525n)!.revokedAt).toBeInstanceOf(Date);
   });
 
+  it('длинная строка цифр — пустой список, а не отказ базы', async () => {
+    // Столько цифр `bigint` не держит: набранное случайно число должно
+    // просто ничего не найти.
+    await expect(core.listAmbassadors(admin, { query: '9'.repeat(30) })).resolves.toEqual([]);
+  });
+
   it('список — администратору', async () => {
     const manager = await givenStaff();
     await expect(core.listAmbassadors(manager)).rejects.toThrow(ForbiddenError);

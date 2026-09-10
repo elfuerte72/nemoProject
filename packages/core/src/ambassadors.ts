@@ -247,7 +247,11 @@ export async function listAmbassadors(
 
   // Подпись русская, а база сервиса собрана с локалью `C`: без явной
   // коллации «Пхукет» не находится на «пхукет» (`search.ts`).
-  const digits = /^\d+$/.test(query) ? BigInt(query) : null;
+  //
+  // Цифр не больше девятнадцати: столько держит `bigint`, а набранное
+  // случайно число длиннее ушло бы в базу и вернулось отказом вместо
+  // пустого списка.
+  const digits = /^\d{1,19}$/.test(query) ? BigInt(query) : null;
   return read(
     ctx.db,
     or(
