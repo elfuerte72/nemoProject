@@ -4,7 +4,7 @@ import { Money } from '@nemo/types';
 import { formatMoney } from '@nemo/ui/format';
 import { errorResponse, json } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
-import type { MockRefund } from '@/lib/invoice-rows';
+import { refundLeft, type MockRefund } from '@/lib/invoice-rows';
 import { requireActiveMerchant } from '@/lib/mock/guard';
 import { addRefund, findInvoice, listRefunds, replaceInvoice } from '@/lib/mock/store';
 import { viewer } from '@/lib/reads';
@@ -56,11 +56,8 @@ export async function POST(request: Request): Promise<Response> {
      * полных возврата по одному счёту, и «к возврату» показывало бы
      * вдвое больше, чем по нему вообще платили.
      */
-    const already = listRefunds(actor.merchantId)
-      .filter((one) => one.invoiceId === invoice.id && one.status !== 'rejected')
-      .reduce((sum, one) => Money.add(sum, one.amount), Money.ZERO);
-    const left = Money.subtract(invoice.amount, already);
-    if (Money.isZero(left) || Money.isNegative(left)) {
+    const left = refundLeft(invoice, listRefunds(actor.merchantId));
+    if (Money.isZero(left)) {
       throw new InvalidInputError('По этому счёту возврат уже заявлен целиком');
     }
     if (Money.compare(value.data, left) > 0) {

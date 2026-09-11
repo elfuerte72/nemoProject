@@ -420,7 +420,7 @@ describe('разрезы мерчанта', () => {
     expect(cut.records.fastest?.minutes).toBeCloseTo(60, 0);
     expect(cut.records.slowest?.requestId).toBe(big);
     expect(cut.records.slowest?.minutes).toBeCloseTo(24 * 60, 0);
-    expect(cut.records.busiestDay).toMatchObject({ submitted: 1 });
+    expect(cut.records.busiestStep).toMatchObject({ submitted: 1 });
   });
 
   it('строит воронку поданных в период и отделяет просроченные от отменённых', async () => {
@@ -513,6 +513,17 @@ describe('разрезы мерчанта', () => {
       },
     ]);
     expect(cut.byRecipient).toHaveLength(1);
+  });
+
+  it('незнакомый шаг сетки отвергается, а не уходит в запрос', async () => {
+    // Шаг подставляется в запрос литералом через `sql.raw`, и типа на
+    // границе операции нет: снаружи в неё летит то, что пришло из
+    // адресной строки.
+    await expect(
+      core.breakdownMerchant(merchant, merchant.merchantId, period(), {
+        step: "day'; drop table exchange_requests; --" as never,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid-input' });
   });
 
   it('чужие разрезы мерчанту не отдаются', async () => {

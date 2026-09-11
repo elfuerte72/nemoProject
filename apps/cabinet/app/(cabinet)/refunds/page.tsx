@@ -7,6 +7,7 @@ import {
   REFUND_STATUS_LABELS,
   REFUND_STATUS_TONES,
   countByStatus,
+  owedRefunds,
   refundCell,
   refundColumns,
   refundStatuses,
@@ -46,11 +47,14 @@ export default async function RefundsPage({
 
   // Валюты не складываются между собой — по строке на каждую, той же
   // арифметикой, что у денег везде (docs/adr/0013).
-  const byCurrency = [...new Set(all.map((one) => one.code))]
+  // Отклонённые не в счёт: по ним ничего не уходит. Правило то же, по
+  // которому считается остаток по счёту, и взято оно оттуда же.
+  const owed = owedRefunds(all);
+  const byCurrency = [...new Set(owed.map((one) => one.code))]
     .sort((a, b) => a.localeCompare(b))
     .map((code) => ({
       code,
-      amount: all
+      amount: owed
         .filter((one) => one.code === code)
         .reduce((sum, one) => Money.add(sum, one.amount), Money.ZERO),
     }));

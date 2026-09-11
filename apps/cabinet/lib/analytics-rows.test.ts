@@ -26,7 +26,7 @@ const cut = (over: Partial<MerchantBreakdowns> = {}): MerchantBreakdowns => ({
   bySource: [],
   byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, submitted: 0 })),
   byWeekday: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, submitted: 0 })),
-  records: { busiestDay: null, largest: [], fastest: null, slowest: null },
+  records: { busiestStep: null, largest: [], fastest: null, slowest: null },
   ...over,
 });
 

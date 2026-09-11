@@ -8,10 +8,13 @@ import {
   invoiceCurrencies,
   invoiceMoneyLines,
   invoiceTotal,
+  owedRefunds,
   refundCell,
   refundColumns,
+  refundLeft,
   searchInvoices,
   type MockInvoice,
+  type MockRefund,
 } from './invoice-rows';
 import { buyerPays, makeInvoice, nextNumber, posSides } from './pos';
 import { addInvoice, forgetMock, listInvoices } from './mock/store';
@@ -64,6 +67,24 @@ describe('сумма к оплате', () => {
     const back = posSides(Money.toAmount('2000.5'), 'buy', quote);
     expect(back.buy).toBe('2000.5');
     expect(back.pay).toBe('5002');
+  });
+
+  it('выдача, съеденная комиссией, — не счёт, а отказ', () => {
+    // Арифметика клампит съеденную комиссией выдачу в ноль. Счёт на
+    // «0 THB по курсу 0» — не сделка: теми же словами это отвергает
+    // подача заявки в ядре.
+    const eaten: Quote = {
+      rate: Money.toAmount('0.4'),
+      payoutDecimals: 2,
+      fee: {
+        toBaseRate: Money.toAmount('0.01'),
+        fromBaseRate: Money.toAmount('35'),
+        tiers: [{ upToUsd: null, rateBps: 0, fixedPayout: Money.toAmount('1000') }],
+        minUsd: null,
+        thresholdInclusive: true,
+      },
+    };
+    expect(posSides(Money.toAmount('100'), 'pay', eaten).buy).toBeNull();
   });
 
   it('без курса считает только набранное', () => {
@@ -159,12 +180,55 @@ describe('числа над списком', () => {
     expect(searchInvoices(rows, 'ничего')).toHaveLength(0);
   });
 
+  it('день счёта — местный и в номере, и в ячейке даты', () => {
+    // Три часа ночи 12 сентября в Бангкоке — это ещё 11-е по UTC.
+    const night = new Date('2026-09-11T20:00:00Z');
+    const bangkok = 7 * 60;
+    expect(nextNumber([], night, bangkok)).toBe('2026-09-12-001');
+    expect(nextNumber([], night)).toBe('2026-09-11-001');
+
+    const one = invoice({ createdAt: night.toISOString() });
+    expect(invoiceCell(one, 'created', bangkok).text).toBe('2026-09-12');
+    expect(invoiceCell(one, 'created').text).toBe('2026-09-11');
+  });
+
   it('номер счёта продолжает день, а не начинается заново', () => {
     const first = invoice({ number: nextNumber([], at) });
     expect(first.number).toBe('2026-09-11-001');
     expect(nextNumber([first], at)).toBe('2026-09-11-002');
     // Другой день начинается с первого.
     expect(nextNumber([first], new Date('2026-09-12T09:00:00Z'))).toBe('2026-09-12-001');
+  });
+});
+
+describe('остаток по счёту', () => {
+  const refund = (over: Partial<MockRefund>): MockRefund => ({
+    id: 'r',
+    invoiceId: 'i',
+    invoiceNumber: '2026-09-11-001',
+    code: 'THB',
+    amount: Money.toAmount('500'),
+    retained: null,
+    reason: 'причина',
+    status: 'pending',
+    createdAt: at.toISOString(),
+    ...over,
+  });
+
+  it('считается по обещанным заявкам, отклонённые не в счёт', () => {
+    const one = { ...invoice({ status: 'paid' }), id: 'i' };
+    expect(refundLeft(one, [])).toBe('2000');
+    expect(refundLeft(one, [refund({})])).toBe('1500');
+    // Отклонённая ничего не обещает — остаток от неё не уменьшается.
+    expect(refundLeft(one, [refund({ status: 'rejected' })])).toBe('2000');
+    // Чужие заявки по другому счёту тоже мимо.
+    expect(refundLeft(one, [refund({ invoiceId: 'другой' })])).toBe('2000');
+    expect(owedRefunds([refund({}), refund({ status: 'rejected' })])).toHaveLength(1);
+  });
+
+  it('остаток не уходит в минус', () => {
+    const one = { ...invoice({ status: 'paid' }), id: 'i' };
+    expect(refundLeft(one, [refund({ amount: Money.toAmount('5000') })])).toBe('0');
   });
 });
 

@@ -1,6 +1,8 @@
+import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { InvalidInputError } from '@nemo/core';
 import { Money } from '@nemo/types';
+import { TZ_COOKIE, readTzOffset } from '@nemo/ui/period';
 import { errorResponse, json } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
@@ -74,12 +76,16 @@ export async function POST(request: Request): Promise<Response> {
      */
     const { buy, pay } = posSides(value.data, body.side, quote);
     if (buy === null || pay === null) {
-      throw new InvalidInputError('По этой сумме цену посчитать не получается');
+      throw new InvalidInputError(
+        'На эту сумму счёт не выставить: после комиссии покупателю ничего не остаётся',
+      );
     }
 
+    // День номера — местный, тот же, по которому считается смена.
+    const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
     const at = new Date();
     const invoice = makeInvoice({
-      number: nextNumber(listInvoices(actor.merchantId), at),
+      number: nextNumber(listInvoices(actor.merchantId), at, offset),
       purpose: body.purpose,
       buyer: body.buyer,
       author: session.name,

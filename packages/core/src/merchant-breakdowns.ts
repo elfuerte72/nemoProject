@@ -26,6 +26,7 @@ import {
   localWeekdayOf,
   requireOffset,
   requirePeriod,
+  requireStep,
   stepStartOf,
   submittedWithin,
 } from './analytics.js';
@@ -146,8 +147,13 @@ export interface MerchantFastest {
 }
 
 export interface MerchantRecords {
-  /** День периода с наибольшим числом поданных. Без заявок — пусто. */
-  readonly busiestDay: { readonly day: string; readonly submitted: number } | null;
+  /**
+   * Шаг сетки с наибольшим числом поданных — сутки, неделя или месяц,
+   * смотря чем меряет динамика. Шагом, а не днём: рекорд считается по
+   * тому же ряду, который нарисован рядом, и «день» в названии врал бы
+   * ровно тогда, когда шаг переключили на месяцы. Без заявок — пусто.
+   */
+  readonly busiestStep: { readonly at: string; readonly submitted: number } | null;
   /** Крупнейшая исполненная — по каждой валюте отдачи своя: складывать их нечем. */
   readonly largest: readonly MerchantBiggest[];
   readonly fastest: MerchantFastest | null;
@@ -294,7 +300,7 @@ export async function breakdownMerchant(
   await requireReadableMerchant(ctx, actor, merchantId);
   const window = requirePeriod(period);
   const offset = requireOffset(options.offsetMinutes);
-  const step = options.step ?? 'day';
+  const step = requireStep(options.step);
 
   const mine = eq(exchangeRequests.merchantId, merchantId);
   const submittedIn = submittedWithin(window);
@@ -580,7 +586,7 @@ export async function breakdownMerchant(
         .reduce((total, row) => total + row.n, 0),
     })),
     records: {
-      busiestDay: busiest === null ? null : { day: busiest.at, submitted: busiest.submitted },
+      busiestStep: busiest === null ? null : { at: busiest.at, submitted: busiest.submitted },
       largest: largest
         .map((row) => ({
           code: row.code,

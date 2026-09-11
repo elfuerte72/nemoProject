@@ -7,6 +7,7 @@ import {
   INVOICE_STATUS_TONES,
   REFUND_STATUS_LABELS,
   REFUND_STATUS_TONES,
+  refundLeft,
 } from '@/lib/invoice-rows';
 import { findInvoice, listRefunds } from '@/lib/mock/store';
 import { PREVIEW_NOTE } from '@/lib/pos-texts';
@@ -94,7 +95,7 @@ export default async function InvoicePage({
           id={invoice.id}
           status={invoice.status}
           code={invoice.code}
-          amount={invoice.amount}
+          left={refundLeft(invoice, listRefunds(actor.merchantId))}
         />
       </section>
 

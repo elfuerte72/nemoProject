@@ -191,12 +191,12 @@ export default async function AnalyticsPage({
                 </div>
               </li>
             ) : undefined}
-            {cut.records.busiestDay ? (
+            {cut.records.busiestStep ? (
               <li className="row">
                 <div className="row__main">
-                  <span className="row__title">{cut.records.busiestDay.day}</span>
+                  <span className="row__title">{cut.records.busiestStep.at}</span>
                   <span className="row__meta">
-                    самый плотный шаг: подано {cut.records.busiestDay.submitted}
+                    самый плотный шаг: подано {cut.records.busiestStep.submitted}
                   </span>
                 </div>
               </li>

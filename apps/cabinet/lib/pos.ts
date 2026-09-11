@@ -47,7 +47,11 @@ export function posSides(value: Amount | null, side: PosSide, quote: Quote | nul
   if (value === null) return { buy: null, pay: null };
   if (side === 'pay') {
     const pay = buyerPays(value);
-    return { buy: quote ? payoutOf(pay, quote) : null, pay };
+    // Выдача, съеденная комиссией целиком, — не сделка: арифметика
+    // клампит отрицательное в ноль, и без этого счёт уходил бы на «0 THB
+    // по курсу 0». Теми же словами это отвергает подача заявки в ядре.
+    const buy = quote ? payoutOf(pay, quote) : null;
+    return { buy: buy !== null && Money.isZero(buy) ? null : buy, pay };
   }
   // Сколько нужно отдать, чтобы вышло ровно столько, — вверх, как у
   // обратного счёта заявки: отброшенный хвост вернулся бы недостачей.
@@ -94,9 +98,22 @@ export function makeInvoice(input: NewInvoiceInput): MockInvoice {
 /**
  * Номер счёта: день и порядковый за него. Номер называют покупателю
  * вслух, и идентификатор из тридцати знаков для этого не годится.
+ *
+ * День — местный, а не по UTC: счётчик за смену считается по местной
+ * полуночи, и в два часа ночи в Бангкоке «за смену: 3» стояло бы рядом
+ * со счётом, названным вчерашним числом.
  */
-export function nextNumber(existing: readonly MockInvoice[], at: Date): string {
-  const day = at.toISOString().slice(0, 10);
+export function nextNumber(
+  existing: readonly MockInvoice[],
+  at: Date,
+  offsetMinutes = 0,
+): string {
+  const day = localDay(at, offsetMinutes);
   const today = existing.filter((one) => one.number.startsWith(day)).length;
   return `${day}-${String(today + 1).padStart(3, '0')}`;
+}
+
+/** День «2026-09-12» по местному времени того, кто у кассы. */
+export function localDay(at: Date, offsetMinutes: number): string {
+  return new Date(at.getTime() + offsetMinutes * 60_000).toISOString().slice(0, 10);
 }

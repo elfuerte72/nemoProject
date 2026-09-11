@@ -180,7 +180,22 @@ export function localWeekdayOf(column: AnyPgColumn, offset: number): SQL<number>
 }
 
 /** Шаг сетки динамики: сутки, неделя или месяц. */
-export type SeriesStep = 'day' | 'week' | 'month';
+export const seriesSteps = ['day', 'week', 'month'] as const;
+export type SeriesStep = (typeof seriesSteps)[number];
+
+/**
+ * Шаг — из списка, и проверяется он здесь же, где проверяется смещение
+ * пояса, и по той же причине: оба подставляются в запрос литералом
+ * через `sql.raw`, а типа на границе операции нет — снаружи в неё летит
+ * то, что пришло из адресной строки.
+ */
+export function requireStep(step: SeriesStep | undefined): SeriesStep {
+  const asked = step ?? 'day';
+  if (!(seriesSteps as readonly string[]).includes(asked)) {
+    throw new InvalidInputError('Неизвестный шаг сетки');
+  }
+  return asked;
+}
 
 /**
  * Начало шага, в который попадает момент колонки, — днём «2026-09-02»

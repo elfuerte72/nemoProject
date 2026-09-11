@@ -21,21 +21,30 @@ export function InvoiceActions({
   id,
   status,
   code,
-  amount,
+  left,
 }: {
   readonly id: string;
   readonly status: string;
   readonly code: string;
-  readonly amount: string;
+  /**
+   * Сколько по счёту ещё можно вернуть. Остаток, а не сумма счёта:
+   * заявленное раньше уже обещано покупателю, и подставленная целиком
+   * сумма упиралась бы в отказ «больше остатка» на первом же нажатии.
+   */
+  readonly left: string;
 }) {
   const router = useRouter();
   const [asking, setAsking] = useState<'paid' | 'cancelled' | 'refund'>();
   const [busy, setBusy] = useState(false);
   const [complaint, setComplaint] = useState<string>();
-  const [typed, setTyped] = useState(formatAmount(amount));
+  const [typed, setTyped] = useState(formatAmount(left));
   const [reason, setReason] = useState('');
 
   async function act(path: string, body: unknown): Promise<void> {
+    // Второе нажатие по тому же действию не уходит: кнопка нарочно не
+    // гаснет — погашенная теряет фокус, — и без этой проверки двойной
+    // щелчок показывал бы красный отказ сразу после удавшегося действия.
+    if (busy) return;
     setComplaint(undefined);
     setBusy(true);
     const reply = await send(path, body);
@@ -130,8 +139,8 @@ export function InvoiceActions({
                 aria-label={`Сумма возврата в ${code}`}
               />
               <span className="hint">
-                целиком — {formatMoney(amount, code)}; меньшая сумма означает, что остальное
-                остаётся у вас
+                остаток по счёту — {formatMoney(left, code)}; меньшая сумма означает, что
+                остальное остаётся у вас
               </span>
             </label>
             <label className="field">

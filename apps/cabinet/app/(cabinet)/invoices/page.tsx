@@ -11,6 +11,7 @@ import {
 } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
 import { formatByCurrency } from '@nemo/ui/money-list';
+import { TZ_COOKIE, readTzOffset } from '@nemo/ui/period';
 import { INVOICE_PREFS_COOKIE, readInvoiceColumns } from '@/lib/invoice-prefs';
 import {
   INVOICE_COLUMN_LABELS,
@@ -53,6 +54,7 @@ export default async function InvoicesPage({
   const params = await searchParams;
   const jar = await cookies();
   const shown = readInvoiceColumns(jar.get(INVOICE_PREFS_COOKIE)?.value, actor.merchantId);
+  const offset = readTzOffset(jar.get(TZ_COOKIE)?.value);
 
   const all = listInvoices(actor.merchantId);
   const query = firstParam(params.q) ?? '';
@@ -195,7 +197,7 @@ export default async function InvoicesPage({
               {rows.map((one) => (
                 <tr key={one.id}>
                   {shown.map((column) => {
-                    const cell = invoiceCell(one, column);
+                    const cell = invoiceCell(one, column, offset);
                     return (
                       <td key={column} className={cell.numeric ? 'num' : undefined}>
                         {column === 'number' ? (

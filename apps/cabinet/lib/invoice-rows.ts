@@ -101,11 +101,18 @@ export interface Cell {
 }
 
 /**
- * Ячейка колонки. Дата здесь днём без часа: час печатает браузер
- * (`Moment`), а сервер живёт в UTC — в списке стоит день, в карточке
- * полное время.
+ * Ячейка колонки.
+ *
+ * Дата — днём без часа и по местному времени того, кто смотрит:
+ * смещение пояса кладёт в куку шапка, и по нему же считает период
+ * аналитика. Без него мерчант из Бангкока видел бы в файле вчерашний
+ * день у счёта, выставленного в три часа ночи, а на экране сегодняшний.
  */
-export function invoiceCell(one: MockInvoice, column: InvoiceColumn): Cell {
+export function invoiceCell(
+  one: MockInvoice,
+  column: InvoiceColumn,
+  offsetMinutes = 0,
+): Cell {
   switch (column) {
     case 'number':
       return { text: one.number, meta: one.purpose || undefined };
@@ -124,8 +131,13 @@ export function invoiceCell(one: MockInvoice, column: InvoiceColumn): Cell {
     case 'status':
       return { text: INVOICE_STATUS_LABELS[one.status] };
     case 'created':
-      return { text: one.createdAt.slice(0, 10), numeric: true };
+      return { text: localDayOf(one.createdAt, offsetMinutes), numeric: true };
   }
+}
+
+/** День «2026-09-12» по местному времени того, кто смотрит. */
+function localDayOf(at: string, offsetMinutes: number): string {
+  return new Date(new Date(at).getTime() + offsetMinutes * 60_000).toISOString().slice(0, 10);
 }
 
 /* ── Возврат ─────────────────────────────────────────────────────── */
@@ -185,7 +197,35 @@ export const REFUND_COLUMN_LABELS: Record<RefundColumn, string> = {
   created: 'Заявлен',
 };
 
-export function refundCell(one: MockRefund, column: RefundColumn): Cell {
+/**
+ * Заявки, по которым деньги ещё считаются обещанными покупателю.
+ *
+ * Отклонённая не в счёт: по ней ничего не уходит. Правило одно на два
+ * места — на плитку «к возврату» и на остаток по счёту, — потому что
+ * два ответа на вопрос «сколько ещё должны» расходятся при первой
+ * правке, а заметит это тот, кто уже пообещал покупателю.
+ */
+export function owedRefunds(refunds: readonly MockRefund[]): readonly MockRefund[] {
+  return refunds.filter((one) => one.status !== 'rejected');
+}
+
+/** Сколько по счёту ещё можно вернуть: сумма счёта минус обещанное. */
+export function refundLeft(
+  invoice: MockInvoice,
+  refunds: readonly MockRefund[],
+): Amount {
+  const already = owedRefunds(refunds)
+    .filter((one) => one.invoiceId === invoice.id)
+    .reduce((sum, one) => Money.add(sum, one.amount), Money.ZERO);
+  const left = Money.subtract(invoice.amount, already);
+  return Money.isNegative(left) ? Money.ZERO : left;
+}
+
+export function refundCell(
+  one: MockRefund,
+  column: RefundColumn,
+  offsetMinutes = 0,
+): Cell {
   switch (column) {
     case 'invoice':
       return { text: one.invoiceNumber };
@@ -202,7 +242,7 @@ export function refundCell(one: MockRefund, column: RefundColumn): Cell {
     case 'status':
       return { text: REFUND_STATUS_LABELS[one.status] };
     case 'created':
-      return { text: one.createdAt.slice(0, 10), numeric: true };
+      return { text: localDayOf(one.createdAt, offsetMinutes), numeric: true };
   }
 }
 

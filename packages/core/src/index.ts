@@ -287,6 +287,7 @@ export type {
   MoneyByCurrency,
   SeriesStep,
 } from './analytics.js';
+export { seriesSteps } from './analytics.js';
 export { EXPIRED_REASON } from './expiry.js';
 export type { ColleagueView, ReassignExchangeRequestInput } from './exchange-reassign.js';
 import type { ReassignExchangeRequestInput } from './exchange-reassign.js';
