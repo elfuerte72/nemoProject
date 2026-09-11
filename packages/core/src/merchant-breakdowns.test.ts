@@ -323,6 +323,82 @@ describe('разрезы мерчанта', () => {
     ]);
   });
 
+  /**
+   * Разрез по тому, кто подал (тикет 17). Заявка по ключу API ничья:
+   * ключ принадлежит организации, и назвать её автором того, кто ключ
+   * выпустил, значило бы записать в историю чужую работу.
+   */
+  it('раскладывает по тому, кто подал, а заявку по ключу оставляет ничьей', async () => {
+    const added = await core.addMerchantUser(merchant, {
+      email: 'anna@example.com',
+      password: 'правильная лошадь батарейка',
+      name: 'Анна',
+      role: 'operator',
+    });
+    const operator = {
+      type: 'merchant',
+      merchantId: merchant.merchantId,
+      userId: added.id,
+      role: 'operator',
+    } as const;
+    const byKey = {
+      type: 'merchant',
+      merchantId: merchant.merchantId,
+      userId: null,
+      role: 'operator',
+    } as const;
+
+    await givenRequest({
+      owner: operator,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      submittedAt: at(5),
+      finishedAt: at(5, 13),
+    });
+    await givenRequest({
+      owner: operator,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '60',
+      fate: 'open',
+      submittedAt: at(4),
+    });
+    await givenRequest({
+      owner: byKey,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '50',
+      fate: 'open',
+      submittedAt: at(3),
+      source: 'api',
+    });
+
+    const cut = await core.breakdownMerchant(merchant, merchant.merchantId, period());
+
+    expect(cut.byStaff).toEqual([
+      {
+        userId: added.id,
+        name: 'Анна',
+        submitted: 2,
+        completed: 1,
+        cancelled: 0,
+        converted: 1,
+        turnover: [{ code: 'USDT', amount: '100', count: 1 }],
+      },
+      {
+        userId: null,
+        name: null,
+        submitted: 1,
+        completed: 0,
+        cancelled: 0,
+        converted: 0,
+        turnover: [],
+      },
+    ]);
+  });
+
   it('строит динамику по дням периода, оставляя пустые дни на месте', async () => {
     await givenRequest({
       owner: merchant,

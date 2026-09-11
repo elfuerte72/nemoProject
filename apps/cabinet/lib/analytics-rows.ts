@@ -3,6 +3,7 @@ import { describeRequisites } from '@nemo/types';
 import { formatByCurrency } from '@nemo/ui/money-list';
 import { formatShare } from '@nemo/ui/format';
 import {
+  BY_KEY,
   PAYOUT_METHOD_LABELS,
   SOURCE_LABELS,
   STEP_LABELS,
@@ -29,6 +30,7 @@ export type AnalyticsTableKey =
   | 'method'
   | 'recipient'
   | 'source'
+  | 'staff'
   | 'series'
   | 'hour'
   | 'weekday';
@@ -129,6 +131,16 @@ export function analyticsTables(cut: MerchantBreakdowns): readonly AnalyticsTabl
         one.source === null ? UNKNOWN_SOURCE : SOURCE_LABELS[one.source],
         ...sliceCells(one),
       ]),
+    });
+  }
+
+  if (cut.byStaff.length > 0) {
+    tables.push({
+      key: 'staff',
+      title: 'По сотрудникам',
+      note: 'Кто подал: заявки по ключу API ничьи — ключ принадлежит кабинету',
+      columns: ['Сотрудник', ...SLICE_COLUMNS],
+      rows: cut.byStaff.map((one) => [one.name ?? BY_KEY, ...sliceCells(one)]),
     });
   }
 

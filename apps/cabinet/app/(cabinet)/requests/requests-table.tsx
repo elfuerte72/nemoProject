@@ -6,7 +6,7 @@ import { EmptyState, Moment } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
 import { cursorOf, cursorToParams, mergePages } from '@nemo/ui/paging';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
-import type { RequestRow, RequestTab } from '@/lib/request-rows';
+import type { RequestRow, RequestTab, WhoKey } from '@/lib/request-rows';
 
 /**
  * Список заявок с дочитыванием по курсору — тем же правилом, что у
@@ -17,10 +17,24 @@ export function RequestsTable({
   rows,
   total,
   tab,
+  who,
+  names,
 }: {
   readonly rows: readonly RequestRow[];
   readonly total: number;
   readonly tab: RequestTab;
+  /**
+   * Чьи заявки показаны. Едет в запрос дочитывания: без него вторая
+   * страница приехала бы по всему кабинету, и в «моих» появились бы
+   * чужие строки.
+   */
+  readonly who: WhoKey;
+  /**
+   * Имена людей кабинета по идентификатору. Пусто у всех, кроме
+   * владельца: состав кабинета читает он один (тикет 17), и колонка
+   * «Кто подал» появляется вместе с именами, а не пустая.
+   */
+  readonly names?: Readonly<Record<string, string>> | undefined;
 }) {
   const [extra, setExtra] = useState<readonly RequestRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,10 +51,10 @@ export function RequestsTable({
     setExtra((current) => current.filter((row) => !rows.some((one) => one.id === row.id)));
   }, [rows]);
 
-  /* Сменился таб — хвост от прежнего чужой этому вопросу целиком. */
+  /* Сменился таб или выборка — хвост от прежней чужой ей целиком. */
   useEffect(() => {
     setExtra([]);
-  }, [tab]);
+  }, [tab, who]);
 
   if (shown.length === 0) {
     return (
@@ -57,6 +71,7 @@ export function RequestsTable({
   }
 
   const remaining = Math.max(total - shown.length, 0);
+  const withNames = names !== undefined;
 
   const more = async () => {
     const cursor = cursorOf(shown);
@@ -65,7 +80,7 @@ export function RequestsTable({
     setLoading(true);
     setFailed(false);
     try {
-      const params = new URLSearchParams({ tab, ...cursorToParams(cursor) });
+      const params = new URLSearchParams({ tab, who, ...cursorToParams(cursor) });
       const response = await fetch(`/api/requests?${params.toString()}`);
       if (!response.ok) throw new Error(String(response.status));
       const body = (await response.json()) as { rows: RequestRow[] };
@@ -82,11 +97,12 @@ export function RequestsTable({
 
   return (
     <>
-      <ul className="table table--requests">
+      <ul className={`table ${withNames ? 'table--requests-staff' : 'table--requests'}`}>
         <li className="table__head" aria-hidden>
           <span>Отдаю</span>
           <span>Получаю</span>
           <span>Свой номер</span>
+          {withNames ? <span>Кто подал</span> : undefined}
           <span>Состояние</span>
           <span>Подана</span>
         </li>
@@ -111,6 +127,20 @@ export function RequestsTable({
                 <span className="cell__label">Свой номер</span>
                 <span className="cell__value">{request.reference ?? '—'}</span>
               </span>
+              {withNames ? (
+                <span className="cell">
+                  <span className="cell__label">Кто подал</span>
+                  <span className="cell__value">
+                    {request.submittedByUserId === null ? (
+                      // Заявка по ключу API ничья: ключ принадлежит
+                      // кабинету, а не человеку.
+                      <span className="muted">по ключу API</span>
+                    ) : (
+                      (names?.[request.submittedByUserId] ?? <span className="muted">—</span>)
+                    )}
+                  </span>
+                </span>
+              ) : undefined}
               <span className="cell">
                 <span className="cell__label">Состояние</span>
                 <span className={`pill pill--${STATUS_TONES[request.status]}`}>

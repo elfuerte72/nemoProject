@@ -17,7 +17,7 @@ import {
  * провайдера, а представление о нём.
  */
 
-const MERCHANT = toMerchant({ id: 'm1', email: 'shop@example.com' });
+const MERCHANT = toMerchant('m1', 'shop@example.com');
 const PROVIDER: MailDelivery = { mode: 'provider', apiKey: 're_test', from: 'Tobee <no@t.ru>' };
 
 const VERIFICATION: Notification = {

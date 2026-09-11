@@ -109,6 +109,7 @@ describe('договор API', () => {
         paymentInstructions: null,
         cancelReason: null,
         reference: null,
+        submittedByUserId: null,
         createdAt: now,
         updatedAt: now,
         completedAt: null,

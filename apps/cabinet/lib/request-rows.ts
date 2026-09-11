@@ -18,6 +18,12 @@ export interface RequestRow {
   readonly toAmount: string | null;
   readonly status: ExchangeRequestStatus;
   readonly reference: string | null;
+  /**
+   * Кто подал внутри кабинета. Пусто у заявок по ключу API и у
+   * поданных до появления отметки; имя по нему подставляет страница —
+   * список людей мерчанта читает один владелец (тикет 17).
+   */
+  readonly submittedByUserId: string | null;
   /** ISO-строка: она же курсор дочитывания вместе с идентификатором. */
   readonly createdAt: string;
 }
@@ -32,6 +38,7 @@ export function toRequestRow(request: ExchangeRequestView): RequestRow {
     toAmount: request.toAmount,
     status: request.status,
     reference: request.reference,
+    submittedByUserId: request.submittedByUserId,
     createdAt: request.createdAt.toISOString(),
   };
 }
@@ -82,3 +89,32 @@ export function pickTab(value: string | undefined): RequestTab {
 
 /** Столько строк на странице: экран ноутбука вмещает их без второй прокрутки. */
 export const REQUESTS_PAGE = 25;
+
+/**
+ * Чьи заявки показывать (тикет 17): все кабинета или только свои.
+ *
+ * Живёт рядом с табами и по той же причине: отбор берут отсюда и
+ * страница, и маршрут дочитывания, и разойтись они не должны — иначе
+ * вторая страница приезжала бы с чужими заявками, а заметил бы это
+ * тот, кто дочитал до конца.
+ */
+export const WHO_KEYS = ['all', 'me'] as const;
+export type WhoKey = (typeof WHO_KEYS)[number];
+
+export const WHO_LABELS: Record<WhoKey, string> = {
+  all: 'Все',
+  me: 'Мои',
+};
+
+/** Незнакомое слово — «все»: параметр приходит из адресной строки. */
+export function pickWho(raw: string | undefined): WhoKey {
+  return WHO_KEYS.includes(raw as WhoKey) ? (raw as WhoKey) : 'all';
+}
+
+/** Условие отбора по автору — то же на странице и в маршруте. */
+export function submittedByFilter(
+  who: WhoKey,
+  userId: string,
+): { submittedByUserId?: string } {
+  return who === 'me' ? { submittedByUserId: userId } : {};
+}

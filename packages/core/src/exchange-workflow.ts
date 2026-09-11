@@ -33,7 +33,13 @@ import {
   type ExchangeKind,
   type ExchangeRequestStatus,
 } from '@nemo/types';
-import { requireOwner, requireStaff, type Actor, type Owner } from './actor.js';
+import {
+  requireOwner,
+  requireOwnerAbility,
+  requireStaff,
+  type Actor,
+  type Owner,
+} from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { requirePositiveAmount } from './amounts.js';
 import {
@@ -318,7 +324,9 @@ async function applyTransition(
     notifications: [
       notificationFor(
         updated!,
-        await recipientOf(executor, ownerOf(updated!)),
+        // Тому, кто заявку подал, а по закрытии его доступа —
+        // владельцу: правило одно и живёт в `merchantAddressBook`.
+        await recipientOf(executor, ownerOf(updated!), updated!.submittedByUserId),
         input.payWithinMinutes,
       ),
     ],
@@ -1052,7 +1060,8 @@ export async function cancelOwnExchangeRequest(
   actor: Actor,
   requestId: string,
 ): Promise<ClientTransitionResult> {
-  const owner = requireOwner(actor);
+  // Отмена — то же право, что и подача: наблюдатель заявок не ведёт.
+  const { owner } = requireOwnerAbility(actor, 'submit');
 
   return ctx.db.transaction(async (tx) => {
     const row = await lockRequest(tx, requestId);

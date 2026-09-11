@@ -9,7 +9,7 @@ import {
 } from './merchant-mails';
 import { toClient, toMerchant, type Notification } from './notifications';
 
-const MERCHANT = toMerchant({ id: 'm1', email: 'shop@example.com' });
+const MERCHANT = toMerchant('m1', 'shop@example.com');
 
 /**
  * Письма мерчанту. Проверяются снимком текста: письмо уходит наружу и

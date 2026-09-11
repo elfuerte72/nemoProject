@@ -5,6 +5,7 @@ export * from './currencies.js';
 export * from './domain.js';
 export * from './fee.js';
 export * from './knowledge.js';
+export * from './merchant-roles.js';
 export * from './quote.js';
 export * from './referral.js';
 export * as Money from './money.js';

@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
 import type { MerchantSession } from '@nemo/core';
+import { merchantRoleName } from '@nemo/types';
 import { Brand, Sidebar, Topbar } from '@nemo/ui';
 import { TZ_COOKIE } from '@nemo/ui/period';
 import type { MerchantActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
-import { NAV_COLLAPSED_KEY, NAV_GROUPS } from '@/lib/nav';
+import { NAV_COLLAPSED_KEY } from '@/lib/nav';
+import { navGroupsFor } from '@/lib/nav-by-role';
 import { openCount, requestCounts, supportUsername, viewer } from '@/lib/reads';
 import { ResendVerification } from '@/app/ui/resend-verification';
 import { StateScreen } from '@/app/ui/state-screen';
@@ -38,7 +40,7 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
   return (
     <div className="shell">
       <Sidebar
-        groups={NAV_GROUPS}
+        groups={navGroupsFor(session.role)}
         counts={{ active: openCount(counts) }}
         storageKey={NAV_COLLAPSED_KEY}
         brand={<Brand eyebrow="кабинет" />}
@@ -48,7 +50,7 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
       <div className="shell__main">
         <Topbar
           name={session.name}
-          sub="Мерчант"
+          sub={`${session.userName} · ${merchantRoleName(session.role)}`}
           items={[{ href: '/settings', label: 'Настройки', icon: 'settings' }]}
           logoutPath="/api/auth/logout"
           afterLogout="/login"
@@ -70,7 +72,7 @@ async function stateScreen(
 ): Promise<ReactNode> {
   const support = await supportUsername();
 
-  if (!session.emailVerified) {
+  if (session.needsEmailVerification) {
     return (
       <StateScreen
         title="Подтвердите почту"

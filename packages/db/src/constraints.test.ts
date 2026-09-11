@@ -9,6 +9,7 @@ import {
   feeScheduleTiers,
   feeSchedules,
   merchants,
+  merchantUsers,
   referralCodes,
   referralLineRates,
   referrals,
@@ -622,13 +623,18 @@ describe('владелец заявки на обмен', () => {
     const [row] = await db
       .insert(merchants)
       .values({
-        email,
-        passwordHash: 'hash',
         name: 'Оплатишка',
         contactName: 'Пётр',
         phone: '+79990000000',
       })
       .returning({ id: merchants.id });
+    await db.insert(merchantUsers).values({
+      merchantId: row!.id,
+      email,
+      passwordHash: 'hash',
+      name: 'Пётр',
+      role: 'owner',
+    });
     return row!.id;
   }
 
@@ -728,5 +734,87 @@ describe('владелец заявки на обмен', () => {
     await expect(
       db.update(merchants).set({ status: 'rejected' }).where(eq(merchants.id, merchantId)),
     ).rejects.toThrow(/merchants_rejection_reason/);
+  });
+});
+
+/**
+ * Люди у мерчанта (тикет 17 трекера кабинета). Правила про них тоже в
+ * базе: второй владелец — это второй адрес, по которому сервис пишет о
+ * деньгах, а одна почта в двух кабинетах — вопрос, в какой из них
+ * пускать вошедшего.
+ */
+describe('люди у мерчанта', () => {
+  async function insertMerchantRow(): Promise<string> {
+    const [row] = await db
+      .insert(merchants)
+      .values({ name: 'Оплатишка', contactName: 'Пётр', phone: '+79990000000' })
+      .returning({ id: merchants.id });
+    return row!.id;
+  }
+
+  it('владелец у мерчанта один', async () => {
+    const merchantId = await insertMerchantRow();
+    await db.insert(merchantUsers).values({
+      merchantId,
+      email: 'first@example.com',
+      passwordHash: 'hash',
+      name: 'Пётр',
+      role: 'owner',
+    });
+
+    await expect(
+      db.insert(merchantUsers).values({
+        merchantId,
+        email: 'second@example.com',
+        passwordHash: 'hash',
+        name: 'Анна',
+        role: 'owner',
+      }),
+    ).rejects.toThrow(/merchant_users_single_owner/);
+  });
+
+  it('операторов сколько угодно', async () => {
+    const merchantId = await insertMerchantRow();
+    await db.insert(merchantUsers).values([
+      {
+        merchantId,
+        email: 'one@example.com',
+        passwordHash: 'hash',
+        name: 'Пётр',
+        role: 'operator',
+      },
+      {
+        merchantId,
+        email: 'two@example.com',
+        passwordHash: 'hash',
+        name: 'Анна',
+        role: 'operator',
+      },
+    ]);
+
+    const rows = await db.select().from(merchantUsers);
+    expect(rows).toHaveLength(2);
+  });
+
+  it('одна почта в двух кабинетах не заводится', async () => {
+    const first = await insertMerchantRow();
+    const second = await insertMerchantRow();
+    await db.insert(merchantUsers).values({
+      merchantId: first,
+      email: 'shop@example.com',
+      passwordHash: 'hash',
+      name: 'Пётр',
+      role: 'owner',
+    });
+
+    await expect(
+      db.insert(merchantUsers).values({
+        merchantId: second,
+        email: 'shop@example.com',
+        passwordHash: 'hash',
+        name: 'Пётр',
+        role: 'owner',
+      }),
+    ).rejects.toThrow(/merchant_users_email_unique/);
   });
 });

@@ -19,7 +19,7 @@ import {
   type PromptPayIdType,
   type RequisiteKind,
 } from '@nemo/types';
-import { requireOwner, type Actor, type Owner } from './actor.js';
+import { requireOwner, requireOwnerAbility, type Actor, type Owner } from './actor.js';
 import { requirePublicKey, type CoreConfig, type Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 import { requireActiveNetwork } from './networks.js';
@@ -348,7 +348,7 @@ export async function saveRequisites(
   actor: Actor,
   input: SaveRequisitesInput,
 ): Promise<RequisitesView> {
-  const owner = requireOwner(actor);
+  const { owner } = requireOwnerAbility(actor, 'recipients');
   return ctx.db.transaction((tx) => saveRequisitesIn(ctx, tx, owner, input));
 }
 
@@ -421,7 +421,7 @@ export async function archiveRequisites(
   actor: Actor,
   requisitesId: string,
 ): Promise<void> {
-  const owner = requireOwner(actor);
+  const { owner } = requireOwnerAbility(actor, 'recipients');
   const [row] = await ctx.db
     .update(clientRequisites)
     .set({ archivedAt: new Date() })

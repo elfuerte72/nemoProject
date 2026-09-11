@@ -57,6 +57,13 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     key: 'account',
     title: 'Кабинет',
     items: [
+      /*
+       * Сотрудники стоят здесь, а не в «Работе»: это про сам кабинет —
+       * кто в него входит, — а не про заявки. Видит пункт один
+       * владелец, и решает это `navGroupsFor` по той же таблице прав,
+       * что и операции ядра (тикет 17).
+       */
+      { href: '/staff', label: 'Сотрудники', icon: 'user' },
       { href: '/settings', label: 'Настройки', icon: 'settings' },
       { href: '/support', label: 'Поддержка', icon: 'chat' },
     ],

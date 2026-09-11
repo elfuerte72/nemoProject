@@ -9,11 +9,11 @@ import {
   type WebhookEndpointState,
   type WebhookEvent,
 } from '@nemo/types';
-import { requireMerchant, requireStaff, type Actor } from './actor.js';
+import { requireMerchantAbility, requireStaff, type Actor } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
-import { requireActiveMerchant } from './merchants.js';
-import { toMerchant, type Notification } from './notifications.js';
+import { merchantOwnerRecipient, requireActiveMerchant } from './merchants.js';
+import type { Notification } from './notifications.js';
 import { randomAlphanumeric } from './secrets.js';
 
 /**
@@ -214,7 +214,7 @@ export async function addWebhookEndpoint(
   actor: Actor,
   input: { readonly url: string; readonly events: readonly WebhookEvent[] },
 ): Promise<AddedWebhookEndpoint> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
 
   const url = input.url.trim();
   const check = looksLikeWebhookUrl(url);
@@ -302,7 +302,7 @@ export async function listWebhookEndpoints(
   ctx: CoreConfig,
   actor: Actor,
 ): Promise<readonly WebhookEndpointView[]> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
   return endpointViews(ctx, await liveEndpointsOf(ctx, merchantId));
 }
 
@@ -353,7 +353,7 @@ export async function setWebhookEndpointPaused(
   endpointId: string,
   paused: boolean,
 ): Promise<WebhookEndpointView> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
   await ownEndpoint(ctx.db, merchantId, endpointId);
   const [updated] = await ctx.db
     .update(webhookEndpoints)
@@ -374,7 +374,7 @@ export async function removeWebhookEndpoint(
   actor: Actor,
   endpointId: string,
 ): Promise<void> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
   await ctx.db.transaction(async (tx) => {
     await ownEndpoint(tx, merchantId, endpointId);
     await tx
@@ -436,7 +436,7 @@ export async function listWebhookDeliveries(
   actor: Actor,
   filter: { readonly endpointId?: string | undefined; readonly limit?: number | undefined } = {},
 ): Promise<readonly WebhookDeliveryView[]> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
   return deliveriesOf(
     ctx,
     merchantId,
@@ -450,7 +450,7 @@ export async function getWebhookDelivery(
   actor: Actor,
   deliveryId: string,
 ): Promise<WebhookDeliveryView> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
   const [found] = await deliveriesOf(ctx, merchantId, [eq(webhookDeliveries.id, deliveryId)], 1);
   if (!found) throw new NotFoundError('Доставка не найдена');
   return found;
@@ -510,7 +510,7 @@ export async function enqueueWebhookPing(
   actor: Actor,
   endpointId: string,
 ): Promise<WebhookDeliveryView> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
   const endpoint = await ownEndpoint(ctx.db, merchantId, endpointId);
   const [row] = await ctx.db
     .insert(webhookDeliveries)
@@ -711,18 +711,13 @@ export async function recordWebhookDeliveryResult(
       .returning({ id: webhookEndpoints.id });
     if (!marked) return { notifications: [] };
 
-    const [merchant] = await tx
-      .select({ id: merchants.id, email: merchants.email })
-      .from(merchants)
-      .where(eq(merchants.id, found.endpoint.merchantId))
-      .limit(1);
-    if (!merchant) throw new NotFoundError('Мерчант не найден');
-
     return {
       notifications: [
         {
           kind: 'merchant-webhook-failing',
-          to: toMerchant(merchant),
+          // Владельцу: вебхуки ведёт он, и встала интеграция его
+          // организации.
+          to: await merchantOwnerRecipient(tx, found.endpoint.merchantId),
           url: found.endpoint.url,
           event: found.delivery.event,
         },

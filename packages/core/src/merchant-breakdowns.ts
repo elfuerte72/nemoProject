@@ -1,5 +1,5 @@
 import { and, count, desc, eq, or, sql, sum } from 'drizzle-orm';
-import { clientRequisites, exchangeRequests } from '@nemo/db';
+import { clientRequisites, exchangeRequests, merchantUsers } from '@nemo/db';
 import {
   Money,
   exchangeRequestStatuses,
@@ -83,6 +83,16 @@ export interface MerchantDirectionSlice extends MerchantSlice {
 export interface MerchantMethodSlice extends MerchantSlice {
   /** Пусто у заявки без получателя: способ выдачи ей назовёт менеджер. */
   readonly method: PayoutMethod | null;
+}
+
+/**
+ * Кто подал внутри мерчанта (тикет 17). Имя, а не почта: в таблице
+ * узнают человека, а не адрес, по которому он входит.
+ */
+export interface MerchantStaffSlice extends MerchantSlice {
+  /** Пусто у заявок по ключу API — он ничей — и у поданных до отметки. */
+  readonly userId: string | null;
+  readonly name: string | null;
 }
 
 export interface MerchantSourceSlice extends MerchantSlice {
@@ -176,6 +186,12 @@ export interface MerchantBreakdowns {
    */
   readonly recipientsHidden: number;
   readonly bySource: readonly MerchantSourceSlice[];
+  /**
+   * По тому, кто подал. У мерчанта-одиночки в нём одна строка — его
+   * собственная, — и это честный ответ: разрез отвечает «кто работал»,
+   * а не «сколько вас».
+   */
+  readonly byStaff: readonly MerchantStaffSlice[];
   /** Двадцать четыре часа, включая пустые: провал в ряду — это тоже ответ. */
   readonly byHour: readonly { readonly hour: number; readonly submitted: number }[];
   /** Семь дней недели, понедельник первым. */
@@ -249,6 +265,8 @@ interface ComboRow {
   readonly toCode: string;
   readonly kind: ExchangeKind;
   readonly source: ExchangeRequestSource | null;
+  readonly submittedByUserId: string | null;
+  readonly submittedByName: string | null;
   readonly requisiteKind: RequisiteKind | null;
   readonly bankName: string | null;
   readonly phone: string | null;
@@ -337,6 +355,8 @@ export async function breakdownMerchant(
         toCode: exchangeRequests.toCode,
         kind: exchangeRequests.kind,
         source: exchangeRequests.source,
+        submittedByUserId: exchangeRequests.submittedByUserId,
+        submittedByName: merchantUsers.name,
         requisiteKind: clientRequisites.kind,
         bankName: clientRequisites.bankName,
         phone: clientRequisites.phone,
@@ -360,12 +380,17 @@ export async function breakdownMerchant(
       })
       .from(exchangeRequests)
       .leftJoin(clientRequisites, eq(exchangeRequests.requisitesId, clientRequisites.id))
+      // Левым: у заявки по ключу API подавшего нет, и внутреннее
+      // соединение вычеркнуло бы её из всех пяти разрезов разом.
+      .leftJoin(merchantUsers, eq(exchangeRequests.submittedByUserId, merchantUsers.id))
       .where(and(mine, touched))
       .groupBy(
         exchangeRequests.fromCode,
         exchangeRequests.toCode,
         exchangeRequests.kind,
         exchangeRequests.source,
+        exchangeRequests.submittedByUserId,
+        merchantUsers.name,
         clientRequisites.kind,
         clientRequisites.bankName,
         clientRequisites.phone,
@@ -439,12 +464,13 @@ export async function breakdownMerchant(
       .limit(1),
   ]);
 
-  /* ── Четыре разреза из одной группировки ───────────────────────── */
+  /* ── Пять разрезов из одной группировки ────────────────────────── */
 
   const directions = new Map<string, { row: ComboRow; bucket: Bucket }>();
   const methods = new Map<PayoutMethod | 'none', Bucket>();
   const recipients = new Map<string, { row: ComboRow; bucket: Bucket }>();
   const sources = new Map<ExchangeRequestSource | 'none', Bucket>();
+  const staff = new Map<string, { row: ComboRow; bucket: Bucket }>();
 
   for (const row of combos as ComboRow[]) {
     const direction = `${row.fromCode}\u0000${row.toCode}\u0000${row.kind}`;
@@ -469,6 +495,11 @@ export async function breakdownMerchant(
     const inSource = sources.get(source) ?? emptyBucket();
     addTo(inSource, row);
     sources.set(source, inSource);
+
+    const who = row.submittedByUserId ?? 'none';
+    const inStaff = staff.get(who) ?? { row, bucket: emptyBucket() };
+    addTo(inStaff.bucket, row);
+    staff.set(who, inStaff);
   }
 
   const byDirection = [...directions.values()]
@@ -511,6 +542,14 @@ export async function breakdownMerchant(
       ...sliceOf(bucket),
     }))
     .sort(unknownLast((one) => one.source));
+
+  const byStaff = [...staff.values()]
+    .map(({ row, bucket }) => ({
+      userId: row.submittedByUserId,
+      name: row.submittedByName,
+      ...sliceOf(bucket),
+    }))
+    .sort(unknownLast((one) => one.userId));
 
   /* ── Динамика ──────────────────────────────────────────────────── */
 
@@ -573,6 +612,7 @@ export async function breakdownMerchant(
     byRecipient,
     recipientsHidden: allRecipients.length - byRecipient.length,
     bySource,
+    byStaff,
     byHour: Array.from({ length: 24 }, (_, at) => ({
       hour: at,
       submitted: clock

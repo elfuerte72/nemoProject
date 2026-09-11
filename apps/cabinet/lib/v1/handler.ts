@@ -183,7 +183,14 @@ export async function handleV1(
   }
 
   const ctx: V1Context = {
-    actor: { type: 'merchant', merchantId: auth.merchantId },
+    /*
+     * Ключ действует как оператор и ничей: он принадлежит организации,
+     * а не человеку (тикет 17). Отсюда два следствия — ключом нельзя
+     * вести ключи, вебхуки и людей, и заявка по нему остаётся без
+     * автора: назвать им того, кто ключ выпустил, значило бы записать
+     * в историю чужую работу.
+     */
+    actor: { type: 'merchant', merchantId: auth.merchantId, role: 'operator', userId: null },
     keyId: auth.keyId,
   };
 

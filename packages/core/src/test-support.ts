@@ -6,6 +6,7 @@ import {
   feeScheduleTiers,
   feeSchedules,
   merchants,
+  merchantUsers,
   referralLineRates,
   referralTierRates,
   referralTiers,
@@ -215,26 +216,40 @@ let merchantCounter = 0;
  */
 export async function givenMerchant(
   options: { name?: string; email?: string; status?: MerchantStatus } = {},
-): Promise<Actor & { type: 'merchant' }> {
+): Promise<MerchantOwnerActor> {
   merchantCounter += 1;
   const status = options.status ?? 'active';
   const [row] = await db
     .insert(merchants)
     .values({
-      email: options.email ?? `shop${merchantCounter}@example.com`,
-      passwordHash: 'фикстура: входа в этих тестах нет',
       name: options.name ?? 'Оплатишка',
       contactName: 'Пётр',
       phone: '+79990000000',
       status,
-      emailVerifiedAt: new Date(),
       ...(status === 'rejected' ? { rejectionReason: 'фикстура' } : {}),
       ...(status === 'active' ? { approvedAt: new Date() } : {}),
       ...(status === 'disabled' ? { disabledAt: new Date() } : {}),
     })
     .returning({ id: merchants.id });
-  return { type: 'merchant', merchantId: row!.id };
+  const [owner] = await db
+    .insert(merchantUsers)
+    .values({
+      merchantId: row!.id,
+      email: options.email ?? `shop${merchantCounter}@example.com`,
+      passwordHash: 'фикстура: входа в этих тестах нет',
+      name: 'Пётр',
+      role: 'owner',
+      emailVerifiedAt: new Date(),
+    })
+    .returning({ id: merchantUsers.id });
+  return { type: 'merchant', merchantId: row!.id, role: 'owner', userId: owner!.id };
 }
+
+/**
+ * Владелец кабинета — с человеком, а не только с организацией: у
+ * заявки он записывается тем, кто её подал, и тесты о нём спрашивают.
+ */
+export type MerchantOwnerActor = Actor & { type: 'merchant'; userId: string };
 
 /**
  * Сетка комиссии для валюты и способа выдачи. Ступени задаются в том же

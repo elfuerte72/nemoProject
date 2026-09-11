@@ -69,7 +69,7 @@ export async function POST(request: Request): Promise<Response> {
     store.set(
       SESSION_COOKIE,
       issueToken(
-        { merchantId: session.merchantId, sessionEpoch: session.sessionEpoch },
+        { userId: session.userId, sessionEpoch: session.sessionEpoch },
         { secret: sessionSecret() },
       ),
       SESSION_COOKIE_OPTIONS,
