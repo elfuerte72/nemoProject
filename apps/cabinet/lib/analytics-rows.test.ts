@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { slopComplaints } from '@nemo/core';
 import type { MerchantBreakdowns } from '@nemo/core';
 import { Money } from '@nemo/types';
-import { formatByCurrency } from '@nemo/ui/money-list';
 import { analyticsTables } from './analytics-rows';
 import { ANALYTICS_HOW_TO } from './analytics-texts';
 
@@ -83,12 +82,10 @@ describe('таблицы разрезов', () => {
       }),
     );
 
-    expect(directions?.rows[0]).toContain(
-      formatByCurrency([
-        { code: 'RUB', amount: Money.toAmount('50000') },
-        { code: 'USDT', amount: Money.toAmount('100') },
-      ]),
-    );
+    // Литералом, а не через `formatByCurrency`: утверждение, собранное
+    // той же функцией, что и проверяемое значение, доказывает только
+    // то, что функция вызвана дважды.
+    expect(directions?.rows[0]).toContain('50\u202f000 RUB · 100 USDT');
     // Одного числа «оборот» в строке нет: складывать валюты нечем.
     expect(directions?.rows[0]?.join(' ')).toMatch(/RUB · .*USDT/u);
   });

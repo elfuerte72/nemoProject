@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { slopComplaints } from '@nemo/core';
 import { Money, type Quote } from '@nemo/types';
-import { formatMoney } from '@nemo/ui/format';
 import {
   INVOICE_COLUMN_LABELS,
   invoiceCell,
@@ -85,8 +84,13 @@ describe('колонки списка счетов', () => {
 
   it('сумма показывается с эквивалентом по курсу, записанному в счёт', () => {
     const cell = invoiceCell(invoice(), 'amount');
-    expect(cell.text).toBe(formatMoney(Money.toAmount('2000'), 'THB'));
-    expect(cell.meta).toContain(formatMoney(Money.toAmount('5600'), 'RUB'));
+    // Литералом, а не через `formatMoney`: утверждение, повторяющее
+    // вычисление из кода, не заметит, если разряды начнут разделять
+    // иначе. Пробел здесь узкий неразрывный — тот самый, что ставит
+    // `formatAmount` (U+202F), и написан он последовательностью: в
+    // исходнике его не отличить от обычного.
+    expect(cell.text).toBe('2\u202f000 THB');
+    expect(cell.meta).toContain('5\u202f600 RUB');
     expect(cell.meta).toContain('2,8');
   });
 
