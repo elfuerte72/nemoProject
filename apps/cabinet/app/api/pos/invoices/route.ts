@@ -6,6 +6,7 @@ import { requireActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import { addInvoice, listInvoices } from '@/lib/mock/store';
 import { makeInvoice, nextNumber, posSides } from '@/lib/pos';
+import { requireActiveMerchant } from '@/lib/mock/guard';
 import { viewer } from '@/lib/reads';
 
 export const runtime = 'nodejs';
@@ -29,12 +30,20 @@ const bodySchema = z.object({
   amount: z.string().trim().min(1).max(40),
   purpose: z.string().trim().max(200).default(''),
   buyer: z.string().trim().max(200).default(''),
+  /**
+   * Отметка времени курса, который экран показал покупателю. По нему
+   * счёт и считается: снимок котировки обновляется раз в минуту, и
+   * спрошенный заново курс успевал бы уйти между словами «пять тысяч
+   * рублей» и нажатием. Тем же способом закрепляется цена заявки.
+   */
+  quotedAt: z.coerce.date().optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {
   try {
     const actor = await requireActor();
     const { session } = await viewer();
+    requireActiveMerchant(session.status);
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new InvalidInputError('Счёт заполнен не полностью');
@@ -50,6 +59,7 @@ export async function POST(request: Request): Promise<Response> {
       fromCode: body.from,
       toCode: body.to,
       fromAmount: '1',
+      ...(body.quotedAt === undefined ? {} : { asOf: body.quotedAt }),
     });
     if (!quote) {
       throw new InvalidInputError('Курса сейчас нет: счёт по нему выставить не получится');

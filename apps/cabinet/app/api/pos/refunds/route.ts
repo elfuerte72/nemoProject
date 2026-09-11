@@ -1,10 +1,13 @@
 import { z } from 'zod';
 import { InvalidInputError, NotFoundError } from '@nemo/core';
 import { Money } from '@nemo/types';
+import { formatMoney } from '@nemo/ui/format';
 import { errorResponse, json } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
 import type { MockRefund } from '@/lib/invoice-rows';
-import { addRefund, findInvoice, replaceInvoice } from '@/lib/mock/store';
+import { requireActiveMerchant } from '@/lib/mock/guard';
+import { addRefund, findInvoice, listRefunds, replaceInvoice } from '@/lib/mock/store';
+import { viewer } from '@/lib/reads';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,6 +34,8 @@ const bodySchema = z.object({
 export async function POST(request: Request): Promise<Response> {
   try {
     const actor = await requireActor();
+    const { session } = await viewer();
+    requireActiveMerchant(session.status);
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new InvalidInputError('Возврат заполнен не полностью');
     const body = parsed.data;
@@ -45,11 +50,26 @@ export async function POST(request: Request): Promise<Response> {
     if (!value.success || Money.isZero(value.data) || Money.isNegative(value.data)) {
       throw new InvalidInputError('Сумма возврата должна быть больше нуля');
     }
-    if (Money.compare(value.data, invoice.amount) > 0) {
-      throw new InvalidInputError('Возврат больше суммы счёта');
+    /*
+     * Считается от остатка, а не от суммы счёта: заявленное раньше уже
+     * ушло покупателю. Без этого двойное нажатие клало бы в очередь два
+     * полных возврата по одному счёту, и «к возврату» показывало бы
+     * вдвое больше, чем по нему вообще платили.
+     */
+    const already = listRefunds(actor.merchantId)
+      .filter((one) => one.invoiceId === invoice.id && one.status !== 'rejected')
+      .reduce((sum, one) => Money.add(sum, one.amount), Money.ZERO);
+    const left = Money.subtract(invoice.amount, already);
+    if (Money.isZero(left) || Money.isNegative(left)) {
+      throw new InvalidInputError('По этому счёту возврат уже заявлен целиком');
+    }
+    if (Money.compare(value.data, left) > 0) {
+      throw new InvalidInputError(
+        `Больше остатка: по счёту можно вернуть ещё ${formatMoney(left, invoice.code)}`,
+      );
     }
 
-    const full = Money.compare(value.data, invoice.amount) === 0;
+    const full = Money.compare(value.data, left) === 0;
     const at = new Date().toISOString();
     const refund: MockRefund = {
       id: `ref_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
@@ -57,7 +77,7 @@ export async function POST(request: Request): Promise<Response> {
       invoiceNumber: invoice.number,
       code: invoice.code,
       amount: value.data,
-      retained: full ? null : Money.subtract(invoice.amount, value.data),
+      retained: full ? null : Money.subtract(left, value.data),
       reason: body.reason,
       status: 'pending',
       createdAt: at,

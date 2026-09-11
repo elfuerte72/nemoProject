@@ -113,14 +113,14 @@ export default async function InvoicesPage({
           value={formatMoney(total.amount, code)}
           note={
             code === 'RUB'
-              ? `по курсу каждого счёта · счетов ${total.count}`
-              : `только счета в этой валюте · их ${total.count}`
+              ? `по оплаченным, курсом каждого счёта · их ${total.count}`
+              : `по оплаченным в этой валюте · их ${total.count}`
           }
         />
         <Stat
           label="По валютам"
           value={formatByCurrency(invoiceMoneyLines(found))}
-          note="суммы счетов, без сложения между собой"
+          note="по оплаченным, без сложения между собой"
         />
       </Stats>
 

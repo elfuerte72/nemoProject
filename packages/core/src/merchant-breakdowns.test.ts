@@ -152,6 +152,7 @@ describe('разрезы мерчанта', () => {
         submitted: 2,
         completed: 1,
         cancelled: 1,
+        converted: 1,
         turnover: [{ code: 'USDT', amount: '100', count: 1 }],
       },
       {
@@ -161,9 +162,39 @@ describe('разрезы мерчанта', () => {
         submitted: 1,
         completed: 1,
         cancelled: 0,
+        converted: 1,
         turnover: [{ code: 'RUB', amount: '50000', count: 1 }],
       },
     ]);
+  });
+
+  it('конверсия строки считается по поданным в ней, а не делением двух чисел', async () => {
+    // Подана до периода, исполнена внутри: в «исполнено» строки она
+    // попадает, в конверсию — нет. Делить одно на другое значило бы
+    // показать четыреста процентов в неделю, когда разгребли хвост.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '300',
+      fate: 'completed',
+      submittedAt: at(9),
+      finishedAt: at(3),
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'open',
+      submittedAt: at(2),
+    });
+
+    const cut = await core.breakdownMerchant(merchant, merchant.merchantId, period());
+
+    const line = cut.byDirection[0];
+    expect(line).toMatchObject({ submitted: 1, completed: 1, converted: 0 });
+    expect(line!.converted / line!.submitted).toBeLessThanOrEqual(1);
   });
 
   it('раскладывает по способу выдачи и по получателю', async () => {
@@ -217,6 +248,7 @@ describe('разрезы мерчанта', () => {
         submitted: 3,
         completed: 1,
         cancelled: 0,
+        converted: 1,
         turnover: [{ code: 'USDT', amount: '100', count: 1 }],
       },
       {
@@ -224,6 +256,7 @@ describe('разрезы мерчанта', () => {
         submitted: 1,
         completed: 1,
         cancelled: 0,
+        converted: 1,
         turnover: [{ code: 'RUB', amount: '50000', count: 1 }],
       },
     ]);
@@ -282,10 +315,11 @@ describe('разрезы мерчанта', () => {
         submitted: 2,
         completed: 1,
         cancelled: 0,
+        converted: 1,
         turnover: [{ code: 'USDT', amount: '100', count: 1 }],
       },
-      { source: 'cabinet', submitted: 1, completed: 0, cancelled: 0, turnover: [] },
-      { source: null, submitted: 1, completed: 0, cancelled: 0, turnover: [] },
+      { source: 'cabinet', submitted: 1, completed: 0, cancelled: 0, converted: 0, turnover: [] },
+      { source: null, submitted: 1, completed: 0, cancelled: 0, converted: 0, turnover: [] },
     ]);
   });
 
@@ -474,6 +508,7 @@ describe('разрезы мерчанта', () => {
         submitted: 1,
         completed: 1,
         cancelled: 0,
+        converted: 1,
         turnover: [{ code: 'USDT', amount: '100', count: 1 }],
       },
     ]);

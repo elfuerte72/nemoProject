@@ -13,7 +13,7 @@ import { ANALYTICS_HOW_TO } from './analytics-texts';
  * файл с экраном.
  */
 
-const EMPTY_SLICE = { submitted: 0, completed: 0, cancelled: 0, turnover: [] };
+const EMPTY_SLICE = { submitted: 0, completed: 0, cancelled: 0, converted: 0, turnover: [] };
 
 const cut = (over: Partial<MerchantBreakdowns> = {}): MerchantBreakdowns => ({
   period: { from: new Date('2026-09-01T00:00:00Z'), to: new Date('2026-09-08T00:00:00Z') },
@@ -23,6 +23,7 @@ const cut = (over: Partial<MerchantBreakdowns> = {}): MerchantBreakdowns => ({
   byDirection: [],
   byPayoutMethod: [],
   byRecipient: [],
+  recipientsHidden: 0,
   bySource: [],
   byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, submitted: 0 })),
   byWeekday: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, submitted: 0 })),
@@ -42,6 +43,7 @@ describe('таблицы разрезов', () => {
             submitted: 3,
             completed: 2,
             cancelled: 1,
+            converted: 2,
             turnover: [{ code: 'USDT', amount: Money.toAmount('300'), count: 2 }],
           },
         ],
@@ -71,6 +73,7 @@ describe('таблицы разрезов', () => {
             submitted: 2,
             completed: 2,
             cancelled: 0,
+            converted: 2,
             turnover: [
               { code: 'RUB', amount: Money.toAmount('50000'), count: 1 },
               { code: 'USDT', amount: Money.toAmount('100'), count: 1 },

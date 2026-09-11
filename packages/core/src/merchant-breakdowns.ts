@@ -55,11 +55,20 @@ import { requireReadableMerchant } from './merchant-stats.js';
  * то же самое видит мерчант в списке получателей.
  */
 
-/** Числа одного разреза — те же четыре, что в плитках сводки. */
+/** Числа одного разреза — те же, что в плитках сводки. */
 export interface MerchantSlice {
   readonly submitted: number;
   readonly completed: number;
   readonly cancelled: number;
+  /**
+   * Дошедшие из поданных в период — числитель конверсии строки.
+   *
+   * Отдельным числом, а не делением «исполнено» на «подано»: те
+   * посчитаны по разным датам, и в неделю, когда разгребают хвост,
+   * такая дробь дала бы четыреста процентов. То же правило и та же
+   * причина, что у конверсии в сводке.
+   */
+  readonly converted: number;
   /** Отдано по исполненным в период — по валютам, порознь. */
   readonly turnover: readonly MoneyByCurrency[];
 }
@@ -153,6 +162,13 @@ export interface MerchantBreakdowns {
   readonly byDirection: readonly MerchantDirectionSlice[];
   readonly byPayoutMethod: readonly MerchantMethodSlice[];
   readonly byRecipient: readonly MerchantRecipientSlice[];
+  /**
+   * Скольких получателей в список не поместили. Предел у выборки есть
+   * всегда: у мерчанта с тысячей покупателей таблица на тысячу строк не
+   * читается ни на экране, ни в файле, а молча обрезанный список врал
+   * бы о том, сколько их было.
+   */
+  readonly recipientsHidden: number;
   readonly bySource: readonly MerchantSourceSlice[];
   /** Двадцать четыре часа, включая пустые: провал в ряду — это тоже ответ. */
   readonly byHour: readonly { readonly hour: number; readonly submitted: number }[];
@@ -168,22 +184,27 @@ export interface MerchantBreakdownOptions {
   readonly step?: SeriesStep | undefined;
 }
 
+/** Сколько строк получателей отдаётся: дальше таблицу не читают. */
+const RECIPIENTS_SHOWN = 50;
+
 /** Накопитель разреза: суммы по валютам копятся картой, а не списком. */
 interface Bucket {
   submitted: number;
   completed: number;
   cancelled: number;
+  converted: number;
   turnover: Map<string, { amount: Amount; count: number }>;
 }
 
 function emptyBucket(): Bucket {
-  return { submitted: 0, completed: 0, cancelled: 0, turnover: new Map() };
+  return { submitted: 0, completed: 0, cancelled: 0, converted: 0, turnover: new Map() };
 }
 
 function addTo(bucket: Bucket, row: ComboRow): void {
   bucket.submitted += row.submitted;
   bucket.completed += row.completed;
   bucket.cancelled += row.cancelled;
+  bucket.converted += row.converted;
   if (row.completed === 0) return;
   const line = bucket.turnover.get(row.fromCode) ?? { amount: Money.ZERO, count: 0 };
   bucket.turnover.set(row.fromCode, {
@@ -203,6 +224,7 @@ function sliceOf(bucket: Bucket): MerchantSlice {
     submitted: bucket.submitted,
     completed: bucket.completed,
     cancelled: bucket.cancelled,
+    converted: bucket.converted,
     turnover: moneyOf(bucket),
   };
 }
@@ -235,6 +257,7 @@ interface ComboRow {
   readonly submitted: number;
   readonly completed: number;
   readonly cancelled: number;
+  readonly converted: number;
   readonly amount: string | null;
 }
 
@@ -322,6 +345,9 @@ export async function breakdownMerchant(
         submitted: sql`count(*) filter (where ${submittedIn})`.mapWith(Number),
         completed: sql`count(*) filter (where ${completedIn})`.mapWith(Number),
         cancelled: sql`count(*) filter (where ${cancelledIn})`.mapWith(Number),
+        converted: sql`count(*) filter (where ${submittedIn} and ${eq(exchangeRequests.status, 'completed')})`.mapWith(
+          Number,
+        ),
         amount: sql<
           string | null
         >`sum(${exchangeRequests.fromAmount}) filter (where ${completedIn})`,
@@ -455,7 +481,7 @@ export async function breakdownMerchant(
     }))
     .sort(unknownLast((one) => one.method));
 
-  const byRecipient = [...recipients.values()]
+  const allRecipients = [...recipients.values()]
     .map(({ row, bucket }) => ({
       kind: row.requisiteKind,
       bankName: row.bankName,
@@ -471,6 +497,7 @@ export async function breakdownMerchant(
       ...sliceOf(bucket),
     }))
     .sort(unknownLast((one) => one.kind));
+  const byRecipient = allRecipients.slice(0, RECIPIENTS_SHOWN);
 
   const bySource = [...sources.entries()]
     .map(([source, bucket]) => ({
@@ -538,6 +565,7 @@ export async function breakdownMerchant(
     byDirection,
     byPayoutMethod,
     byRecipient,
+    recipientsHidden: allRecipients.length - byRecipient.length,
     bySource,
     byHour: Array.from({ length: 24 }, (_, at) => ({
       hour: at,

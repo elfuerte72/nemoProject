@@ -69,7 +69,10 @@ export const PAYOUT_METHOD_LABELS: Record<PayoutMethod, string> = {
   cash: 'Наличные',
 };
 
-export const UNKNOWN_METHOD = 'Получатель не назван';
+/** У заявки нет получателя: способ выдачи ей назовёт менеджер. */
+export const UNKNOWN_METHOD = 'Способ назовёт менеджер';
+
+export const UNKNOWN_RECIPIENT = 'Получатель не назван';
 
 /** Дни недели, понедельник первым: `isodow` из базы считает так же. */
 export const WEEKDAY_LABELS: readonly string[] = [

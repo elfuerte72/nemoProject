@@ -5,6 +5,7 @@ import {
   INVOICE_COLUMN_LABELS,
   invoiceCell,
   invoiceColumns,
+  invoiceStatuses,
   searchInvoices,
   type InvoiceStatus,
 } from '@/lib/invoice-rows';
@@ -25,7 +26,15 @@ export async function GET(request: Request): Promise<Response> {
     const actor = await requireActor();
     const params = new URL(request.url).searchParams;
     const found = searchInvoices(listInvoices(actor.merchantId), params.get('q') ?? undefined);
-    const tab = params.get('tab') as InvoiceStatus | null;
+    /*
+     * Незнакомое состояние — весь список, как и на самой странице:
+     * файл с одной шапкой читается как «счетов не было», а не как
+     * «в адресе опечатка».
+     */
+    const asked = params.get('tab');
+    const tab = (invoiceStatuses as readonly string[]).includes(asked ?? '')
+      ? (asked as InvoiceStatus)
+      : undefined;
     const rows = tab ? found.filter((one) => one.status === tab) : found;
 
     const table = [

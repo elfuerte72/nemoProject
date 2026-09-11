@@ -3,7 +3,9 @@ import { InvalidInputError, NotFoundError } from '@nemo/core';
 import { errorResponse, json } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
 import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/invoice-rows';
+import { requireActiveMerchant } from '@/lib/mock/guard';
 import { findInvoice, replaceInvoice } from '@/lib/mock/store';
+import { viewer } from '@/lib/reads';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,6 +29,8 @@ export async function POST(
 ): Promise<Response> {
   try {
     const actor = await requireActor();
+    const { session } = await viewer();
+    requireActiveMerchant(session.status);
     const { id } = await context.params;
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new InvalidInputError('Неизвестное действие со счётом');

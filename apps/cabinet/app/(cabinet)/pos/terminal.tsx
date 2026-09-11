@@ -4,6 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Money, rateLine, type Quote } from '@nemo/types';
+
+/**
+ * Котировка, как её отдаёт `/api/quote`: к цене приложена отметка
+ * времени, и её же экран присылает обратно при выставлении счёта —
+ * иначе счёт уходил бы по курсу, который пришёл между словами «пять
+ * тысяч рублей» и нажатием. То же правило, что у подачи заявки.
+ */
+type QuoteReply = Quote & { readonly asOf: string };
 import { formatAmount, formatMoney, formatRate, formatRateValue } from '@nemo/ui/format';
 import { normalizeTyped, parseTyped } from '@/lib/new-request';
 import { posSides, type PosSide } from '@/lib/pos';
@@ -69,7 +77,7 @@ export function Terminal({
 
   /* Курс — на направление, не на сумму; перечитывается по кругу. */
   const pairKey = `${fromCode}/${toCode}`;
-  const [quote, setQuote] = useState<{ pair: string; view: Quote | null }>();
+  const [quote, setQuote] = useState<{ pair: string; view: QuoteReply | null }>();
   const rate = quote?.pair === pairKey ? quote.view : undefined;
 
   useEffect(() => {
@@ -80,7 +88,7 @@ export function Terminal({
       void fetch(`/api/quote?from=${fromCode}&to=${toCode}`)
         .then(async (response) => {
           if (!response.ok) throw new Error(String(response.status));
-          return (await response.json()) as { quote: Quote | null };
+          return (await response.json()) as { quote: QuoteReply | null };
         })
         .then((reply) => {
           if (!cancelled) setQuote({ pair: pairKey, view: reply.quote });
@@ -128,6 +136,7 @@ export function Terminal({
       amount: typed,
       purpose,
       buyer,
+      ...(rate ? { quotedAt: rate.asOf } : {}),
     });
     setBusy(false);
     if (!reply.ok) {

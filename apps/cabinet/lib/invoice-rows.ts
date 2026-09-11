@@ -208,12 +208,21 @@ export function refundCell(one: MockRefund, column: RefundColumn): Cell {
 
 /* ── Числа над списками ──────────────────────────────────────────── */
 
+/** Счета, за которые деньги получены: оборот — только они. */
+export function paidOnly(invoices: readonly MockInvoice[]): readonly MockInvoice[] {
+  return invoices.filter((one) => one.status === 'paid');
+}
+
 /**
  * Оборот счетов в выбранной валюте.
  *
- * Валюта оплаты (рубль) считается по всем счетам: у каждого записан
- * свой курс, и сумма в ней — точная. Валюта покупателя — только по
- * счетам в ней: сводить баты с юанями нечем, курса между ними у
+ * Считается по оплаченным: выставленный и тем более отменённый счёт —
+ * это бумага, а не деньги, и «оборот 50 000» рядом с «оплачено 0»
+ * читался бы как ошибка в счётчике, а не в подписи.
+ *
+ * Валюта оплаты (рубль) складывается по всем таким счетам: у каждого
+ * записан свой курс, и сумма в ней точная. Валюта покупателя — только
+ * по счетам в ней: сводить баты с юанями нечем, курса между ними у
  * сервиса нет и задним числом он его не выдумывает.
  */
 export function invoiceTotal(
@@ -222,7 +231,7 @@ export function invoiceTotal(
 ): { readonly amount: Amount; readonly count: number } {
   let amount = Money.ZERO;
   let count = 0;
-  for (const one of invoices) {
+  for (const one of paidOnly(invoices)) {
     if (one.payCode === code) {
       amount = Money.add(amount, one.payAmount);
       count += 1;
@@ -244,10 +253,10 @@ export function invoiceCurrencies(invoices: readonly MockInvoice[]): readonly st
   return [...codes].sort((a, b) => a.localeCompare(b));
 }
 
-/** Суммы счетов по валютам покупателя — строкой, без сложения между собой. */
+/** Суммы оплаченных счетов по валютам покупателя — без сложения между собой. */
 export function invoiceMoneyLines(invoices: readonly MockInvoice[]): readonly MoneyLine[] {
   const byCode = new Map<string, { amount: Amount; count: number }>();
-  for (const one of invoices) {
+  for (const one of paidOnly(invoices)) {
     const line = byCode.get(one.code) ?? { amount: Money.ZERO, count: 0 };
     byCode.set(one.code, { amount: Money.add(line.amount, one.amount), count: line.count + 1 });
   }

@@ -112,26 +112,39 @@ describe('колонки списка счетов', () => {
 });
 
 describe('числа над списком', () => {
-  it('валюта оплаты складывается по всем счетам, валюта покупателя — только по своим', () => {
+  it('в обороте только оплаченные счета, а валюты не складываются', () => {
     const rows = [
-      invoice(),
+      invoice({ status: 'paid' }),
       invoice({
+        status: 'paid',
         code: 'CNY',
         amount: Money.toAmount('500'),
         payAmount: Money.toAmount('6600'),
         rate: Money.toAmount('13.2'),
       }),
+      // Выставленный и отменённый — бумага, а не деньги: «оборот 50 000»
+      // рядом с «оплачено 0» читался бы как ошибка в счётчике.
+      invoice({ status: 'issued', payAmount: Money.toAmount('9999') }),
+      invoice({ status: 'cancelled', payAmount: Money.toAmount('8888') }),
     ];
 
     // Рубли — точная сумма: у каждого счёта записан свой курс.
     expect(invoiceTotal(rows, 'RUB')).toEqual({ amount: '12200', count: 2 });
     // Баты — только по батовым счетам: свести их с юанями нечем.
     expect(invoiceTotal(rows, 'THB')).toEqual({ amount: '2000', count: 1 });
+    // Валюты для выбора берутся из всех счетов: выставленный тоже в
+    // какой-то валюте, и пропавший из списка выбор сбивал бы с толку.
     expect(invoiceCurrencies(rows)).toEqual(['CNY', 'RUB', 'THB']);
     expect(invoiceMoneyLines(rows)).toEqual([
       { code: 'CNY', amount: '500', count: 1 },
       { code: 'THB', amount: '2000', count: 1 },
     ]);
+  });
+
+  it('без оплаченных оборота нет', () => {
+    const rows = [invoice({ status: 'issued' }), invoice({ status: 'cancelled' })];
+    expect(invoiceTotal(rows, 'RUB')).toEqual({ amount: '0', count: 0 });
+    expect(invoiceMoneyLines(rows)).toEqual([]);
   });
 
   it('поиск сужает список, а не прячет строки', () => {

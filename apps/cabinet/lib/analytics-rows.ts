@@ -1,4 +1,4 @@
-import type { MerchantBreakdowns, MerchantSlice } from '@nemo/core';
+import type { MerchantBreakdowns, MerchantRecipientSlice, MerchantSlice } from '@nemo/core';
 import { describeRequisites } from '@nemo/types';
 import { formatByCurrency } from '@nemo/ui/money-list';
 import { formatShare } from '@nemo/ui/format';
@@ -7,6 +7,7 @@ import {
   SOURCE_LABELS,
   STEP_LABELS,
   UNKNOWN_METHOD,
+  UNKNOWN_RECIPIENT,
   UNKNOWN_SOURCE,
   WEEKDAY_LABELS,
 } from './analytics-texts';
@@ -50,11 +51,30 @@ function sliceCells(slice: MerchantSlice): Cell[] {
     slice.submitted,
     slice.completed,
     slice.cancelled,
-    // Конверсия по строке разреза — доля дошедших среди поданных в неё.
-    // Без поданных её нет: ноль означал бы «не дошёл никто».
-    formatShare(slice.submitted === 0 ? null : slice.completed / slice.submitted),
+    /*
+     * Конверсия строки — доля дошедших среди поданных в неё, числом из
+     * самого разреза. Делить «исполнено» на «подано» нельзя: они
+     * посчитаны по разным датам, и в неделю, когда разгребают хвост,
+     * дробь переваливает за сотню процентов. Без поданных конверсии
+     * нет — ноль означал бы «не дошёл никто».
+     */
+    formatShare(slice.submitted === 0 ? null : slice.converted / slice.submitted),
     formatByCurrency(slice.turnover),
   ];
+}
+
+/**
+ * Как назвать получателя в строке.
+ *
+ * К описанию записи добавляется имя держателя, если оно есть: у
+ * тайского счёта `describeRequisites` его не показывает, а два счёта в
+ * одном банке с одинаковым хвостом номера иначе неразличимы — строки
+ * выглядят одинаково, и мерчант не поймёт, чьи они.
+ */
+function recipientLabel(one: MerchantRecipientSlice): string {
+  if (one.kind === null) return UNKNOWN_RECIPIENT;
+  const described = describeRequisites({ ...one, kind: one.kind });
+  return one.holderName ? `${described} · ${one.holderName}` : described;
 }
 
 export function analyticsTables(cut: MerchantBreakdowns): readonly AnalyticsTable[] {
@@ -90,12 +110,12 @@ export function analyticsTables(cut: MerchantBreakdowns): readonly AnalyticsTabl
     tables.push({
       key: 'recipient',
       title: 'По получателям',
-      note: 'Строка — человек, а не запись: по API она заводится на каждую заявку заново',
+      note:
+        cut.recipientsHidden > 0
+          ? `Строка — человек, а не запись. Показаны самые частые; ещё ${cut.recipientsHidden} не поместились`
+          : 'Строка — человек, а не запись: по API она заводится на каждую заявку заново',
       columns: ['Получатель', ...SLICE_COLUMNS],
-      rows: cut.byRecipient.map((one) => [
-        one.kind === null ? 'Получатель не назван' : describeRequisites({ ...one, kind: one.kind }),
-        ...sliceCells(one),
-      ]),
+      rows: cut.byRecipient.map((one) => [recipientLabel(one), ...sliceCells(one)]),
     });
   }
 
