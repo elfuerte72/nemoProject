@@ -35,7 +35,9 @@ export async function POST(request: Request): Promise<Response> {
 
     const { request: created, notifications } = await getCore().submitExchangeRequest(
       { type: 'client', telegramUserId: initData.telegramUserId },
-      parsed.data,
+      // Источник называет тот, кто принял запрос: операция у Mini App,
+      // формы кабинета и API одна, и различить их изнутри нечем.
+      { ...parsed.data, source: 'miniapp' },
     );
     // Сотрудникам о заявке сообщает панель: клиентский деплой только
     // говорит ей, что появился повод. Ответа не ждём — клиент ждёт

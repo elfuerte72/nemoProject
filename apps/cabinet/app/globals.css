@@ -617,10 +617,16 @@
  * Две недели по два столбика: подано и исполнено. Высоты — от самого
  * высокого дня, пустой день стоит на своём месте пустым.
  */
+/*
+ * Столбиков четырнадцать на обзоре и столько, сколько шагов в периоде,
+ * в аналитике: число приходит переменной, а не вторым набором правил —
+ * два ряда столбиков, разошедшиеся в высоте и зазоре, читались бы как
+ * два разных показателя.
+ */
 .bars {
   display: grid;
-  grid-template-columns: repeat(14, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(var(--bars, 14), minmax(0, 1fr));
+  gap: var(--bars-gap, 6px);
   height: 120px;
   margin-top: 6px;
 }
@@ -1138,4 +1144,293 @@
 
 .entry__bot svg {
   color: #2f9fdf;
+}
+
+/* ── Касса ───────────────────────────────────────────────────────── */
+
+/*
+ * Касса: слева набор, справа крупно то, что называют покупателю вслух.
+ * Числа у стойки читают в полуметре от экрана и через плечо, поэтому
+ * итог набран крупнее всего остального на странице.
+ */
+.pos__sum {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+.pos__field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.input--big {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  height: auto;
+  padding: 12px 14px;
+}
+
+.pos__total {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  min-width: 0;
+}
+
+.pos__label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pos__value {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.pos__equal {
+  font-size: 15px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.pos__rate {
+  font-size: 13px;
+  color: var(--gold-light);
+}
+
+.pos__about {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.pos__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+/* Курс прямо на плитке валюты: у стойки спрашивают «почём», а не «что есть». */
+.chip__rate {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.chips--tight {
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .pos__sum,
+  .pos__about {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Режим кассы ─────────────────────────────────────────────────── */
+
+/*
+ * Не узкая вёрстка того же экрана, а свой режим: планшет у стойки,
+ * меню убрано, клавиши под палец. Поверх всего порталом не уходит —
+ * ему нечего перекрывать, кроме кабинета, а кабинет здесь и не нужен.
+ */
+.desk {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg);
+  overflow-y: auto;
+}
+
+.desk__bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.desk__clock {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.desk__shift {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.desk__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.desk__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.desk__keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/*
+ * Цель под палец: шестьдесят четыре точки в высоту — заметно больше
+ * сорока восьми, ниже которых промахиваются. У стойки промах стоит
+ * второго набора суммы при покупателе.
+ */
+.desk__key {
+  min-height: 64px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.desk__key:active {
+  background: var(--surface-soft-hover);
+}
+
+.btn--wide {
+  width: 100%;
+  min-height: 56px;
+  font-size: 17px;
+}
+
+/* ── Список счетов ───────────────────────────────────────────────── */
+
+/*
+ * Полоса над таблицей: табы, поиск и поля. Поиск сужает выборку на
+ * сервере — «нашлось 3» значит, что подходящих три, а не что остальные
+ * спрятаны разметкой.
+ */
+.listbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+
+.listbar__search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.listbar__search .input {
+  min-width: 240px;
+}
+
+.fields {
+  position: relative;
+}
+
+.fields__list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--lift);
+  white-space: nowrap;
+}
+
+.fields__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ── Действия со счётом ──────────────────────────────────────────── */
+
+/*
+ * Необратимое спрашивает подтверждение раскрытием строки, и кнопка при
+ * этом не гаснет: погашенная теряет фокус, и работающий с клавиатуры
+ * оказывается в начале страницы.
+ */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.actions__ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+}
+
+.actions__ask--form {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/*
+ * Сумма счёта в карточке: тот же кегль, что у итога кассы, — это одно
+ * и то же число, названное дважды, и разный размер читался бы как
+ * разные величины. Отступы свои: в кассе это ячейка сетки, в карточке
+ * абзац, и умолчание браузера разносит их на полтора интервала.
+ */
+.card > .pos__value {
+  margin: 0;
+}
+
+.card > .pos__equal {
+  margin: 6px 0 0;
 }

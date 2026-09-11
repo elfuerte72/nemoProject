@@ -25,6 +25,7 @@ import {
   type Amount,
   type CurrencyKind,
   type ExchangeKind,
+  type ExchangeRequestSource,
   type ExchangeRequestStatus,
   type PayoutMethod,
   minimumMeasure,
@@ -151,6 +152,16 @@ export interface SubmitExchangeRequestInput {
    * повторяет запрос — без ключа он оплатил бы обмен дважды.
    */
   readonly idempotencyKey?: string | undefined;
+  /**
+   * Откуда пришёл запрос: Mini App, форма кабинета или API мерчанта.
+   *
+   * Называет его тот, кто принял запрос: операция у всех троих одна, и
+   * различить их изнутри нечем. Ядро отметку не толкует — ни правил, ни
+   * цены от неё не зависит; она нужна разрезу мерчанта «сколько прошло
+   * через интеграцию, а сколько завели руками». Не назван — пусто:
+   * угаданный источник читался бы как записанный.
+   */
+  readonly source?: ExchangeRequestSource | undefined;
 }
 
 export interface SubmitExchangeRequestResult {
@@ -509,6 +520,7 @@ export async function submitExchangeRequest(
       ...ownerColumns(owner),
       ...(reference === undefined ? {} : { reference }),
       ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+      ...(input.source === undefined ? {} : { source: input.source }),
       kind: input.kind,
       fromCode: input.fromCode,
       toCode: input.toCode,

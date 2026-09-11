@@ -1,6 +1,11 @@
 import { cache } from 'react';
 import { redirect } from 'next/navigation';
-import type { AnalyticsPeriod, MerchantStats } from '@nemo/core';
+import type {
+  AnalyticsPeriod,
+  MerchantBreakdowns,
+  MerchantStats,
+  SeriesStep,
+} from '@nemo/core';
 import type { ExchangeRequestStatus } from '@nemo/types';
 import { requireViewer, type MerchantViewer } from '@/lib/auth';
 import { getCore } from '@/lib/core';
@@ -59,6 +64,27 @@ export const merchantStats = cache(
     const { actor } = await viewer();
     const period: AnalyticsPeriod = { from: new Date(from), to: new Date(to) };
     return getCore().summarizeMerchant(actor, actor.merchantId, period, { offsetMinutes });
+  },
+);
+
+/**
+ * Разрезы за период — вторым пакетом запросов к тем же заявкам. Ключ
+ * памяти тот же, что у сводки, плюс шаг сетки: `cache` сравнивает
+ * аргументы по ссылке, и датами в объекте он бы не сошёлся.
+ */
+export const merchantBreakdowns = cache(
+  async (
+    from: number,
+    to: number,
+    offsetMinutes: number,
+    step: SeriesStep,
+  ): Promise<MerchantBreakdowns> => {
+    const { actor } = await viewer();
+    const period: AnalyticsPeriod = { from: new Date(from), to: new Date(to) };
+    return getCore().breakdownMerchant(actor, actor.merchantId, period, {
+      offsetMinutes,
+      step,
+    });
   },
 );
 

@@ -55,6 +55,14 @@ export interface MerchantPeriodSummary {
   readonly cancelled: number;
   /** Из поданных в период — сколько сейчас в работе. */
   readonly open: number;
+  /**
+   * Исполненных среди поданных в период, 0..1; без поданных — null.
+   *
+   * Считается по одним и тем же заявкам, а не делением «исполнено» на
+   * «подано»: те посчитаны по разным датам, и в неделю, когда разгребли
+   * хвост, такая дробь дала бы конверсию больше единицы.
+   */
+  readonly conversion: number | null;
   /** Отдано мерчантом по исполненным в период — по валюте отдачи. */
   readonly turnover: readonly MoneyByCurrency[];
   /** От подачи до исполнения, минуты, по исполненным в период. */
@@ -107,7 +115,11 @@ const BY_DAY_DAYS = 14;
  * Существование сверяется только для сотрудника: мерчант, который
  * спрашивает о себе, уже доказал его сессией.
  */
-async function requireReadable(ctx: CoreConfig, actor: Actor, merchantId: string): Promise<void> {
+export async function requireReadableMerchant(
+  ctx: CoreConfig,
+  actor: Actor,
+  merchantId: string,
+): Promise<void> {
   if (actor.type === 'merchant') {
     if (actor.merchantId !== merchantId) throw new NotFoundError('Мерчант не найден');
     return;
@@ -136,6 +148,12 @@ function countColumns(period: AnalyticsPeriod) {
   return {
     submitted: sql`count(*) filter (where ${submittedIn})`.mapWith(Number),
     open: sql`count(*) filter (where ${submittedIn} and ${stillOpen})`.mapWith(Number),
+    // Дошедшие из поданных в период — числитель конверсии. Считается
+    // по тем же заявкам, что и знаменатель: «исполнено» посчитано по
+    // другой дате и для этой дроби не годится.
+    converted: sql`count(*) filter (where ${submittedIn} and ${eq(exchangeRequests.status, 'completed')})`.mapWith(
+      Number,
+    ),
     completed: sql`count(*) filter (where ${completedIn})`.mapWith(Number),
     cancelled: sql`count(*) filter (where ${cancelledWithin(period)})`.mapWith(Number),
     minutes: sql<string | null>`${minutesToComplete} filter (where ${completedIn})`,
@@ -144,6 +162,7 @@ function countColumns(period: AnalyticsPeriod) {
 
 interface Counted {
   readonly submitted: number;
+  readonly converted: number;
   readonly open: number;
   readonly completed: number;
   readonly cancelled: number;
@@ -157,7 +176,7 @@ export async function summarizeMerchant(
   period: AnalyticsPeriod,
   options: MerchantStatsOptions = {},
 ): Promise<MerchantStats> {
-  await requireReadable(ctx, actor, merchantId);
+  await requireReadableMerchant(ctx, actor, merchantId);
   const current = requirePeriod(period);
   const previous = previousPeriod(current);
   const offset = requireOffset(options.offsetMinutes);
@@ -174,9 +193,9 @@ export async function summarizeMerchant(
   const [counts, turnover, calls, deliveries, submittedByDay, completedByDay] = await Promise.all([
     ctx.db
       .select({
-        current: sql<Counted>`json_build_object('submitted', ${countColumns(current).submitted}, 'open', ${countColumns(current).open}, 'completed', ${countColumns(current).completed}, 'cancelled', ${countColumns(current).cancelled}, 'minutes', ${countColumns(current).minutes})`,
-        previous: sql<Counted>`json_build_object('submitted', ${countColumns(previous).submitted}, 'open', ${countColumns(previous).open}, 'completed', ${countColumns(previous).completed}, 'cancelled', ${countColumns(previous).cancelled}, 'minutes', ${countColumns(previous).minutes})`,
-        today: sql<Counted>`json_build_object('submitted', ${countColumns(today).submitted}, 'open', 0, 'completed', ${countColumns(today).completed}, 'cancelled', ${countColumns(today).cancelled}, 'minutes', null)`,
+        current: sql<Counted>`json_build_object('submitted', ${countColumns(current).submitted}, 'converted', ${countColumns(current).converted}, 'open', ${countColumns(current).open}, 'completed', ${countColumns(current).completed}, 'cancelled', ${countColumns(current).cancelled}, 'minutes', ${countColumns(current).minutes})`,
+        previous: sql<Counted>`json_build_object('submitted', ${countColumns(previous).submitted}, 'converted', ${countColumns(previous).converted}, 'open', ${countColumns(previous).open}, 'completed', ${countColumns(previous).completed}, 'cancelled', ${countColumns(previous).cancelled}, 'minutes', ${countColumns(previous).minutes})`,
+        today: sql<Counted>`json_build_object('submitted', ${countColumns(today).submitted}, 'converted', 0, 'open', 0, 'completed', ${countColumns(today).completed}, 'cancelled', ${countColumns(today).cancelled}, 'minutes', null)`,
       })
       .from(exchangeRequests)
       .where(mine),
@@ -240,6 +259,7 @@ export async function summarizeMerchant(
       completed: c?.completed ?? 0,
       cancelled: c?.cancelled ?? 0,
       open: c?.open ?? 0,
+      conversion: c === undefined || c.submitted === 0 ? null : c.converted / c.submitted,
       turnover: toMoneyLines(lines.filter((row) => row.count > 0)),
       averageMinutesToComplete:
         c?.minutes === null || c?.minutes === undefined ? null : Number(c.minutes),

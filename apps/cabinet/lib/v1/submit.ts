@@ -1,4 +1,5 @@
 import type { Actor, Core, Notification, SubmitExchangeRequestResult } from '@nemo/core';
+import type { ExchangeRequestSource } from '@nemo/types';
 import { deliverMail } from '@/lib/mail';
 import { nudgeStaffAlerts } from '@/lib/staff-alert';
 import { quoteFor, recipientPayoutMethod } from './quote';
@@ -16,12 +17,18 @@ import type { ExchangeRequestBody } from './schemas';
  * присланная, способ выдачи — от получателя: по тому же снимку и той же
  * сетке, по которым уйдёт заявка. Сама операция — та же, что у Mini
  * App: ядро не знает, откуда пришёл запрос.
+ *
+ * Источник называет вызывающий — форма кабинета или маршрут `/api/v1`:
+ * изнутри их не различить, а мерчант спрашивает об этом разрезом
+ * «сколько прошло через интеграцию, а сколько завели руками». Решений
+ * по нему не принимается ни здесь, ни в ядре.
  */
 export async function submitFromBody(
   core: Core,
   actor: Actor,
   body: ExchangeRequestBody,
   idempotencyKey: string,
+  source: ExchangeRequestSource,
 ): Promise<SubmitExchangeRequestResult> {
   let fromAmount = body.amount;
   let quotedAt = body.quotedAt;
@@ -44,6 +51,7 @@ export async function submitFromBody(
     toCode: body.to,
     fromAmount,
     idempotencyKey,
+    source,
     ...(body.reference === undefined ? {} : { reference: body.reference }),
     ...(quotedAt === undefined ? {} : { quotedAt }),
     ...(body.requisitesId === undefined ? {} : { requisitesId: body.requisitesId }),

@@ -160,3 +160,12 @@ export function formatMinutes(value: number | null): string {
   if (hours < 48) return `${hours.toFixed(1).replace('.', ',')} ч`;
   return `${(hours / 24).toFixed(1).replace('.', ',')} дн`;
 }
+
+/**
+ * Доля 0..1 процентами. Целыми: у конверсии, посчитанной на десятке
+ * заявок, десятая доля процента — шум, а не точность. Пусто — прочерк:
+ * «0 %» значило бы «не дошёл никто», а не «считать не из чего».
+ */
+export function formatShare(value: number | null): string {
+  return value === null ? '—' : `${Math.round(value * 100)} %`;
+}

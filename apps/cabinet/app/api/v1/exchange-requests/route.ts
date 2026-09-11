@@ -30,6 +30,7 @@ export const POST = v1(async (request, ctx, raw) => {
     ctx.actor,
     body,
     idempotencyKey,
+    'api',
   );
   await afterSubmission(notifications);
 

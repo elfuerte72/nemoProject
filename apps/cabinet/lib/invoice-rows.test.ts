@@ -1,0 +1,263 @@
+import { describe, expect, it } from 'vitest';
+import { slopComplaints } from '@nemo/core';
+import { Money, type Quote } from '@nemo/types';
+import {
+  INVOICE_COLUMN_LABELS,
+  invoiceCell,
+  invoiceColumns,
+  invoiceCurrencies,
+  invoiceMoneyLines,
+  invoiceTotal,
+  owedRefunds,
+  refundCell,
+  refundColumns,
+  refundLeft,
+  searchInvoices,
+  type MockInvoice,
+  type MockRefund,
+} from './invoice-rows';
+import { buyerPays, makeInvoice, nextNumber, posSides } from './pos';
+import { addInvoice, forgetMock, listInvoices } from './mock/store';
+import { INVOICES_HOW_TO, POS_HOW_TO, PREVIEW_NOTE, REFUNDS_HOW_TO } from './pos-texts';
+
+/**
+ * Счета и возвраты — макет, но правила у него те же: колонки в одном
+ * месте, валюты не складываются, сумма к оплате округляется вверх, а
+ * выборка мерчанта не видит чужого.
+ */
+
+const at = new Date('2026-09-11T10:00:00Z');
+
+const invoice = (over: Partial<MockInvoice> = {}): MockInvoice => ({
+  ...makeInvoice({
+    number: '2026-09-11-001',
+    purpose: 'Маникюр',
+    buyer: 'Анна',
+    author: 'Оплатишка',
+    code: 'THB',
+    amount: Money.toAmount('2000'),
+    payCode: 'RUB',
+    payAmount: Money.toAmount('5600'),
+    rate: Money.toAmount('2.8'),
+    at,
+  }),
+  ...over,
+});
+
+describe('сумма к оплате', () => {
+  it('округляется вверх до целой единицы', () => {
+    expect(buyerPays(Money.toAmount('5599.01'))).toBe('5600');
+    expect(buyerPays(Money.toAmount('5600'))).toBe('5600');
+    // Копейку у стойки не отдают, а вниз её терял бы мерчант.
+    expect(buyerPays(Money.toAmount('0.4'))).toBe('1');
+  });
+
+  it('считает встречную сторону и округляет счёт вверх в обе стороны', () => {
+    // Курс «1 RUB = 0,4 THB»: сторона считается той же арифметикой,
+    // что у формы заявки и у ядра.
+    const quote: Quote = { rate: Money.toAmount('0.4'), payoutDecimals: 2 };
+
+    // Назвали рубли — получили баты.
+    expect(posSides(Money.toAmount('5000'), 'pay', quote)).toEqual({
+      buy: '2000',
+      pay: '5000',
+    });
+
+    // Назвали баты — счёт вышел вверх до рубля.
+    const back = posSides(Money.toAmount('2000.5'), 'buy', quote);
+    expect(back.buy).toBe('2000.5');
+    expect(back.pay).toBe('5002');
+  });
+
+  it('выдача, съеденная комиссией, — не счёт, а отказ', () => {
+    // Арифметика клампит съеденную комиссией выдачу в ноль. Счёт на
+    // «0 THB по курсу 0» — не сделка: теми же словами это отвергает
+    // подача заявки в ядре.
+    const eaten: Quote = {
+      rate: Money.toAmount('0.4'),
+      payoutDecimals: 2,
+      fee: {
+        toBaseRate: Money.toAmount('0.01'),
+        fromBaseRate: Money.toAmount('35'),
+        tiers: [{ upToUsd: null, rateBps: 0, fixedPayout: Money.toAmount('1000') }],
+        minUsd: null,
+        thresholdInclusive: true,
+      },
+    };
+    expect(posSides(Money.toAmount('100'), 'pay', eaten).buy).toBeNull();
+  });
+
+  it('без курса считает только набранное', () => {
+    expect(posSides(Money.toAmount('5000'), 'pay', null)).toEqual({ buy: null, pay: '5000' });
+    expect(posSides(null, 'buy', null)).toEqual({ buy: null, pay: null });
+  });
+});
+
+describe('колонки списка счетов', () => {
+  it('шапка и строка берут набор из одного места', () => {
+    const one = invoice();
+    const header = invoiceColumns.map((column) => INVOICE_COLUMN_LABELS[column]);
+    const row = invoiceColumns.map((column) => invoiceCell(one, column));
+    expect(row).toHaveLength(header.length);
+    expect(header.every((label) => label.length > 0)).toBe(true);
+    expect(row.every((cell) => cell.text.length > 0)).toBe(true);
+  });
+
+  it('сумма показывается с эквивалентом по курсу, записанному в счёт', () => {
+    const cell = invoiceCell(invoice(), 'amount');
+    // Литералом, а не через `formatMoney`: утверждение, повторяющее
+    // вычисление из кода, не заметит, если разряды начнут разделять
+    // иначе. Пробел здесь узкий неразрывный — тот самый, что ставит
+    // `formatAmount` (U+202F), и написан он последовательностью: в
+    // исходнике его не отличить от обычного.
+    expect(cell.text).toBe('2\u202f000 THB');
+    expect(cell.meta).toContain('5\u202f600 RUB');
+    expect(cell.meta).toContain('2,8');
+  });
+
+  it('у возврата целиком удержанного нет, а не ноль', () => {
+    const cell = refundCell(
+      {
+        id: 'r1',
+        invoiceId: 'i1',
+        invoiceNumber: '2026-09-11-001',
+        code: 'THB',
+        amount: Money.toAmount('2000'),
+        retained: null,
+        reason: 'Отменили запись',
+        status: 'pending',
+        createdAt: at.toISOString(),
+      },
+      'retained',
+    );
+    expect(cell.text).toBe('—');
+    expect(cell.meta).toBe('возврат целиком');
+    expect(refundColumns).toContain('retained');
+  });
+});
+
+describe('числа над списком', () => {
+  it('в обороте только оплаченные счета, а валюты не складываются', () => {
+    const rows = [
+      invoice({ status: 'paid' }),
+      invoice({
+        status: 'paid',
+        code: 'CNY',
+        amount: Money.toAmount('500'),
+        payAmount: Money.toAmount('6600'),
+        rate: Money.toAmount('13.2'),
+      }),
+      // Выставленный и отменённый — бумага, а не деньги: «оборот 50 000»
+      // рядом с «оплачено 0» читался бы как ошибка в счётчике.
+      invoice({ status: 'issued', payAmount: Money.toAmount('9999') }),
+      invoice({ status: 'cancelled', payAmount: Money.toAmount('8888') }),
+    ];
+
+    // Рубли — точная сумма: у каждого счёта записан свой курс.
+    expect(invoiceTotal(rows, 'RUB')).toEqual({ amount: '12200', count: 2 });
+    // Баты — только по батовым счетам: свести их с юанями нечем.
+    expect(invoiceTotal(rows, 'THB')).toEqual({ amount: '2000', count: 1 });
+    // Валюты для выбора берутся из всех счетов: выставленный тоже в
+    // какой-то валюте, и пропавший из списка выбор сбивал бы с толку.
+    expect(invoiceCurrencies(rows)).toEqual(['CNY', 'RUB', 'THB']);
+    expect(invoiceMoneyLines(rows)).toEqual([
+      { code: 'CNY', amount: '500', count: 1 },
+      { code: 'THB', amount: '2000', count: 1 },
+    ]);
+  });
+
+  it('без оплаченных оборота нет', () => {
+    const rows = [invoice({ status: 'issued' }), invoice({ status: 'cancelled' })];
+    expect(invoiceTotal(rows, 'RUB')).toEqual({ amount: '0', count: 0 });
+    expect(invoiceMoneyLines(rows)).toEqual([]);
+  });
+
+  it('поиск сужает список, а не прячет строки', () => {
+    const rows = [invoice(), invoice({ buyer: 'Пётр', purpose: 'Педикюр' })];
+    expect(searchInvoices(rows, 'пётр')).toHaveLength(1);
+    expect(searchInvoices(rows, 'маникюр')).toHaveLength(1);
+    expect(searchInvoices(rows, '  ')).toHaveLength(2);
+    expect(searchInvoices(rows, 'ничего')).toHaveLength(0);
+  });
+
+  it('день счёта — местный и в номере, и в ячейке даты', () => {
+    // Три часа ночи 12 сентября в Бангкоке — это ещё 11-е по UTC.
+    const night = new Date('2026-09-11T20:00:00Z');
+    const bangkok = 7 * 60;
+    expect(nextNumber([], night, bangkok)).toBe('2026-09-12-001');
+    expect(nextNumber([], night)).toBe('2026-09-11-001');
+
+    const one = invoice({ createdAt: night.toISOString() });
+    expect(invoiceCell(one, 'created', bangkok).text).toBe('2026-09-12');
+    expect(invoiceCell(one, 'created').text).toBe('2026-09-11');
+  });
+
+  it('номер счёта продолжает день, а не начинается заново', () => {
+    const first = invoice({ number: nextNumber([], at) });
+    expect(first.number).toBe('2026-09-11-001');
+    expect(nextNumber([first], at)).toBe('2026-09-11-002');
+    // Другой день начинается с первого.
+    expect(nextNumber([first], new Date('2026-09-12T09:00:00Z'))).toBe('2026-09-12-001');
+  });
+});
+
+describe('остаток по счёту', () => {
+  const refund = (over: Partial<MockRefund>): MockRefund => ({
+    id: 'r',
+    invoiceId: 'i',
+    invoiceNumber: '2026-09-11-001',
+    code: 'THB',
+    amount: Money.toAmount('500'),
+    retained: null,
+    reason: 'причина',
+    status: 'pending',
+    createdAt: at.toISOString(),
+    ...over,
+  });
+
+  it('считается по обещанным заявкам, отклонённые не в счёт', () => {
+    const one = { ...invoice({ status: 'paid' }), id: 'i' };
+    expect(refundLeft(one, [])).toBe('2000');
+    expect(refundLeft(one, [refund({})])).toBe('1500');
+    // Отклонённая ничего не обещает — остаток от неё не уменьшается.
+    expect(refundLeft(one, [refund({ status: 'rejected' })])).toBe('2000');
+    // Чужие заявки по другому счёту тоже мимо.
+    expect(refundLeft(one, [refund({ invoiceId: 'другой' })])).toBe('2000');
+    expect(owedRefunds([refund({}), refund({ status: 'rejected' })])).toHaveLength(1);
+  });
+
+  it('остаток не уходит в минус', () => {
+    const one = { ...invoice({ status: 'paid' }), id: 'i' };
+    expect(refundLeft(one, [refund({ amount: Money.toAmount('5000') })])).toBe('0');
+  });
+});
+
+describe('тексты кассы, счетов и возвратов набраны человеком', () => {
+  it.each([
+    ['Касса', POS_HOW_TO],
+    ['Счета', INVOICES_HOW_TO],
+    ['Возвраты', REFUNDS_HOW_TO],
+  ] as const)('подсказка «%s»', (_name, items) => {
+    for (const item of items) {
+      expect(slopComplaints(`${item.title}\n${item.detail}`)).toEqual([]);
+    }
+  });
+
+  it('предупреждение о макете говорит про деньги прямо', () => {
+    expect(slopComplaints(PREVIEW_NOTE)).toEqual([]);
+    expect(PREVIEW_NOTE).toMatch(/денег/u);
+  });
+});
+
+describe('память макета', () => {
+  it('чужих счетов мерчант не видит', () => {
+    forgetMock('shop');
+    forgetMock('other');
+    addInvoice('shop', invoice());
+    addInvoice('other', invoice({ buyer: 'Чужой' }));
+
+    expect(listInvoices('shop')).toHaveLength(1);
+    expect(listInvoices('shop')[0]?.buyer).toBe('Анна');
+    expect(listInvoices('nobody')).toEqual([]);
+  });
+});

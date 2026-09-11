@@ -162,6 +162,54 @@ describe('сводка мерчанта за период', () => {
     expect(stats.previous.turnover).toEqual([{ code: 'USDT', amount: '300', count: 1 }]);
   });
 
+  it('считает конверсию среди поданных в период, а не отношение двух чисел', async () => {
+    const period = { from: at(7, 0), to: at(0, 0) };
+    // Подана в период и исполнена — в конверсию идёт.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      submittedAt: at(5),
+      finishedAt: at(5, 13),
+    });
+    // Подана в период, но не дошла.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '90',
+      fate: 'open',
+      submittedAt: at(4),
+    });
+    /*
+     * Подана до периода, исполнена внутри: в «исполнено» она попадает,
+     * а в конверсию — нет. Делить одно на другое значило бы считать
+     * конверсию больше единицы в ту неделю, когда разгребли хвост.
+     */
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '300',
+      fate: 'completed',
+      submittedAt: at(9),
+      finishedAt: at(3),
+    });
+
+    const stats = await core.summarizeMerchant(merchant, merchant.merchantId, period);
+
+    expect(stats.current).toMatchObject({ submitted: 2, completed: 2 });
+    expect(stats.current.conversion).toBeCloseTo(0.5, 5);
+  });
+
+  it('без поданных конверсии нет, а не ноль', async () => {
+    const period = { from: at(7, 0), to: at(0, 0) };
+    const stats = await core.summarizeMerchant(merchant, merchant.merchantId, period);
+    expect(stats.current.conversion).toBeNull();
+  });
+
   it('чужие заявки в числа мерчанта не попадают', async () => {
     const period = { from: at(7, 0), to: at(0, 0) };
     const other = await givenMerchant({ email: 'other@example.com' });
