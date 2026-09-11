@@ -19,18 +19,6 @@ export const dynamic = 'force-dynamic';
  * исходы: доставки идут воркером в фоне.
  */
 
-const SIGNATURE_EXAMPLE = `import { createHmac, timingSafeEqual } from 'node:crypto';
-
-// Тело — сырой текст запроса, до разбора JSON: подпись считана от него.
-export function verifyWebhook(rawBody, signatureHeader, secret) {
-  const expected = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex');
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signatureHeader ?? '');
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-// Ответьте 2xx сразу, обработку — после ответа; дубли по id отбрасывайте.`;
-
 export default async function WebhooksPage({
   searchParams,
 }: {
@@ -61,18 +49,18 @@ export default async function WebhooksPage({
           <h1 className="page__title">Вебхуки</h1>
           <p className="page__sub">Куда сообщать о переходах ваших заявок.</p>
         </div>
+        <Link className="btn btn--ghost" href="/webhooks/guide">
+          Как встроить
+        </Link>
       </header>
 
-      <HowTo title="Как встроить" sub="Тело, подпись, повторы, дубли" items={WEBHOOKS_HOW_TO} />
+      <HowTo
+        title="Как устроено"
+        sub="Точки, их состояния, пробная доставка и журнал"
+        items={WEBHOOKS_HOW_TO}
+      />
 
       <Endpoints endpoints={endpoints.map(toEndpointRow)} canAdd={session.status === 'active'} />
-
-      <section className="card">
-        <h2 className="card__title">Проверка подписи на Node.js</h2>
-        <pre className="code">
-          <code>{SIGNATURE_EXAMPLE}</code>
-        </pre>
-      </section>
 
       <section className="section">
         <div className="section__head">
@@ -142,11 +130,24 @@ export default async function WebhooksPage({
                       {delivery.responseStatus !== null ? (
                         <span className="mono">{delivery.responseStatus} </span>
                       ) : undefined}
-                      {delivery.error ?? delivery.responseBody ?? (
-                        <span className="muted">—</span>
-                      )}
+                      {delivery.error}
                       {delivery.durationMs !== null ? (
                         <span className="muted"> · {delivery.durationMs} мс</span>
+                      ) : undefined}
+                      {/* Ждущая своей попытки доставка ответа ещё не получала. */}
+                      {delivery.responseStatus === null && delivery.error === null ? (
+                        <span className="muted">—</span>
+                      ) : undefined}
+                      {/*
+                       * Тело ответа стоит рядом со словами отказа, а не
+                       * вместо них: «Ответ 500» говорит, что сервер
+                       * мерчанта отказал, а чем он подавился, написано
+                       * только в теле.
+                       */}
+                      {delivery.responseBody ? (
+                        <span className="hook__body mono" title={delivery.responseBody}>
+                          {delivery.responseBody}
+                        </span>
                       ) : undefined}
                     </span>
                   </span>
