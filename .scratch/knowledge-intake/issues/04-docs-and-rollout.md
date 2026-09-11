@@ -13,3 +13,7 @@ README, ADR 0016, запись в backlog про порядок статей. Н
 README, ADR 0016, backlog). Осталось за Пенкиным: ключ DeepSeek в окружении
 `admin` на Dokploy и smoke после выката — открыть «Настройки → Помощник»,
 вставить абзац текста, увидеть черновик.
+
+6 сентября 2026: переменные добавлены у `admin` на dev и prod
+(`/root/dk application.saveEnvironment`, теперь с `buildSecrets`), PR #108
+после ревью слит в dev и выкачен на прод (`main = 5ccf6ba`).
