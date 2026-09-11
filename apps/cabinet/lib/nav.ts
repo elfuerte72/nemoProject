@@ -25,6 +25,22 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/rates', label: 'Курсы', icon: 'chart' },
     ],
   },
+  /*
+   * Касса стоит своей группой, а не в «Работе»: за ней нет денег
+   * сервиса — покупатель платит мерчанту мимо нас, — и соседство со
+   * заявками, по которым деньги идут, читалось бы как одно и то же.
+   * Что именно тут нарисовано, а что работает, сказано на каждом из
+   * трёх экранов.
+   */
+  {
+    key: 'till',
+    title: 'Касса',
+    items: [
+      { href: '/pos', label: 'Касса', icon: 'spark' },
+      { href: '/invoices', label: 'Счета', icon: 'card' },
+      { href: '/refunds', label: 'Возвраты', icon: 'withdrawal' },
+    ],
+  },
   {
     key: 'integration',
     title: 'Интеграция',
