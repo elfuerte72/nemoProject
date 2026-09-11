@@ -117,7 +117,7 @@ const PAIRS = [
  * Сети, в которых сервис принимает и отправляет USDT. Справочник общий:
  * из него берут сеть и реквизиты обмена, и заявки на вывод.
  */
-const NETWORKS = ['TRC20', 'TON'];
+const NETWORKS = ['TRC20', 'TON', 'BEP20'];
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
