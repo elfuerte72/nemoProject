@@ -238,7 +238,13 @@ interface ComboRow {
   readonly amount: string | null;
 }
 
-/** Ключ получателя — всё, что о нём видно без расшифровки. */
+/**
+ * Ключ получателя — всё, что о нём видно без расшифровки.
+ *
+ * Поля разделены знаком, которого в них не бывает: на пробеле «Т-Банк
+ * А» с пустым телефоном и «Т-Банк» с телефоном «А» дали бы один ключ, и
+ * две карты слились бы в одну строку разреза.
+ */
 function recipientKey(row: ComboRow): string {
   return [
     row.requisiteKind,
@@ -252,7 +258,7 @@ function recipientKey(row: ComboRow): string {
     row.qrHint,
     row.promptpayIdType,
     row.alipayAccount,
-  ].join(' ');
+  ].join('\u0000');
 }
 
 export async function breakdownMerchant(
@@ -409,7 +415,7 @@ export async function breakdownMerchant(
   const sources = new Map<ExchangeRequestSource | 'none', Bucket>();
 
   for (const row of combos as ComboRow[]) {
-    const direction = `${row.fromCode} ${row.toCode} ${row.kind}`;
+    const direction = `${row.fromCode}\u0000${row.toCode}\u0000${row.kind}`;
     const inDirection = directions.get(direction) ?? { row, bucket: emptyBucket() };
     addTo(inDirection.bucket, row);
     directions.set(direction, inDirection);
