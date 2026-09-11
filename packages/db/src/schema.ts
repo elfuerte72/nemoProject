@@ -54,6 +54,12 @@ export const exchangeRequestStatusEnum = pgEnum('exchange_request_status', [
   'cancelled',
 ]);
 
+export const exchangeRequestSourceEnum = pgEnum('exchange_request_source', [
+  'miniapp',
+  'cabinet',
+  'api',
+]);
+
 export const withdrawalRequestStatusEnum = pgEnum('withdrawal_request_status', [
   'new',
   'approved',
@@ -1142,6 +1148,19 @@ export const exchangeRequests = pgTable(
      * дважды.
      */
     idempotencyKey: text('idempotency_key'),
+    /**
+     * Откуда заявка пришла: Mini App, форма кабинета или API мерчанта.
+     *
+     * Спрашивает об этом сам мерчант — «сколько прошло через
+     * интеграцию, а сколько завели руками», — и ответить на это без
+     * отметки нечем: операция подачи у всех троих одна, и по ней их не
+     * различить. Ядро источник не толкует: ни правил, ни цены от него
+     * не зависит.
+     *
+     * Пусто у заявок, поданных до появления отметки: дописать её задним
+     * числом нечем, а угаданная читалась бы как записанная.
+     */
+    source: exchangeRequestSourceEnum('source'),
     kind: exchangeKindEnum('kind').notNull(),
     fromCode: text('from_code').notNull(),
     toCode: text('to_code').notNull(),

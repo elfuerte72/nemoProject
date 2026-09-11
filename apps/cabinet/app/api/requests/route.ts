@@ -68,6 +68,7 @@ export async function POST(request: Request): Promise<Response> {
       actor,
       v1Body,
       idempotencyKey,
+      'cabinet',
     );
     await afterSubmission(notifications);
 

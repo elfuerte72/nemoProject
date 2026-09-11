@@ -106,6 +106,10 @@ import {
   type MerchantStatsOptions,
 } from './merchant-stats.js';
 import {
+  breakdownMerchant,
+  type MerchantBreakdownOptions,
+} from './merchant-breakdowns.js';
+import {
   authenticateApiKey,
   issueApiKey,
   listApiKeys,
@@ -281,7 +285,9 @@ export type {
   ExchangeCounts,
   ExchangeSummary,
   MoneyByCurrency,
+  SeriesStep,
 } from './analytics.js';
+export { EXPIRED_REASON } from './expiry.js';
 export type { ColleagueView, ReassignExchangeRequestInput } from './exchange-reassign.js';
 import type { ReassignExchangeRequestInput } from './exchange-reassign.js';
 
@@ -361,6 +367,13 @@ export function createCore(ctx: CoreConfig) {
       options?: MerchantStatsOptions,
     ) => summarizeMerchant(ctx, actor, merchantId, period, options),
     merchantActivitySince: (actor: Actor, since: Date) => merchantActivitySince(ctx, actor, since),
+    /** Разрезы мерчанта: то же, что сводка, но по чему именно. */
+    breakdownMerchant: (
+      actor: Actor,
+      merchantId: string,
+      period: AnalyticsPeriod,
+      options?: MerchantBreakdownOptions,
+    ) => breakdownMerchant(ctx, actor, merchantId, period, options),
     /** Заявки мерчанта — все, а не только те, что в работе. */
     listMerchantExchangeRequests: (
       actor: Actor,
@@ -819,6 +832,20 @@ export type {
   MerchantPeriodSummary,
   MerchantStats,
 } from './merchant-stats.js';
+export type {
+  MerchantBiggest,
+  MerchantBreakdownOptions,
+  MerchantBreakdowns,
+  MerchantDirectionSlice,
+  MerchantFastest,
+  MerchantFunnel,
+  MerchantMethodSlice,
+  MerchantRecipientSlice,
+  MerchantRecords,
+  MerchantSeriesPoint,
+  MerchantSlice,
+  MerchantSourceSlice,
+} from './merchant-breakdowns.js';
 export type {
   SaveServiceAccountInput,
   ServiceAccountFields,

@@ -2190,3 +2190,74 @@ select.input {
 .copy:focus-visible .copy__mark {
   opacity: 1;
 }
+
+/* ── Воронка ─────────────────────────────────────────────────────── */
+
+.funnel {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.funnel__step {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 48px 52px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.funnel__label {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.funnel__bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  overflow: hidden;
+}
+
+.funnel__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--text-faint);
+  transition: width 0.3s var(--ease);
+}
+
+.funnel__step--wait .funnel__fill {
+  background: var(--gold);
+}
+
+.funnel__step--up .funnel__fill {
+  background: var(--up);
+}
+
+.funnel__step--down .funnel__fill {
+  background: var(--down);
+}
+
+.funnel__count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.funnel__share {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .funnel__step {
+    grid-template-columns: 110px minmax(0, 1fr) 40px 44px;
+    gap: 8px;
+  }
+}

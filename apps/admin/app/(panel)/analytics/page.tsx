@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import { CoreError, type ExchangeSummary } from '@nemo/core';
 import {
   ExchangeCountTiles,
+  formatShare,
+  Funnel,
   HowTo,
   Moment,
   MoneyCompare,
@@ -16,7 +18,6 @@ import { getCore } from '@/lib/core';
 import { STATUS_LABELS } from '@/lib/exchange-request-labels';
 import { averageByCurrency, formatByCurrency } from '@nemo/ui/money-list';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
-import { Funnel } from '@/app/ui/funnel';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,11 +123,11 @@ export default async function AnalyticsPage({
           <ExchangeCountTiles current={current} previous={previous} />
           <Stat
             label="Конверсия"
-            value={percent(current.conversion)}
+            value={formatShare(current.conversion)}
             note={
               current.conversion === null
                 ? 'поданных в период нет'
-                : `исполнено из поданных · было ${percent(previous.conversion)}`
+                : `исполнено из поданных · было ${formatShare(previous.conversion)}`
             }
             tone={trendTone(current.conversion, previous.conversion)}
           />
@@ -317,6 +318,3 @@ function single(value: string | string[] | undefined): string | undefined {
   return one?.trim() || undefined;
 }
 
-function percent(value: number | null): string {
-  return value === null ? '—' : `${Math.round(value * 100)} %`;
-}

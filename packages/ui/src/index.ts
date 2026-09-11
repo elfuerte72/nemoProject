@@ -15,6 +15,7 @@ export { BankChips } from './bank-chips.js';
 export { Brand, TobeeMark } from './brand.js';
 export { CopyValue } from './copy.js';
 export { EmptyState } from './empty.js';
+export { Funnel, type FunnelStep } from './funnel.js';
 export { Greeting } from './greeting.js';
 export { dayWords, salute } from './greeting-words.js';
 export { HowTo, type HowToItem } from './howto.js';
@@ -59,5 +60,6 @@ export {
   formatMoney,
   formatRate,
   formatRateValue,
+  formatShare,
   formatTime,
 } from './format.js';

@@ -160,6 +160,50 @@ export function localDayOf(column: AnyPgColumn, offset: number): SQL<string> {
   return sql<string>`to_char((${column} at time zone 'UTC') + make_interval(mins => ${sql.raw(String(offset))}), 'YYYY-MM-DD')`;
 }
 
+/** Момент колонки по местному времени — основа для часа, дня недели и шага сетки. */
+function localMomentOf(column: AnyPgColumn, offset: number): SQL {
+  return sql`((${column} at time zone 'UTC') + make_interval(mins => ${sql.raw(String(offset))}))`;
+}
+
+/**
+ * Час суток по местному времени, 0..23. Час — про привычки покупателя,
+ * а не про часы сервера: в UTC «вечерний наплыв» у мерчанта из Бангкока
+ * пришёлся бы на утро.
+ */
+export function localHourOf(column: AnyPgColumn, offset: number): SQL<number> {
+  return sql<number>`extract(hour from ${localMomentOf(column, offset)})`.mapWith(Number);
+}
+
+/** День недели по местному времени: 1 — понедельник, 7 — воскресенье. */
+export function localWeekdayOf(column: AnyPgColumn, offset: number): SQL<number> {
+  return sql<number>`extract(isodow from ${localMomentOf(column, offset)})`.mapWith(Number);
+}
+
+/** Шаг сетки динамики: сутки, неделя или месяц. */
+export type SeriesStep = 'day' | 'week' | 'month';
+
+/**
+ * Начало шага, в который попадает момент колонки, — днём «2026-09-02»
+ * по местному времени. Неделя начинается с понедельника (`date_trunc`
+ * считает так же), месяц — с первого числа; ключ у всех трёх один по
+ * виду, и разбирать его на экране не приходится.
+ */
+export function localStepOf(column: AnyPgColumn, offset: number, step: SeriesStep): SQL<string> {
+  const local = localMomentOf(column, offset);
+  if (step === 'day') return sql<string>`to_char(${local}, 'YYYY-MM-DD')`;
+  return sql<string>`to_char(date_trunc(${sql.raw(`'${step}'`)}, ${local}), 'YYYY-MM-DD')`;
+}
+
+/** Начало шага для дня «2026-09-02» — тем же правилом, что и в базе. */
+export function stepStartOf(day: string, step: SeriesStep): string {
+  if (step === 'day') return day;
+  const date = new Date(`${day}T00:00:00Z`);
+  if (step === 'month') return `${day.slice(0, 7)}-01`;
+  // Понедельник той же недели: `getUTCDay` считает от воскресенья.
+  const shift = (date.getUTCDay() + 6) % 7;
+  return new Date(date.getTime() - shift * DAY_MS).toISOString().slice(0, 10);
+}
+
 /** Местная полночь сегодняшнего дня — моментом UTC. */
 export function localMidnight(now: Date, offsetMinutes: number): Date {
   const shifted = new Date(now.getTime() + offsetMinutes * 60_000);

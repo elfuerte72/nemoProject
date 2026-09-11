@@ -25,6 +25,26 @@ export const exchangeRequestStatuses = [
   'cancelled', // отменена
 ] as const;
 export const exchangeRequestStatusSchema = z.enum(exchangeRequestStatuses);
+
+/**
+ * Откуда заявка пришла.
+ *
+ * Мерчант спрашивает об этом сам: «сколько прошло через интеграцию, а
+ * сколько завели руками» — первый вопрос к разрезу по источнику, и без
+ * отметки на него нечем ответить. Ядро источник не толкует и решений по
+ * нему не принимает: одна и та же операция, одни и те же правила, —
+ * отметка нужна только затем, чтобы разрез был честным.
+ *
+ * У заявки, поданной до появления отметки, источник пуст: дописать его
+ * задним числом нечем, а угаданный читался бы как записанный.
+ */
+export const exchangeRequestSources = [
+  'miniapp', // Mini App клиента
+  'cabinet', // форма кабинета мерчанта
+  'api', // API мерчанта
+] as const;
+export const exchangeRequestSourceSchema = z.enum(exchangeRequestSources);
+export type ExchangeRequestSource = z.infer<typeof exchangeRequestSourceSchema>;
 export type ExchangeRequestStatus = z.infer<typeof exchangeRequestStatusSchema>;
 
 /** Допустимые переходы. Всё, чего здесь нет, — ошибка, а не «на всякий случай». */

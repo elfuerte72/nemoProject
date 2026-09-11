@@ -4,6 +4,7 @@ import {
   EmptyState,
   ExchangeCountTiles,
   firstParam,
+  formatShare,
   Greeting,
   HowTo,
   IntegrationTiles,
@@ -11,9 +12,12 @@ import {
   MoneyCompare,
   PeriodChips,
   QuietRefresh,
+  Stat,
   Stats,
+  trendTone,
 } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
+import { averageByCurrency, formatByCurrency } from '@nemo/ui/money-list';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 import { WEBHOOK_ENDPOINT_STATE_LABELS } from '@nemo/types';
 import { getCore } from '@/lib/core';
@@ -120,6 +124,14 @@ export default async function OverviewPage({
             <Moment at={lastDay.toISOString()} mode="day" />
           </h2>
           <span className="section__rule" />
+          {/*
+            Вход в аналитику стоит здесь, а не в меню: отдельный пункт
+            обещал бы вторую правду о тех же числах, а разрезы за них
+            спрашивают тогда же, когда смотрят на плитки.
+          */}
+          <Link className="btn btn--soft btn--tiny" href={`/analytics?${csvQuery}`}>
+            Полная аналитика
+          </Link>
           <a className="btn btn--ghost btn--tiny" href={`/api/requests/csv?${csvQuery}`}>
             CSV заявок
           </a>
@@ -134,6 +146,16 @@ export default async function OverviewPage({
 
         <Stats>
           <ExchangeCountTiles current={current} previous={previous} openHref="/requests" />
+          <Stat
+            label="Конверсия"
+            value={formatShare(current.conversion)}
+            note={
+              current.conversion === null
+                ? 'поданных в период нет'
+                : `исполнено из поданных · было ${formatShare(previous.conversion)}`
+            }
+            tone={trendTone(current.conversion, previous.conversion)}
+          />
           <IntegrationTiles
             apiCalls={current.apiCalls}
             webhookDeliveries={current.webhookDeliveries}
@@ -147,6 +169,18 @@ export default async function OverviewPage({
             <h2 className="card__title">Оборот</h2>
             <p className="card__note">Отдано по исполненным заявкам — по каждой валюте отдельно</p>
             <MoneyCompare now={current.turnover} before={previous.turnover} />
+          </section>
+
+          <section className="card">
+            <h2 className="card__title">Средний чек</h2>
+            <p className="card__note">Оборот на число исполненных заявок — по каждой валюте</p>
+            {/*
+              Карточкой, а не плиткой: у мерчанта две валюты отдачи и
+              больше, а плитка рассчитана на одно число — двумя она
+              разъезжается на три строки и забирает полосу себе.
+            */}
+            <p className="money">{formatByCurrency(averageByCurrency(current.turnover))}</p>
+            <p className="muted">было {formatByCurrency(averageByCurrency(previous.turnover))}</p>
           </section>
 
           <section className="card">
