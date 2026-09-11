@@ -16,7 +16,7 @@ import { NAV_GROUPS } from './nav';
  * незачем.
  */
 
-/** Какое право открывает пункт. Не названные здесь видны всем. */
+/** Какое право открывает раздел. Не названные здесь видны всем. */
 const NEEDS: Readonly<Record<string, MerchantAbility>> = {
   '/requests/new': 'submit',
   '/recipients': 'recipients',
@@ -43,4 +43,14 @@ export function navGroupsFor(role: MerchantUserRole): readonly NavGroup[] {
     // «Интеграции» не остаётся ни одного пункта, и самой группы быть
     // не должно.
     .filter((group) => group.items.length > 0);
+}
+
+/**
+ * Какое право нужно разделу по его адресу — одной картой на меню и на
+ * сам раздел: спрятанный пункт не запрещает ничего, а страница,
+ * которую открыли прямой ссылкой, обязана отказать словами, а не
+ * пятисотым ответом от операции.
+ */
+export function abilityForPath(path: string): MerchantAbility | undefined {
+  return NEEDS[path];
 }

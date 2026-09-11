@@ -1,8 +1,10 @@
 import { HowTo } from '@nemo/ui';
+import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
 import { viewer } from '@/lib/reads';
 import { STAFF_HOW_TO } from '@/lib/staff-texts';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { StaffList } from './staff-list';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +21,9 @@ export const dynamic = 'force-dynamic';
  * спрашивают нынешний.
  */
 export default async function StaffPage() {
+  const access = await allowedHere('/staff');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const people = await getCore().listMerchantUsers(actor);
 

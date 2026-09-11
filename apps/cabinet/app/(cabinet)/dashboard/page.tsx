@@ -19,7 +19,7 @@ import {
 import { formatMoney } from '@nemo/ui/format';
 import { averageByCurrency, formatByCurrency } from '@nemo/ui/money-list';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
-import { WEBHOOK_ENDPOINT_STATE_LABELS } from '@nemo/types';
+import { merchantRoleCan, WEBHOOK_ENDPOINT_STATE_LABELS } from '@nemo/types';
 import { getCore } from '@/lib/core';
 import { OVERVIEW_HOW_TO } from '@/lib/exchange-texts';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
@@ -58,12 +58,18 @@ export default async function OverviewPage({
   );
 
   const core = getCore();
+  /*
+   * Ключи и вебхуки спрашиваются только у того, кому они видны:
+   * оператору и наблюдателю операция откажет (тикет 17), и обзор — не
+   * то место, где человек узнаёт об этом пятисотым ответом.
+   */
+  const ownsIntegration = merchantRoleCan(session.role, 'integration');
   const [stats, recent, counts, keys, hooks] = await Promise.all([
     merchantStats(period.from.getTime(), period.to.getTime(), offset),
     core.listExchangeRequests(actor, { limit: 5 }),
     requestCounts(),
-    core.listApiKeys(actor),
-    core.listWebhookEndpoints(actor),
+    ownsIntegration ? core.listApiKeys(actor) : Promise.resolve([]),
+    ownsIntegration ? core.listWebhookEndpoints(actor) : Promise.resolve([]),
   ]);
   const { current, previous, today } = stats;
   const active = openCount(counts);
@@ -224,6 +230,7 @@ export default async function OverviewPage({
         отвечают ли точки, где документация. Подробности — в своих
         разделах; здесь ответ на «всё ли живо», не открывая их.
       */}
+      {ownsIntegration ? (
       <section className="section">
         <div className="section__head">
           <h2 className="section__title">Интеграция</h2>
@@ -256,6 +263,7 @@ export default async function OverviewPage({
           ) : undefined}
         </p>
       </section>
+      ) : undefined}
 
       <section className="section">
         <div className="section__head">

@@ -1,8 +1,10 @@
 import { HowTo } from '@nemo/ui';
+import { allowedHere } from '@/lib/access';
 import { SANDBOX_HOW_TO } from '@/lib/integration-texts';
 import { supportUsername, viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { SupportLink } from '@/app/ui/support-link';
+import { NoAccess } from '@/app/ui/no-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +18,9 @@ export const dynamic = 'force-dynamic';
  */
 
 export default async function SandboxPage() {
+  const access = await allowedHere('/sandbox');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { session } = await viewer();
   const support = await supportUsername();
   const sandboxUrl = (process.env.CABINET_SANDBOX_URL ?? '').trim().replace(/\/+$/, '');

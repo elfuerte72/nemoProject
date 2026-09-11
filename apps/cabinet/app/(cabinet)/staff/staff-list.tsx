@@ -302,8 +302,8 @@ export function StaffList({
             </select>
             <span className="hint">{ROLE_HINTS[form.role]}</span>
           </label>
-          <div className="form__actions">
-            <button type="submit" className="btn" aria-busy={busy}>
+          <div className="row__actions">
+            <button type="submit" className="btn btn--gold" aria-busy={busy}>
               Завести
             </button>
             <button
@@ -319,9 +319,14 @@ export function StaffList({
           </div>
         </form>
       ) : (
-        <button type="button" className="btn" onClick={() => setAdding(true)}>
-          Завести сотрудника
-        </button>
+        // По содержимому, а не во всю карточку: кнопка на всю ширину
+        // читается как итог страницы, а это одно из действий на ней —
+        // так же стоит выпуск ключа в разделе «API».
+        <div className="row__actions">
+          <button type="button" className="btn btn--gold" onClick={() => setAdding(true)}>
+            Завести сотрудника
+          </button>
+        </div>
       )}
     </section>
   );

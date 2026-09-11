@@ -12,6 +12,7 @@ import {
 import { formatMoney } from '@nemo/ui/format';
 import { formatByCurrency } from '@nemo/ui/money-list';
 import { TZ_COOKIE, readTzOffset } from '@nemo/ui/period';
+import { allowedHere } from '@/lib/access';
 import { INVOICE_PREFS_COOKIE, readInvoiceColumns } from '@/lib/invoice-prefs';
 import {
   INVOICE_COLUMN_LABELS,
@@ -30,6 +31,7 @@ import { listInvoices } from '@/lib/mock/store';
 import { INVOICES_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { Columns } from './columns';
 
 export const dynamic = 'force-dynamic';
@@ -50,6 +52,9 @@ export default async function InvoicesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const access = await allowedHere('/invoices');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const params = await searchParams;
   const jar = await cookies();

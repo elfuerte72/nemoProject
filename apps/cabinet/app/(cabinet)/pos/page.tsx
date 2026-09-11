@@ -2,12 +2,14 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { EmptyState, HowTo } from '@nemo/ui';
 import { TZ_COOKIE, localMidnight, readTzOffset } from '@nemo/ui/period';
+import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
 import { listDirectionRates } from '@/lib/direction-rates';
 import { countSince } from '@/lib/mock/store';
 import { POS_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { Terminal } from './terminal';
 
 export const dynamic = 'force-dynamic';
@@ -25,6 +27,9 @@ export const dynamic = 'force-dynamic';
  * разделе «Курсы» и на экране новой заявки.
  */
 export default async function PosPage() {
+  const access = await allowedHere('/pos');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
   const { directions, terms } = await listDirectionRates(getCore());
