@@ -37,7 +37,7 @@ import { Columns } from './columns';
 export const dynamic = 'force-dynamic';
 
 /**
- * Счета кассы: список с числами над ним.
+ * Счета POS-терминала: список с числами над ним.
  *
  * Макет без денег — записи живут в памяти процесса и до перезапуска
  * (`backlog.md`). Сказано об этом сверху: мерчант, потерявший счёт
@@ -97,7 +97,7 @@ export default async function InvoicesPage({
         </div>
         <div className="page__actions">
           <Link className="btn btn--gold btn--tiny" href="/pos">
-            В кассу
+            В терминал
           </Link>
           <a className="btn btn--ghost btn--tiny" href={`/api/pos/invoices/csv?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(status ? { tab: status } : {}) }).toString()}`}>
             CSV
@@ -182,7 +182,7 @@ export default async function InvoicesPage({
           title={all.length === 0 ? 'Счетов пока нет' : 'По этому отбору ничего нет'}
           text={
             all.length === 0
-              ? 'Счёт выставляется в кассе: покупатель называет валюту и сумму, вы нажимаете «Выставить счёт».'
+              ? 'Счёт выставляется в POS-терминале: покупатель называет валюту и сумму, вы нажимаете «Выставить счёт».'
               : 'Снимите поиск или возьмите другое состояние.'
           }
         />
