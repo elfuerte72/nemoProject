@@ -136,7 +136,7 @@ export default async function OverviewPage({
             спрашивают тогда же, когда смотрят на плитки.
           */}
           <Link className="btn btn--soft btn--tiny" href={`/analytics?${csvQuery}`}>
-            Полная аналитика
+            Подробнее
           </Link>
           <a className="btn btn--ghost btn--tiny" href={`/api/requests/csv?${csvQuery}`}>
             CSV заявок

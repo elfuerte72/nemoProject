@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POS-терминал: покупатель выбирает валюту и называет сумму, мерчант
- * выставляет счёт.
+ * создаёт счёт.
  *
  * Назван словом владельца со звонка 8 сентября 2026 — он показывал
  * «посттерминал» у образца и просил перенести его.
@@ -37,7 +37,7 @@ export default async function PosPage() {
   const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
   const { directions, terms } = await listDirectionRates(getCore());
 
-  // Смена — сутки по часам того, кто смотрит: касса работает день, а
+  // Смена — сутки по часам того, кто смотрит: терминал работает день, а
   // не с полуночи по UTC.
   const shift = countSince(actor.merchantId, localMidnight(new Date(), offset));
 
@@ -67,7 +67,7 @@ export default async function PosPage() {
         <EmptyState
           icon="exchange"
           title="Направлений с рублями нет"
-          text="POS-терминал считает цену по направлениям, в которых сервис выдаёт валюту за рубли. Пока таких нет, выставить счёт не из чего."
+          text="POS-терминал считает цену по направлениям, в которых сервис выдаёт валюту за рубли. Пока таких нет, создать счёт не из чего."
         />
       ) : (
         <Terminal

@@ -97,7 +97,7 @@ export default async function InvoicesPage({
         </div>
         <div className="page__actions">
           <Link className="btn btn--gold btn--tiny" href="/pos">
-            В терминал
+            POS-терминал
           </Link>
           <a className="btn btn--ghost btn--tiny" href={`/api/pos/invoices/csv?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(status ? { tab: status } : {}) }).toString()}`}>
             CSV
@@ -108,15 +108,15 @@ export default async function InvoicesPage({
       <HowTo title="Как это устроено" sub="Откуда счета и почему числа такие" items={INVOICES_HOW_TO} />
 
       <Stats>
-        <Stat label="Счетов" value={found.length} note={query ? 'нашлось по запросу' : 'всего'} />
+        <Stat label="Всего счетов" value={found.length} note={query ? 'нашлось по запросу' : 'всего'} />
         <Stat
-          label="Оплачено"
+          label="Оплаченные счета"
           value={paid.length}
           note="отмечаете вы сами: деньги идут мимо сервиса"
           tone={paid.length > 0 ? 'up' : 'plain'}
         />
         <Stat
-          label={`Оборот, ${code}`}
+          label={`Оборот в ${code}`}
           value={formatMoney(total.amount, code)}
           note={
             code === 'RUB'
@@ -182,7 +182,7 @@ export default async function InvoicesPage({
           title={all.length === 0 ? 'Счетов пока нет' : 'По этому отбору ничего нет'}
           text={
             all.length === 0
-              ? 'Счёт выставляется в POS-терминале: покупатель называет валюту и сумму, вы нажимаете «Выставить счёт».'
+              ? 'Счёт создаётся в POS-терминале: покупатель называет валюту и сумму, вы нажимаете «Создать счёт».'
               : 'Снимите поиск или возьмите другое состояние.'
           }
         />

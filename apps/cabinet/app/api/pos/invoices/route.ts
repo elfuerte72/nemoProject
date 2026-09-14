@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Счёт из кассы — запись макета в памяти процесса, а не строка в базе
+ * Счёт из POS-терминала — запись макета в памяти процесса, а не строка в базе
  * (`backlog.md`, решение от 10 сентября 2026). Денег за ним нет: ни
  * покупателю, ни сервису ничего не уходит.
  *
@@ -64,7 +64,7 @@ export async function POST(request: Request): Promise<Response> {
       ...(body.quotedAt === undefined ? {} : { asOf: body.quotedAt }),
     });
     if (!quote) {
-      throw new InvalidInputError('Курса сейчас нет: счёт по нему выставить не получится');
+      throw new InvalidInputError('Курса сейчас нет: счёт по нему создать не получится');
     }
 
     /*
@@ -77,7 +77,7 @@ export async function POST(request: Request): Promise<Response> {
     const { buy, pay } = posSides(value.data, body.side, quote);
     if (buy === null || pay === null) {
       throw new InvalidInputError(
-        'На эту сумму счёт не выставить: после комиссии покупателю ничего не остаётся',
+        'На эту сумму счёт не создать: после комиссии покупателю ничего не остаётся',
       );
     }
 

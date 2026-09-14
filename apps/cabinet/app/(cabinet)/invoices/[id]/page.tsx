@@ -69,7 +69,7 @@ export default async function InvoicePage({
                 </span>
               </span>
               <span className="row__meta">
-                выставил {invoice.author} · <Moment at={invoice.createdAt} />
+                создал {invoice.author} · <Moment at={invoice.createdAt} />
               </span>
             </div>
           </li>

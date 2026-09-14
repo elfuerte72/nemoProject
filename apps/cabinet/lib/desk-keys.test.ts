@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Цель нажатия в режиме кассы.
+ * Цель нажатия в виде терминала.
  *
  * Вёрстку тестами не проверяют — размер и цвет смотрятся глазами, — но
  * это тот случай, о котором `CLAUDE.md` говорит отдельно: цель нажатия
@@ -27,14 +27,14 @@ function minHeightOf(selector: string): number | null {
   return found?.[1] ? Number(found[1]) : null;
 }
 
-describe('режим кассы', () => {
+describe('вид терминала', () => {
   it('клавиша набора не мельче сорока восьми точек', () => {
     const height = minHeightOf('desk__key');
     expect(height).not.toBeNull();
     expect(height!).toBeGreaterThanOrEqual(48);
   });
 
-  it('кнопка «Выставить счёт» в режиме кассы тоже под палец', () => {
+  it('кнопка «Создать счёт» в виде терминала тоже под палец', () => {
     const height = minHeightOf('btn--wide');
     expect(height).not.toBeNull();
     expect(height!).toBeGreaterThanOrEqual(48);
