@@ -8,6 +8,7 @@ import {
   ATTEMPT_LIMIT,
   ATTEMPT_WINDOW_MS,
   forgetAttempts,
+  isFailedLogin,
 } from './attempts';
 
 /**
@@ -104,5 +105,29 @@ describe('адрес запроса', () => {
     expect(addressOf(new Request('https://business.tobee.ru/api/auth/login'))).toBe(
       'неизвестный адрес',
     );
+  });
+});
+
+describe('что считается неудачной попыткой', () => {
+  /*
+   * Ядро кабинета держится на `globalThis`, а заводит его хук запуска —
+   * в своём бандле. Ошибка приходит с классом из другой копии
+   * `@nemo/core`, и `instanceof ForbiddenError` в маршруте ложно всегда.
+   * Так предел входа не срабатывал вовсе: 14 сентября 2026 на dev
+   * тринадцать неверных паролей подряд к одной почте не заперли ничего.
+   * Здесь ошибка собрана так, как она приходит из чужой копии: тот же
+   * `code`, но родства по классу нет.
+   */
+  function foreignCopy(code: string): Error {
+    return Object.assign(new Error('Почта или пароль не подходят'), { code });
+  }
+
+  it('отказ ядра «forbidden» из чужой копии класса — неудачный вход', () => {
+    expect(isFailedLogin(foreignCopy('forbidden'))).toBe(true);
+  });
+
+  it('отказавшая база — не попытка подбора', () => {
+    expect(isFailedLogin(foreignCopy('unavailable'))).toBe(false);
+    expect(isFailedLogin(new Error('connect ECONNREFUSED'))).toBe(false);
   });
 });
