@@ -73,7 +73,7 @@ export default async function PosPage() {
         <Terminal
           directions={sellable}
           shift={shift}
-          merchantName={session.name}
+          authorName={session.userName}
           minAmount={terms.minAmount}
         />
       )}

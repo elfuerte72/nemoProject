@@ -51,13 +51,14 @@ export interface PosDirection {
 export function Terminal({
   directions,
   shift,
-  merchantName,
+  authorName,
   minAmount,
 }: {
   readonly directions: readonly PosDirection[];
   /** Сколько счетов уже создано за сегодня — счётчик смены. */
   readonly shift: number;
-  readonly merchantName: string;
+  /** Кто создаёт счёт — человек, а не кабинет: так он и запишется в счёт. */
+  readonly authorName: string;
   /** Минимум сервиса в долларах: по нему черта курса решает, что сказать. */
   readonly minAmount: string;
 }) {
@@ -366,7 +367,7 @@ export function Terminal({
           Вид терминала
         </button>
         <span className="muted">
-          создал {merchantName} · за смену {made}
+          создал {authorName} · за смену {made}
         </span>
       </div>
     </section>

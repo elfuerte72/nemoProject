@@ -8,7 +8,7 @@ import { requireActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import { addInvoice, listInvoices } from '@/lib/mock/store';
 import { makeInvoice, nextNumber, posSides } from '@/lib/pos';
-import { requireActiveMerchant } from '@/lib/mock/guard';
+import { requireTill } from '@/lib/mock/guard';
 import { viewer } from '@/lib/reads';
 
 export const runtime = 'nodejs';
@@ -45,7 +45,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const actor = await requireActor();
     const { session } = await viewer();
-    requireActiveMerchant(session.status);
+    requireTill(session);
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new InvalidInputError('Счёт заполнен не полностью');
@@ -88,7 +88,8 @@ export async function POST(request: Request): Promise<Response> {
       number: nextNumber(listInvoices(actor.merchantId), at, offset),
       purpose: body.purpose,
       buyer: body.buyer,
-      author: session.name,
+      // Кто нажал, а не чей кабинет: людей у мерчанта несколько (тикет 17).
+      author: session.userName,
       code: body.to,
       amount: buy,
       payCode: body.from,

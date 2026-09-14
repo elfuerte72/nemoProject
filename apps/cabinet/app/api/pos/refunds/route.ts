@@ -5,7 +5,7 @@ import { formatMoney } from '@nemo/ui/format';
 import { errorResponse, json } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
 import { refundLeft, type MockRefund } from '@/lib/invoice-rows';
-import { requireActiveMerchant } from '@/lib/mock/guard';
+import { requireTill } from '@/lib/mock/guard';
 import { addRefund, findInvoice, listRefunds, replaceInvoice } from '@/lib/mock/store';
 import { viewer } from '@/lib/reads';
 
@@ -35,7 +35,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const actor = await requireActor();
     const { session } = await viewer();
-    requireActiveMerchant(session.status);
+    requireTill(session);
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new InvalidInputError('Возврат заполнен не полностью');
     const body = parsed.data;

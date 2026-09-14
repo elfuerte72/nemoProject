@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { merchantRoleCan } from '@nemo/types';
 import { Moment } from '@nemo/ui';
 import { formatMoney, formatRate } from '@nemo/ui/format';
 import {
@@ -29,7 +30,7 @@ export default async function InvoicePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { actor } = await viewer();
+  const { actor, session } = await viewer();
   const { id } = await params;
   const invoice = findInvoice(actor.merchantId, id);
   if (!invoice) notFound();
@@ -91,12 +92,18 @@ export default async function InvoicePage({
           ) : undefined}
         </ul>
 
-        <InvoiceActions
-          id={invoice.id}
-          status={invoice.status}
-          code={invoice.code}
-          left={refundLeft(invoice, listRefunds(actor.merchantId))}
-        />
+        {/*
+          Действия — тем, у кого есть право POS-терминала: наблюдателю
+          маршрут откажет (`requireTill`), и кнопка вела бы в отказ.
+        */}
+        {merchantRoleCan(session.role, 'till') ? (
+          <InvoiceActions
+            id={invoice.id}
+            status={invoice.status}
+            code={invoice.code}
+            left={refundLeft(invoice, listRefunds(actor.merchantId))}
+          />
+        ) : undefined}
       </section>
 
       <section className="card">

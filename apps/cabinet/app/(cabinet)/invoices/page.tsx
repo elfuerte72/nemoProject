@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
+import { merchantRoleCan } from '@nemo/types';
 import {
   EmptyState,
   firstParam,
@@ -96,9 +97,11 @@ export default async function InvoicesPage({
           <p className="page__sub">{PREVIEW_NOTE}</p>
         </div>
         <div className="page__actions">
-          <Link className="btn btn--gold btn--tiny" href="/pos">
-            POS-терминал
-          </Link>
+          {merchantRoleCan(session.role, 'till') ? (
+            <Link className="btn btn--gold btn--tiny" href="/pos">
+              POS-терминал
+            </Link>
+          ) : undefined}
           <a className="btn btn--ghost btn--tiny" href={`/api/pos/invoices/csv?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(status ? { tab: status } : {}) }).toString()}`}>
             CSV
           </a>
