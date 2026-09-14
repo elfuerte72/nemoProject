@@ -89,12 +89,17 @@ async function resolveAll(hostname: string): Promise<readonly string[]> {
  * внутреннюю сеть он не ходит.
  */
 export function isPrivateAddress(address: string): boolean {
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(address);
+  // IPv4 внутри IPv6 — с приставкой ffff и без неё: адрес решает тот,
+  // что внутри.
+  const mapped = /^::(?:ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(address);
   if (mapped) return isPrivateAddress(mapped[1]!);
 
   if (address.includes(':')) {
     const lower = address.toLowerCase();
     if (lower === '::' || lower === '::1') return true;
+    // 64:ff9b::/96 — NAT64: за ним любой IPv4, в том числе внутренний, и
+    // разобрать, какой, шлюз не обязан. Не ходим туда вовсе.
+    if (lower.startsWith('64:ff9b:')) return true;
     // fc00::/7 — уникальные локальные, fe80::/10 — локальная связь.
     return /^f[cd]/.test(lower) || /^fe[89ab]/.test(lower);
   }
@@ -103,7 +108,7 @@ export function isPrivateAddress(address: string): boolean {
   if (parts.length !== 4 || parts.some((one) => !Number.isInteger(one) || one < 0 || one > 255)) {
     return true;
   }
-  const [a, b] = parts as [number, number, number, number];
+  const [a, b, c] = parts as [number, number, number, number];
   return (
     a === 0 ||
     a === 10 ||
@@ -112,6 +117,10 @@ export function isPrivateAddress(address: string): boolean {
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
     (a === 100 && b >= 64 && b <= 127) ||
+    // 198.18.0.0/15 — стенды производительности, 192.0.0.0/24 —
+    // протокольные назначения IANA: в интернет не маршрутизируются.
+    (a === 198 && (b === 18 || b === 19)) ||
+    (a === 192 && b === 0 && c === 0) ||
     a >= 224
   );
 }
