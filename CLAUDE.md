@@ -1159,7 +1159,10 @@ Single-context: `CONTEXT.md` at the root, ADRs under `docs/adr/`. See `docs/agen
 Ветка идёт в `dev`, не в `main`: слитое в `dev` само выезжает на
 тестовый контур с ботом `@devnemobot_bot`, и только проверенное там
 уходит на боевой через `pnpm release` — fast-forward `main` до `dev`,
-без PR и без коммитов в `main`. README, «Два контура».
+без PR и без коммитов в `main`. README, «Два контура». Пока GitHub
+закрыт, сборки идут из зеркала на сервере: вместо PR — скилл `qa` у
+себя и `git push server <ветка>:dev`, выкатывает хук зеркала, и push в
+`main` там же — это выкат на прод. README, «Выкат без GitHub».
 
 ### Parallel sessions
 
