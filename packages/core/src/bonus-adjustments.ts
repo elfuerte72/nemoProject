@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { bonusTransactions, clients } from '@nemo/db';
 import { Money } from '@nemo/types';
 import { requireAdmin, type Actor } from './actor.js';
-import { bonusBalance, toBonusTransactionView, type BonusTransactionView } from './bonus-account.js';
+import { bonusStanding, toBonusTransactionView, type BonusTransactionView } from './bonus-account.js';
 import type { CoreConfig } from './context.js';
 import { InvalidInputError, NotFoundError } from './errors.js';
 
@@ -13,7 +13,8 @@ import { InvalidInputError, NotFoundError } from './errors.js';
  * ошибку правят тоже руками. Комментарий обязателен — движение без
  * причины через месяц не отличить от сбоя; кто правил, пишется в строку.
  * Ниже нуля счёт не уходит: снятое сверх остатка было бы долгом
- * клиента, которого программа не знает.
+ * клиента, которого программа не знает. Снять можно только доступное —
+ * баллы под поданной заявкой на вывод уже обещаны.
  */
 
 export interface AdjustBonusInput {
@@ -52,9 +53,17 @@ export async function adjustBonus(
       throw new NotFoundError('Клиент не найден');
     }
     if (Money.isNegative(amount)) {
-      const balance = await bonusBalance(tx, clientId);
-      if (Money.isNegative(Money.add(balance, amount))) {
-        throw new InvalidInputError(`Снять больше остатка нельзя: на счёте ${balance}`);
+      // Мерится доступным, а не остатком: баллы под поданной заявкой на
+      // вывод уже обещаны клиенту, и снятые, они всё равно ушли бы
+      // деньгами при выплате — счёт стал бы отрицательным.
+      const { balance, held, available } = await bonusStanding(tx, clientId);
+      if (Money.isNegative(Money.add(available, amount))) {
+        throw new InvalidInputError(
+          Money.isZero(held)
+            ? `Снять больше остатка нельзя: на счёте ${balance}`
+            : `Снять больше доступного нельзя: доступно ${available} из ${balance}, ` +
+                `${held} ждут выплаты по заявке на вывод. Сначала отклоните её в разделе «Вывод»`,
+        );
       }
     }
     const [row] = await tx

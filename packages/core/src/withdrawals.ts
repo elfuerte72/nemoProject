@@ -21,10 +21,15 @@ import {
 } from '@nemo/types';
 import { requireClient, requireStaff, type Actor } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
-import { bonusBalance, heldByWithdrawals } from './bonus-account.js';
+import { bonusBalance, bonusStanding } from './bonus-account.js';
 import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import { requirePrivateKey, type CoreConfig, type Executor } from './context.js';
-import { InvalidInputError, NotFoundError, TransitionNotAllowedError } from './errors.js';
+import {
+  ConflictError,
+  InvalidInputError,
+  NotFoundError,
+  TransitionNotAllowedError,
+} from './errors.js';
 import { requireActiveNetwork } from './networks.js';
 import type { Notification } from './notifications.js';
 import { logRequisiteAccess } from './requisite-access.js';
@@ -182,27 +187,6 @@ function revealed(
   }
 }
 
-/**
- * Сколько клиент может вывести прямо сейчас: баланс за вычетом сумм,
- * уже заявленных к выводу.
- *
- * Без вычета две заявки, поданные подряд, вывели бы один и тот же
- * остаток дважды — списание-то происходит только при выплате.
- */
-async function availableForWithdrawal(
-  executor: Executor,
-  clientId: bigint,
-): Promise<Amount> {
-  // Тем же счётом, каким доступное показывает счёт баллов
-  // (`bonus-account.ts`): разойдись они, кабинет предлагал бы подать
-  // заявку на баллы, которые уже обещаны другой.
-  const [balance, held] = await Promise.all([
-    bonusBalance(executor, clientId),
-    heldByWithdrawals(executor, clientId),
-  ]);
-  return Money.subtract(balance, held);
-}
-
 export async function submitWithdrawalRequest(
   ctx: CoreConfig,
   actor: Actor,
@@ -263,7 +247,9 @@ export async function submitWithdrawalRequest(
       );
     }
 
-    const available = await availableForWithdrawal(tx, clientId);
+    // Баланс за вычетом уже заявленного: без вычета две заявки, поданные
+    // подряд, вывели бы один остаток дважды — списание-то при выплате.
+    const { available } = await bonusStanding(tx, clientId);
     if (Money.compare(amount, available) > 0) {
       throw new InvalidInputError(
         `На бонусном балансе доступно ${available} баллов`,
@@ -391,6 +377,11 @@ export async function approveWithdrawalRequest(
  * Списание и смена состояния идут одной транзакцией: заявка,
  * помеченная выплаченной без списания, оставила бы клиенту баллы,
  * которые он уже получил деньгами.
+ *
+ * Ниже нуля счёт выплата не уводит. Подача и правка баллов держат
+ * заявленное нетронутым, но снятия, проведённые до 17 сентября 2026,
+ * этого не знали: заплатить по такой заявке значит отдать деньги за
+ * баллы, которых у клиента уже нет.
  */
 export async function markWithdrawalPaid(
   ctx: CoreConfig,
@@ -402,6 +393,23 @@ export async function markWithdrawalPaid(
   return ctx.db.transaction(async (tx) => {
     const row = await lockWithdrawal(tx, requestId);
     const updated = await transition(tx, row, 'paid', staff.staffId, { paidAt: new Date() });
+
+    // Строка клиента под замком, как у подачи и правки баллов: снятие,
+    // пришедшее между подсчётом и списанием, иначе прочло бы старый
+    // остаток. Проверка после перехода: переход сам отказывает словами
+    // про состояние, и выплаченную дважды заявку незачем мерить балансом.
+    await tx
+      .select({ id: clients.telegramUserId })
+      .from(clients)
+      .where(eq(clients.telegramUserId, row.clientId))
+      .for('update');
+    const balance = await bonusBalance(tx, row.clientId);
+    if (Money.compare(balance, Money.toAmount(row.amount)) < 0) {
+      throw new ConflictError(
+        `Выплатить нельзя: на счёте клиента ${balance} баллов, а заявка на ${Money.toAmount(row.amount)}, ` +
+          'баллы сняли после подачи. Отклоните заявку с причиной: клиент подаст новую на то, что осталось',
+      );
+    }
 
     // Отрицательной величиной, а не отдельным знаком у движения: баланс
     // — сумма движений, и правило «одни виды сложить, другие вычесть»
