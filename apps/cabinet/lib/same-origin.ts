@@ -18,63 +18,34 @@
  * Запрос без `Origin` и без `Sec-Fetch-Site` пропускается: так не ходит
  * ни один нынешний браузер, а подделать запрос можно только в браузере
  * жертвы. Чтение не проверяется — опасно изменение, а не взгляд.
+ *
+ * Само правило — в `@nemo/http/same-origin`, одно на кабинет и панель;
+ * здесь состав кабинета и его слова отказа.
  */
 
-export interface RequestFacts {
-  readonly method: string;
-  readonly pathname: string;
-  readonly origin: string | null;
-  /** `Sec-Fetch-Site`: `same-origin`, `same-site`, `cross-site` или `none`. */
-  readonly fetchSite: string | null;
-  /** Хост кабинета, как его видит браузер: за прокси — `x-forwarded-host`. */
-  readonly host: string | null;
-  readonly contentType: string | null;
-}
-
-const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
-
-/**
- * Маршруты не на куке. API v1 входит ключом из заголовка и зовётся
- * сервером мерчанта, у которого нет ни `Origin`, ни нашей страницы;
- * планировщик — секретом. Подделать чужой ключ браузер не может.
- */
-const NOT_COOKIE = ['/api/v1/', '/api/maintenance/'];
+import {
+  crossSiteComplaint as complaintBy,
+  publicHost,
+  type RequestFacts,
+  type SameOriginRules,
+} from '@nemo/http/same-origin';
 
 export const CROSS_SITE_COMPLAINT =
   'Запрос пришёл не со страницы кабинета. Откройте кабинет и повторите действие там.';
 
+/**
+ * Состав кабинета. Не на куке — API v1 (входит ключом из заголовка, и
+ * зовёт его сервер мерчанта, у которого нет ни `Origin`, ни нашей
+ * страницы) и планировщик (секретом). Подделать чужой ключ браузер не
+ * может. Файлов кабинет не принимает: QR читается на устройстве.
+ */
+export const CABINET_RULES: SameOriginRules = {
+  complaint: CROSS_SITE_COMPLAINT,
+  notCookie: ['/api/v1/', '/api/maintenance/'],
+};
+
 export function crossSiteComplaint(facts: RequestFacts): string | null {
-  if (READS.has(facts.method.toUpperCase())) return null;
-  if (NOT_COOKIE.some((prefix) => facts.pathname.startsWith(prefix))) return null;
-
-  const site = facts.fetchSite?.toLowerCase();
-  if (site !== undefined && site !== 'same-origin' && site !== 'none') {
-    return CROSS_SITE_COMPLAINT;
-  }
-
-  if (facts.origin !== null && hostOf(facts.origin) !== facts.host?.toLowerCase()) {
-    return CROSS_SITE_COMPLAINT;
-  }
-
-  if (facts.contentType !== null) {
-    const media = facts.contentType.split(';')[0]!.trim().toLowerCase();
-    if (media !== 'application/json') return CROSS_SITE_COMPLAINT;
-  }
-
-  return null;
+  return complaintBy(facts, CABINET_RULES);
 }
 
-/** Хост из `Origin`; `null` и мусор не совпадают ни с чем. */
-function hostOf(origin: string): string | null {
-  try {
-    return new URL(origin).host.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-/** Хост кабинета за прокси: первый из `x-forwarded-host`, иначе `host`. */
-export function publicHost(headers: Headers): string | null {
-  const forwarded = headers.get('x-forwarded-host')?.split(',')[0]?.trim();
-  return forwarded || headers.get('host');
-}
+export { publicHost, type RequestFacts };

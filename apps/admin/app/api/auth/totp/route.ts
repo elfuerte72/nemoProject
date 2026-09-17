@@ -10,6 +10,7 @@ import {
   sessionSecret,
   SessionError,
 } from '@/lib/auth/session';
+import { withTotpAttempts } from '@/lib/auth/totp-attempts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,6 +23,11 @@ const codeSchema = z.object({ code: z.string().min(1).max(12) });
  * Только он превращает незавершённый вход в сессию. Пропустить шаг,
  * подправив куку, нельзя: ступень входа покрыта той же подписью, что и
  * идентификатор сотрудника.
+ *
+ * Коды считаются (`lib/auth/totp-attempts.ts`): после пяти промахов за
+ * четверть часа ядро не спрашивается вовсе. О закрытом входе в журнал
+ * ложится строка — по ней администратор узнаёт, что у сотрудника
+ * подбирали код, то есть первый фактор уже у чужого.
  */
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -36,7 +42,15 @@ export async function POST(request: Request): Promise<Response> {
       throw new SessionError('Код не передан');
     }
 
-    const session = await getCore().completeStaffLogin(pending.staffId, parsed.data.code);
+    const session = await withTotpAttempts(
+      pending.staffId,
+      () => getCore().completeStaffLogin(pending.staffId, parsed.data.code),
+      Date.now(),
+      () =>
+        console.warn(
+          `Вход сотрудника ${pending.staffId} закрыт на четверть часа: исчерпаны попытки кода второго фактора`,
+        ),
+    );
 
     store.set(
       SESSION_COOKIE,

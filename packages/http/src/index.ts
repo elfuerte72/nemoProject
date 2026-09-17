@@ -123,3 +123,8 @@ export function schedulerCallDenied(request: Request): Response | null {
 }
 
 export { healthResponse, type DatabaseState, type HealthProbe } from './health.js';
+export {
+  createAttemptCounter,
+  type AttemptCounter,
+  type AttemptCounterOptions,
+} from './attempts.js';
