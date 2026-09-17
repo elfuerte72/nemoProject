@@ -1,5 +1,4 @@
-import { redirect } from 'next/navigation';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { HowToWithdrawals } from '@/app/ui/how-to';
 import { WithdrawalList } from './withdrawal-list';
@@ -14,10 +13,7 @@ export const dynamic = 'force-dynamic';
  * после самого перевода, а не до.
  */
 export default async function WithdrawalsPage() {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const requests = await getCore().listWithdrawalQueue(actor);
 

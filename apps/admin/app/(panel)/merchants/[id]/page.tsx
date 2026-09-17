@@ -1,8 +1,9 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
-import { CoreError } from '@nemo/core';
+import { notFound } from 'next/navigation';
+import { isCoreError } from '@nemo/http';
 import {
+  isUuid,
   WEBHOOK_DELIVERY_STATUS_LABELS,
   WEBHOOK_ENDPOINT_STATE_LABELS,
   WEBHOOK_EVENT_LABELS,
@@ -18,7 +19,7 @@ import {
   Stats,
 } from '@nemo/ui';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { toExchangeRow } from '@/lib/exchange-rows';
 import { toMerchantCardData } from '@/lib/merchant-card';
@@ -47,12 +48,13 @@ export default async function MerchantPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const { id } = await params;
+  // Номер не того вида — «не найдено», а не ошибка базы.
+  if (!isUuid(id)) {
+    notFound();
+  }
   const query = await searchParams;
   const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
   const now = new Date();
@@ -64,7 +66,7 @@ export default async function MerchantPage({
   const core = getCore();
 
   const merchant = await core.getMerchantCard(actor, id).catch((error: unknown) => {
-    if (error instanceof CoreError && error.code === 'not-found') {
+    if (isCoreError(error) && error.code === 'not-found') {
       notFound();
     }
     throw error;

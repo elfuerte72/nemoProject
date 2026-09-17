@@ -1,5 +1,4 @@
 import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 import { CoreError, type ExchangeSummary } from '@nemo/core';
 import {
   ExchangeCountTiles,
@@ -13,7 +12,7 @@ import {
   Stats,
   trendTone,
 } from '@nemo/ui';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { STATUS_LABELS } from '@/lib/exchange-request-labels';
 import { averageByCurrency, formatByCurrency } from '@nemo/ui/money-list';
@@ -62,10 +61,7 @@ export default async function AnalyticsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const params = await searchParams;
   const jar = await cookies();

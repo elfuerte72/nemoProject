@@ -16,7 +16,17 @@ import { Brand } from '@nemo/ui';
  * видел только заводивший его администратор. Отдаёт ключ ядро и только
  * до первого сошедшегося кода (`packages/core/src/staff.ts`).
  */
-export function LoginForm({ devLogin = false }: { devLogin?: boolean }) {
+export function LoginForm({
+  devLogin = false,
+  returnTo = '/',
+}: {
+  devLogin?: boolean;
+  /**
+   * Куда вести после входа: туда, откуда увела истёкшая сессия. Путь уже
+   * проверен страницей — только свой, относительный.
+   */
+  returnTo?: string;
+}) {
   const widgetRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<'telegram' | 'code'>('telegram');
   const [enrollment, setEnrollment] = useState<{ secret: string; qr: string }>();
@@ -82,7 +92,9 @@ export function LoginForm({ devLogin = false }: { devLogin?: boolean }) {
         setError(body.error ?? 'Код не подошёл');
         return;
       }
-      window.location.href = '/';
+      // Туда, куда человек шёл: кнопка «Открыть заявку» из уведомления
+      // при истёкшей сессии до 17 сентября 2026 приводила на стол.
+      window.location.href = returnTo;
     } catch {
       setError('Не удалось связаться с сервером. Повторите попытку.');
     } finally {
@@ -106,7 +118,7 @@ export function LoginForm({ devLogin = false }: { devLogin?: boolean }) {
               Вход по Telegram. Доступ получают только заведённые сотрудники.
             </p>
             <div ref={widgetRef} className="login__widget" />
-            {devLogin ? <DevLogin onError={setError} /> : undefined}
+            {devLogin ? <DevLogin onError={setError} returnTo={returnTo} /> : undefined}
           </>
         ) : (
           <form onSubmit={submitCode} className="login__form">
@@ -196,7 +208,13 @@ declare global {
  * Сказано об этом прямо на экране, чтобы блок не спутали с рабочим
  * входом.
  */
-function DevLogin({ onError }: { onError: (message: string | undefined) => void }) {
+function DevLogin({
+  onError,
+  returnTo,
+}: {
+  onError: (message: string | undefined) => void;
+  returnTo: string;
+}) {
   const [telegramUserId, setTelegramUserId] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -217,7 +235,7 @@ function DevLogin({ onError }: { onError: (message: string | undefined) => void 
       }
       // Адресом, а не router: после установки куки нужен свежий запрос,
       // иначе разделы приедут из кэша страницы входа.
-      window.location.href = '/';
+      window.location.href = returnTo;
     } catch {
       onError('Вход не выполнен');
     } finally {

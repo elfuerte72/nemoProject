@@ -15,6 +15,13 @@ export { BankChips } from './bank-chips.js';
 export { Brand, TobeeMark } from './brand.js';
 export { CopyValue } from './copy.js';
 export { EmptyState } from './empty.js';
+export { ErrorScreen } from './error-screen.js';
+export {
+  FallbackFrame,
+  NotFoundScreen,
+  type FallbackHome,
+  type FallbackStandalone,
+} from './fallback.js';
 export { Funnel, type FunnelStep } from './funnel.js';
 export { Greeting } from './greeting.js';
 export { dayWords, salute } from './greeting-words.js';

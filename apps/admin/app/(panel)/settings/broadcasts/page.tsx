@@ -9,11 +9,14 @@ export default async function BroadcastsPage() {
   return (
     <SettingsSection
       load={async () => {
-        const broadcasts = await getCore().listBroadcasts(actor);
+        const [broadcasts, audience] = await Promise.all([
+          getCore().listBroadcasts(actor),
+          getCore().countBroadcastAudience(actor),
+        ]);
         return (
           <>
             <SectionLead href="/settings/broadcasts" />
-            <BroadcastForm broadcasts={broadcasts} />
+            <BroadcastForm broadcasts={broadcasts} audience={audience} />
           </>
         );
       }}

@@ -1,8 +1,7 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { firstParam, HowTo } from '@nemo/ui';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { AMBASSADORS_HOW_TO } from '@/lib/referral-texts';
 import { Ambassadors } from './ambassadors';
@@ -25,10 +24,7 @@ export default async function AmbassadorsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const query = firstParam((await searchParams).q) ?? '';
 

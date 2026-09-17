@@ -1,3 +1,5 @@
+import { decimalFromInput } from './decimal-input';
+
 /**
  * Ставки в процентах на экране, в базисных пунктах в ядре.
  *
@@ -21,7 +23,7 @@ export function bpsToPercent(bps: number): string {
  * узнает об ошибке ввода из сообщения о неверной ставке.
  */
 export function percentToBps(percent: string): number | null {
-  const normalized = percent.replace(',', '.').trim();
+  const normalized = decimalFromInput(percent);
   if (!/^\d+(\.\d+)?$/.test(normalized)) return null;
 
   const bps = Number(normalized) * 100;

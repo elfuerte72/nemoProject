@@ -180,10 +180,7 @@ const OPEN_WITHDRAWAL_STATUSES = withdrawalRequestStatuses.filter(isWithdrawalOp
  * из счёта — экран показал бы больше, чем разрешит подача, а отказ
  * пришёл бы уже после нажатия.
  */
-export async function heldByWithdrawals(
-  executor: Executor,
-  clientId: bigint,
-): Promise<Amount> {
+async function heldByWithdrawals(executor: Executor, clientId: bigint): Promise<Amount> {
   const [row] = await executor
     .select({ total: sql<string | null>`sum(${withdrawalRequests.amount})` })
     .from(withdrawalRequests)
@@ -195,6 +192,36 @@ export async function heldByWithdrawals(
     );
 
   return row?.total == null ? Money.ZERO : Money.toAmount(row.total);
+}
+
+export interface BonusStanding {
+  /** Сумма движений. */
+  readonly balance: Amount;
+  /** Сколько из неё держат поданные заявки на вывод. */
+  readonly held: Amount;
+  /** Остаток за вычетом занятого: столько можно вывести или снять. */
+  readonly available: Amount;
+}
+
+/**
+ * Остаток и доступное — одним счётом на всё ядро.
+ *
+ * Баллы списываются при выплате, а не при подаче, поэтому между ними
+ * сумма заявки остаётся на счёте, но уже обещана клиенту. Читают это
+ * число кабинет, подача заявки на вывод и правка баллов руками: разойдись
+ * они, экран предлагал бы вывести обещанное другой заявке, а снятие
+ * администратора забирало бы баллы, за которые менеджер потом заплатит
+ * деньгами (разбор 17 сентября 2026).
+ */
+export async function bonusStanding(
+  executor: Executor,
+  clientId: bigint,
+): Promise<BonusStanding> {
+  const [balance, held] = await Promise.all([
+    bonusBalance(executor, clientId),
+    heldByWithdrawals(executor, clientId),
+  ]);
+  return { balance, held, available: Money.subtract(balance, held) };
 }
 
 async function countReferralsByLine(
@@ -237,11 +264,10 @@ export async function getBonusAccount(
   const clientId = requireClient(actor);
 
   const program = await readReferralProgram(ctx.db);
-  const [balance, earned, held, counts, history, settings, rates, referralCode, codes, promo] =
+  const [standing, earned, counts, history, settings, rates, referralCode, codes, promo] =
     await Promise.all([
-      bonusBalance(ctx.db, clientId),
+      bonusStanding(ctx.db, clientId),
       bonusEarned(ctx.db, clientId),
-      heldByWithdrawals(ctx.db, clientId),
       countReferralsByLine(ctx.db, clientId),
       listBonusTransactions(ctx.db, clientId),
       readServiceSettings(ctx.db),
@@ -252,8 +278,8 @@ export async function getBonusAccount(
     ]);
 
   return {
-    balance,
-    available: Money.subtract(balance, held),
+    balance: standing.balance,
+    available: standing.available,
     earned,
     referralCode,
     codes,

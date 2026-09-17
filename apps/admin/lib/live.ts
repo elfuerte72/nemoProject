@@ -69,3 +69,31 @@ export function eventConcerns(event: LiveEvent, screen: LiveScreen): boolean {
   if (screen.clientId === undefined) return true;
   return event.clientId === screen.clientId;
 }
+
+/** Строка очереди с полем: что в нём сохранено на сервере. */
+export interface QueueRowField {
+  readonly id: string;
+  readonly saved?: string | null | undefined;
+}
+
+/**
+ * Набрано ли в полях строк очереди то, что ещё не ушло.
+ *
+ * Тем же правилом, что поле ответа клиенту (`hasUnsentText`): набором
+ * считается только набранное поверх сохранённого. И только у строк,
+ * которые сейчас в очереди: ушедшая строка унесла своё поле, и ждать его
+ * незачем.
+ *
+ * До 17 сентября 2026 очередь карт считала набором любое непустое поле:
+ * номер, сохранённый вместе с переходом, оставался в памяти экрана, и с
+ * первого же действия тихое обновление стояло до перезагрузки.
+ */
+export function rowsHaveUnsentText(
+  typed: Readonly<Record<string, string>>,
+  rows: readonly QueueRowField[],
+): boolean {
+  return rows.some((row) => {
+    const value = typed[row.id];
+    return value !== undefined && hasUnsentText(value, row.saved ?? undefined);
+  });
+}

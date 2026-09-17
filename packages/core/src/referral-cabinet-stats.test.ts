@@ -307,6 +307,15 @@ describe('список рефералов', () => {
     await expect(core.listMyReferrals(asClient(1n), { offset: Number.NaN })).rejects.toThrow(
       /целое/,
     );
+    /*
+     * `1e300` — целое для `Number.isInteger`, но не для базы: до
+     * 17 сентября 2026 такое смещение из адреса кабинета амбассадора
+     * уходило в запрос и отвечало страницей аварии.
+     */
+    await expect(core.listMyReferrals(asClient(1n), { offset: 1e300 })).rejects.toMatchObject({
+      code: 'invalid-input',
+      message: expect.stringMatching(/Смещение/),
+    });
   });
 });
 

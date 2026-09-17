@@ -1,8 +1,10 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { generateRequisiteKeyPair } from '@nemo/crypto';
+import { bonusTransactions } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { looksLikeCardNumber } from '@nemo/types';
 import {
+  ConflictError,
   createCore,
   ForbiddenError,
   InvalidInputError,
@@ -308,6 +310,29 @@ describe('обработка заявки менеджером', () => {
 
     await core.markWithdrawalPaid(manager, id);
 
+    expect((await core.getBonusAccount(asClient(1n))).balance).toBe('0');
+  });
+
+  it('не уводит счёт в минус, если баллы сняли после подачи', async () => {
+    const id = await givenSubmitted();
+    await core.approveWithdrawalRequest(manager, id);
+    // Снятие, проведённое мимо проверки доступного, — так их проводили
+    // до 17 сентября 2026: баланс 0, а заявка на 5000 ждёт выплаты.
+    const admin = await givenStaff({ role: 'admin' });
+    await testDatabase().insert(bonusTransactions).values({
+      clientId: 1n,
+      kind: 'adjustment',
+      amount: '-5000',
+      comment: 'снято до правила',
+      staffId: admin.staffId,
+    });
+
+    const refusal = core.markWithdrawalPaid(manager, id);
+    await expect(refusal).rejects.toThrow(ConflictError);
+    await expect(refusal).rejects.toThrow(/на счёте клиента 0 .*заявка на 5000/i);
+
+    const [request] = await core.listWithdrawalRequests(asClient(1n));
+    expect(request?.status).toBe('approved');
     expect((await core.getBonusAccount(asClient(1n))).balance).toBe('0');
   });
 

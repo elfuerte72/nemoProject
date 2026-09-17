@@ -1,9 +1,8 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 import { exchangeKinds, inProgressExchangeStatuses } from '@nemo/types';
 import { Greeting, Icon, Stat, Stats } from '@nemo/ui';
-import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { panelCounts } from '@/lib/counts';
 import { coreFilterFor, toExchangeRow, type DeskFilter } from '@/lib/exchange-rows';
@@ -33,11 +32,7 @@ export default async function DeskPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const viewer = await requireStaffViewerOrNull();
-  if (!viewer) {
-    redirect('/login');
-  }
-  const { actor, displayName } = viewer;
+  const { actor, displayName } = await requireStaffPage();
 
   const params = await searchParams;
   // Личные настройки таблицы — из куки этого сотрудника; чужая или испорченная — по умолчанию.

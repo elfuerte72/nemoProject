@@ -26,12 +26,14 @@ import {
 import { getBonusAccount } from './bonus-account.js';
 import { adjustBonus, type AdjustBonusInput } from './bonus-adjustments.js';
 import {
+  countBroadcastAudience,
   finishBroadcast,
   listBroadcasts,
   recordBroadcastProgress,
   setMarketingConsent,
   startBroadcast,
   type BroadcastProgress,
+  type StartBroadcastInput,
 } from './broadcasts.js';
 import {
   listCardApplicationQueue,
@@ -754,8 +756,9 @@ export function createCore(ctx: CoreConfig) {
      * клиенту, и права здесь спрашивать не у кого.
      */
 
-    startBroadcast: (actor: Actor, input: { body: string }) =>
+    startBroadcast: (actor: Actor, input: StartBroadcastInput) =>
       startBroadcast(ctx, actor, input),
+    countBroadcastAudience: (actor: Actor) => countBroadcastAudience(ctx, actor),
     recordBroadcastProgress: (
       actor: Actor,
       broadcastId: string,
@@ -940,7 +943,12 @@ export type {
   ReceiveMessageInput,
   ReplyInput,
 } from './conversations.js';
-export type { BroadcastProgress, BroadcastView, StartedBroadcast } from './broadcasts.js';
+export type {
+  BroadcastProgress,
+  BroadcastView,
+  StartBroadcastInput,
+  StartedBroadcast,
+} from './broadcasts.js';
 export type { SecondFactorEnrollment, StaffLoginStart, StaffSession } from './staff.js';
 export type {
   AddStaffInput,

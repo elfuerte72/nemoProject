@@ -1764,19 +1764,31 @@ export const settingsAuditLog = pgTable(
  * возвращается к вопросу «дошло ли до людей письмо на прошлой неделе»
  * тогда, когда экран отправки давно закрыт.
  */
-export const broadcasts = pgTable('broadcasts', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  authorStaffId: uuid('author_staff_id')
-    .notNull()
-    .references(() => staff.id),
-  body: text('body').notNull(),
-  /** Скольким согласившимся предназначалась рассылка. */
-  recipients: integer('recipients').default(0).notNull(),
-  delivered: integer('delivered').default(0).notNull(),
-  failed: integer('failed').default(0).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  finishedAt: timestamp('finished_at', { withTimezone: true }),
-});
+export const broadcasts = pgTable(
+  'broadcasts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    authorStaffId: uuid('author_staff_id')
+      .notNull()
+      .references(() => staff.id),
+    body: text('body').notNull(),
+    /** Скольким согласившимся предназначалась рассылка. */
+    recipients: integer('recipients').default(0).notNull(),
+    delivered: integer('delivered').default(0).notNull(),
+    failed: integer('failed').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    /**
+     * Ключ повтора: форма выдаёт его на черновик. Рассылка идёт минутами,
+     * а запустивший её запрос рвётся по таймауту раньше, и повтор того же
+     * черновика без ключа разослал бы текст всем второй раз. Уникален,
+     * поэтому и два повтора разом заводят одну строку. Пуст у рассылок,
+     * отправленных до 17 сентября 2026.
+     */
+    idempotencyKey: text('idempotency_key'),
+  },
+  (table) => [uniqueIndex('broadcasts_idempotency_key').on(table.idempotencyKey)],
+);
 
 /**
  * Переписка клиента с менеджером.

@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
-import { CoreError } from '@nemo/core';
+import { notFound } from 'next/navigation';
+import { isCoreError } from '@nemo/http';
+import { parseTelegramUserId } from '@nemo/types';
 import { formatAmount } from '@nemo/ui/format';
 import { Moment, Stat, Stats } from '@nemo/ui';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { toClientCardData } from '@/lib/client-card';
 import { getCore } from '@/lib/core';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
@@ -22,20 +23,21 @@ export const dynamic = 'force-dynamic';
  * ведёт в карточку заявки.
  */
 export default async function ClientPage({ params }: { params: Promise<{ id: string }> }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const { id } = await params;
-  if (!/^\d+$/.test(id)) {
+  /*
+   * Номер из адреса: в него ведёт и палитра по любым цифрам. Длиннее
+   * bigint — такого клиента нет, и в базу он не уходит.
+   */
+  const clientId = parseTelegramUserId(id);
+  if (clientId === null) {
     notFound();
   }
-  const clientId = BigInt(id);
   const core = getCore();
 
   const card = await core.getClientCard(actor, clientId).catch((error: unknown) => {
-    if (error instanceof CoreError && error.code === 'not-found') return null;
+    if (isCoreError(error) && error.code === 'not-found') return null;
     throw error;
   });
   if (!card) {

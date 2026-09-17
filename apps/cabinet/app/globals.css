@@ -1156,6 +1156,13 @@
   color: var(--text-muted);
 }
 
+/* Знак над формой входа ведёт на двери витрины: выглядит знаком, а
+   скругление даёт рамке фокуса форму плитки, а не прямоугольника. */
+.login__home {
+  display: inline-flex;
+  border-radius: 14px;
+}
+
 .door__note a,
 .entry__link {
   color: var(--gold-light);

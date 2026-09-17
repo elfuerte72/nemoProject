@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
-import { CoreError } from '@nemo/core';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { notFound } from 'next/navigation';
+import { isCoreError } from '@nemo/http';
+import { parseTelegramUserId } from '@nemo/types';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { toClientCardData } from '@/lib/client-card';
 import { getCore } from '@/lib/core';
 import { ClientCard } from '@/app/ui/client-card';
@@ -27,15 +28,14 @@ export default async function ConversationPage({
   params: Promise<{ clientId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const { clientId } = await params;
   // Идентификатор приходит из адреса, а его правит кто угодно: нечисловой
-  // уронил бы `BigInt` и показал бы страницу аварии вместо разговора.
-  if (!/^\d+$/.test(clientId)) {
+  // уронил бы `BigInt`, а длиннее bigint — запрос к базе, и вместо
+  // разговора была бы страница аварии.
+  const telegramUserId = parseTelegramUserId(clientId);
+  if (telegramUserId === null) {
     notFound();
   }
 
@@ -44,11 +44,11 @@ export default async function ConversationPage({
 
   const core = getCore();
   const [messages, card] = await Promise.all([
-    core.listConversation(actor, BigInt(clientId)),
+    core.listConversation(actor, telegramUserId),
     // Карточка не обязана существовать: писать боту может тот, кого ещё
     // не завели. Разговор из-за этого пропадать не должен.
-    core.getClientCard(actor, BigInt(clientId)).catch((error: unknown) => {
-      if (error instanceof CoreError && error.code === 'not-found') return null;
+    core.getClientCard(actor, telegramUserId).catch((error: unknown) => {
+      if (isCoreError(error) && error.code === 'not-found') return null;
       throw error;
     }),
   ]);

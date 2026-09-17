@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { InvalidInputError } from '@nemo/core';
+import { parseTelegramUserId } from '@nemo/types';
 import { errorResponse, json } from '@/lib/api';
 import { requireStaffActor } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
@@ -12,17 +13,12 @@ export const dynamic = 'force-dynamic';
  * Кому это можно, решает операция, а не маршрут.
  */
 
-/** Верх `bigint` в Postgres: больше — не идентификатор, а опечатка. */
-const MAX_BIGINT = 9_223_372_036_854_775_807n;
-
+// Верх — `bigint` в Postgres: больше — не идентификатор, а опечатка.
 const telegramId = z
   .string()
   .trim()
   .regex(/^\d+$/, 'Telegram ID — только цифры')
-  .refine((value) => {
-    const id = BigInt(value);
-    return id > 0n && id <= MAX_BIGINT;
-  }, 'Telegram ID слишком длинный: проверьте число');
+  .refine((value) => parseTelegramUserId(value) !== null, 'Telegram ID слишком длинный: проверьте число');
 
 const actionSchema = z.discriminatedUnion('action', [
   z.object({

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { eventConcerns } from './live';
+import { eventConcerns, rowsHaveUnsentText } from './live';
 
 /**
  * Чьё это событие. Общее правило тихого обновления — в `@nemo/ui` и
@@ -24,5 +24,34 @@ describe('чьё это событие', () => {
 
     expect(eventConcerns({ topic: 'conversations', clientId: '200' }, screen)).toBe(true);
     expect(eventConcerns({ topic: 'conversations' }, screen)).toBe(true);
+  });
+});
+
+/**
+ * Набрано ли в строках очереди то, что ещё не ушло.
+ *
+ * До 17 сентября 2026 очередь карт считала набором любое непустое поле
+ * номера — и после того, как номер сохранился вместе с переходом, и после
+ * того, как строка ушла из очереди. С первого же действия тихое
+ * обновление вставало до перезагрузки.
+ */
+describe('набор в строках очереди', () => {
+  it('номер, набранный поверх сохранённого, держит обновление', () => {
+    expect(rowsHaveUnsentText({ a: 'PRV-42' }, [{ id: 'a', saved: null }])).toBe(true);
+    expect(rowsHaveUnsentText({ a: 'PRV-43' }, [{ id: 'a', saved: 'PRV-42' }])).toBe(true);
+  });
+
+  it('сохранённый номер — уже не набор', () => {
+    expect(rowsHaveUnsentText({ a: 'PRV-42' }, [{ id: 'a', saved: 'PRV-42' }])).toBe(false);
+    expect(rowsHaveUnsentText({ a: ' PRV-42 ' }, [{ id: 'a', saved: 'PRV-42' }])).toBe(false);
+  });
+
+  it('строка ушла из очереди — ждать её поле незачем', () => {
+    expect(rowsHaveUnsentText({ a: 'PRV-42' }, [{ id: 'b', saved: null }])).toBe(false);
+  });
+
+  it('пустое и нетронутое поле — не набор', () => {
+    expect(rowsHaveUnsentText({ a: '  ' }, [{ id: 'a', saved: null }])).toBe(false);
+    expect(rowsHaveUnsentText({}, [{ id: 'a', saved: 'PRV-42' }])).toBe(false);
   });
 });

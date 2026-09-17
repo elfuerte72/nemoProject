@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
-import { Brand } from '@nemo/ui';
+import { EntryBrand } from '@/app/ui/entry-brand';
 import { send } from '@/app/ui/send';
 
 /**
@@ -52,9 +52,7 @@ export function RegisterForm() {
   return (
     <main className="login">
       <div className="login__card login__card--wide">
-        <div className="login__brand">
-          <Brand eyebrow="кабинет" />
-        </div>
+        <EntryBrand />
         <p className="login__eyebrow">Заведение кабинета</p>
         <p className="muted">
           Кабинет — для бизнеса, который меняет через Tobee деньги: свои или своего

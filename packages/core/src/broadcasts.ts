@@ -1,8 +1,8 @@
-import { desc, eq } from 'drizzle-orm';
+import { count, desc, eq } from 'drizzle-orm';
 import { broadcasts, clients } from '@nemo/db';
 import { requireAdmin, requireClient, type Actor } from './actor.js';
 import type { CoreConfig } from './context.js';
-import { InvalidInputError, NotFoundError } from './errors.js';
+import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
 
 /**
  * Согласие на рассылку и ручные рассылки.
@@ -32,8 +32,22 @@ export interface BroadcastView {
 
 export interface StartedBroadcast {
   readonly broadcast: BroadcastView;
-  /** Кому отправлять. Только клиенты с действующим согласием. */
+  /**
+   * Кому отправлять. Только клиенты с действующим согласием. У повтора
+   * пусто: этот черновик уже отправляется или отправлен.
+   */
   readonly recipients: readonly bigint[];
+  /** Черновик с этим ключом уже заводил рассылку — отдана она же. */
+  readonly repeated: boolean;
+}
+
+export interface StartBroadcastInput {
+  readonly body: string;
+  /**
+   * Ключ повтора, один на черновик. Форма выдаёт новый, когда текст
+   * меняется, и тот же — на повторное нажатие после оборванного запроса.
+   */
+  readonly idempotencyKey: string;
 }
 
 type BroadcastRow = typeof broadcasts.$inferSelect;
@@ -81,6 +95,24 @@ export async function setMarketingConsent(
 }
 
 /**
+ * Скольким уйдёт рассылка, если отправить её сейчас.
+ *
+ * Называется в подтверждении до отправки: «разослать» без числа не
+ * говорит, что нажатие дойдёт до тысяч людей и отозвать его нельзя.
+ * Число может разойтись с итоговым на тех, кто ответил на вопрос о
+ * согласии между подтверждением и отправкой, — список получателей всё
+ * равно читает `startBroadcast`.
+ */
+export async function countBroadcastAudience(ctx: CoreConfig, actor: Actor): Promise<number> {
+  requireAdmin(actor);
+  const [row] = await ctx.db
+    .select({ value: count() })
+    .from(clients)
+    .where(eq(clients.marketingConsent, true));
+  return row?.value ?? 0;
+}
+
+/**
  * Составить рассылку и получить список получателей.
  *
  * Список читается здесь и один раз: отписавшийся во время отправки уже
@@ -95,12 +127,19 @@ export async function setMarketingConsent(
 export async function startBroadcast(
   ctx: CoreConfig,
   actor: Actor,
-  input: { body: string },
+  input: StartBroadcastInput,
 ): Promise<StartedBroadcast> {
   const admin = requireAdmin(actor);
   const body = input.body.trim();
   if (!body) {
     throw new InvalidInputError('Рассылка без текста никому ничего не сообщит');
+  }
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!idempotencyKey || idempotencyKey.length > 100) {
+    // Без ключа оборванный запрос нечем отличить от новой рассылки, и
+    // повтор разослал бы текст второй раз: правило держит операция, а
+    // не форма.
+    throw new InvalidInputError('Рассылка не отправлена: обновите страницу и отправьте снова');
   }
 
   return ctx.db.transaction(async (tx) => {
@@ -109,15 +148,49 @@ export async function startBroadcast(
       .from(clients)
       .where(eq(clients.marketingConsent, true));
 
+    /*
+     * Повтор черновика отдаёт уже заведённую рассылку, а не заводит
+     * вторую. Вставкой с `on conflict do nothing`, а не чтением перед
+     * ней: два повтора разом прочли бы пустоту оба. Нарушение
+     * уникальности, пойманное как ошибка, прервало бы транзакцию, и
+     * дочитать первую рассылку было бы уже нечем.
+     */
     const [row] = await tx
       .insert(broadcasts)
-      .values({ authorStaffId: admin.staffId, body, recipients: consenting.length })
+      .values({
+        authorStaffId: admin.staffId,
+        body,
+        recipients: consenting.length,
+        idempotencyKey,
+      })
+      .onConflictDoNothing({ target: broadcasts.idempotencyKey })
       .returning();
 
-    return {
-      broadcast: toView(row!),
-      recipients: consenting.map((one) => one.telegramUserId),
-    };
+    if (row) {
+      return {
+        broadcast: toView(row),
+        recipients: consenting.map((one) => one.telegramUserId),
+        repeated: false,
+      };
+    }
+
+    const [earlier] = await tx
+      .select()
+      .from(broadcasts)
+      .where(eq(broadcasts.idempotencyKey, idempotencyKey))
+      .limit(1);
+    if (!earlier) {
+      throw new ConflictError('Рассылка уже отправляется: обновите страницу');
+    }
+    // Тот же ключ с другим текстом — не повтор, а сбой формы: отдать
+    // первую рассылку значило бы сказать «ушло» о тексте, который не
+    // уходил, а разослать — нарушить обещание ключа.
+    if (earlier.body !== body) {
+      throw new ConflictError(
+        'Этот черновик уже разослан с другим текстом. Обновите страницу и отправьте новый текст заново',
+      );
+    }
+    return { broadcast: toView(earlier), recipients: [], repeated: true };
   });
 }
 

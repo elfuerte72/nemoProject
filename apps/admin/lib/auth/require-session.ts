@@ -1,6 +1,8 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { CoreError, type Actor } from '@nemo/core';
 import { getCore } from '@/lib/core';
+import { loginPath, PAGE_PATH_HEADER } from '@/lib/auth/return-to';
 import { readToken, SESSION_COOKIE, sessionSecret, SessionError } from '@/lib/auth/session';
 
 export type StaffActor = Actor & { type: 'staff' };
@@ -61,4 +63,22 @@ export async function requireStaffViewerOrNull(): Promise<StaffViewer | null> {
     if (error instanceof CoreError && error.code === 'forbidden') return null;
     throw error;
   }
+}
+
+/**
+ * Кто смотрит страницу панели — или уход на вход с адресом возврата.
+ *
+ * Одна обёртка на все страницы и каркасы: до 17 сентября 2026 пара
+ * «проверить сессию, иначе `redirect('/login')`» была набрана в каждой
+ * странице, и адрес, с которого человека увели, не знала ни одна. Кнопка
+ * «Открыть заявку» из уведомления при истёкшей сессии приводила после
+ * входа на стол. Путь страницы кладёт в запрос `middleware`, а годится ли
+ * он для возврата, решает `loginPath`.
+ */
+export async function requireStaffPage(): Promise<StaffViewer> {
+  const viewer = await requireStaffViewerOrNull();
+  if (!viewer) {
+    redirect(loginPath((await headers()).get(PAGE_PATH_HEADER)));
+  }
+  return viewer;
 }
