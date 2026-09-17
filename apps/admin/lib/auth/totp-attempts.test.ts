@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   forgetTotpAttempts,
@@ -110,6 +112,23 @@ describe('предел попыток кода', () => {
       await expect(withTotpAttempts('anna', down, 1_000)).rejects.toThrow('ECONNREFUSED');
     }
     await expect(withTotpAttempts('anna', rightCode, 1_000)).resolves.toEqual({ role: 'manager' });
+  });
+
+  /*
+   * Правило живёт в модуле, а срабатывает, только если маршрут им
+   * пользуется. Маршрут на `cookies()` из Next в тест целиком не
+   * поднять, поэтому сверяется его текст: ядро зовётся ровно один раз и
+   * только изнутри предела.
+   */
+  it('маршрут второго шага входа зовёт ядро только через предел', () => {
+    const route = readFileSync(
+      fileURLToPath(new URL('../../app/api/auth/totp/route.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(route.match(/completeStaffLogin/g)).toHaveLength(1);
+    expect(route).toMatch(
+      /withTotpAttempts\(\s*pending\.staffId,\s*\(\)\s*=>\s*getCore\(\)\.completeStaffLogin\(/,
+    );
   });
 
   it('предел позволяет опечататься и не даёт перебирать', () => {

@@ -44,6 +44,13 @@ describe('изменяющий запрос — только со своей с�
     expect(crossSiteComplaint({ ...SAME, host: 'localhost:3000' }, RULES)).not.toBeNull();
   });
 
+  it('изменением считается всё, кроме чтения: PUT, PATCH, DELETE — в любом регистре', () => {
+    const forged = { ...SAME, origin: 'https://evil-1-2-3-4.sslip.io', fetchSite: 'same-site', contentType: 'text/plain' };
+    for (const method of ['PUT', 'PATCH', 'DELETE', 'patch', 'Delete']) {
+      expect(crossSiteComplaint({ ...forged, method }, RULES), method).toBe(RULES.complaint);
+    }
+  });
+
   it('не браузер — ни Origin, ни Sec-Fetch-Site — пропускается', () => {
     expect(crossSiteComplaint({ ...SAME, origin: null, fetchSite: null }, RULES)).toBeNull();
   });
