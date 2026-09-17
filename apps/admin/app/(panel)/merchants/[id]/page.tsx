@@ -1,8 +1,9 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { CoreError } from '@nemo/core';
+import { isCoreError } from '@nemo/http';
 import {
+  isUuid,
   WEBHOOK_DELIVERY_STATUS_LABELS,
   WEBHOOK_ENDPOINT_STATE_LABELS,
   WEBHOOK_EVENT_LABELS,
@@ -53,6 +54,10 @@ export default async function MerchantPage({
   }
 
   const { id } = await params;
+  // Номер не того вида — «не найдено», а не ошибка базы.
+  if (!isUuid(id)) {
+    notFound();
+  }
   const query = await searchParams;
   const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
   const now = new Date();
@@ -64,7 +69,7 @@ export default async function MerchantPage({
   const core = getCore();
 
   const merchant = await core.getMerchantCard(actor, id).catch((error: unknown) => {
-    if (error instanceof CoreError && error.code === 'not-found') {
+    if (isCoreError(error) && error.code === 'not-found') {
       notFound();
     }
     throw error;

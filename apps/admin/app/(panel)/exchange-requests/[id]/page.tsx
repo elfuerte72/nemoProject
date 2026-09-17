@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
-import { CoreError } from '@nemo/core';
+import { isCoreError } from '@nemo/http';
+import { isUuid } from '@nemo/types';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
 import { toClientCardData } from '@/lib/client-card';
 import { toMerchantCardData, toOwnerData } from '@/lib/merchant-card';
@@ -19,6 +20,13 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   }
 
   const { id } = await params;
+  /*
+   * Номер не того вида — тоже «не найдено»: база на него отвечает не
+   * пустотой, а ошибкой, и менеджер видел бы страницу аварии.
+   */
+  if (!isUuid(id)) {
+    notFound();
+  }
   const core = getCore();
 
   /*
@@ -32,7 +40,7 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
     core.getExchangeRequestForStaff(actor, id),
     core.listExchangeRequestEvents(actor, id),
   ]).catch((error: unknown) => {
-    if (error instanceof CoreError && error.code === 'not-found') {
+    if (isCoreError(error) && error.code === 'not-found') {
       notFound();
     }
     throw error;
@@ -53,14 +61,14 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   const card =
     owner.kind === 'client'
       ? await core.getClientCard(actor, owner.clientId).catch((error: unknown) => {
-          if (error instanceof CoreError && error.code === 'not-found') return null;
+          if (isCoreError(error) && error.code === 'not-found') return null;
           throw error;
         })
       : null;
   const merchant =
     owner.kind === 'merchant'
       ? await core.getMerchantCard(actor, owner.merchantId).catch((error: unknown) => {
-          if (error instanceof CoreError && error.code === 'not-found') return null;
+          if (isCoreError(error) && error.code === 'not-found') return null;
           throw error;
         })
       : null;

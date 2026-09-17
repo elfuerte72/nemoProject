@@ -69,7 +69,12 @@ export function localMidnight(now: Date, offsetMinutes: number): Date {
  * Период из параметров адреса. Незнакомый ключ и битые даты — тридцать
  * дней: параметр приходит из адресной строки, и отказом на опечатку
  * отвечать незачем. Свой период — календарные дни включительно:
- * «по 2 сентября» значит до конца 2 сентября.
+ * «по 2 сентября» значит до конца 2 сентября, а «с 2 по 2 сентября» —
+ * весь этот день.
+ *
+ * Пустым период не бывает: ядро такой отвергает, и отказ на странице
+ * стал бы аварией. Поэтому даты, набранные задом наперёд, называют те
+ * же дни, а начало без конца, стоящее после сегодня, — один свой день.
  */
 export function resolvePeriod(
   params: { period?: string | undefined; from?: string | undefined; to?: string | undefined },
@@ -82,11 +87,13 @@ export function resolvePeriod(
   if (params.period === 'custom') {
     const from = parseDay(params.from, offsetMinutes);
     const to = parseDay(params.to, offsetMinutes);
-    if (from && to && from < to) {
-      return { key: 'custom', from, to: new Date(to.getTime() + DAY) };
+    if (from && to) {
+      const [first, last] = from <= to ? [from, to] : [to, from];
+      return { key: 'custom', from: first, to: new Date(last.getTime() + DAY) };
     }
-    if (from && !to) {
-      return { key: 'custom', from, to: tomorrow };
+    if (from) {
+      const end = Math.max(tomorrow.getTime(), from.getTime() + DAY);
+      return { key: 'custom', from, to: new Date(end) };
     }
   }
 

@@ -108,13 +108,22 @@ const MAX_PERIOD_MS = 366 * DAY_MS;
 const OPEN_WITHDRAWAL_STATUSES = withdrawalRequestStatuses.filter(isWithdrawalOpen);
 const within = periodOf;
 
-/** Целое неотрицательное из запроса: `NaN` и бесконечность — отказ словами, а не ошибка базы. */
+/**
+ * Целое неотрицательное из запроса: `NaN`, бесконечность и число, которое
+ * не записать целым без потери, — отказ словами, а не ошибка базы.
+ * `1e300` для `Number.isInteger` целое, но в запрос уходит строкой
+ * `1e+300`, и её база уже не разбирает.
+ */
 function requireWhole(value: number | undefined, fallback: number, subject: string): number {
   if (value === undefined) return fallback;
   if (!Number.isFinite(value) || value < 0) {
     throw new InvalidInputError(`${subject}: ожидается целое неотрицательное число`);
   }
-  return Math.trunc(value);
+  const whole = Math.trunc(value);
+  if (!Number.isSafeInteger(whole)) {
+    throw new InvalidInputError(`${subject}: слишком большое число`);
+  }
+  return whole;
 }
 
 function amountOf(value: string | null | undefined): Amount {

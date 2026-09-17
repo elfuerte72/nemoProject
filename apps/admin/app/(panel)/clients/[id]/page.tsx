@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { CoreError } from '@nemo/core';
+import { isCoreError } from '@nemo/http';
+import { parseTelegramUserId } from '@nemo/types';
 import { formatAmount } from '@nemo/ui/format';
 import { Moment, Stat, Stats } from '@nemo/ui';
 import { requireStaffActorOrNull } from '@/lib/auth/require-session';
@@ -28,14 +29,18 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   }
 
   const { id } = await params;
-  if (!/^\d+$/.test(id)) {
+  /*
+   * Номер из адреса: в него ведёт и палитра по любым цифрам. Длиннее
+   * bigint — такого клиента нет, и в базу он не уходит.
+   */
+  const clientId = parseTelegramUserId(id);
+  if (clientId === null) {
     notFound();
   }
-  const clientId = BigInt(id);
   const core = getCore();
 
   const card = await core.getClientCard(actor, clientId).catch((error: unknown) => {
-    if (error instanceof CoreError && error.code === 'not-found') return null;
+    if (isCoreError(error) && error.code === 'not-found') return null;
     throw error;
   });
   if (!card) {

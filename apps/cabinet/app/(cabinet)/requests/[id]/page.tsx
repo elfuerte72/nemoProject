@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { isCoreError } from '@nemo/http';
+import { isUuid } from '@nemo/types';
 import { Moment, QuietRefresh } from '@nemo/ui';
 import { formatMoney, formatRate } from '@nemo/ui/format';
 import { getCore } from '@/lib/core';
@@ -25,6 +26,9 @@ export default async function RequestPage({
 }) {
   const { actor } = await viewer();
   const { id } = await params;
+  // Номер не того вида — «не найдена», как и чужая: база на него
+  // отвечает не пустотой, а ошибкой.
+  if (!isUuid(id)) notFound();
   const core = getCore();
 
   const request = await core.getExchangeRequest(actor, id).catch((error: unknown) => {

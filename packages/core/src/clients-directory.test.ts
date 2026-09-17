@@ -103,6 +103,10 @@ describe('список клиентов', () => {
       (await core.listClients(manager, { query: '@fuer' })).map((one) => one.username),
     ).toEqual(['elfuerte']);
     expect(await core.countClients(manager, { query: 'e' })).toBe(2);
+    // Цифр больше, чем вмещает bigint, — такого клиента нет, а не ошибка
+    // базы: до 17 сентября 2026 такой поиск отвечал страницей аварии.
+    expect(await core.listClients(manager, { query: '99999999999999999999999' })).toEqual([]);
+    expect(await core.countClients(manager, { query: '99999999999999999999999' })).toBe(0);
   });
 
   it('ждущие ответа — те, чьё последнее сообщение без ответа', async () => {

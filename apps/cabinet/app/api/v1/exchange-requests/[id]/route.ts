@@ -1,5 +1,6 @@
 import { json } from '@nemo/http';
 import { getCore } from '@/lib/core';
+import { requireRequestId } from '@/lib/v1/ids';
 import { v1 } from '@/lib/v1/route';
 import { toApiRequest } from '@/lib/v1/views';
 
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export const GET = v1<{ id: string }>(async (_request, ctx, _body, { id }) => {
   const core = getCore();
   const [request, terms] = await Promise.all([
-    core.getExchangeRequest(ctx.actor, id),
+    core.getExchangeRequest(ctx.actor, requireRequestId(id)),
     core.getExchangeTerms(),
   ]);
   return json({ request: toApiRequest(request, terms) });
