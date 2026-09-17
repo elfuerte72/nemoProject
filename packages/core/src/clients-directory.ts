@@ -1,6 +1,6 @@
 import { and, count, desc, eq, ilike, inArray, lt, max, or, sql, sum, type SQL } from 'drizzle-orm';
 import { clientMessages, clients, exchangeRequests, staff } from '@nemo/db';
-import { Money } from '@nemo/types';
+import { Money, parseTelegramUserId } from '@nemo/types';
 import { requireStaff, type Actor } from './actor.js';
 import type { MoneyByCurrency } from './analytics.js';
 import type { CoreConfig } from './context.js';
@@ -99,11 +99,14 @@ function whereFor(filter: ClientFilter): SQL | undefined {
   const parts: SQL[] = [];
   const query = filter.query?.trim().replace(/^@/, '');
   if (query) {
-    parts.push(
-      /^\d+$/.test(query)
-        ? eq(clients.telegramUserId, BigInt(query))
-        : ilike(clients.username, `%${escapeLike(query)}%`),
-    );
+    if (/^\d+$/.test(query)) {
+      // Цифр больше, чем вмещает bigint, — такого клиента нет, а не
+      // ошибка базы: в запрос такое число не уходит.
+      const id = parseTelegramUserId(query);
+      parts.push(id === null ? sql`false` : eq(clients.telegramUserId, id));
+    } else {
+      parts.push(ilike(clients.username, `%${escapeLike(query)}%`));
+    }
   }
   if (filter.tab === 'regular') {
     parts.push(sql`${clients.telegramUserId} in ${regularIds()}`);

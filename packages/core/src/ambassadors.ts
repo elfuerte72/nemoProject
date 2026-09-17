@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { ambassadors, bonusTransactions, clients, referrals, staff } from '@nemo/db';
-import { Money, isReferralLine, type Amount, type ReferralLine } from '@nemo/types';
+import { Money, isReferralLine, parseTelegramUserId, type Amount, type ReferralLine } from '@nemo/types';
 import { requireAdmin, type Actor } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { ConflictError, ForbiddenError, InvalidInputError, NotFoundError } from './errors.js';
@@ -64,22 +64,6 @@ export interface AddAmbassadorInput {
 export interface ListAmbassadorsInput {
   /** Поиск по подписи и по идентификатору Telegram. */
   readonly query?: string | undefined;
-}
-
-/** Верх `bigint` в Postgres: больше — не идентификатор, а опечатка. */
-const MAX_BIGINT = 9_223_372_036_854_775_807n;
-
-/**
- * Строка цифр как идентификатор Telegram — или пусто.
- *
- * Число сверх `bigint` в запрос не уходит: база ответила бы отказом
- * там, где человек просто ошибся при наборе, а пустой список — это и
- * есть честный ответ «такого нет».
- */
-function telegramIdOrNull(query: string): bigint | null {
-  if (!/^\d+$/.test(query)) return null;
-  const value = BigInt(query);
-  return value > 0n && value <= MAX_BIGINT ? value : null;
 }
 
 function requireTitle(raw: string): string {
@@ -263,7 +247,12 @@ export async function listAmbassadors(
 
   // Подпись русская, а база сервиса собрана с локалью `C`: без явной
   // коллации «Пхукет» не находится на «пхукет» (`search.ts`).
-  const digits = telegramIdOrNull(query);
+  /*
+   * Число сверх `bigint` в запрос не уходит: база ответила бы отказом
+   * там, где человек просто ошибся при наборе, а пустой список — это и
+   * есть честный ответ «такого нет».
+   */
+  const digits = parseTelegramUserId(query);
   return read(
     ctx.db,
     or(
