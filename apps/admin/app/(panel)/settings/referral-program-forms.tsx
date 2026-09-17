@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { ReferralProgramView, ReferralTierView, ServiceSettingsView } from '@nemo/core';
 import { MAX_REFERRAL_DEPTH, referralLineTitle } from '@nemo/types';
+import { decimalFromInput } from '@/lib/decimal-input';
 import { bpsToPercent } from '@/lib/percent';
 import {
   draftsToLines,
@@ -311,7 +312,7 @@ function WithdrawalCard({ settings, busy, onSend }: { settings: ServiceSettingsV
           disabled={busy}
           className="btn btn--gold"
           onClick={() =>
-            onSend('/api/settings', { minWithdrawalAmount: minWithdrawal.replace(',', '.').trim() })
+            onSend('/api/settings', { minWithdrawalAmount: decimalFromInput(minWithdrawal) })
           }
         >
           Сохранить

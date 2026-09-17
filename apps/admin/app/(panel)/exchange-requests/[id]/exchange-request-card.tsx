@@ -23,6 +23,7 @@ import { ClientCard, type ClientCardData } from '@/app/ui/client-card';
 import { MerchantCard, type MerchantCardData } from '@/app/ui/merchant-card';
 import { HowToRunRequest } from '@/app/ui/how-to';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
+import { decimalFromInput } from '@/lib/decimal-input';
 import { suggestServiceIncome } from '@/lib/income';
 import type { OwnerData } from '@/lib/merchant-card';
 import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
@@ -683,10 +684,15 @@ export function ExchangeRequestCard({
                       action: 'confirm-rate',
                       // Ни курс, ни сумма не уходят по заявке с курсом
                       // подачи: и то и другое там обязательство сервиса, и
-                      // присланное поверх операция отвергает.
+                      // присланное поверх операция отвергает. Набранное
+                      // с запятой — с телефона иначе не набрать — уходит
+                      // с точкой: ядро знает только её.
                       ...(request.requestRate
                         ? {}
-                        : { finalRate, ...(toAmount ? { toAmount } : {}) }),
+                        : {
+                            finalRate: decimalFromInput(finalRate),
+                            ...(toAmount.trim() ? { toAmount: decimalFromInput(toAmount) } : {}),
+                          }),
                       ...(serviceAccountId ? { serviceAccountId } : {}),
                       ...(paymentInstructions.trim() ? { paymentInstructions } : {}),
                     })
@@ -777,7 +783,13 @@ export function ExchangeRequestCard({
                   type="button"
                   disabled={busy || !serviceIncome.trim() || !serviceIncomeCode.trim()}
                   className="btn btn--gold"
-                  onClick={() => act({ action: 'complete', serviceIncome, serviceIncomeCode })}
+                  onClick={() =>
+                    act({
+                      action: 'complete',
+                      serviceIncome: decimalFromInput(serviceIncome),
+                      serviceIncomeCode,
+                    })
+                  }
                 >
                   Заявка исполнена
                 </button>
