@@ -16,8 +16,16 @@ export const dynamic = 'force-dynamic';
  * возвращается в ядро. Отказ по одному получателю не прерывает
  * остальных: заблокировавший бота — обычное дело, а не повод оборвать
  * рассылку на нём.
+ *
+ * Запрос несёт ключ повтора черновика. Отправка идёт минутами, и этот
+ * запрос рвётся по таймауту раньше, чем она закончится; повтор с тем же
+ * ключом операция узнаёт и отдаёт первую рассылку с пустым списком —
+ * второй раз никому ничего не уходит.
  */
-const broadcastSchema = z.object({ body: z.string().min(1).max(4000) });
+const broadcastSchema = z.object({
+  body: z.string().min(1).max(4000),
+  idempotencyKey: z.string().default(''),
+});
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -28,7 +36,10 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const core = getCore();
-    const { broadcast, recipients } = await core.startBroadcast(actor, parsed.data);
+    const { broadcast, recipients, repeated } = await core.startBroadcast(actor, parsed.data);
+    if (repeated) {
+      return json({ broadcast, repeated: true });
+    }
 
     // Счётчики сохраняются по ходу отправки: на большом списке она идёт
     // минутами, и этот запрос может оборваться по таймауту раньше, чем
@@ -41,7 +52,10 @@ export async function POST(request: Request): Promise<Response> {
       },
     });
 
-    return json({ broadcast: await core.finishBroadcast(actor, broadcast.id, result) });
+    return json({
+      broadcast: await core.finishBroadcast(actor, broadcast.id, result),
+      repeated: false,
+    });
   } catch (error) {
     return errorResponse(error);
   }
