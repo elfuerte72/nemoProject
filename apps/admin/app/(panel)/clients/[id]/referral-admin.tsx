@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { HowTo } from '@nemo/ui';
 import { referralLineTitle } from '@nemo/types';
 import type { ClientReferralData } from '@/app/ui/client-card';
+import { decimalFromInput } from '@/lib/decimal-input';
 import { bpsToPercent } from '@/lib/percent';
 import { individualDraftsToRates } from '@/lib/referral-program-forms';
 import { CLIENT_REFERRAL_HOW_TO } from '@/lib/referral-texts';
@@ -134,7 +135,7 @@ export function ReferralAdmin({
             type="button"
             className="btn btn--danger"
             disabled={busy || !amount.trim() || !comment.trim()}
-            onClick={() => act({ action: 'adjust', amount: amount.replace(',', '.').trim(), comment })}
+            onClick={() => act({ action: 'adjust', amount: decimalFromInput(amount), comment })}
           >
             Провести правку
           </button>

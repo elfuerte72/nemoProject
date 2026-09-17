@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { DirectionView, FeeScheduleView, NetworkView } from '@nemo/core';
 import { feeScheduleComplaint, type PayoutMethod } from '@nemo/types';
 import { KIND_LABELS } from '@/lib/exchange-request-labels';
+import { decimalFromInput } from '@/lib/decimal-input';
 import { feeScheduleUnsaved } from '@/lib/fee-schedule-forms';
 import { FEE_PAYOUT_LABELS, pillClass } from '@/lib/labels';
 import { bpsToPercent, percentToBps } from '@/lib/percent';
@@ -181,13 +182,13 @@ function draftsReady(drafts: readonly TierDraft[]): boolean {
 function toTiers(drafts: readonly TierDraft[]) {
   return drafts.map((draft, index) => ({
     upToUsd:
-      index === drafts.length - 1 ? null : draft.upToUsd.replace(',', '.').trim(),
+      index === drafts.length - 1 ? null : decimalFromInput(draft.upToUsd),
     ...(draft.rate.trim() === '' ? {} : { rateBps: percentToBps(draft.rate) ?? 0 }),
     ...(draft.fixed.trim() === ''
       ? {}
       : draft.fixedIn === 'payout'
-        ? { fixedPayout: draft.fixed.replace(',', '.').trim() }
-        : { fixedUsd: draft.fixed.replace(',', '.').trim() }),
+        ? { fixedPayout: decimalFromInput(draft.fixed) }
+        : { fixedUsd: decimalFromInput(draft.fixed) }),
   }));
 }
 
@@ -358,7 +359,7 @@ function FeeScheduleCard({
   // кнопку, иначе о нём рассказал бы отказ ядра после нажатия.
   const minReady =
     minUsd.trim() === '' ||
-    (isAmount(minUsd) && Number(minUsd.replace(',', '.')) > 0);
+    (isAmount(minUsd) && Number(decimalFromInput(minUsd)) > 0);
 
   /*
    * Чем сетка не годится, говорится до нажатия и теми же словами, что
@@ -556,7 +557,7 @@ function FeeScheduleCard({
               // он снимается — сетка сохраняется целиком.
               ...(minUsd.trim() === ''
                 ? {}
-                : { minUsd: minUsd.replace(',', '.').trim() }),
+                : { minUsd: decimalFromInput(minUsd) }),
               thresholdInclusive: inclusive,
               tiers,
             });
