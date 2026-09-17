@@ -12,6 +12,7 @@ import {
 import { dayKey, formatDayHeading } from '@nemo/ui/format';
 import { Moment, useBrowserZone } from '@nemo/ui';
 import { hasUnsentText } from '@/lib/live';
+import type { SendOutcome } from '@/lib/send-outcome';
 
 /**
  * Окно переписки — так, как оно устроено в CRM, где чат и есть работа.
@@ -40,13 +41,17 @@ export function Dialog({
   readonly messages: readonly MessageView[];
   /** Что уже стоит в поле ответа: номер заявки, если писать из карточки. */
   readonly draft?: string | undefined;
-  readonly onReply?: ((body: string) => Promise<void>) | undefined;
+  /**
+   * Отправить ответ. Исход — не для галочки: поле пустеет только по
+   * принятому ответу, а отказ встаёт рядом с полем.
+   */
+  readonly onReply?: ((body: string) => Promise<SendOutcome>) | undefined;
   /**
    * Отправить файл — тем же ботом, каким уходит ответ словами. Слова из
    * поля идут к нему подписью: чек с пояснением и чек без пояснения —
    * одно сообщение, а не два.
    */
-  readonly onSendFile?: ((file: File, body: string) => Promise<void>) | undefined;
+  readonly onSendFile?: ((file: File, body: string) => Promise<SendOutcome>) | undefined;
   /**
    * В поле ответа что-то набрано. Наружу — чтобы тихое обновление
    * страницы подождало: перерисовка посреди набранного ответа отнимает
@@ -60,7 +65,11 @@ export function Dialog({
   const [busy, setBusy] = useState(false);
   /** Выбранный файл — до отправки он никуда не уходит. */
   const [file, setFile] = useState<File | null>(null);
-  /** Чем не годится выбранный файл. Своё, а не с сервера: до отправки. */
+  /**
+   * Почему ответ не ушёл: файл не годится — это видно до отправки, —
+   * или сервер отказал. Стоит у поля, а не над лентой: на телефоне лента
+   * выше экрана, и отказ, напечатанный над ней, менеджер не видел.
+   */
   const [complaint, setComplaint] = useState<string>();
   const feed = useRef<HTMLDivElement>(null);
   /*
@@ -103,27 +112,30 @@ export function Dialog({
     setFile(chosen);
   }
 
+  /*
+   * Поле и файл пустеют только по принятому ответу. До 17 сентября 2026
+   * они стирались при любом исходе: клиент заблокировал бота, истекла
+   * сессия, оборвалась сеть — и набранное пропадало вместе с отказом.
+   */
   async function send() {
     const text = body.trim();
     if (busy) return;
-    // Отказ по отброшенному файлу висел бы над лентой и после того, как
+    // Отказ по отброшенному файлу висел бы у поля и после того, как
     // менеджер махнул на него рукой и ответил словами.
     setComplaint(undefined);
-    if (file && onSendFile) {
-      setBusy(true);
-      try {
-        await onSendFile(file, text);
-        setFile(null);
-        setBody('');
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-    if (!onReply || !text) return;
+    const sendFile = file && onSendFile ? () => onSendFile(file, text) : undefined;
+    const reply = onReply && text ? () => onReply(text) : undefined;
+    const deliver = sendFile ?? reply;
+    if (!deliver) return;
+
     setBusy(true);
     try {
-      await onReply(text);
+      const outcome = await deliver();
+      if (!outcome.sent) {
+        setComplaint(outcome.complaint);
+        return;
+      }
+      setFile(null);
       setBody('');
     } finally {
       setBusy(false);
@@ -300,8 +312,12 @@ export function Dialog({
                 type="submit"
                 // Пустой ответ отправлять некуда: операция его отвергнет, а
                 // погашенная кнопка говорит об этом до нажатия. Файл сам по
-                // себе ответ — с ним пустое поле кнопку не гасит.
-                disabled={busy || (!body.trim() && !file)}
+                // себе ответ — с ним пустое поле кнопку не гасит. На время
+                // отправки кнопка не гаснет: погашенная теряет фокус, и
+                // после отказа работающий с клавиатуры оказывался бы в
+                // начале страницы, а не у повтора. Второе нажатие держит
+                // `busy` в самой отправке.
+                disabled={!body.trim() && !file}
                 className="btn btn--gold"
               >
                 {busy ? 'Отправляю…' : 'Отправить'}

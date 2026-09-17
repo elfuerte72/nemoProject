@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { Moment } from '@nemo/ui';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { REQUISITE_KIND_LABELS } from '@/lib/labels';
 import { HowToAccessLog } from '@/app/ui/how-to';
@@ -24,10 +23,7 @@ export default async function RequisiteAccessPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const params = await searchParams;
   const single = (key: string): string | undefined => {

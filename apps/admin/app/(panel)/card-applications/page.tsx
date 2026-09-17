@@ -1,5 +1,4 @@
-import { redirect } from 'next/navigation';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { HowToCards } from '@/app/ui/how-to';
 import { CardList } from './card-list';
@@ -14,10 +13,7 @@ export const dynamic = 'force-dynamic';
  * поданной внешнему провайдеру.
  */
 export default async function CardApplicationsPage() {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const applications = await getCore().listCardApplicationQueue(actor);
 

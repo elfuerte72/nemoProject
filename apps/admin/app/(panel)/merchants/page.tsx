@@ -1,11 +1,10 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import { EmptyState, HowTo, Moment, Tabs } from '@nemo/ui';
 import { formatByCurrency } from '@nemo/ui/money-list';
 import { TZ_COOKIE, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 import type { MerchantActivity } from '@nemo/core';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { MERCHANT_TABS, MERCHANT_TAB_LABELS, pickMerchantStatus } from '@/lib/merchant-rows';
 import { MERCHANT_STATUS_LABELS, merchantPillClass } from '@/app/ui/merchant-card';
@@ -58,10 +57,7 @@ export default async function MerchantsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const params = await searchParams;
   const query = single(params.q);

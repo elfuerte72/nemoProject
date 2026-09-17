@@ -8,6 +8,7 @@ import { cardApplicationTransitions } from '@nemo/types';
 import { Moment } from '@nemo/ui';
 import { CARD_STATUS_LABELS, CARD_STATUS_TONES, pillClass } from '@/lib/labels';
 import { LiveQueue } from '@/app/ui/live-queue';
+import { rowsHaveUnsentText } from '@/lib/live';
 
 /**
  * Заявки на виртуальную карту.
@@ -81,11 +82,25 @@ export function CardList({
    * Пока набирают номер у провайдера или ждёт подтверждения отказ,
    * тихое обновление ждёт: перерисовка уносит набранное вместе с
    * раскрытой строкой.
+   *
+   * Набор — это номер поверх сохранённого, и только в строках, что сейчас
+   * в очереди (`rowsHaveUnsentText`), а раскрытый отказ — только у строки,
+   * которая в ней осталась. До 17 сентября 2026 набором считалось любое
+   * непустое поле: номер, ушедший вместе с переходом, оставался в памяти
+   * экрана, и с первого действия очередь переставала обновляться сама.
    */
+  const inQueue = (id: string | undefined): boolean =>
+    id !== undefined && applications.some((application) => application.id === id);
   const typing =
-    rejecting !== undefined ||
+    inQueue(rejecting) ||
     editing !== undefined ||
-    Object.values(references).some((reference) => reference.trim().length > 0);
+    rowsHaveUnsentText(
+      references,
+      applications.map((application) => ({
+        id: application.id,
+        saved: application.providerReference,
+      })),
+    );
 
   if (applications.length === 0) {
     return (

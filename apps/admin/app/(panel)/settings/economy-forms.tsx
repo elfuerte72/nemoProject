@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { ServiceSettingsView } from '@nemo/core';
+import { decimalFromInput } from '@/lib/decimal-input';
 import { bpsToPercent, percentToBps } from '@/lib/percent';
 import { useSettingsSend } from './use-settings-send';
 
@@ -69,7 +70,7 @@ export function EconomyForms({ settings }: { settings: ServiceSettingsView }) {
             onClick={() =>
               send('/api/settings', {
                 markupBps: percentToBps(markup),
-                minExchangeAmount: minExchange.replace(',', '.').trim(),
+                minExchangeAmount: decimalFromInput(minExchange),
                 unpaidExchangeRequestTtlMinutes: Number(ttlMinutes),
               })
             }

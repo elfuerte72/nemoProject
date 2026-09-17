@@ -1,5 +1,4 @@
-import { redirect } from 'next/navigation';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { HowToServiceAccounts } from '@/app/ui/how-to';
 import { ServiceAccountForms } from './service-account-forms';
@@ -15,10 +14,7 @@ export const dynamic = 'force-dynamic';
  * не является (docs/adr/0015): реквизиты в заявке вставляют и руками.
  */
 export default async function ServiceAccountsPage() {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const core = getCore();
   const [accounts, terms, networks] = await Promise.all([
