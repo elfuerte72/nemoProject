@@ -142,7 +142,7 @@ export default async function AmbassadorPeople({
             </div>
           )}
         </section>
-      ) : offset > 0 ? (
+      ) : offset > 0 && page.total > 0 ? (
         /*
          * Смещение за концом списка — из старой ссылки или набранное
          * руками. «Приведённых пока нет» здесь было бы неправдой: они

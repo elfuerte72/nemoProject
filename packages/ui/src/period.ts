@@ -117,9 +117,19 @@ const DAYS_BY_KEY: Partial<Record<PeriodKey, number>> = {
   '180d': 180,
 };
 
+/**
+ * Годы, в которых у сервиса бывают данные. За их краем граница периода
+ * уезжает в десятитысячный или нулевой год, и база отвечает не пустотой,
+ * а ошибкой: такой день читается битым, как и «2026-13-40».
+ */
+const FIRST_YEAR = 2000;
+const LAST_YEAR = 2100;
+
 /** «2026-09-02» → местная полночь этого дня. */
 function parseDay(raw: string | undefined, offsetMinutes: number): Date | null {
   if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const year = Number(raw.slice(0, 4));
+  if (year < FIRST_YEAR || year > LAST_YEAR) return null;
   const utc = new Date(`${raw}T00:00:00Z`);
   if (Number.isNaN(utc.getTime())) return null;
   return new Date(utc.getTime() - offsetMinutes * MINUTE);

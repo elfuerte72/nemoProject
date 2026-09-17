@@ -102,6 +102,27 @@ describe('период аналитики', () => {
     }
   });
 
+  /*
+   * День девятитысячного года — правильная дата, но граница периода за
+   * ним уже десятитысячный год, а его база не принимает и отвечает
+   * страницей аварии (ревью 17 сентября 2026). Годы, в которых у сервиса
+   * не бывает данных, читаются битой датой.
+   */
+  it('год, в котором данных не бывает, — битая дата, а не граница для базы', () => {
+    const edges = [
+      { params: { period: 'custom', from: '9999-12-31', to: '9999-12-31' }, offset: 0 },
+      { params: { period: 'custom', from: '0001-01-01', to: '0001-01-01' }, offset: 7 * 60 },
+      { params: { period: 'custom', from: '1999-12-31' }, offset: -12 * 60 },
+      { params: { period: 'custom', from: '2101-01-01', to: '2101-01-02' }, offset: 0 },
+    ];
+    for (const { params, offset } of edges) {
+      expect(resolvePeriod(params, now, offset).key, JSON.stringify(params)).toBe('30d');
+    }
+    expect(resolvePeriod({ period: 'custom', from: '2000-01-01', to: '2100-12-31' }, now, 0).key).toBe(
+      'custom',
+    );
+  });
+
   it('незнакомый ключ и битые даты — тридцать дней', () => {
     expect(resolvePeriod({ period: 'yesterday' }, now, 0).key).toBe('30d');
     expect(resolvePeriod({ period: 'custom', from: 'вчера', to: '2026-09-01' }, now, 0).key).toBe(
