@@ -4,6 +4,7 @@ import { Brand, Sidebar, Topbar } from '@nemo/ui';
 import { TZ_COOKIE } from '@nemo/ui/period';
 import { AMBASSADOR_NAV_COLLAPSED_KEY, AMBASSADOR_NAV_GROUPS } from '@/lib/nav';
 import { ambassadorScreen } from '@/lib/ambassador';
+import { DOORS_PATH } from '@/lib/entry';
 import { ambassadorViewer } from '@/lib/ambassador-reads';
 import { supportUsername } from '@/lib/reads';
 import { StateScreen } from '@/app/ui/state-screen';
@@ -27,7 +28,7 @@ export default async function AmbassadorLayout({ children }: { children: ReactNo
   } catch (error) {
     const screen = ambassadorScreen(error);
     // Не вошёл — на витрину: там дверь, в которую ему и нужно.
-    if (screen === 'entry') redirect('/');
+    if (screen === 'entry') redirect(DOORS_PATH);
     if (screen === 'not-in-program') return await notInProgram();
     throw error;
   }
@@ -47,7 +48,7 @@ export default async function AmbassadorLayout({ children }: { children: ReactNo
           name={session.title}
           sub="Амбассадор"
           logoutPath="/api/auth/ambassador/logout"
-          afterLogout="/"
+          afterLogout={DOORS_PATH}
           timeZoneCookie={TZ_COOKIE}
         />
         {children}
@@ -66,7 +67,7 @@ async function notInProgram(): Promise<ReactNode> {
     <StateScreen
       title="Вас нет в программе"
       eyebrow="амбассадор"
-      signOut={{ path: '/api/auth/ambassador/logout', after: '/' }}
+      signOut={{ path: '/api/auth/ambassador/logout', after: DOORS_PATH }}
       support={await supportUsername()}
       lines={[
         'Кабинет амбассадора открыт тем, кого сервис позвал в программу поимённо: каналам, ' +

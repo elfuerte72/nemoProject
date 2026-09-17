@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import type { AnalyticsPeriod, BonusAccountView, ReferralCabinetStats } from '@nemo/core';
 import { ambassadorOrNull, requireAmbassador, type AmbassadorViewer } from '@/lib/ambassador';
 import { getCore } from '@/lib/core';
+import { DOORS_PATH } from '@/lib/entry';
 import { viewerOrElse } from '@/lib/session';
 
 /**
@@ -27,7 +28,7 @@ export const ambassadorViewer = cache(
  * отказ, брошенный наружу, лёг бы в журнал ошибкой (см. `viewerOrElse`).
  */
 export const ambassadorPage = cache(
-  async (): Promise<AmbassadorViewer> => viewerOrElse(ambassadorViewer, () => redirect('/')),
+  async (): Promise<AmbassadorViewer> => viewerOrElse(ambassadorViewer, () => redirect(DOORS_PATH)),
 );
 
 /** Сводка за период — один пакет запросов на страницу, как у мерчанта. */

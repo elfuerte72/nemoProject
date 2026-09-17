@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
-import { Brand } from '@nemo/ui';
+import { EntryBrand } from '@/app/ui/entry-brand';
 import { send } from '@/app/ui/send';
 
 /**
@@ -36,9 +36,7 @@ export function ResetForm({ token }: { readonly token: string }) {
   return (
     <main className="login">
       <div className="login__card">
-        <div className="login__brand">
-          <Brand eyebrow="кабинет" />
-        </div>
+        <EntryBrand />
         <p className="login__eyebrow">Новый пароль</p>
 
         {done ? (

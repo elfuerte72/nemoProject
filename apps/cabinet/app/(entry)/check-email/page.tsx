@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Brand } from '@nemo/ui';
+import { EntryBrand } from '@/app/ui/entry-brand';
 
 export const metadata: Metadata = { title: 'Проверьте почту — кабинет Tobee' };
 
@@ -12,9 +12,7 @@ export default function CheckEmailPage() {
   return (
     <main className="state">
       <div className="state__card">
-        <div className="login__brand">
-          <Brand eyebrow="кабинет" />
-        </div>
+        <EntryBrand />
         <h1 className="state__title">Проверьте почту</h1>
         <p className="state__text">
           Мы отправили письмо со ссылкой. Откройте её — и анкета уйдёт на рассмотрение;

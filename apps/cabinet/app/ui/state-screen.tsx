@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Brand } from '@nemo/ui';
+import { EntryBrand } from '@/app/ui/entry-brand';
 import { SignOut } from '@/app/ui/sign-out';
 import { SupportLink } from '@/app/ui/support-link';
 
@@ -33,9 +33,7 @@ export function StateScreen({
   return (
     <main className="state">
       <div className="state__card">
-        <div className="login__brand">
-          <Brand eyebrow={eyebrow} />
-        </div>
+        <EntryBrand eyebrow={eyebrow} />
         <h1 className="state__title">{title}</h1>
         {lines.map((line) => (
           <p key={line} className="state__text">
