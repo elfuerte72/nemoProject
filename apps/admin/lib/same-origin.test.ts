@@ -1,9 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server';
 import { NextRequest } from 'next/server';
 import { describe, expect, it } from 'vitest';
 import { config, middleware } from '../middleware';
+import { PAGE_PATH_HEADER } from './auth/return-to';
 import { PANEL_RULES, crossSiteComplaint, type RequestFacts } from './same-origin';
 
 /**
@@ -121,7 +123,42 @@ describe('middleware панели', () => {
   }
 
   it('стоит на всех маршрутах API', () => {
-    expect(config.matcher).toBe('/api/:path*');
+    for (const url of ['/api/staff', '/api/staff/notify', '/api/conversations/attachments']) {
+      expect(unstable_doesMiddlewareMatch({ config, url }), url).toBe(true);
+    }
+  });
+
+  /*
+   * На страницах middleware ничего не запрещает: он кладёт в запрос путь
+   * страницы, чтобы истёкшая сессия увела на вход с адресом возврата
+   * (`lib/auth/return-to.ts`). Статика мимо: её отдают без сессии.
+   */
+  it('стоит на страницах, но не на статике', () => {
+    for (const url of ['/', '/exchange-requests/abc', '/settings/staff', '/login']) {
+      expect(unstable_doesMiddlewareMatch({ config, url }), url).toBe(true);
+    }
+    for (const url of ['/_next/static/chunks/main.js', '/_next/image', '/icon.svg']) {
+      expect(unstable_doesMiddlewareMatch({ config, url }), url).toBe(false);
+    }
+  });
+
+  it('кладёт в запрос страницы её путь — свой, а не присланный браузером', () => {
+    const response = middleware(
+      request(
+        '/exchange-requests/abc?request=1',
+        { host: 'localhost:3001', [PAGE_PATH_HEADER]: '//evil.example' },
+        'GET',
+      ),
+    );
+    expect(response.headers.get('x-middleware-next')).toBe('1');
+    expect(response.headers.get(`x-middleware-request-${PAGE_PATH_HEADER}`)).toBe(
+      '/exchange-requests/abc?request=1',
+    );
+  });
+
+  it('маршрутам API путь страницы не нужен', () => {
+    const response = middleware(request('/api/live', { host: 'localhost:3001' }, 'GET'));
+    expect(response.headers.get(`x-middleware-request-${PAGE_PATH_HEADER}`)).toBeNull();
   });
 
   it('отвечает 403 словами на подделанный запрос', async () => {

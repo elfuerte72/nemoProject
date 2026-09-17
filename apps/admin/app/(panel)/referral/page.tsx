@@ -1,11 +1,10 @@
 import Link from 'next/link';
 import { referralLineName, type ReferralLine } from '@nemo/types';
 import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import { formatAmount } from '@nemo/ui/format';
 import { HowTo, Moment, PeriodChips, Stat, Stats } from '@nemo/ui';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { bpsToPercent } from '@/lib/percent';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
@@ -62,10 +61,7 @@ export default async function ReferralPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const params = await searchParams;
   const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);

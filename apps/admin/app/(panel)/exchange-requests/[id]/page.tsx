@@ -1,6 +1,6 @@
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { CoreError } from '@nemo/core';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { toClientCardData } from '@/lib/client-card';
 import { toMerchantCardData, toOwnerData } from '@/lib/merchant-card';
 import { getCore } from '@/lib/core';
@@ -13,10 +13,7 @@ export const dynamic = 'force-dynamic';
  * экране — состояние, история переходов и доступные действия.
  */
 export default async function RequestPage({ params }: { params: Promise<{ id: string }> }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const { id } = await params;
   const core = getCore();

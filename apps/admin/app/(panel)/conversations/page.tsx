@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import {
   CoreError,
   WAITING_CLIENT_MINUTES,
@@ -7,7 +6,7 @@ import {
   type ConversationView,
 } from '@nemo/core';
 import { Moment } from '@nemo/ui';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { INQUIRY_TOPIC_LABELS, pillClass } from '@/lib/labels';
 import { LiveRefresh } from '@/app/ui/live-refresh';
@@ -32,10 +31,7 @@ export default async function ConversationsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const params = await searchParams;
   const asked = (Array.isArray(params.topic) ? params.topic[0] : params.topic) ?? '';

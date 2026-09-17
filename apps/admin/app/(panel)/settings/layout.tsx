@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { SettingsNav } from './settings-nav';
 
 /**
@@ -13,10 +12,7 @@ import { SettingsNav } from './settings-nav';
  * иначе один отказ в каркасе защищал бы заголовок, а не настройки.
  */
 export default async function SettingsLayout({ children }: { children: ReactNode }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   return (
     <main className="page">

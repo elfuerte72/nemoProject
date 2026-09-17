@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { Brand, Sidebar, Topbar } from '@nemo/ui';
-import { requireStaffViewerOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { panelCounts } from '@/lib/counts';
 import { ROLE_LABELS } from '@/lib/labels';
 import { NAV_COLLAPSED_KEY, NAV_GROUPS } from '@/lib/nav';
@@ -23,11 +22,7 @@ export const dynamic = 'force-dynamic';
  * а не заявки.
  */
 export default async function PanelLayout({ children }: { children: ReactNode }) {
-  const viewer = await requireStaffViewerOrNull();
-  if (!viewer) {
-    redirect('/login');
-  }
-  const { actor, displayName } = viewer;
+  const { actor, displayName } = await requireStaffPage();
 
   /*
    * Счётчики очередей в меню: сколько ждёт, видно не открывая раздел —

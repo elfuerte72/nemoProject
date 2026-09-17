@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { CoreError } from '@nemo/core';
 import {
   WEBHOOK_DELIVERY_STATUS_LABELS,
@@ -18,7 +18,7 @@ import {
   Stats,
 } from '@nemo/ui';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { getCore } from '@/lib/core';
 import { toExchangeRow } from '@/lib/exchange-rows';
 import { toMerchantCardData } from '@/lib/merchant-card';
@@ -47,10 +47,7 @@ export default async function MerchantPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const { id } = await params;
   const query = await searchParams;

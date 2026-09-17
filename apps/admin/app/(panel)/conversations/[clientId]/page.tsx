@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { CoreError } from '@nemo/core';
-import { requireStaffActorOrNull } from '@/lib/auth/require-session';
+import { requireStaffPage } from '@/lib/auth/require-session';
 import { toClientCardData } from '@/lib/client-card';
 import { getCore } from '@/lib/core';
 import { ClientCard } from '@/app/ui/client-card';
@@ -27,10 +27,7 @@ export default async function ConversationPage({
   params: Promise<{ clientId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
+  const { actor } = await requireStaffPage();
 
   const { clientId } = await params;
   // Идентификатор приходит из адреса, а его правит кто угодно: нечисловой

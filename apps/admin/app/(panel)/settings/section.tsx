@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { CoreError } from '@nemo/core';
-import { requireStaffActorOrNull, type StaffActor } from '@/lib/auth/require-session';
+import { requireStaffPage, type StaffActor } from '@/lib/auth/require-session';
 import { SETTINGS_SECTIONS } from '@/lib/nav';
 
 /**
@@ -15,11 +14,7 @@ import { SETTINGS_SECTIONS } from '@/lib/nav';
  * отказ, а не страницу входа — войти он как раз может, просто не сюда.
  */
 export async function settingsActor(): Promise<StaffActor> {
-  const actor = await requireStaffActorOrNull();
-  if (!actor) {
-    redirect('/login');
-  }
-  return actor;
+  return (await requireStaffPage()).actor;
 }
 
 /** Строка о подразделе — из той же карты, что и подменю. */
