@@ -137,6 +137,8 @@ export function Dialog({
       }
       setFile(null);
       setBody('');
+      // Дошло, но не записалось: сказать у поля, что повторять не нужно.
+      if (outcome.notice) setComplaint(outcome.notice);
     } finally {
       setBusy(false);
     }

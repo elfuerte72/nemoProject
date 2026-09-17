@@ -37,6 +37,28 @@ describe('исход отправки клиенту', () => {
     });
   });
 
+  /*
+   * Файл уходит в Telegram раньше записи в переписку, и маршрут, у которого
+   * упала запись, говорит, что файл уже у клиента. Прочитанный как отказ,
+   * такой ответ оставлял файл в поле — и следующее «Отправить» слало клиенту
+   * тот же чек вторым (ревью 17 сентября 2026).
+   */
+  it('файл дошёл, а запись упала — отправлен, и слова маршрута остаются', async () => {
+    const said = 'Файл клиенту ушёл, но в переписку не записался.';
+    const outcome = await sendOutcome(
+      answer(500, JSON.stringify({ error: said, delivered: true })),
+      refused,
+    );
+    expect(outcome).toEqual({ sent: true, notice: said });
+  });
+
+  it('признак доставки без слов — отправлен, со словами экрана', async () => {
+    expect(await sendOutcome(answer(500, '{"delivered":true}'), refused)).toEqual({
+      sent: true,
+      notice: refused,
+    });
+  });
+
   it('оборванная сеть — не отправлен, и сказано, что сервер не ответил', async () => {
     const offline = () => Promise.reject(new TypeError('Failed to fetch'));
     expect(await sendOutcome(offline, refused)).toEqual({ sent: false, complaint: NO_CONNECTION });

@@ -1,4 +1,5 @@
 import { Money } from '@nemo/types';
+import { decimalFromInput } from './decimal-input';
 
 /**
  * Карточка сетки комиссии: набрано ли в ней то, что сохранено.
@@ -41,8 +42,8 @@ export interface FeeScheduleForm {
  * читался бы как поломка.
  */
 function sameAmount(a: string | null | undefined, b: string | null | undefined): boolean {
-  const left = a?.replace(',', '.').trim() || null;
-  const right = b?.replace(',', '.').trim() || null;
+  const left = decimalFromInput(a ?? '') || null;
+  const right = decimalFromInput(b ?? '') || null;
   if (left === null || right === null) return left === right;
   const parsedLeft = Money.amountSchema.safeParse(left);
   const parsedRight = Money.amountSchema.safeParse(right);

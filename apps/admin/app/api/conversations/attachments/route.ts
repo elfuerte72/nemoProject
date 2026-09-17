@@ -118,6 +118,9 @@ export async function POST(request: Request): Promise<Response> {
         {
           error:
             'Файл клиенту ушёл, но в переписку не записался. Отправлять заново не нужно — он придёт вторым.',
+          // По этому признаку поле ответа пустеет, как по принятому
+          // (`lib/send-outcome.ts`): слова одни, а повтор — второй чек.
+          delivered: true,
         },
         { status: 500 },
       );
