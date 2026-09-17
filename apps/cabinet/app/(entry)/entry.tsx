@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import { botLink, type EntryDoors } from '@/lib/entry';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { botLink, type EntryDoors, type EntrySignedIn } from '@/lib/entry';
 import { EntryMark } from './entry-mark';
 import { send } from '@/app/ui/send';
 
@@ -24,8 +24,18 @@ import { send } from '@/app/ui/send';
  * над дверьми нет: страница отвечает на «куда мне войти», и человек,
  * дошедший до неё, уже знает, куда пришёл, — а знак и надстрочник
  * говорят это быстрее любой строки.
+ *
+ * Дверь, в которую уже вошли, вместо входа ведёт в кабинет и называет,
+ * кем вошли: на двери по ссылке приходят и с живой сессией, и второй
+ * вход поверх первого был бы вопросом «а меня что, выкинуло?».
  */
-export function Entry({ doors }: { readonly doors: EntryDoors }) {
+export function Entry({
+  doors,
+  signedIn,
+}: {
+  readonly doors: EntryDoors;
+  readonly signedIn: EntrySignedIn;
+}) {
   return (
     <main className="entry">
       <div className="entry__inner">
@@ -35,8 +45,8 @@ export function Entry({ doors }: { readonly doors: EntryDoors }) {
         </header>
 
         <div className="entry__doors">
-          <MerchantDoor />
-          <AmbassadorDoor doors={doors} />
+          <MerchantDoor signedIn={signedIn.merchant} />
+          <AmbassadorDoor doors={doors} signedIn={signedIn.ambassador} />
         </div>
 
         {/*
@@ -68,7 +78,7 @@ function TelegramGlyph() {
   );
 }
 
-function MerchantDoor() {
+function MerchantDoor({ signedIn }: { readonly signedIn: string | null }) {
   return (
     <section className="door door--gold">
       <span className="door__edge" />
@@ -76,12 +86,23 @@ function MerchantDoor() {
       <p className="door__text">
         Заявки от лица компании, получатели, курсы, ключи API и вебхуки. Вход по почте и паролю.
       </p>
-      <Link href="/login" className="btn btn--gold btn--wide">
-        Войти в кабинет
-      </Link>
-      <p className="door__note">
-        Кабинета ещё нет? <Link href="/register">Заведите</Link> — анкету рассмотрит менеджер.
-      </p>
+      {signedIn === null ? (
+        <>
+          <Link href="/login" className="btn btn--gold btn--wide">
+            Войти в кабинет
+          </Link>
+          <p className="door__note">
+            Кабинета ещё нет? <Link href="/register">Заведите</Link> — анкету рассмотрит менеджер.
+          </p>
+        </>
+      ) : (
+        <>
+          <Link href="/dashboard" className="btn btn--gold btn--wide">
+            Перейти в кабинет
+          </Link>
+          <p className="door__note">Вы вошли: «{signedIn}».</p>
+        </>
+      )}
     </section>
   );
 }
@@ -91,13 +112,19 @@ function MerchantDoor() {
  * заранее — без этого страница дёргалась бы, когда виджет доедет.
  * Пришедшее от него уходит своим маршрутом; он и проверяет подпись.
  */
-function AmbassadorDoor({ doors }: { readonly doors: EntryDoors }) {
+function AmbassadorDoor({
+  doors,
+  signedIn,
+}: {
+  readonly doors: EntryDoors;
+  readonly signedIn: string | null;
+}) {
   const slot = useRef<HTMLDivElement>(null);
   const [complaint, setComplaint] = useState<string>();
 
   useEffect(() => {
     const bot = doors.botUsername;
-    if (!bot || !slot.current || slot.current.childElementCount > 0) return;
+    if (signedIn !== null || !bot || !slot.current || slot.current.childElementCount > 0) return;
 
     (window as unknown as { onTobeeAmbassadorAuth?: (user: unknown) => void }).onTobeeAmbassadorAuth =
       async (user: unknown) => {
@@ -120,7 +147,7 @@ function AmbassadorDoor({ doors }: { readonly doors: EntryDoors }) {
     script.setAttribute('data-userpic', 'false');
     script.setAttribute('data-radius', '12');
     slot.current.appendChild(script);
-  }, [doors.botUsername]);
+  }, [doors.botUsername, signedIn]);
 
   return (
     <section className="door door--telegram">
@@ -131,6 +158,32 @@ function AmbassadorDoor({ doors }: { readonly doors: EntryDoors }) {
         Telegram — тот аккаунт, который назвали менеджеру.
       </p>
 
+      {signedIn !== null ? (
+        <>
+          <Link href="/ambassador" className="btn btn--soft btn--wide">
+            Перейти в кабинет
+          </Link>
+          <p className="door__note">Вы вошли: «{signedIn}».</p>
+        </>
+      ) : (
+        <AmbassadorSignIn doors={doors} slot={slot} complaint={complaint} />
+      )}
+    </section>
+  );
+}
+
+/** Вход, когда амбассадор ещё не вошёл: кнопка Telegram или слова вместо неё. */
+function AmbassadorSignIn({
+  doors,
+  slot,
+  complaint,
+}: {
+  readonly doors: EntryDoors;
+  readonly slot: RefObject<HTMLDivElement | null>;
+  readonly complaint: string | undefined;
+}) {
+  return (
+    <>
       {doors.botUsername ? (
         <div className="door__widget" ref={slot} />
       ) : (
@@ -142,6 +195,6 @@ function AmbassadorDoor({ doors }: { readonly doors: EntryDoors }) {
       <p className="door__note">
         Вас нет в программе? Она по приглашению: сервис зовёт каналы и чаты сам.
       </p>
-    </section>
+    </>
   );
 }

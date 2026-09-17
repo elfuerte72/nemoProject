@@ -5,6 +5,7 @@ import { Brand, Sidebar, Topbar } from '@nemo/ui';
 import { TZ_COOKIE } from '@nemo/ui/period';
 import type { MerchantActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
+import { DOORS_PATH } from '@/lib/entry';
 import { NAV_COLLAPSED_KEY } from '@/lib/nav';
 import { navGroupsFor } from '@/lib/nav-by-role';
 import { openCount, requestCounts, supportUsername, viewer } from '@/lib/reads';
@@ -53,7 +54,7 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
           sub={`${session.userName} · ${merchantRoleName(session.role)}`}
           items={[{ href: '/settings', label: 'Настройки', icon: 'settings' }]}
           logoutPath="/api/auth/logout"
-          afterLogout="/login"
+          afterLogout={DOORS_PATH}
           timeZoneCookie={TZ_COOKIE}
         />
         {children}

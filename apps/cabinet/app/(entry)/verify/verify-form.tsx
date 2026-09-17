@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Brand } from '@nemo/ui';
+import { EntryBrand } from '@/app/ui/entry-brand';
 import { send } from '@/app/ui/send';
 
 /**
@@ -30,9 +30,7 @@ export function VerifyForm({ token }: { readonly token: string }) {
   return (
     <main className="state">
       <div className="state__card">
-        <div className="login__brand">
-          <Brand eyebrow="кабинет" />
-        </div>
+        <EntryBrand />
 
         {done ? (
           <>
