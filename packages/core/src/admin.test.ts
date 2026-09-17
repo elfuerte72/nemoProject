@@ -112,6 +112,89 @@ describe('сотрудники', () => {
   });
 });
 
+describe('последний администратор', () => {
+  /*
+   * Первого администратора заводит `create-first-admin`, и только на
+   * пустом списке сотрудников; до 17 сентября 2026 единственный
+   * администратор снимал с себя роль одним нажатием, и вернуть её можно
+   * было только правкой базы.
+   */
+  const LAST_ADMIN = /ни одного действующего администратора/;
+
+  async function roles(): Promise<Record<string, string>> {
+    const all = await core.listStaff(admin);
+    return Object.fromEntries(all.map((one) => [one.displayName, `${one.role}:${one.isActive}`]));
+  }
+
+  it('не снимает роль с единственного администратора', async () => {
+    const refusal = core.updateStaffRole(admin, admin.staffId, 'manager');
+
+    await expect(refusal).rejects.toThrow(InvalidInputError);
+    await expect(refusal).rejects.toThrow(LAST_ADMIN);
+    expect((await roles())['Владелец']).toBe('admin:true');
+  });
+
+  it('снимает роль, если остаётся другой действующий администратор', async () => {
+    const { staff: anna } = await core.addStaff(admin, {
+      telegramUserId: 555n,
+      displayName: 'Анна',
+      role: 'admin',
+    });
+
+    await core.updateStaffRole(admin, admin.staffId, 'manager');
+
+    expect(anna.role).toBe('admin');
+    expect(await roles()).toMatchObject({ Владелец: 'manager:true', Анна: 'admin:true' });
+  });
+
+  it('не считает администратора с закрытым доступом', async () => {
+    const { staff: anna } = await core.addStaff(admin, {
+      telegramUserId: 555n,
+      displayName: 'Анна',
+      role: 'admin',
+    });
+    await core.setStaffActive(admin, anna.id, false);
+
+    await expect(core.updateStaffRole(admin, admin.staffId, 'manager')).rejects.toThrow(
+      LAST_ADMIN,
+    );
+  });
+
+  it('не закрывает доступ последнему действующему администратору', async () => {
+    // Двое администраторов закрывают доступ друг другу: первый успел
+    // снять роль с себя, второй — по прежней сессии, где первый ещё
+    // администратор, — закрывает доступ единственному оставшемуся.
+    const second = await givenStaff({ role: 'admin', displayName: 'Анна' });
+    await core.updateStaffRole(admin, admin.staffId, 'manager');
+
+    const refusal = core.setStaffActive(admin, second.staffId, false);
+
+    await expect(refusal).rejects.toThrow(InvalidInputError);
+    await expect(refusal).rejects.toThrow(LAST_ADMIN);
+    expect((await roles())['Анна']).toBe('admin:true');
+  });
+
+  it('снятые разом друг другом, оставляют одного', async () => {
+    const second = await givenStaff({ role: 'admin', displayName: 'Анна' });
+
+    const results = await Promise.allSettled([
+      core.updateStaffRole(admin, second.staffId, 'manager'),
+      core.updateStaffRole(second, admin.staffId, 'manager'),
+    ]);
+
+    expect(results.filter((one) => one.status === 'fulfilled')).toHaveLength(1);
+    const admins = (await core.listStaff(admin)).filter((one) => one.role === 'admin');
+    expect(admins).toHaveLength(1);
+  });
+
+  it('не мешает менять роль и доступ менеджерам', async () => {
+    await core.updateStaffRole(admin, manager.staffId, 'manager');
+    await core.setStaffActive(admin, manager.staffId, false);
+
+    expect((await roles())['Менеджер']).toBe('manager:false');
+  });
+});
+
 describe('второй фактор из консоли сервера', () => {
   it('выдаётся заново без администратора: иначе войти, чтобы починить вход, нельзя', async () => {
     const first = await core.addStaff(admin, { telegramUserId: 555n, displayName: 'Анна' });
