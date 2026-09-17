@@ -179,14 +179,17 @@ async function requireStaffRow(executor: Executor, staffId: string): Promise<Sta
  * Строки действующих администраторов берутся под замок: двое,
  * снимающие роль друг с друга разом, иначе прочли бы друг друга
  * администраторами и оставили бы сервис ни с кем. Второй дождётся
- * первого и перечитает уже без него.
+ * первого и перечитает уже без него. Замок `no key update`, а не
+ * `update`: второй ставит и обычное изменение строки, и с проверкой
+ * внешнего ключа не спорит — передача заявки, ссылающаяся на
+ * администратора, иначе могла бы сцепиться с этой проверкой намертво.
  */
 async function requireAnotherActiveAdmin(executor: Executor, staffId: string): Promise<void> {
   const admins = await executor
     .select({ id: staff.id })
     .from(staff)
     .where(and(eq(staff.role, 'admin'), eq(staff.isActive, true)))
-    .for('update');
+    .for('no key update');
   if (admins.some((one) => one.id === staffId) && admins.length === 1) {
     throw new InvalidInputError(
       'В панели не останется ни одного действующего администратора, и вернуть роль можно ' +
