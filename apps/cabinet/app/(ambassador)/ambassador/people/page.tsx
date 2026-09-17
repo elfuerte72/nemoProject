@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { EmptyState, firstParam, HowTo, Moment } from '@nemo/ui';
+import { EmptyState, HowTo, Moment } from '@nemo/ui';
 import { formatAmount } from '@nemo/ui/format';
 import { referralLineTitle } from '@nemo/types';
+import { readPeopleQuery } from '@/lib/ambassador-params';
 import { AMBASSADOR_PEOPLE_HOW_TO } from '@/lib/ambassador-texts';
 import { ambassadorAccount, ambassadorPage } from '@/lib/ambassador-reads';
 import { getCore } from '@/lib/core';
@@ -31,19 +32,16 @@ export default async function AmbassadorPeople({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { actor } = await ambassadorPage();
-  const params = await searchParams;
-  const line = Number(firstParam(params.line));
   /*
-   * Смещение из адреса чинится здесь, а не отказом ядра: параметр
-   * приходит из адресной строки, и «-1» должен показать первую
-   * страницу, а не страницу аварии.
+   * Линия и смещение из адреса чинятся здесь, а не отказом ядра:
+   * параметр приходит из адресной строки, и «-1», «1e300» или девятая
+   * линия должны показать список, а не страницу аварии.
    */
-  const asked = Number(firstParam(params.offset));
-  const offset = Number.isInteger(asked) && asked > 0 ? asked : 0;
+  const { line, offset } = readPeopleQuery(await searchParams);
 
   const [page, account] = await Promise.all([
     getCore().listMyReferrals(actor, {
-      ...(Number.isInteger(line) && line > 0 ? { line } : {}),
+      ...(line ? { line } : {}),
       offset,
       limit: PAGE,
     }),
@@ -55,7 +53,7 @@ export default async function AmbassadorPeople({
 
   const query = (next: { line?: number | undefined; offset?: number | undefined }) => {
     const search = new URLSearchParams();
-    const chosen = next.line ?? (Number.isInteger(line) && line > 0 ? line : undefined);
+    const chosen = next.line ?? line;
     if (chosen) search.set('line', String(chosen));
     if (next.offset) search.set('offset', String(next.offset));
     const text = search.toString();
@@ -82,7 +80,7 @@ export default async function AmbassadorPeople({
       />
 
       <div className="chips">
-        <Link href={query({ line: 0 })} className={line > 0 ? 'chip' : 'chip chip--on'}>
+        <Link href={query({ line: 0 })} className={line ? 'chip' : 'chip chip--on'}>
           Все линии
         </Link>
         {account.lines.map((one) => (
@@ -144,12 +142,28 @@ export default async function AmbassadorPeople({
             </div>
           )}
         </section>
+      ) : offset > 0 ? (
+        /*
+         * Смещение за концом списка — из старой ссылки или набранное
+         * руками. «Приведённых пока нет» здесь было бы неправдой: они
+         * есть, просто раньше.
+         */
+        <EmptyState
+          icon="user"
+          title="Дальше никого"
+          text="Список кончился раньше этой страницы."
+          action={
+            <Link href={query({ offset: 0 })} className="btn btn--soft">
+              К началу списка
+            </Link>
+          }
+        />
       ) : (
         <EmptyState
           icon="user"
-          title={line > 0 ? 'На этой линии никого' : 'Приведённых пока нет'}
+          title={line ? 'На этой линии никого' : 'Приведённых пока нет'}
           text={
-            line > 0
+            line
               ? 'Вторая линия набирается сама: она появится, когда ваши люди позовут своих.'
               : 'Поставьте ссылку туда, где вас читают, — она в разделе «Ссылка».'
           }

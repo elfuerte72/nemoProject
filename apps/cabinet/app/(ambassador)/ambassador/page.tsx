@@ -10,6 +10,7 @@ import {
   resolvePeriod,
   type PeriodKey,
 } from '@nemo/ui/period';
+import { readForPeriod } from '@/lib/ambassador-params';
 import { AMBASSADOR_OVERVIEW_HOW_TO } from '@/lib/ambassador-texts';
 import { ambassadorAccount, ambassadorPage, ambassadorStats } from '@/lib/ambassador-reads';
 
@@ -43,18 +44,25 @@ export default async function AmbassadorOverview({
   await ambassadorPage();
   const params = await searchParams;
   const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
-  const period = resolvePeriod(
+  const now = new Date();
+  const asked = resolvePeriod(
     {
       period: firstParam(params.period) ?? '30d',
       from: firstParam(params.from),
       to: firstParam(params.to),
     },
-    new Date(),
+    now,
     offset,
   );
 
-  const [stats, account] = await Promise.all([
-    ambassadorStats(period.from.getTime(), period.to.getTime(), offset),
+  /*
+   * Период длиннее года ядро не считает, а набрать его в полях «С / По»
+   * можно. Тогда числа — за тридцать дней, а над ними — почему.
+   */
+  const [{ period, data: stats, refusal }, account] = await Promise.all([
+    readForPeriod(asked, resolvePeriod({ period: '30d' }, now, offset), (one) =>
+      ambassadorStats(one.from.getTime(), one.to.getTime(), offset),
+    ),
     ambassadorAccount(),
   ]);
   const { current, previous } = stats;
@@ -127,6 +135,17 @@ export default async function AmbassadorOverview({
           from={dayOf(period.from, offset)}
           to={dayOf(lastDay, offset)}
         />
+
+        {refusal ? (
+          <div className="callout" role="status">
+            <div className="callout__body">
+              <span className="callout__title">{refusal}</span>
+              <p className="callout__text">
+                Ниже числа за последние тридцать дней. Выберите период покороче: чипом или датами.
+              </p>
+            </div>
+          </div>
+        ) : undefined}
 
         <Stats>
           <Stat
