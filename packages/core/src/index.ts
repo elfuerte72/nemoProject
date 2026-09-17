@@ -1,4 +1,4 @@
-import type { StaffRole } from '@nemo/types';
+import type { MerchantUserRole, StaffRole } from '@nemo/types';
 import type { Actor } from './actor.js';
 import {
   addStaff,
@@ -50,6 +50,7 @@ import {
 } from './clients.js';
 import { getClientCard } from './client-card.js';
 import {
+  addMerchantUser,
   approveMerchant,
   beginMerchantLogin,
   changeMerchantPassword,
@@ -59,13 +60,18 @@ import {
   merchantSupportUsername,
   getMerchantSession,
   listMerchants,
+  listMerchantUsers,
   registerMerchant,
   rejectMerchant,
+  setMerchantUserAccess,
+  setMerchantUserPassword,
+  updateMerchantUser,
   requestMerchantPasswordReset,
   resendMerchantEmailVerification,
   resetMerchantPassword,
   setMerchantActive,
   verifyMerchantEmail,
+  type AddMerchantUserInput,
   type MerchantFilter,
   type RegisterMerchantInput,
 } from './merchants.js';
@@ -340,8 +346,8 @@ export function createCore(ctx: CoreConfig) {
       resendMerchantEmailVerification(ctx, actor),
     beginMerchantLogin: (input: { email: string; password: string }) =>
       beginMerchantLogin(ctx, input),
-    getMerchantSession: (merchantId: string, sessionEpoch: number) =>
-      getMerchantSession(ctx, merchantId, sessionEpoch),
+    getMerchantSession: (userId: string, sessionEpoch: number) =>
+      getMerchantSession(ctx, userId, sessionEpoch),
     getMerchantProfile: (actor: Actor) => getMerchantProfile(ctx, actor),
     changeMerchantPassword: (
       actor: Actor,
@@ -351,6 +357,20 @@ export function createCore(ctx: CoreConfig) {
       requestMerchantPasswordReset(ctx, email),
     resetMerchantPassword: (token: string, password: string) =>
       resetMerchantPassword(ctx, token, password),
+
+    /* Люди мерчанта: их ведёт владелец кабинета (тикет 17). */
+    listMerchantUsers: (actor: Actor) => listMerchantUsers(ctx, actor),
+    addMerchantUser: (actor: Actor, input: AddMerchantUserInput) =>
+      addMerchantUser(ctx, actor, input),
+    updateMerchantUser: (
+      actor: Actor,
+      userId: string,
+      input: { name?: string | undefined; role?: MerchantUserRole | undefined },
+    ) => updateMerchantUser(ctx, actor, userId, input),
+    setMerchantUserPassword: (actor: Actor, userId: string, password: string) =>
+      setMerchantUserPassword(ctx, actor, userId, password),
+    setMerchantUserAccess: (actor: Actor, userId: string, input: { allowed: boolean }) =>
+      setMerchantUserAccess(ctx, actor, userId, input),
 
     /* Мерчанты глазами панели: список и карточка обеим ролям, решения — администратору. */
     listMerchants: (actor: Actor, filter?: MerchantFilter) =>

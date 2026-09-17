@@ -4,7 +4,7 @@ import type { MoneyLine } from '@nemo/ui/money-list';
 import type { PillTone } from './labels';
 
 /**
- * Счёт и возврат кассы — макет без денег.
+ * Счёт и возврат POS-терминала — макет без денег.
  *
  * Сущностей в ядре у них нет и пока не будет (`backlog.md`, решение от
  * 10 сентября 2026): за счётом у образца стоит приём денег покупателя,
@@ -22,7 +22,7 @@ export const invoiceStatuses = ['issued', 'paid', 'cancelled'] as const;
 export type InvoiceStatus = (typeof invoiceStatuses)[number];
 
 export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
-  issued: 'Выставлен',
+  issued: 'Ожидает',
   paid: 'Оплачен',
   cancelled: 'Отменён',
 };
@@ -46,7 +46,7 @@ export interface MockInvoice {
   readonly number: string;
   readonly purpose: string;
   readonly buyer: string;
-  /** Кто выставил: имя мерчанта или «Касса». */
+  /** Кто создал: имя того, кто нажал «Создать счёт». */
   readonly author: string;
   /** Валюта покупателя и сумма в ней. */
   readonly code: string;
@@ -82,7 +82,7 @@ export const INVOICE_COLUMN_LABELS: Record<InvoiceColumn, string> = {
   author: 'Создатель',
   amount: 'Сумма',
   status: 'Состояние',
-  created: 'Выставлен',
+  created: 'Создан',
 };
 
 /**
@@ -106,7 +106,7 @@ export interface Cell {
  * Дата — днём без часа и по местному времени того, кто смотрит:
  * смещение пояса кладёт в куку шапка, и по нему же считает период
  * аналитика. Без него мерчант из Бангкока видел бы в файле вчерашний
- * день у счёта, выставленного в три часа ночи, а на экране сегодняшний.
+ * день у счёта, созданного в три часа ночи, а на экране сегодняшний.
  */
 export function invoiceCell(
   one: MockInvoice,
@@ -256,7 +256,7 @@ export function paidOnly(invoices: readonly MockInvoice[]): readonly MockInvoice
 /**
  * Оборот счетов в выбранной валюте.
  *
- * Считается по оплаченным: выставленный и тем более отменённый счёт —
+ * Считается по оплаченным: ожидающий и тем более отменённый счёт —
  * это бумага, а не деньги, и «оборот 50 000» рядом с «оплачено 0»
  * читался бы как ошибка в счётчике, а не в подписи.
  *

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { HowTo, QuietRefresh, Stat, Stats, Tabs } from '@nemo/ui';
+import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
 import { CALLS_HOW_TO } from '@/lib/integration-texts';
 import { viewer } from '@/lib/reads';
@@ -11,6 +12,7 @@ import {
   toCallRow,
 } from '@/lib/call-rows';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { CallsTable } from './calls-table';
 
 export const dynamic = 'force-dynamic';
@@ -31,6 +33,9 @@ export default async function CallsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const access = await allowedHere('/calls');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const params = await searchParams;
   const outcome = pickOutcome(single(params.outcome));

@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import { cursorFromParams } from '@nemo/ui/paging';
 import { errorResponse, json } from '@/lib/api';
-import { requireActor } from '@/lib/auth';
+import { requireActor, requireViewer } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import {
   pickTab,
+  pickWho,
   REQUESTS_PAGE,
   statusesOf,
+  submittedByFilter,
   toRequestRow,
 } from '@/lib/request-rows';
 import { exchangeRequestBodySchema, parseBody } from '@/lib/v1/schemas';
@@ -24,15 +26,17 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: Request): Promise<Response> {
   try {
-    const actor = await requireActor();
+    const { actor, session } = await requireViewer();
     const params = new URL(request.url).searchParams;
     const tab = pickTab(params.get('tab') ?? undefined);
+    const who = pickWho(params.get('who') ?? undefined);
     const cursor = cursorFromParams(params);
     const statuses = statusesOf(tab);
 
     const rows = await getCore().listExchangeRequests(actor, {
       limit: REQUESTS_PAGE,
       ...(statuses ? { statuses } : {}),
+      ...submittedByFilter(who, session.userId),
       ...(cursor ? { after: { createdAt: new Date(cursor.createdAt), id: cursor.id } } : {}),
     });
 

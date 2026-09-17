@@ -1,9 +1,11 @@
 import { HowTo } from '@nemo/ui';
+import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
 import { KEYS_HOW_TO } from '@/lib/integration-texts';
 import { toKeyRow } from '@/lib/key-rows';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { ApiKeys } from './api-keys';
 import { SignatureToggle } from './signature-toggle';
 import { UsageExample } from './usage-example';
@@ -20,6 +22,9 @@ export const dynamic = 'force-dynamic';
  */
 
 export default async function KeysPage() {
+  const access = await allowedHere('/keys');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const core = getCore();
   const [keys, profile] = await Promise.all([core.listApiKeys(actor), core.getMerchantProfile(actor)]);

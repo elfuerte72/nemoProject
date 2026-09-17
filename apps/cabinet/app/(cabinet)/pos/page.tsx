@@ -2,19 +2,24 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { EmptyState, HowTo } from '@nemo/ui';
 import { TZ_COOKIE, localMidnight, readTzOffset } from '@nemo/ui/period';
+import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
 import { listDirectionRates } from '@/lib/direction-rates';
 import { countSince } from '@/lib/mock/store';
 import { POS_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { Terminal } from './terminal';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Касса: покупатель выбирает валюту и называет сумму, мерчант
- * выставляет счёт.
+ * POS-терминал: покупатель выбирает валюту и называет сумму, мерчант
+ * создаёт счёт.
+ *
+ * Назван словом владельца со звонка 8 сентября 2026 — он показывал
+ * «посттерминал» у образца и просил перенести его.
  *
  * Экран нарисован, денег за ним нет — так решено 10 сентября 2026
  * (`backlog.md`). Сказано об этом сверху и прямо: умолчать значило бы
@@ -25,11 +30,14 @@ export const dynamic = 'force-dynamic';
  * разделе «Курсы» и на экране новой заявки.
  */
 export default async function PosPage() {
+  const access = await allowedHere('/pos');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
   const { directions, terms } = await listDirectionRates(getCore());
 
-  // Смена — сутки по часам того, кто смотрит: касса работает день, а
+  // Смена — сутки по часам того, кто смотрит: терминал работает день, а
   // не с полуночи по UTC.
   const shift = countSince(actor.merchantId, localMidnight(new Date(), offset));
 
@@ -43,7 +51,7 @@ export default async function PosPage() {
 
       <header className="page__head">
         <div>
-          <h1 className="page__title">Касса</h1>
+          <h1 className="page__title">POS-терминал</h1>
           <p className="page__sub">{PREVIEW_NOTE}</p>
         </div>
         <div className="page__actions">
@@ -59,13 +67,13 @@ export default async function PosPage() {
         <EmptyState
           icon="exchange"
           title="Направлений с рублями нет"
-          text="Касса считает цену по направлениям, в которых сервис выдаёт валюту за рубли. Пока таких нет, выставить счёт не из чего."
+          text="POS-терминал считает цену по направлениям, в которых сервис выдаёт валюту за рубли. Пока таких нет, создать счёт не из чего."
         />
       ) : (
         <Terminal
           directions={sellable}
           shift={shift}
-          merchantName={session.name}
+          authorName={session.userName}
           minAmount={terms.minAmount}
         />
       )}

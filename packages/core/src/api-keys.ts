@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import { apiKeys, merchants } from '@nemo/db';
-import { requireMerchant, requireStaff, type Actor } from './actor.js';
+import { requireMerchantAbility, requireStaff, type Actor } from './actor.js';
 import type { CoreConfig } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
-import { requireActiveMerchant } from './merchants.js';
-import { toMerchant, type Notification } from './notifications.js';
+import { merchantOwnerRecipient, requireActiveMerchant } from './merchants.js';
+import type { Notification } from './notifications.js';
 import { randomAlphanumeric } from './secrets.js';
 
 /**
@@ -143,7 +143,7 @@ export async function issueApiKey(
   actor: Actor,
   input: { readonly label: string },
 ): Promise<IssuedApiKey> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
   const prefix = requireApiKeyPrefix(ctx);
 
   const label = input.label.trim();
@@ -156,7 +156,7 @@ export async function issueApiKey(
 
   // Только одобренному и не отключённому: ключ — право подавать заявки,
   // а оно открывается одобрением анкеты и закрывается отключением.
-  const merchant = await requireActiveMerchant(ctx.db, merchantId);
+  await requireActiveMerchant(ctx.db, merchantId);
 
   const secret = `${prefix}${randomAlphanumeric(SECRET_LENGTH)}`;
   const hint = apiKeyHint(secret, prefix);
@@ -171,7 +171,12 @@ export async function issueApiKey(
     key,
     secret,
     notifications: [
-      { kind: 'merchant-api-key-issued', to: toMerchant(merchant), label, hint },
+      {
+        kind: 'merchant-api-key-issued',
+        to: await merchantOwnerRecipient(ctx.db, merchantId),
+        label,
+        hint,
+      },
     ],
   };
 }
@@ -186,7 +191,7 @@ export async function revokeApiKey(
   actor: Actor,
   keyId: string,
 ): Promise<ApiKeyResult> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
 
   return ctx.db.transaction(async (tx) => {
     const [row] = await tx
@@ -208,18 +213,12 @@ export async function revokeApiKey(
       .where(eq(apiKeys.id, keyId))
       .returning();
 
-    const [merchant] = await tx
-      .select({ id: merchants.id, email: merchants.email })
-      .from(merchants)
-      .where(eq(merchants.id, merchantId))
-      .limit(1);
-
     return {
       key: toView(updated!),
       notifications: [
         {
           kind: 'merchant-api-key-revoked',
-          to: toMerchant(merchant!),
+          to: await merchantOwnerRecipient(tx, merchantId),
           label: row.label,
           hint: row.hint,
         },
@@ -229,7 +228,7 @@ export async function revokeApiKey(
 }
 
 export async function listApiKeys(ctx: CoreConfig, actor: Actor): Promise<readonly ApiKeyView[]> {
-  return keysOf(ctx, requireMerchant(actor));
+  return keysOf(ctx, requireMerchantAbility(actor, 'integration').merchantId);
 }
 
 /** Ключи мерчанта для карточки в панели: без секретов, с последней активностью. */
@@ -327,7 +326,7 @@ export async function setSignatureRequired(
   actor: Actor,
   required: boolean,
 ): Promise<boolean> {
-  const merchantId = requireMerchant(actor);
+  const { merchantId } = requireMerchantAbility(actor, 'integration');
   const [updated] = await ctx.db
     .update(merchants)
     .set({ signatureRequired: required })

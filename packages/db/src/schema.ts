@@ -98,6 +98,13 @@ export const merchantStatusEnum = pgEnum('merchant_status', [
   'disabled',
 ]);
 
+/** Роли людей у мерчанта — см. `merchantUserRoles` в `@nemo/types`. */
+export const merchantUserRoleEnum = pgEnum('merchant_user_role', [
+  'owner',
+  'operator',
+  'viewer',
+]);
+
 /** Зачем выдана ссылка из письма: подтвердить адрес или сменить пароль. */
 /**
  * События, о которых мерчант просит сообщать вебхуком. Переходы заявки
@@ -443,20 +450,6 @@ export const merchants = pgTable(
   'merchants',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    /**
-     * Почта — то, чем мерчант входит, и то, куда сервис пишет. Хранится
-     * приведённой к нижнему регистру: «Shop@…» и «shop@…» — один ящик, и
-     * два аккаунта на него означали бы, что второй никогда не подтвердит
-     * адрес.
-     */
-    email: text('email').notNull().unique(),
-    passwordHash: text('password_hash').notNull(),
-    /**
-     * Поколение сессий. Смена пароля увеличивает его, и подписанные им
-     * куки перестают подходить разом — иначе угнанная сессия пережила бы
-     * смену пароля, ради которой её и меняли.
-     */
-    sessionEpoch: integer('session_epoch').default(1).notNull(),
     name: text('name').notNull(),
     site: text('site'),
     contactName: text('contact_name').notNull(),
@@ -466,12 +459,6 @@ export const merchants = pgTable(
     status: merchantStatusEnum('status').default('pending').notNull(),
     /** Почему отклонён. Мерчант читает её в кабинете, а не гадает. */
     rejectionReason: text('rejection_reason'),
-    /**
-     * Когда подтверждён адрес почты. До этого анкета администратору не
-     * показывается: рассматривать заявку от ящика, до которого письмо не
-     * дошло, значит рассматривать неизвестно чью.
-     */
-    emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
     approvedAt: timestamp('approved_at', { withTimezone: true }),
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
     /**
@@ -494,6 +481,71 @@ export const merchants = pgTable(
 );
 
 /**
+ * Человек у мерчанта: тот, кто входит в кабинет.
+ *
+ * Мерчант — организация, и почта с паролем ей не принадлежат: входят
+ * люди. Поэтому и поколение сессий стоит здесь, а не у мерчанта — оно
+ * свойство входа, и закрытый доступ поднимает его так же, как смена
+ * пароля.
+ *
+ * Владелец — тот, кто завёл анкету; он один, роль ему не меняется и
+ * доступ не закрывается, иначе кабинет остался бы без хозяина. Прочих
+ * заводит он сам и пароль передаёт лично: приглашение по почте
+ * добавило бы подтверждение адреса ради ничего.
+ */
+export const merchantUsers = pgTable(
+  'merchant_users',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchants.id, { onDelete: 'cascade' }),
+    /**
+     * Почта — то, чем человек входит, и то, куда сервис пишет ему.
+     * Хранится приведённой к нижнему регистру: «Shop@…» и «shop@…» —
+     * один ящик. Уникальна по всей таблице, а не в пределах мерчанта:
+     * вход спрашивает почту и пароль, и одна почта в двух кабинетах
+     * означала бы вопрос, в какой из них пускать.
+     */
+    email: text('email').notNull().unique(),
+    passwordHash: text('password_hash').notNull(),
+    /** Имя, по которому его узнают в списке заявок. */
+    name: text('name').notNull(),
+    role: merchantUserRoleEnum('role').notNull(),
+    /**
+     * Поколение сессий. Смена пароля и закрытие доступа увеличивают
+     * его, и подписанные им куки перестают подходить разом — иначе
+     * угнанная сессия пережила бы смену пароля, ради которой её и
+     * меняли.
+     */
+    sessionEpoch: integer('session_epoch').default(1).notNull(),
+    /**
+     * Когда подтверждён адрес. Спрашивается у владельца: по его адресу
+     * принимается решение об анкете, и рассматривать её от ящика, до
+     * которого письмо не дошло, значит рассматривать неизвестно чью. У
+     * прочих пусто и не требуется — пароль им задаёт владелец.
+     */
+    emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
+    /**
+     * Когда закрыт доступ. Доступ закрывается, а не удаляется: заявки
+     * ссылаются на того, кто их подал, и история за месяц без авторов
+     * стала бы историей ни о чём.
+     */
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('merchant_users_merchant_idx').on(table.merchantId, table.createdAt, table.id),
+    // Владелец у мерчанта ровно один, и сторожит это индекс, а не
+    // операция: второй владелец — это второй адрес, по которому сервис
+    // пишет о деньгах, и узнать о нём пришлось бы из письма.
+    uniqueIndex('merchant_users_single_owner')
+      .on(table.merchantId)
+      .where(sql`${table.role} = 'owner'`),
+  ],
+);
+
+/**
  * Ссылка из письма: подтверждение адреса или сброс пароля.
  *
  * Хранится хеш, а не сама ссылка: письмо доходит до почтового ящика, а
@@ -507,9 +559,14 @@ export const merchantEmailTokens = pgTable(
   'merchant_email_tokens',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    merchantId: uuid('merchant_id')
+    /**
+     * Человек, а не организация: подтверждают адрес и меняют пароль
+     * ему. До появления людей ссылка принадлежала мерчанту — там, где
+     * почта и пароль лежали у него же.
+     */
+    merchantUserId: uuid('merchant_user_id')
       .notNull()
-      .references(() => merchants.id, { onDelete: 'cascade' }),
+      .references(() => merchantUsers.id, { onDelete: 'cascade' }),
     purpose: merchantEmailTokenPurposeEnum('purpose').notNull(),
     tokenHash: text('token_hash').notNull().unique(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -517,7 +574,7 @@ export const merchantEmailTokens = pgTable(
     usedAt: timestamp('used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('merchant_email_tokens_merchant_idx').on(table.merchantId)],
+  (table) => [index('merchant_email_tokens_user_idx').on(table.merchantUserId)],
 );
 
 /**
@@ -1135,6 +1192,19 @@ export const exchangeRequests = pgTable(
       () => clients.telegramUserId,
     ),
     merchantId: uuid('merchant_id').references(() => merchants.id),
+    /**
+     * Кто подал внутри мерчанта. Мерчант спрашивает об этом сам —
+     * «сколько прошло через Петра», — а по одному `merchant_id` этого
+     * не узнать: организация одна, людей у неё несколько.
+     *
+     * Пусто у заявки по ключу API: ключ принадлежит мерчанту, а не
+     * человеку, и назвать автором того, кто ключ выпустил, значило бы
+     * записать в историю чужую работу. Пусто и у поданных до появления
+     * отметки.
+     */
+    submittedByUserId: uuid('submitted_by_user_id').references(
+      () => merchantUsers.id,
+    ),
     /**
      * Внешний номер мерчанта: «бронь №1024». Сервис его не толкует —
      * он нужен, чтобы менеджер и мерчант говорили об одной заявке

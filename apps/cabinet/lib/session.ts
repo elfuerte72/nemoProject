@@ -9,11 +9,11 @@ import { isCoreError } from '@nemo/http';
  * идентификатор и время, до которого он действителен.
  *
  * Отличие одно и важное: в подпись входит поколение
- * (`merchants.session_epoch`). Смена пароля увеличивает его в базе, и
- * все выданные раньше куки перестают подходить разом — не перебирая
- * их. Ради этого поколение и заведено: угнанный аккаунт мерчанта — это
- * кража у мерчанта, взломщик меняет реквизиты получателя, а платит
- * мерчант.
+ * (`merchant_users.session_epoch`). Смена пароля и закрытие доступа
+ * увеличивают его в базе, и все выданные раньше куки перестают
+ * подходить разом — не перебирая их. Ради этого поколение и заведено:
+ * угнанный аккаунт мерчанта — это кража у мерчанта, взломщик меняет
+ * реквизиты получателя, а платит мерчант.
  *
  * Право доступа эта строка не подтверждает. Она говорит лишь «вход
  * состоялся тогда-то, при таком поколении»; одобрен ли мерчант и не
@@ -60,8 +60,14 @@ export async function viewerOrElse<T, F>(
 }
 
 export interface SessionPayload {
-  readonly merchantId: string;
-  /** Поколение из `merchants.session_epoch` на момент входа. */
+  /**
+   * Кто вошёл — человек, а не организация: людей у мерчанта несколько
+   * (тикет 17), и какой из них подал заявку, кабинет обязан знать.
+   * Своего мерчанта человек приносит с собой — он записан у него в
+   * строке, и подделать его в куке нечем.
+   */
+  readonly userId: string;
+  /** Поколение из `merchant_users.session_epoch` на момент входа. */
   readonly sessionEpoch: number;
 }
 
@@ -91,7 +97,7 @@ export function issueToken(payload: SessionPayload, options: SessionOptions): st
   const ttl = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
   const expiresAt = Math.floor(now.getTime() / 1000) + ttl;
 
-  const body = `${payload.merchantId}.${payload.sessionEpoch}.${expiresAt}`;
+  const body = `${payload.userId}.${payload.sessionEpoch}.${expiresAt}`;
   return `${body}.${sign(body, options.secret)}`;
 }
 
@@ -107,9 +113,9 @@ export function readToken(
   if (parts.length !== 4) {
     throw new SessionError('Сессия непонятного вида');
   }
-  const [merchantId, epoch, expiresAt, signature] = parts as [string, string, string, string];
+  const [userId, epoch, expiresAt, signature] = parts as [string, string, string, string];
 
-  const expected = Buffer.from(sign(`${merchantId}.${epoch}.${expiresAt}`, options.secret));
+  const expected = Buffer.from(sign(`${userId}.${epoch}.${expiresAt}`, options.secret));
   const actual = Buffer.from(signature);
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
     throw new SessionError('Подпись сессии не совпала');
@@ -125,7 +131,7 @@ export function readToken(
     throw new SessionError('Сессия непонятного вида');
   }
 
-  return { merchantId, sessionEpoch };
+  return { userId, sessionEpoch };
 }
 
 export function sessionSecret(): string {

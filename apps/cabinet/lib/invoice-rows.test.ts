@@ -147,7 +147,7 @@ describe('числа над списком', () => {
         payAmount: Money.toAmount('6600'),
         rate: Money.toAmount('13.2'),
       }),
-      // Выставленный и отменённый — бумага, а не деньги: «оборот 50 000»
+      // Ожидающий и отменённый — бумага, а не деньги: «оборот 50 000»
       // рядом с «оплачено 0» читался бы как ошибка в счётчике.
       invoice({ status: 'issued', payAmount: Money.toAmount('9999') }),
       invoice({ status: 'cancelled', payAmount: Money.toAmount('8888') }),
@@ -157,7 +157,7 @@ describe('числа над списком', () => {
     expect(invoiceTotal(rows, 'RUB')).toEqual({ amount: '12200', count: 2 });
     // Баты — только по батовым счетам: свести их с юанями нечем.
     expect(invoiceTotal(rows, 'THB')).toEqual({ amount: '2000', count: 1 });
-    // Валюты для выбора берутся из всех счетов: выставленный тоже в
+    // Валюты для выбора берутся из всех счетов: ожидающий тоже в
     // какой-то валюте, и пропавший из списка выбор сбивал бы с толку.
     expect(invoiceCurrencies(rows)).toEqual(['CNY', 'RUB', 'THB']);
     expect(invoiceMoneyLines(rows)).toEqual([
@@ -232,9 +232,9 @@ describe('остаток по счёту', () => {
   });
 });
 
-describe('тексты кассы, счетов и возвратов набраны человеком', () => {
+describe('тексты терминала, счетов и возвратов набраны человеком', () => {
   it.each([
-    ['Касса', POS_HOW_TO],
+    ['POS-терминал', POS_HOW_TO],
     ['Счета', INVOICES_HOW_TO],
     ['Возвраты', REFUNDS_HOW_TO],
   ] as const)('подсказка «%s»', (_name, items) => {

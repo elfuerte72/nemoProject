@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { CoreError } from '@nemo/core';
+import { isCoreError } from '@nemo/http';
 import { Moment, QuietRefresh } from '@nemo/ui';
 import { formatMoney, formatRate } from '@nemo/ui/format';
 import { getCore } from '@/lib/core';
@@ -31,7 +31,9 @@ export default async function RequestPage({
     // Чужая заявка — «не найдена», и отвечать на неё надо так же:
     // отличать одно от другого значило бы подтверждать её существование
     // тому, кто перебирает номера.
-    if (error instanceof CoreError && error.code === 'not-found') notFound();
+    // По коду, а не по классу: ядро заводит хук запуска в своём бандле,
+    // и `instanceof` здесь ложно (`lib/core-errors.test.ts`).
+    if (isCoreError(error) && error.code === 'not-found') notFound();
     throw error;
   });
   const [events, terms] = await Promise.all([

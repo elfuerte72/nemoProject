@@ -82,8 +82,8 @@ export function forgetMock(merchantId: string): void {
 }
 
 /**
- * Сколько счетов мерчант выставил за смену. Смена — сутки по часам
- * того, кто смотрит: касса работает день, а не с полуночи по UTC.
+ * Сколько счетов мерчант создал за смену. Смена — сутки по часам
+ * того, кто смотрит: терминал работает день, а не с полуночи по UTC.
  */
 export function countSince(merchantId: string, since: Date): number {
   return listInvoices(merchantId).filter((one) => new Date(one.createdAt) >= since).length;

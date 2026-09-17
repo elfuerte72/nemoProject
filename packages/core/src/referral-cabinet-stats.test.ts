@@ -20,6 +20,10 @@ const core = createCore({ db });
 let manager: Actor & { type: 'staff' };
 
 const DAY = 24 * 60 * 60 * 1000;
+/** Следующий день у ключа «ГГГГ-ММ-ДД»: им помечены столбики. */
+const nextDay = (day: string) =>
+  new Date(new Date(`${day}T00:00:00Z`).getTime() + DAY).toISOString().slice(0, 10);
+
 /** Момент `daysAgo` дней назад в `hour` часов UTC. */
 const at = (daysAgo: number, hour = 12) => {
   const date = new Date();
@@ -179,10 +183,17 @@ describe('сводка кабинета за период', () => {
 
     expect(utc.byDay).toHaveLength(14);
     expect(utc.byDay.filter((day) => day.joined > 0).map((day) => day.joined)).toEqual([1]);
-    // 22:00 UTC — это уже завтра по Бангкоку: столбик уезжает на день.
-    const utcDay = utc.byDay.findIndex((day) => day.joined > 0);
-    const bangkokDay = bangkok.byDay.findIndex((day) => day.joined > 0);
-    expect(bangkokDay).toBe(utcDay + 1);
+    /*
+     * 22:00 UTC — это уже завтра по Бангкоку: столбик уезжает на день.
+     * Сверяются сами дни, а не их места в массиве: окно строится от
+     * полуночи смотрящего, и при смещении вся сетка съезжает вместе со
+     * столбиком — до 12 сентября 2026 тест сравнивал места и потому
+     * проходил только до 17:00 UTC.
+     */
+    const utcDay = utc.byDay.find((day) => day.joined > 0)?.day;
+    const bangkokDay = bangkok.byDay.find((day) => day.joined > 0)?.day;
+    expect(utcDay).toBeDefined();
+    expect(bangkokDay).toBe(nextDay(utcDay!));
     expect(utc.byDay.find((day) => day.joined > 0)?.accrued).toBe('50');
     expect(utc.pending).toBe('0');
   });

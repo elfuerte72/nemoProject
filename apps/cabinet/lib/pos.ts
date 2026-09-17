@@ -2,7 +2,7 @@ import { Money, giveFor, payoutOf, type Amount, type Quote } from '@nemo/types';
 import type { MockInvoice } from './invoice-rows';
 
 /**
- * Касса: что покупатель выбирает и сколько за это платит.
+ * POS-терминал: что покупатель выбирает и сколько за это платит.
  *
  * Курс берётся тем же путём, что на экране новой заявки, и считается
  * той же арифметикой (`payoutOf`, `giveFor` из `@nemo/types`): двух
@@ -37,7 +37,7 @@ export interface PosSides {
 /**
  * Обе стороны продажи. Считается та, в которую не вводят: «дай батов
  * на пять тысяч рублей» и «нужно ровно 2 000 батов» — два вопроса
- * одной кассы, и оба задают у стойки.
+ * одного терминала, и оба задают у стойки.
  *
  * Счёт к оплате всегда округляется вверх — и когда его посчитали, и
  * когда его набрали руками: набранные «5 000,40 ₽» это та же копейка
@@ -91,7 +91,7 @@ export function makeInvoice(input: NewInvoiceInput): MockInvoice {
     status: 'issued',
     createdAt: at,
     paidAt: null,
-    events: [{ at, what: `Счёт выставлен: ${input.author}` }],
+    events: [{ at, what: `Счёт создан: ${input.author}` }],
   };
 }
 
@@ -113,7 +113,7 @@ export function nextNumber(
   return `${day}-${String(today + 1).padStart(3, '0')}`;
 }
 
-/** День «2026-09-12» по местному времени того, кто у кассы. */
+/** День «2026-09-12» по местному времени того, кто у терминала. */
 export function localDay(at: Date, offsetMinutes: number): string {
   return new Date(at.getTime() + offsetMinutes * 60_000).toISOString().slice(0, 10);
 }

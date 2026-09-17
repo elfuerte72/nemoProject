@@ -1,9 +1,11 @@
 import { HowTo } from '@nemo/ui';
+import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
 import { RECIPIENTS_HOW_TO } from '@/lib/exchange-texts';
 import { viewer } from '@/lib/reads';
 import { toRecipientRow } from '@/lib/recipient-rows';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { Recipients } from './recipients';
 
 export const dynamic = 'force-dynamic';
@@ -15,6 +17,9 @@ export const dynamic = 'force-dynamic';
  * растёт на каждого покупателя.
  */
 export default async function RecipientsPage() {
+  const access = await allowedHere('/recipients');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const core = getCore();
   const [requisites, networks] = await Promise.all([

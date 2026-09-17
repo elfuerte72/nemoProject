@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
+import { merchantRoleCan } from '@nemo/types';
 import {
   EmptyState,
   firstParam,
@@ -12,6 +13,7 @@ import {
 import { formatMoney } from '@nemo/ui/format';
 import { formatByCurrency } from '@nemo/ui/money-list';
 import { TZ_COOKIE, readTzOffset } from '@nemo/ui/period';
+import { allowedHere } from '@/lib/access';
 import { INVOICE_PREFS_COOKIE, readInvoiceColumns } from '@/lib/invoice-prefs';
 import {
   INVOICE_COLUMN_LABELS,
@@ -30,12 +32,13 @@ import { listInvoices } from '@/lib/mock/store';
 import { INVOICES_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { Columns } from './columns';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Счета кассы: список с числами над ним.
+ * Счета POS-терминала: список с числами над ним.
  *
  * Макет без денег — записи живут в памяти процесса и до перезапуска
  * (`backlog.md`). Сказано об этом сверху: мерчант, потерявший счёт
@@ -50,6 +53,9 @@ export default async function InvoicesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const access = await allowedHere('/invoices');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const params = await searchParams;
   const jar = await cookies();
@@ -91,9 +97,11 @@ export default async function InvoicesPage({
           <p className="page__sub">{PREVIEW_NOTE}</p>
         </div>
         <div className="page__actions">
-          <Link className="btn btn--gold btn--tiny" href="/pos">
-            В кассу
-          </Link>
+          {merchantRoleCan(session.role, 'till') ? (
+            <Link className="btn btn--gold btn--tiny" href="/pos">
+              POS-терминал
+            </Link>
+          ) : undefined}
           <a className="btn btn--ghost btn--tiny" href={`/api/pos/invoices/csv?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(status ? { tab: status } : {}) }).toString()}`}>
             CSV
           </a>
@@ -103,15 +111,15 @@ export default async function InvoicesPage({
       <HowTo title="Как это устроено" sub="Откуда счета и почему числа такие" items={INVOICES_HOW_TO} />
 
       <Stats>
-        <Stat label="Счетов" value={found.length} note={query ? 'нашлось по запросу' : 'всего'} />
+        <Stat label="Всего счетов" value={found.length} note={query ? 'нашлось по запросу' : 'всего'} />
         <Stat
-          label="Оплачено"
+          label="Оплаченные счета"
           value={paid.length}
           note="отмечаете вы сами: деньги идут мимо сервиса"
           tone={paid.length > 0 ? 'up' : 'plain'}
         />
         <Stat
-          label={`Оборот, ${code}`}
+          label={`Оборот в ${code}`}
           value={formatMoney(total.amount, code)}
           note={
             code === 'RUB'
@@ -177,7 +185,7 @@ export default async function InvoicesPage({
           title={all.length === 0 ? 'Счетов пока нет' : 'По этому отбору ничего нет'}
           text={
             all.length === 0
-              ? 'Счёт выставляется в кассе: покупатель называет валюту и сумму, вы нажимаете «Выставить счёт».'
+              ? 'Счёт создаётся в POS-терминале: покупатель называет валюту и сумму, вы нажимаете «Создать счёт».'
               : 'Снимите поиск или возьмите другое состояние.'
           }
         />

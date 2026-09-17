@@ -8,14 +8,14 @@ import { requireActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import { addInvoice, listInvoices } from '@/lib/mock/store';
 import { makeInvoice, nextNumber, posSides } from '@/lib/pos';
-import { requireActiveMerchant } from '@/lib/mock/guard';
+import { requireTill } from '@/lib/mock/guard';
 import { viewer } from '@/lib/reads';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Счёт из кассы — запись макета в памяти процесса, а не строка в базе
+ * Счёт из POS-терминала — запись макета в памяти процесса, а не строка в базе
  * (`backlog.md`, решение от 10 сентября 2026). Денег за ним нет: ни
  * покупателю, ни сервису ничего не уходит.
  *
@@ -45,7 +45,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const actor = await requireActor();
     const { session } = await viewer();
-    requireActiveMerchant(session.status);
+    requireTill(session);
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new InvalidInputError('Счёт заполнен не полностью');
@@ -64,7 +64,7 @@ export async function POST(request: Request): Promise<Response> {
       ...(body.quotedAt === undefined ? {} : { asOf: body.quotedAt }),
     });
     if (!quote) {
-      throw new InvalidInputError('Курса сейчас нет: счёт по нему выставить не получится');
+      throw new InvalidInputError('Курса сейчас нет: счёт по нему создать не получится');
     }
 
     /*
@@ -77,7 +77,7 @@ export async function POST(request: Request): Promise<Response> {
     const { buy, pay } = posSides(value.data, body.side, quote);
     if (buy === null || pay === null) {
       throw new InvalidInputError(
-        'На эту сумму счёт не выставить: после комиссии покупателю ничего не остаётся',
+        'На эту сумму счёт не создать: после комиссии покупателю ничего не остаётся',
       );
     }
 
@@ -88,7 +88,8 @@ export async function POST(request: Request): Promise<Response> {
       number: nextNumber(listInvoices(actor.merchantId), at, offset),
       purpose: body.purpose,
       buyer: body.buyer,
-      author: session.name,
+      // Кто нажал, а не чей кабинет: людей у мерчанта несколько (тикет 17).
+      author: session.userName,
       code: body.to,
       amount: buy,
       payCode: body.from,

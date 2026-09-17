@@ -32,6 +32,9 @@ const core = createCore({
 const login = await core.beginStaffLogin(100001n);
 const admin = { type: 'staff' as const, staffId: login.staffId, role: login.role };
 
+/** Один пароль на всех: сид ставит сцену разработки, а не секреты. */
+const PASSWORD = 'правильная лошадь батарейка';
+
 const ANKETY = [
   {
     email: 'oplatishka@example.com',
@@ -88,7 +91,7 @@ for (const anketa of ANKETY) {
     .registerMerchant({
       ...anketa,
       site: anketa.site ?? undefined,
-      password: 'правильная лошадь батарейка',
+      password: PASSWORD,
     })
     .catch((error: unknown) => {
       if (error instanceof CoreError && error.code === 'conflict') return null;
@@ -113,10 +116,22 @@ await core.rejectMerchant(admin, rejected!, {
 });
 // Четвёртый остаётся на рассмотрении: раздел открывается на нём.
 
+// Заявки подаёт владелец активного кабинета: вход отдаёт и человека, и
+// его роль — ровно то, из чего актора собирает сам кабинет (тикет 17).
+const session = await core.beginMerchantLogin({
+  email: 'oplatishka@example.com',
+  password: PASSWORD,
+});
+
 const REFERENCES = ['booking-1024', 'sub-2026-09', 'order-77'];
 for (const reference of REFERENCES) {
   await core.submitExchangeRequest(
-    { type: 'merchant', merchantId: active! },
+    {
+      type: 'merchant',
+      merchantId: session.merchantId,
+      userId: session.userId,
+      role: session.role,
+    },
     {
       kind: 'electronic',
       fromCode: 'USDT',

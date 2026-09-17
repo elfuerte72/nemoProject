@@ -1,9 +1,16 @@
+import { createHash } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { merchantEmailTokens } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
+import type { Actor } from './actor.js';
 import { createCore } from './index.js';
 import { givenStaff } from './test-support.js';
+
+/** Хеш ключа: в базе лежит он, а не сама ссылка. */
+function sha256(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 /**
  * Мерчант в ядре: анкета, почта, пароль и решение администратора
@@ -29,6 +36,23 @@ const ANKETA = {
 
 beforeEach(() => resetDatabase(db));
 afterAll(() => closeTestDatabase());
+
+/**
+ * Владелец кабинета как исполнитель операций: вход отдаёт и человека, и
+ * его роль — ровно то, из чего актора собирает сам кабинет.
+ */
+async function ownerActor(
+  email: string = ANKETA.email,
+  password: string = ANKETA.password,
+): Promise<Actor & { type: 'merchant'; userId: string }> {
+  const session = await core.beginMerchantLogin({ email, password });
+  return {
+    type: 'merchant',
+    merchantId: session.merchantId,
+    userId: session.userId,
+    role: session.role,
+  };
+}
 
 /** Ключ из письма: наружу он уходит только уведомлением. */
 function tokenOf(result: { notifications: readonly { kind: string }[] }, kind: string): string {
@@ -170,7 +194,7 @@ describe('вход мерчанта', () => {
    */
   it('смена пароля увеличивает поколение сессии', async () => {
     const merchantId = await registered();
-    const actor = { type: 'merchant', merchantId } as const;
+    const actor = await ownerActor();
 
     await core.changeMerchantPassword(actor, {
       currentPassword: ANKETA.password,
@@ -182,18 +206,18 @@ describe('вход мерчанта', () => {
       password: 'другая длинная фраза',
     });
     expect(session.sessionEpoch).toBe(2);
-    await expect(core.getMerchantSession(merchantId, 1)).rejects.toThrow();
-    expect((await core.getMerchantSession(merchantId, 2)).merchantId).toBe(merchantId);
+    await expect(core.getMerchantSession(actor.userId, 1)).rejects.toThrow();
+    expect((await core.getMerchantSession(actor.userId, 2)).merchantId).toBe(merchantId);
   });
 
   it('смена пароля без нынешнего не проходит', async () => {
-    const merchantId = await registered();
+    await registered();
 
     await expect(
-      core.changeMerchantPassword(
-        { type: 'merchant', merchantId },
-        { currentPassword: 'не тот', newPassword: 'другая длинная фраза' },
-      ),
+      core.changeMerchantPassword(await ownerActor(), {
+        currentPassword: 'не тот',
+        newPassword: 'другая длинная фраза',
+      }),
     ).rejects.toThrow(/почта или пароль/i);
   });
 
@@ -389,7 +413,7 @@ describe('срок ссылки из письма', () => {
     await db
       .update(merchantEmailTokens)
       .set({ expiresAt: new Date(Date.now() - 1000) })
-      .where(eq(merchantEmailTokens.merchantId, registered.merchant.id));
+      .where(eq(merchantEmailTokens.tokenHash, sha256(token)));
 
     await expect(core.verifyMerchantEmail(token)).rejects.toThrow(/ссылк/i);
   });
@@ -401,13 +425,13 @@ describe('срок ссылки из письма', () => {
  * мерчант о себе заполнил.
  */
 describe('мерчант о себе', () => {
-  it('сессия говорит, подтверждена ли почта', async () => {
+  it('сессия говорит, ждут ли подтверждения почты', async () => {
     const registered = await core.registerMerchant(ANKETA);
     const before = await core.beginMerchantLogin({
       email: ANKETA.email,
       password: ANKETA.password,
     });
-    expect(before.emailVerified).toBe(false);
+    expect(before.needsEmailVerification).toBe(true);
 
     await core.verifyMerchantEmail(tokenOf(registered, 'merchant-email-verification'));
 
@@ -415,14 +439,14 @@ describe('мерчант о себе', () => {
       email: ANKETA.email,
       password: ANKETA.password,
     });
-    expect(after.emailVerified).toBe(true);
+    expect(after.needsEmailVerification).toBe(false);
   });
 
   it('отдаёт свою анкету с состоянием и причиной отказа', async () => {
     const { merchant } = await core.registerMerchant(ANKETA);
-    const actor = { type: 'merchant', merchantId: merchant.id } as const;
 
-    const mine = await core.getMerchantProfile(actor);
+    const mine = await core.getMerchantProfile(await ownerActor());
+    expect(mine.id).toBe(merchant.id);
     expect(mine).toMatchObject({ name: 'Оплатишка', status: 'pending', phone: ANKETA.phone });
     // Хеша пароля наружу не уходит ни в одном виде мерчанта.
     expect(mine).not.toHaveProperty('passwordHash');
@@ -432,10 +456,8 @@ describe('мерчант о себе', () => {
     const { merchant } = await core.registerMerchant(ANKETA);
     const other = await core.registerMerchant({ ...ANKETA, email: 'two@example.com' });
 
-    const mine = await core.getMerchantProfile({
-      type: 'merchant',
-      merchantId: other.merchant.id,
-    });
+    const mine = await core.getMerchantProfile(await ownerActor('two@example.com'));
+    expect(mine.id).toBe(other.merchant.id);
     expect(mine.id).not.toBe(merchant.id);
   });
 });
@@ -449,10 +471,9 @@ describe('мерчант о себе', () => {
  */
 describe('письмо подтверждения заново', () => {
   it('высылается по просьбе того, кто вошёл, и работает', async () => {
-    const { merchant } = await core.registerMerchant(ANKETA);
-    const actor = { type: 'merchant', merchantId: merchant.id } as const;
+    await core.registerMerchant(ANKETA);
 
-    const again = await core.resendMerchantEmailVerification(actor);
+    const again = await core.resendMerchantEmailVerification(await ownerActor());
     await core.verifyMerchantEmail(tokenOf(again, 'merchant-email-verification'));
 
     const [found] = await core.listMerchants(await givenStaff({ role: 'admin' }), {
@@ -468,9 +489,8 @@ describe('письмо подтверждения заново', () => {
   it('гасит прежнюю ссылку', async () => {
     const registered = await core.registerMerchant(ANKETA);
     const first = tokenOf(registered, 'merchant-email-verification');
-    const actor = { type: 'merchant', merchantId: registered.merchant.id } as const;
 
-    await core.resendMerchantEmailVerification(actor);
+    await core.resendMerchantEmailVerification(await ownerActor());
 
     await expect(core.verifyMerchantEmail(first)).rejects.toThrow(/не подходит/i);
   });
@@ -478,9 +498,10 @@ describe('письмо подтверждения заново', () => {
   it('подтвердившему второе письмо не высылается', async () => {
     const registered = await core.registerMerchant(ANKETA);
     await core.verifyMerchantEmail(tokenOf(registered, 'merchant-email-verification'));
-    const actor = { type: 'merchant', merchantId: registered.merchant.id } as const;
 
-    await expect(core.resendMerchantEmailVerification(actor)).rejects.toThrow(/уже подтвержд/i);
+    await expect(
+      core.resendMerchantEmailVerification(await ownerActor()),
+    ).rejects.toThrow(/уже подтвержд/i);
   });
 });
 

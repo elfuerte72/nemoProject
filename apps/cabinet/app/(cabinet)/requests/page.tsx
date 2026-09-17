@@ -4,11 +4,15 @@ import { getCore } from '@/lib/core';
 import { countOf, requestCounts, viewer } from '@/lib/reads';
 import {
   pickTab,
+  pickWho,
   REQUESTS_PAGE,
   REQUEST_TABS,
   statusesOf,
+  submittedByFilter,
   TAB_LABELS,
   toRequestRow,
+  WHO_KEYS,
+  WHO_LABELS,
 } from '@/lib/request-rows';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { RequestsTable } from './requests-table';
@@ -60,16 +64,31 @@ export default async function RequestsPage({
   const { actor, session } = await viewer();
   const params = await searchParams;
   const tab = pickTab(single(params.tab));
+  const who = pickWho(single(params.who));
+  const mine = submittedByFilter(who, session.userId);
 
-  const [rows, counts] = await Promise.all([
-    getCore().listExchangeRequests(actor, {
+  const core = getCore();
+  const [rows, counts, people] = await Promise.all([
+    core.listExchangeRequests(actor, {
       limit: REQUESTS_PAGE,
       ...withStatuses(tab),
+      ...mine,
     }),
     requestCounts(),
+    // Состав кабинета читает один владелец (тикет 17): с именами
+    // приходит и колонка «Кто подал», без них её нет вовсе.
+    session.role === 'owner' ? core.listMerchantUsers(actor) : Promise.resolve(undefined),
   ]);
 
-  const total = countOf(counts, statusesOf(tab));
+  /*
+   * Счётчик под фильтром считает то же, что показано: при «моих»
+   * общее число заявок кабинета означало бы, что кнопка дочитывания
+   * обещает строки, которых в этой выборке нет.
+   */
+  const total =
+    who === 'all'
+      ? countOf(counts, statusesOf(tab))
+      : await core.countExchangeRequests(actor, { ...withStatuses(tab), ...mine });
 
   return (
     <main className="page page--wide">
@@ -96,15 +115,37 @@ export default async function RequestsPage({
         <Tabs
           label="Какие заявки показывать"
           items={REQUEST_TABS.map((one) => ({
-            href: `/requests?tab=${one}`,
+            href: `/requests?tab=${one}${who === 'all' ? '' : `&who=${who}`}`,
             label: TAB_LABELS[one],
             count: countOf(counts, statusesOf(one)),
             current: one === tab,
           }))}
         />
+        {/*
+          * Чьи заявки — вторым рядом, а не пятым табом: это другой
+          * вопрос к тому же списку, и слитый с состояниями он читался
+          * бы как ещё одно состояние. Счётчика у него нет: под «моими»
+          * он повторял бы число, которое стоит в подвале таблицы.
+          */}
+        <Tabs
+          label="Чьи заявки показывать"
+          items={WHO_KEYS.map((one) => ({
+            href: `/requests?tab=${tab}${one === 'all' ? '' : `&who=${one}`}`,
+            label: WHO_LABELS[one],
+            current: one === who,
+          }))}
+        />
       </div>
 
-      <RequestsTable rows={rows.map(toRequestRow)} total={total} tab={tab} />
+      <RequestsTable
+        rows={rows.map(toRequestRow)}
+        total={total}
+        tab={tab}
+        who={who}
+        {...(people === undefined
+          ? {}
+          : { names: Object.fromEntries(people.map((one) => [one.id, one.name])) })}
+      />
     </main>
   );
 }

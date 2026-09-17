@@ -7,6 +7,7 @@ import {
   attemptAllowed,
   attemptSpent,
   attemptSucceeded,
+  isFailedLogin,
 } from '@/lib/attempts';
 import { getCore } from '@/lib/core';
 import {
@@ -51,11 +52,9 @@ export async function POST(request: Request): Promise<Response> {
     try {
       session = await getCore().beginMerchantLogin({ email, password: parsed.data.password });
     } catch (error) {
-      // Считается неподошедший пароль, а не всякая неудача: отказавшая
-      // база — это не попытка подбора, и запирать за неё вход на
-      // четверть часа значило бы к недоступной базе добавить
-      // недоступный кабинет.
-      if (error instanceof ForbiddenError) {
+      // Считается неподошедший пароль, а не всякая неудача, и узнаётся
+      // он по коду — почему, сказано у `isFailedLogin`.
+      if (isFailedLogin(error)) {
         attemptSpent(email);
         attemptSpent(address);
       }
@@ -69,7 +68,7 @@ export async function POST(request: Request): Promise<Response> {
     store.set(
       SESSION_COOKIE,
       issueToken(
-        { merchantId: session.merchantId, sessionEpoch: session.sessionEpoch },
+        { userId: session.userId, sessionEpoch: session.sessionEpoch },
         { secret: sessionSecret() },
       ),
       SESSION_COOKIE_OPTIONS,

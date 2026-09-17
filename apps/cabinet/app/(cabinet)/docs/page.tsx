@@ -1,7 +1,9 @@
 import { Fragment, type ReactNode } from 'react';
+import { allowedHere } from '@/lib/access';
 import { loadApiDoc, type DocOperation } from '@/lib/openapi';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +16,9 @@ export const dynamic = 'force-dynamic';
  * поэтому страница не отстаёт от кода.
  */
 export default async function DocsPage() {
+  const access = await allowedHere('/docs');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { session } = await viewer();
   const doc = loadApiDoc();
   const baseUrl = (process.env.CABINET_URL ?? '').replace(/\/+$/, '');

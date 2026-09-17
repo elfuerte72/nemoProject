@@ -30,7 +30,7 @@ import {
   type PayoutMethod,
   minimumMeasure,
 } from '@nemo/types';
-import { requireOwner, type Actor, type Owner } from './actor.js';
+import { requireOwner, requireOwnerAbility, type Actor, type Owner } from './actor.js';
 import { requirePositiveAmount } from './amounts.js';
 import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
@@ -115,6 +115,11 @@ export interface ExchangeRequestView {
    * взяться ему неоткуда.
    */
   readonly reference: string | null;
+  /**
+   * Кто подал внутри мерчанта. Пусто у заявки клиента, у поданной
+   * ключом API — ключ ничей — и у поданных до появления отметки.
+   */
+  readonly submittedByUserId: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly completedAt: Date | null;
@@ -246,6 +251,7 @@ export function toExchangeRequestView(row: ExchangeRequestRow): ExchangeRequestV
     paymentInstructions: row.paymentInstructions,
     cancelReason: row.cancelReason,
     reference: row.reference,
+    submittedByUserId: row.submittedByUserId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     completedAt: row.completedAt,
@@ -331,7 +337,7 @@ export async function submitExchangeRequest(
   actor: Actor,
   input: SubmitExchangeRequestInput,
 ): Promise<SubmitExchangeRequestResult> {
-  const owner = requireOwner(actor);
+  const { owner, submittedByUserId } = requireOwnerAbility(actor, 'submit');
   const fromAmount = requirePositiveAmount(input.fromAmount, 'Сумма заявки');
 
   if (input.requisitesId !== undefined && input.payout !== undefined) {
@@ -518,6 +524,8 @@ export async function submitExchangeRequest(
 
     const [row] = await insertRequest(tx, {
       ...ownerColumns(owner),
+      // Кто подал внутри мерчанта: у клиента и у ключа API автора нет.
+      ...(submittedByUserId === null ? {} : { submittedByUserId }),
       ...(reference === undefined ? {} : { reference }),
       ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
       ...(input.source === undefined ? {} : { source: input.source }),
@@ -575,7 +583,7 @@ export async function submitExchangeRequest(
       notifications: [
         {
           kind: 'exchange-request-status',
-          to: await recipientOf(tx, owner),
+          to: await recipientOf(tx, owner, submittedByUserId),
           requestId: request.id,
           status: 'new',
         },
@@ -670,6 +678,13 @@ export interface OwnExchangeFilter {
   readonly statuses?: readonly ExchangeRequestStatus[] | undefined;
   readonly from?: Date | undefined;
   readonly to?: Date | undefined;
+  /**
+   * Только заявки этого человека внутри мерчанта (тикет 17). Сужает
+   * выборку сервер, а не разметка: «мои» иначе означало бы, что
+   * приехали все, а часть спрятана — и счётчик под фильтром считал бы
+   * не то, что видно.
+   */
+  readonly submittedByUserId?: string | undefined;
   readonly limit?: number | undefined;
   readonly after?: { readonly createdAt: Date; readonly id: string } | undefined;
 }
@@ -692,6 +707,9 @@ export async function listExchangeRequests(
   }
   if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
   if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
+  if (filter.submittedByUserId) {
+    conditions.push(eq(exchangeRequests.submittedByUserId, filter.submittedByUserId));
+  }
   if (filter.after) {
     /*
      * Пара «время и идентификатор» — двумя условиями, а не кортежем в
@@ -746,6 +764,9 @@ export async function countExchangeRequests(
   }
   if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
   if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
+  if (filter.submittedByUserId) {
+    conditions.push(eq(exchangeRequests.submittedByUserId, filter.submittedByUserId));
+  }
 
   const [row] = await ctx.db
     .select({ total: count() })

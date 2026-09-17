@@ -136,7 +136,7 @@ describe('заученные обороты', () => {
  * заявка на обмен», набранная столбцом связок, читается машинной ровно
  * так же — а правит её тот же человек и тем же заходом.
  */
-const MERCHANT = toMerchant({ id: 'm', email: 'shop@example.com' });
+const MERCHANT = toMerchant('m', 'shop@example.com');
 
 const EVERY_NOTIFICATION: readonly Notification[] = [
   { kind: 'referral-joined', to: 1n, line: 1 },

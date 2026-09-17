@@ -15,9 +15,12 @@ export interface MerchantViewer {
  * Кто выполняет запрос в кабинете.
  *
  * Две ступени: подписанная кука говорит, что вход состоялся и не истёк,
- * а обращение в базу — что поколение то же и мерчант всё ещё тот, за
- * кого себя выдаёт. Второе обязательно при каждом запросе: смена пароля
- * обрывает сессии немедленно, а не когда истечёт выданная раньше кука.
+ * а обращение в базу — что поколение то же и человек всё ещё тот, за
+ * кого себя выдаёт. Второе обязательно при каждом запросе: смена
+ * пароля и закрытие доступа обрывают сессии немедленно, а не когда
+ * истечёт выданная раньше кука. Роль читается там же и тем же
+ * запросом: понижённый до наблюдателя перестаёт подавать заявки сразу,
+ * а не после перезахода.
  *
  * Состояние мерчанта здесь не проверяется: отклонённый и отключённый в
  * кабинет входят — первому надо прочитать причину, второму дождаться
@@ -27,8 +30,16 @@ export async function requireViewer(): Promise<MerchantViewer> {
   const store = await cookies();
   const payload = readToken(store.get(SESSION_COOKIE)?.value, { secret: sessionSecret() });
 
-  const session = await getCore().getMerchantSession(payload.merchantId, payload.sessionEpoch);
-  return { actor: { type: 'merchant', merchantId: session.merchantId }, session };
+  const session = await getCore().getMerchantSession(payload.userId, payload.sessionEpoch);
+  return {
+    actor: {
+      type: 'merchant',
+      merchantId: session.merchantId,
+      userId: session.userId,
+      role: session.role,
+    },
+    session,
+  };
 }
 
 export async function requireActor(): Promise<MerchantActor> {

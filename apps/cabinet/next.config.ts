@@ -4,9 +4,30 @@ import { gitSha } from '../../scripts/git-sha.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
+/**
+ * Заголовки безопасности на каждый ответ (`lib/security-headers.test.ts`).
+ *
+ * Фрейм запрещён целиком: кабинет не встраивается никуда, а раздел
+ * «Сотрудники» или выпуск ключа, подложенные во фрейм под клик
+ * владельца, выдали бы доступ чужому. Политика содержимого — одна
+ * директива `frame-ancestors`: полная политика скриптов сломала бы
+ * вставки Next и виджет Telegram на витрине, а защищает здесь именно
+ * фрейм. HSTS — год и только на этот хост: соседние поддомены sslip.io
+ * не наши.
+ */
+const SECURITY_HEADERS = [
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+  { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+];
+
 const config: NextConfig = {
   /** Коммит сборки — в `APP_VERSION`; см. `apps/miniapp/next.config.ts`. */
   env: { APP_VERSION: gitSha(root) ?? '' },
+  poweredByHeader: false,
+  headers: async () => [{ source: '/:path*', headers: SECURITY_HEADERS }],
   transpilePackages: [
     '@nemo/brand',
     '@nemo/core',

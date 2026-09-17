@@ -3,7 +3,7 @@ import { InvalidInputError, NotFoundError } from '@nemo/core';
 import { errorResponse, json } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
 import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/invoice-rows';
-import { requireActiveMerchant } from '@/lib/mock/guard';
+import { requireTill } from '@/lib/mock/guard';
 import { findInvoice, replaceInvoice } from '@/lib/mock/store';
 import { viewer } from '@/lib/reads';
 
@@ -30,7 +30,7 @@ export async function POST(
   try {
     const actor = await requireActor();
     const { session } = await viewer();
-    requireActiveMerchant(session.status);
+    requireTill(session);
     const { id } = await context.params;
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new InvalidInputError('Неизвестное действие со счётом');

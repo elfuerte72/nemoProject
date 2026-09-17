@@ -22,53 +22,29 @@
  * руками — это пятнадцать неудачных входов подряд.
  */
 
+import { createAttemptCounter, isCoreError } from '@nemo/http';
+
 /** Сколько попыток даётся за окно и какой длины окно. */
 export const ATTEMPT_LIMIT = 10;
 export const ATTEMPT_WINDOW_MS = 15 * 60_000;
 
 /**
- * Сколько ключей помнить. Ключ приходит снаружи — почтой из формы, — и
- * без потолка память растёт от одного цикла по случайным адресам.
- * Тысячи хватает: столько разных ящиков за четверть часа не приходит ни
- * от кого, кроме перебирающего, а ему потолок и адресован.
+ * Сам счётчик — общий с панелью (`@nemo/http`): та считает им коды
+ * второго фактора. Память, потолок ключей и обрезка длинного ключа
+ * живут там; здесь предел кабинета и то, что считается попыткой.
  */
-const KEYS_KEPT = 1000;
-
-/** Длина ключа. Почта длиннее ста знаков — уже не почта, а нагрузка. */
-const KEY_LIMIT = 120;
-
-interface Bucket {
-  count: number;
-  /** Когда окно откроется заново. */
-  resetAt: number;
-}
-
-/**
- * Счётчики держатся на `globalThis` по той же причине, что и ядро: Next
- * пересобирает модули в разработке, и с переменной модуля счётчик
- * обнулялся бы на каждой правке.
- */
-const KEY = Symbol.for('nemo.cabinet.attempts');
-type Holder = typeof globalThis & { [KEY]?: Map<string, Bucket> };
-
-function buckets(): Map<string, Bucket> {
-  const holder = globalThis as Holder;
-  holder[KEY] ??= new Map();
-  return holder[KEY];
-}
-
-function shorten(key: string): string {
-  return key.length > KEY_LIMIT ? key.slice(0, KEY_LIMIT) : key;
-}
+const counter = createAttemptCounter({
+  name: 'nemo.cabinet.attempts',
+  limit: ATTEMPT_LIMIT,
+  windowMs: ATTEMPT_WINDOW_MS,
+});
 
 /**
  * Осталась ли попытка. Спрашивается до дорогой работы: считать надо
  * попытки, а не удачи.
  */
 export function attemptAllowed(key: string, now: number = Date.now()): boolean {
-  const bucket = buckets().get(shorten(key));
-  if (!bucket || bucket.resetAt <= now) return true;
-  return bucket.count < ATTEMPT_LIMIT;
+  return counter.allowed(key, now);
 }
 
 /**
@@ -76,54 +52,37 @@ export function attemptAllowed(key: string, now: number = Date.now()): boolean {
  * письмо. Удачный вход счётчик не тратит — он его снимает.
  */
 export function attemptSpent(key: string, now: number = Date.now()): void {
-  const map = buckets();
-  sweep(map, now);
+  counter.spent(key, now);
+}
 
-  const shortened = shorten(key);
-  const bucket = map.get(shortened);
-  if (!bucket || bucket.resetAt <= now) {
-    map.set(shortened, { count: 1, resetAt: now + ATTEMPT_WINDOW_MS });
-    return;
-  }
-  bucket.count += 1;
+/**
+ * Потрачена ли попытка: неподошедший пароль — да, отказавшая база — нет.
+ * За недоступную базу запирать вход на четверть часа значило бы к ней
+ * добавить недоступный кабинет.
+ *
+ * Узнаётся по коду, а не по классу. Ядро кабинета заводит хук запуска в
+ * своём бандле, и ошибка приходит в маршрут с классом из другой копии
+ * `@nemo/core`: с `instanceof ForbiddenError` предел не срабатывал вовсе
+ * — 14 сентября 2026 на dev тринадцать неверных паролей подряд к одной
+ * почте не заперли ничего.
+ */
+export function isFailedLogin(error: unknown): boolean {
+  return isCoreError(error) && error.code === 'forbidden';
 }
 
 /** Вошёл — счёт обнуляется: считаем перебор, а не забывчивость. */
 export function attemptSucceeded(key: string): void {
-  buckets().delete(shorten(key));
+  counter.succeeded(key);
 }
 
 /** Забыть всё: нужно тестам, которым иначе мешает предыдущий. */
 export function forgetAttempts(): void {
-  buckets().clear();
+  counter.forget();
 }
 
 /** Сколько ключей помнится. Наружу — только затем, чтобы это проверял тест. */
 export function attemptCount(): number {
-  return buckets().size;
-}
-
-/**
- * Просроченные ключи — вон, и, если их всё равно много, самые старые
- * тоже. Чистится на записи, а не по таймеру: таймер в serverless живёт
- * не дольше запроса, а записи здесь и так делает только тот, кто
- * счётчик и наполняет.
- */
-function sweep(map: Map<string, Bucket>, now: number): void {
-  if (map.size < KEYS_KEPT) return;
-
-  for (const [key, bucket] of map) {
-    if (bucket.resetAt <= now) map.delete(key);
-  }
-
-  // Всё ещё много — значит окно живое у всех, и тогда уходят те, чьё
-  // окно закроется раньше: их счёт всё равно вот-вот обнулится.
-  if (map.size >= KEYS_KEPT) {
-    const oldest = [...map.entries()]
-      .sort((left, right) => left[1].resetAt - right[1].resetAt)
-      .slice(0, map.size - KEYS_KEPT + 1);
-    for (const [key] of oldest) map.delete(key);
-  }
+  return counter.size();
 }
 
 /**

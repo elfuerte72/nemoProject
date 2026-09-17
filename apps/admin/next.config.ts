@@ -4,7 +4,40 @@ import { gitSha } from '../../scripts/git-sha.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
+/**
+ * Заголовки безопасности на каждый ответ (`lib/next-config.test.ts`).
+ *
+ * Фрейм запрещён целиком: проверка «запрос только со своей страницы»
+ * (`middleware.ts`) ничего не стоит, если саму панель встроить во фрейм
+ * на чужом `*.sslip.io` и подложить под клик менеджера — запрос тогда
+ * уходит с нашей страницы.
+ *
+ * Политики содержимого среди них нет намеренно, в отличие от кабинета.
+ * Next ставит заголовок из настройки первым и одноимённый заголовок
+ * маршрута после этого не пишет, а у файла клиента политика своя —
+ * `sandbox` (`lib/attachment-response.ts`), и общая её бы перетёрла.
+ * Фрейм запрещает `X-Frame-Options`: его понимает любой браузер.
+ */
+const SECURITY_HEADERS = [
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+];
+
 const config: NextConfig = {
+  poweredByHeader: false,
+  headers: async () => [{ source: '/:path*', headers: SECURITY_HEADERS }],
+  experimental: {
+    /*
+     * При `middleware` Next копирует тело запроса для него и по умолчанию
+     * обрезает копию на 10 МБ: маршрут получает только их. Файл клиенту
+     * панель пускает до 20 МБ (столько Telegram отдаёт боту обратно), и
+     * обрезанный multipart не разбирается вовсе. Запас — на обвязку
+     * формы и подпись к файлу.
+     */
+    middlewareClientMaxBodySize: '22mb',
+  },
   /**
    * Коммит сборки — в `APP_VERSION`, который отдаёт `/api/health`.
    * Подставляется здесь, а не читается на старте: `.git` в образе нет,

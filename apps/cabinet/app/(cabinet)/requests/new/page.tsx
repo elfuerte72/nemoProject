@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { HowTo } from '@nemo/ui';
+import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
 import { NEW_REQUEST_HOW_TO } from '@/lib/exchange-texts';
 import { viewer } from '@/lib/reads';
 import { toRecipientRow } from '@/lib/recipient-rows';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { NewRequestForm } from './new-request-form';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +19,9 @@ export const dynamic = 'force-dynamic';
  * перечитывает по кругу.
  */
 export default async function NewRequestPage() {
+  const access = await allowedHere('/requests/new');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const core = getCore();
 

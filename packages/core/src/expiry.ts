@@ -1,7 +1,7 @@
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { exchangeRequestEvents, exchangeRequests } from '@nemo/db';
 import type { CoreConfig } from './context.js';
-import { merchantRecipients, recipientFor } from './merchants.js';
+import { merchantAddressBook } from './merchants.js';
 import { enqueueWebhookDeliveries } from './webhooks.js';
 import type { Notification, Recipient } from './notifications.js';
 import { readServiceSettings } from './settings.js';
@@ -126,11 +126,8 @@ export async function expireUnpaidExchangeRequests(
       await enqueueWebhookDeliveries(tx, { id: row.id, merchantId: row.merchantId, status: 'cancelled' }, at);
     }
 
-    const known = await merchantRecipients(
-      tx,
-      expired.map((row) => row.merchantId),
-    );
-    return expired.map((row) => cancelledNotification(row, recipientFor(row, known)));
+    const book = await merchantAddressBook(tx, expired);
+    return expired.map((row) => cancelledNotification(row, book.for(row)));
   });
 }
 
@@ -170,13 +167,10 @@ export async function warnAboutExpiringExchangeRequests(
       )
       .returning();
 
-    const known = await merchantRecipients(
-      tx,
-      warned.map((row) => row.merchantId),
-    );
+    const book = await merchantAddressBook(tx, warned);
     return warned.map((row) => ({
       kind: 'exchange-request-expiring' as const,
-      to: recipientFor(row, known),
+      to: book.for(row),
       requestId: row.id,
       minutesLeft: minutesLeft(row.requisitesIssuedAt!, ttl, at),
     }));

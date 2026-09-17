@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import { WEBHOOK_DELIVERY_STATUS_LABELS, WEBHOOK_EVENT_LABELS } from '@nemo/types';
 import { HowTo, Moment, QuietRefresh } from '@nemo/ui';
+import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
 import { WEBHOOKS_HOW_TO } from '@/lib/integration-texts';
 import { viewer } from '@/lib/reads';
 import { DELIVERY_STATUS_TONES, toDeliveryRow, toEndpointRow } from '@/lib/webhook-rows';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { Endpoints } from './endpoints';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +26,9 @@ export default async function WebhooksPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const access = await allowedHere('/webhooks');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const core = getCore();
   const params = await searchParams;

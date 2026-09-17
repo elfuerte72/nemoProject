@@ -12,7 +12,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { createCore, createDatabase } from '@nemo/core';
-import { exchangeRequests, merchants } from '@nemo/db';
+import { exchangeRequests, merchantUsers } from '@nemo/db';
 
 const url = process.env.DATABASE_URL;
 if (!url || !url.endsWith('/nemo_dev')) {
@@ -31,13 +31,20 @@ const core = createCore({
 const login = await core.beginStaffLogin(100001n);
 const manager = { type: 'staff' as const, staffId: login.staffId, role: login.role };
 
+// Почта у мерчанта больше не лежит: она принадлежит человеку, и
+// владелец находится по своей (тикет 17).
 const [shop] = await db
-  .select({ id: merchants.id })
-  .from(merchants)
-  .where(eq(merchants.email, 'oplatishka@example.com'))
+  .select({ merchantId: merchantUsers.merchantId, userId: merchantUsers.id })
+  .from(merchantUsers)
+  .where(eq(merchantUsers.email, 'oplatishka@example.com'))
   .limit(1);
 if (!shop) throw new Error('Сначала заведите мерчантов: seed-dev.mts');
-const owner = { type: 'merchant' as const, merchantId: shop.id };
+const owner = {
+  type: 'merchant' as const,
+  merchantId: shop.merchantId,
+  userId: shop.userId,
+  role: 'owner' as const,
+};
 
 const DAY = 24 * 60 * 60 * 1000;
 const at = (daysAgo: number, hour: number) => {

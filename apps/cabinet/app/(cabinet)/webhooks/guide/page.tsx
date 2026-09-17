@@ -9,8 +9,10 @@ import {
   WEBHOOK_GUIDE_RULES,
   WEBHOOK_HEADERS,
 } from '@/lib/webhook-guide';
+import { allowedHere } from '@/lib/access';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 import { SignatureExamples } from './signature-examples';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +34,9 @@ export const dynamic = 'force-dynamic';
  * не расходятся с тем, что уходит на самом деле.
  */
 export default async function WebhookGuidePage() {
+  const access = await allowedHere('/webhooks/guide');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { session } = await viewer();
 
   return (

@@ -58,8 +58,15 @@ export function toClient(telegramUserId: bigint): Recipient {
   return { kind: 'client', telegramUserId };
 }
 
-export function toMerchant(merchant: { id: string; email: string }): Recipient {
-  return { kind: 'merchant', merchantId: merchant.id, email: merchant.email };
+/**
+ * Мерчант-адресат: организация и адрес, на который ей писать.
+ *
+ * Двумя значениями, а не строкой мерчанта: почта у мерчанта больше не
+ * лежит — она принадлежит человеку (тикет 17), и собирать ради письма
+ * объект с чужим полем значило бы делать вид, что она его.
+ */
+export function toMerchant(merchantId: string, email: string): Recipient {
+  return { kind: 'merchant', merchantId, email };
 }
 
 export type Notification =

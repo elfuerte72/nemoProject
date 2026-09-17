@@ -13,10 +13,12 @@ import {
   refundStatuses,
   type RefundStatus,
 } from '@/lib/invoice-rows';
+import { allowedHere } from '@/lib/access';
 import { listRefunds } from '@/lib/mock/store';
 import { PREVIEW_NOTE, REFUNDS_HOW_TO } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { NoAccess } from '@/app/ui/no-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +38,9 @@ export default async function RefundsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const access = await allowedHere('/refunds');
+  if (!access.ok) return <NoAccess ability={access.ability} />;
+
   const { actor, session } = await viewer();
   const params = await searchParams;
   const all = listRefunds(actor.merchantId);

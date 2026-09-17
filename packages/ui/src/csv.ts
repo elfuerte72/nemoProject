@@ -8,8 +8,24 @@
  */
 export const CSV_SEPARATOR = ';';
 
+/**
+ * Знак, с которого Excel начинает формулу. Исполняет он её и в кавычках,
+ * а в выгрузку уходит набранное снаружи — `reference` заявки из API,
+ * назначение счёта, имя клиента. Такая ячейка получает апостроф впереди
+ * (правило OWASP), и Excel читает её текстом.
+ */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+/**
+ * Число или телефон со знаком — не формула: из цифр, пробелов, точек,
+ * скобок и дефисов ни ссылки, ни вызова не собрать, а апостроф перед
+ * «-500» превратил бы сумму в текст, который Excel не сложит.
+ */
+const SIGNED_NUMBER = /^[+-]?[\d\s.,()-]+$/;
+
 export function csvCell(value: string | number | null | undefined): string {
-  const text = value === null || value === undefined ? '' : String(value);
+  const raw = value === null || value === undefined ? '' : String(value);
+  const text = FORMULA_START.test(raw) && !SIGNED_NUMBER.test(raw) ? `'${raw}` : raw;
   return /[;"\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
