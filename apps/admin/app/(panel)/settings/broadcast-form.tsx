@@ -1,14 +1,45 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { BroadcastView } from '@nemo/core';
 import { Moment } from '@nemo/ui';
+import {
+  attemptFor,
+  BROADCAST_ATTEMPT_KEY,
+  parseStoredAttempt,
+  type BroadcastAttempt,
+} from '@/lib/broadcast-draft';
 
 function newKey(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/*
+ * Хранилище вкладки бывает недоступно — приватное окно, запрет сайта.
+ * Тогда попытка живёт в памяти страницы: повтор без перезагрузки
+ * по-прежнему узнаётся.
+ */
+function readStoredAttempt(): BroadcastAttempt | undefined {
+  try {
+    return parseStoredAttempt(window.sessionStorage.getItem(BROADCAST_ATTEMPT_KEY));
+  } catch {
+    return undefined;
+  }
+}
+
+function storeAttempt(attempt: BroadcastAttempt | undefined): void {
+  try {
+    if (attempt === undefined) {
+      window.sessionStorage.removeItem(BROADCAST_ATTEMPT_KEY);
+    } else {
+      window.sessionStorage.setItem(BROADCAST_ATTEMPT_KEY, JSON.stringify(attempt));
+    }
+  } catch {
+    // Нечего делать: попытка остаётся в памяти страницы.
+  }
 }
 
 /**
@@ -20,11 +51,11 @@ function newKey(): string {
  *
  * Отправка необратима и уходит тысячам людей, поэтому спрашивает
  * подтверждение раскрытием строки, как выплата и отказ. И повтор не
- * рассылает второй раз: у черновика свой ключ, новый — только когда
- * меняется текст. Запрос на большом списке рвётся по таймауту, пока
- * рассылка идёт дальше, и нажатие «Отправить» ещё раз с тем же текстом
- * операция узнаёт по ключу — до 17 сентября 2026 форма в этом месте
- * говорила «повторите», и повтор уходил всем вторым сообщением.
+ * рассылает второй раз: запрос на большом списке рвётся по таймауту,
+ * пока рассылка идёт дальше, а отправку того же текста ещё раз операция
+ * узнаёт по ключу попытки (`lib/broadcast-draft.ts`). До 17 сентября
+ * 2026 форма в этом месте говорила «повторите», и повтор уходил всем
+ * вторым сообщением.
  */
 export function BroadcastForm({
   broadcasts,
@@ -35,18 +66,16 @@ export function BroadcastForm({
   audience: number;
 }) {
   const router = useRouter();
-  const [draft, setDraft] = useState(() => ({ body: '', key: newKey() }));
+  const [body, setBody] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /** Последняя попытка без ответа — на случай, если хранилища вкладки нет. */
+  const pending = useRef<BroadcastAttempt | undefined>(undefined);
 
-  function edit(body: string) {
-    setDraft((current) =>
-      // Ключ держится, пока текст тот же: пробел в хвосте не делает
-      // черновик новым, а поправленное слово — делает.
-      current.body.trim() === body.trim() ? { ...current, body } : { body, key: newKey() },
-    );
+  function edit(value: string) {
+    setBody(value);
     setConfirming(false);
     setNotice(undefined);
   }
@@ -55,32 +84,40 @@ export function BroadcastForm({
     setError(undefined);
     setNotice(undefined);
     setBusy(true);
+    // Попытка запоминается до запроса: ответ может не прийти вовсе, а
+    // повтор того же текста обязан уйти с тем же ключом.
+    const attempt = attemptFor(body, pending.current ?? readStoredAttempt(), newKey);
+    pending.current = attempt;
+    storeAttempt(attempt);
     try {
       const response = await fetch('/api/broadcasts', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ body: draft.body.trim(), idempotencyKey: draft.key }),
+        body: JSON.stringify({ body: attempt.body, idempotencyKey: attempt.key }),
       });
       const payload = (await response.json()) as { error?: string; repeated?: boolean };
       if (!response.ok) {
+        // Попытка не забывается: отказ мог прийти уже после того, как
+        // рассылка заведена, и повтор должен её узнать.
         setError(payload.error ?? 'Рассылка не отправлена');
         return;
       }
       if (payload.repeated) {
         setNotice(
-          'Этот текст уже отправлен, второй раз он не уходит. Сколько дошло — в списке ниже: ' +
-            '«не завершена» там значит, что рассылка ещё идёт.',
+          'Этот текст уже отправляли, второй раз он не уходит. Сколько дошло — в списке ниже; ' +
+            '«не завершена» там значит, что рассылка ещё идёт или оборвалась.',
         );
       }
-      setDraft({ body: '', key: newKey() });
+      pending.current = undefined;
+      storeAttempt(undefined);
+      setBody('');
       setConfirming(false);
       router.refresh();
     } catch {
-      // Ключ черновика остаётся прежним: повтор с тем же текстом
-      // операция узнает и второй раз не разошлёт.
       setError(
         'Ответа от сервера не дождались, а рассылка могла уже пойти. Отправьте тот же текст ' +
-          'ещё раз: второй раз он не уйдёт, а в списке ниже появится, сколько дошло.',
+          'ещё раз, хоть после обновления страницы: второй раз он не уйдёт, а в списке ниже ' +
+          'появится, сколько дошло.',
       );
     } finally {
       setBusy(false);
@@ -98,7 +135,7 @@ export function BroadcastForm({
         <span className="label">Текст рассылки</span>
         <textarea
           className="input"
-          value={draft.body}
+          value={body}
           onChange={(event) => edit(event.target.value)}
           rows={4}
         />
@@ -111,14 +148,14 @@ export function BroadcastForm({
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          disabled={busy || !draft.body.trim()}
+          disabled={busy || !body.trim()}
           aria-expanded={confirming}
           className="btn btn--gold"
         >
           Отправить рассылку
         </button>
       </div>
-      {confirming && draft.body.trim() ? (
+      {confirming && body.trim() ? (
         <div className="confirm">
           <p className="muted">
             Клиентов с согласием на рассылку сейчас {audience}. Сообщение уйдёт каждому, и

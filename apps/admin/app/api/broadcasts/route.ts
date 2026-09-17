@@ -35,6 +35,10 @@ export async function POST(request: Request): Promise<Response> {
       throw new InvalidInputError('Рассылка без текста никому ничего не сообщит');
     }
 
+    // Токен — до того, как рассылка заведена: без него она осталась бы
+    // строкой с ключом, не ушедшей никому, и повтор после исправления
+    // настройки назвал бы её уже отправленной.
+    const token = botToken();
     const core = getCore();
     const { broadcast, recipients, repeated } = await core.startBroadcast(actor, parsed.data);
     if (repeated) {
@@ -46,7 +50,7 @@ export async function POST(request: Request): Promise<Response> {
     // она закончится. Тогда рассылка останется незавершённой, но видно
     // будет, сколько успело уйти, — а не нули без объяснений.
     const result = await deliverBroadcast(recipients, broadcast.body, {
-      botToken: botToken(),
+      botToken: token,
       onProgress: async (progress) => {
         await core.recordBroadcastProgress(actor, broadcast.id, progress);
       },
