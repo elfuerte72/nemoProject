@@ -379,8 +379,18 @@ function FeeScheduleCard({
    * «Включить» при несохранённом не включает, а говорит, что сделать
    * сначала. Отказ уходит сам, как только набранное сохранено или
    * возвращено к сохранённому.
+   *
+   * Нетронутая карточка не считается несохранённой никогда: сетка,
+   * записанная в обход формы с тремя знаками после запятой, форме «не
+   * добрана», и без этой оговорки её нельзя было бы включить вовсе.
    */
-  const unsaved = feeScheduleUnsaved(schedule, { minUsd, thresholdInclusive: inclusive, tiers });
+  const untouched =
+    minUsd === (schedule.minUsd ?? '') &&
+    inclusive === schedule.thresholdInclusive &&
+    JSON.stringify(drafts) === JSON.stringify(toDrafts(schedule.tiers));
+  const unsaved =
+    !untouched &&
+    feeScheduleUnsaved(schedule, { minUsd, thresholdInclusive: inclusive, tiers });
 
   return (
     <div className="row row--stack">
