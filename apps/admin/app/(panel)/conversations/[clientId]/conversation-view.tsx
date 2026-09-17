@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react';
 import type { MessageView } from '@nemo/core';
 import { Dialog } from '@/app/ui/dialog';
 import { LiveRefresh } from '@/app/ui/live-refresh';
+import { sendOutcome, type SendOutcome } from '@/lib/send-outcome';
 
 /**
  * Переписка с клиентом и отправка ответа.
@@ -39,27 +40,28 @@ export function ConversationView({
    */
   const onTyping = useCallback((value: boolean) => setTyping(value), []);
 
-  async function reply(body: string) {
+  /**
+   * Отправить ответ словами. Отказ не печатается здесь, над лентой, а
+   * уходит исходом в `Dialog`: там он встаёт у поля, и там же остаётся
+   * набранное.
+   */
+  async function reply(body: string): Promise<SendOutcome> {
     setError(undefined);
-    try {
-      const response = await fetch('/api/conversations', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          clientId,
-          body,
-          ...(requestId ? { exchangeRequestId: requestId } : {}),
+    const outcome = await sendOutcome(
+      () =>
+        fetch('/api/conversations', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            clientId,
+            body,
+            ...(requestId ? { exchangeRequestId: requestId } : {}),
+          }),
         }),
-      });
-      if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
-        setError(payload.error ?? 'Ответ не отправлен');
-        return;
-      }
-      router.refresh();
-    } catch {
-      setError('Не удалось связаться с сервером. Повторите попытку.');
-    }
+      'Ответ не отправлен',
+    );
+    if (outcome.sent) router.refresh();
+    return outcome;
   }
 
   /**
@@ -70,7 +72,7 @@ export function ConversationView({
    * подписью к файлу — вторым сообщением тот же текст читался бы
    * повтором.
    */
-  async function sendFile(file: File, text: string) {
+  async function sendFile(file: File, text: string): Promise<SendOutcome> {
     setError(undefined);
     const form = new FormData();
     form.set('clientId', clientId);
@@ -78,20 +80,12 @@ export function ConversationView({
     if (text) form.set('body', text);
     if (requestId) form.set('exchangeRequestId', requestId);
 
-    try {
-      const response = await fetch('/api/conversations/attachments', {
-        method: 'POST',
-        body: form,
-      });
-      if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
-        setError(payload.error ?? 'Файл не отправлен');
-        return;
-      }
-      router.refresh();
-    } catch {
-      setError('Не удалось связаться с сервером. Повторите попытку.');
-    }
+    const outcome = await sendOutcome(
+      () => fetch('/api/conversations/attachments', { method: 'POST', body: form }),
+      'Файл не отправлен',
+    );
+    if (outcome.sent) router.refresh();
+    return outcome;
   }
 
   /**
@@ -138,6 +132,7 @@ export function ConversationView({
         typing={typing}
       />
 
+      {/* Отказ переключения — над лентой, у кнопки в её шапке. */}
       {error ? <p className="error">{error}</p> : undefined}
 
       <Dialog
