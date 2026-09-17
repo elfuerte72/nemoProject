@@ -24,12 +24,25 @@ export function StaffForm({ staff }: { staff: readonly StaffForDisplay[] }) {
     qr?: string | undefined;
   }>();
 
+  /*
+   * С какой строкой работали последний раз. Отказ по сотруднику — «не
+   * останется ни одного администратора» — встаёт под его строкой, а не
+   * над формой заведения: список ниже первого экрана, и сообщение
+   * наверху страницы нажавший «Сделать менеджером» не увидел бы.
+   */
+  const [actedOn, setActedOn] = useState<string>();
+
   const [newTelegram, setNewTelegram] = useState('');
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState<StaffRole>('manager');
 
-  async function enroll(body: unknown, name: string) {
-    const result = await send('/api/staff', body);
+  async function act(staffId: string | undefined, body: unknown) {
+    setActedOn(staffId);
+    return send('/api/staff', body);
+  }
+
+  async function enroll(staffId: string | undefined, body: unknown, name: string) {
+    const result = await act(staffId, body);
     if (result?.enrollmentSecret) {
       setSecret({ name, value: result.enrollmentSecret, qr: result.qr });
     }
@@ -37,7 +50,11 @@ export function StaffForm({ staff }: { staff: readonly StaffForDisplay[] }) {
 
   return (
     <>
-      {error ? <p className="error">{error}</p> : undefined}
+      {error && actedOn === undefined ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : undefined}
 
       {secret ? (
         <section className="card secret">
@@ -110,6 +127,7 @@ export function StaffForm({ staff }: { staff: readonly StaffForDisplay[] }) {
             className="btn btn--gold"
             onClick={() =>
               void enroll(
+                undefined,
                 {
                   action: 'add',
                   telegramUserId: newTelegram.trim(),
@@ -159,7 +177,7 @@ export function StaffForm({ staff }: { staff: readonly StaffForDisplay[] }) {
                   disabled={busy}
                   className="btn btn--ghost"
                   onClick={() =>
-                    send('/api/staff', {
+                    void act(one.id, {
                       action: 'role',
                       staffId: one.id,
                       role: one.role === 'admin' ? 'manager' : 'admin',
@@ -173,7 +191,7 @@ export function StaffForm({ staff }: { staff: readonly StaffForDisplay[] }) {
                   disabled={busy}
                   className={one.isActive ? 'btn btn--danger' : 'btn btn--ghost'}
                   onClick={() =>
-                    send('/api/staff', {
+                    void act(one.id, {
                       action: 'access',
                       staffId: one.id,
                       isActive: !one.isActive,
@@ -187,12 +205,21 @@ export function StaffForm({ staff }: { staff: readonly StaffForDisplay[] }) {
                   disabled={busy}
                   className="btn btn--ghost"
                   onClick={() =>
-                    void enroll({ action: 'reset-second-factor', staffId: one.id }, one.displayName)
+                    void enroll(
+                      one.id,
+                      { action: 'reset-second-factor', staffId: one.id },
+                      one.displayName,
+                    )
                   }
                 >
                   Выдать второй фактор заново
                 </button>
               </div>
+              {error && actedOn === one.id ? (
+                <p className="error" role="alert">
+                  {error}
+                </p>
+              ) : undefined}
             </li>
           ))}
         </ul>

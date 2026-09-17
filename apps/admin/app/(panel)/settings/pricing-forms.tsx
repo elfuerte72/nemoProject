@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { DirectionView, FeeScheduleView, NetworkView } from '@nemo/core';
 import { feeScheduleComplaint, type PayoutMethod } from '@nemo/types';
 import { KIND_LABELS } from '@/lib/exchange-request-labels';
+import { feeScheduleUnsaved } from '@/lib/fee-schedule-forms';
 import { FEE_PAYOUT_LABELS, pillClass } from '@/lib/labels';
 import { bpsToPercent, percentToBps } from '@/lib/percent';
 
@@ -242,8 +243,9 @@ export function FeeSchedules({
         числа набраны. Один фикс на нижней ступени этому правилу обычно не отвечает:
         ставьте его вместе с долей следующей ступени. Там, где сетки нет, цену назначает наценка;
         выключенная сетка к ней и возвращает, а не закрывает направление. Новая сетка
-        заводится выключенной со ступенями бата — поправьте числа под свою валюту и
-        включите: включённая сразу меняет цену тем, кто в эту минуту считает обмен.
+        заводится выключенной со ступенями бата — поправьте числа под свою валюту, сохраните
+        ставки и включите: включается сохранённое, а включённая сетка сразу меняет цену
+        тем, кто в эту минуту считает обмен.
       </p>
       <p className="card__note">
         У наличных ставка своя и работает иначе: пока её нет, курс наличной сделки не
@@ -343,6 +345,8 @@ function FeeScheduleCard({
   const [drafts, setDrafts] = useState<TierDraft[]>(() => toDrafts(schedule.tiers));
   const [minUsd, setMinUsd] = useState(schedule.minUsd ?? '');
   const [inclusive, setInclusive] = useState(schedule.thresholdInclusive);
+  /** Нажали «Включить» поверх несохранённых ставок — и получили отказ. */
+  const [enableRefused, setEnableRefused] = useState(false);
 
   function change(index: number, patch: Partial<TierDraft>) {
     setDrafts((current) =>
@@ -365,6 +369,28 @@ function FeeScheduleCard({
    */
   const tiers = draftsReady(drafts) ? toTiers(drafts) : null;
   const complaint = tiers === null ? null : feeScheduleComplaint(tiers);
+
+  /*
+   * Включение несёт одну отметку, а не ставки: включается сохранённая
+   * сетка. Набранное поверх неё пропало бы, а клиенты получили бы
+   * прежние ступени — у новой сетки ступени заготовки. Сохранять за
+   * администратора молча нельзя, цена меняется его явным действием;
+   * гасить кнопку тоже — погашенная не объясняет, почему. Поэтому
+   * «Включить» при несохранённом не включает, а говорит, что сделать
+   * сначала. Отказ уходит сам, как только набранное сохранено или
+   * возвращено к сохранённому.
+   *
+   * Нетронутая карточка не считается несохранённой никогда: сетка,
+   * записанная в обход формы с тремя знаками после запятой, форме «не
+   * добрана», и без этой оговорки её нельзя было бы включить вовсе.
+   */
+  const untouched =
+    minUsd === (schedule.minUsd ?? '') &&
+    inclusive === schedule.thresholdInclusive &&
+    JSON.stringify(drafts) === JSON.stringify(toDrafts(schedule.tiers));
+  const unsaved =
+    !untouched &&
+    feeScheduleUnsaved(schedule, { minUsd, thresholdInclusive: inclusive, tiers });
 
   return (
     <div className="row row--stack">
@@ -542,17 +568,29 @@ function FeeScheduleCard({
           type="button"
           disabled={busy}
           className={schedule.isActive ? 'btn btn--danger' : 'btn btn--ghost'}
-          onClick={() =>
-            onSend('/api/fee-schedules', {
+          onClick={() => {
+            // Выключение не ждёт сохранения: гасят срочно, и цена от этого
+            // возвращается к наценке, а не к чужим ступеням.
+            if (!schedule.isActive && unsaved) {
+              setEnableRefused(true);
+              return;
+            }
+            void onSend('/api/fee-schedules', {
               action: 'active',
               scheduleId: schedule.id,
               isActive: !schedule.isActive,
-            })
-          }
+            });
+          }}
         >
           {schedule.isActive ? 'Выключить' : 'Включить'}
         </button>
       </div>
+      {enableRefused && unsaved && !schedule.isActive ? (
+        <p className="error" role="alert">
+          Сначала сохраните ставки. «Включить» включает сетку с сохранёнными ступенями: набранное
+          здесь не попало бы к клиентам и пропало бы.
+        </p>
+      ) : undefined}
     </div>
   );
 }

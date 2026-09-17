@@ -1,9 +1,46 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { BroadcastView } from '@nemo/core';
 import { Moment } from '@nemo/ui';
+import {
+  attemptFor,
+  BROADCAST_ATTEMPT_KEY,
+  parseStoredAttempt,
+  type BroadcastAttempt,
+} from '@/lib/broadcast-draft';
+
+function newKey(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/*
+ * Хранилище вкладки бывает недоступно — приватное окно, запрет сайта.
+ * Тогда попытка живёт в памяти страницы: повтор без перезагрузки
+ * по-прежнему узнаётся.
+ */
+function readStoredAttempt(): BroadcastAttempt | undefined {
+  try {
+    return parseStoredAttempt(window.sessionStorage.getItem(BROADCAST_ATTEMPT_KEY));
+  } catch {
+    return undefined;
+  }
+}
+
+function storeAttempt(attempt: BroadcastAttempt | undefined): void {
+  try {
+    if (attempt === undefined) {
+      window.sessionStorage.removeItem(BROADCAST_ATTEMPT_KEY);
+    } else {
+      window.sessionStorage.setItem(BROADCAST_ATTEMPT_KEY, JSON.stringify(attempt));
+    }
+  } catch {
+    // Нечего делать: попытка остаётся в памяти страницы.
+  }
+}
 
 /**
  * Ручная рассылка.
@@ -11,31 +48,77 @@ import { Moment } from '@nemo/ui';
  * Сообщения уходят только клиентам с действующим согласием — список
  * собирает операция, и обойти его отсюда нельзя. Заблокировавшие бота
  * попадают в недоставленные и рассылку остальным не ломают.
+ *
+ * Отправка необратима и уходит тысячам людей, поэтому спрашивает
+ * подтверждение раскрытием строки, как выплата и отказ. И повтор не
+ * рассылает второй раз: запрос на большом списке рвётся по таймауту,
+ * пока рассылка идёт дальше, а отправку того же текста ещё раз операция
+ * узнаёт по ключу попытки (`lib/broadcast-draft.ts`). До 17 сентября
+ * 2026 форма в этом месте говорила «повторите», и повтор уходил всем
+ * вторым сообщением.
  */
-export function BroadcastForm({ broadcasts }: { broadcasts: readonly BroadcastView[] }) {
+export function BroadcastForm({
+  broadcasts,
+  audience,
+}: {
+  broadcasts: readonly BroadcastView[];
+  /** Скольким клиентам с согласием уйдёт рассылка, если отправить сейчас. */
+  audience: number;
+}) {
   const router = useRouter();
   const [body, setBody] = useState('');
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /** Последняя попытка без ответа — на случай, если хранилища вкладки нет. */
+  const pending = useRef<BroadcastAttempt | undefined>(undefined);
+
+  function edit(value: string) {
+    setBody(value);
+    setConfirming(false);
+    setNotice(undefined);
+  }
 
   async function send() {
     setError(undefined);
+    setNotice(undefined);
     setBusy(true);
+    // Попытка запоминается до запроса: ответ может не прийти вовсе, а
+    // повтор того же текста обязан уйти с тем же ключом.
+    const attempt = attemptFor(body, pending.current ?? readStoredAttempt(), newKey);
+    pending.current = attempt;
+    storeAttempt(attempt);
     try {
       const response = await fetch('/api/broadcasts', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ body: body.trim() }),
+        body: JSON.stringify({ body: attempt.body, idempotencyKey: attempt.key }),
       });
+      const payload = (await response.json()) as { error?: string; repeated?: boolean };
       if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
+        // Попытка не забывается: отказ мог прийти уже после того, как
+        // рассылка заведена, и повтор должен её узнать.
         setError(payload.error ?? 'Рассылка не отправлена');
         return;
       }
+      if (payload.repeated) {
+        setNotice(
+          'Этот текст уже отправляли, второй раз он не уходит. Сколько дошло — в списке ниже; ' +
+            '«не завершена» там значит, что рассылка ещё идёт или оборвалась.',
+        );
+      }
+      pending.current = undefined;
+      storeAttempt(undefined);
       setBody('');
+      setConfirming(false);
       router.refresh();
     } catch {
-      setError('Не удалось связаться с сервером. Повторите попытку.');
+      setError(
+        'Ответа от сервера не дождались, а рассылка могла уже пойти. Отправьте тот же текст ' +
+          'ещё раз, хоть после обновления страницы: второй раз он не уйдёт, а в списке ниже ' +
+          'появится, сколько дошло.',
+      );
     } finally {
       setBusy(false);
     }
@@ -53,21 +136,61 @@ export function BroadcastForm({ broadcasts }: { broadcasts: readonly BroadcastVi
         <textarea
           className="input"
           value={body}
-          onChange={(event) => setBody(event.target.value)}
+          onChange={(event) => edit(event.target.value)}
           rows={4}
         />
       </label>
       <div className="row__actions">
+        {/*
+          Кнопка не гаснет открытым подтверждением: погашенная теряет
+          фокус, и работающий с клавиатуры оказывается в начале страницы.
+        */}
         <button
           type="button"
-          onClick={send}
+          onClick={() => setConfirming(true)}
           disabled={busy || !body.trim()}
+          aria-expanded={confirming}
           className="btn btn--gold"
         >
-          {busy ? 'Отправляем…' : 'Отправить рассылку'}
+          Отправить рассылку
         </button>
       </div>
-      {error ? <p className="error">{error}</p> : undefined}
+      {confirming && body.trim() ? (
+        <div className="confirm">
+          <p className="muted">
+            Клиентов с согласием на рассылку сейчас {audience}. Сообщение уйдёт каждому, и
+            отозвать его будет нельзя.
+          </p>
+          <div className="row__actions">
+            <button
+              type="button"
+              onClick={() => void send()}
+              disabled={busy}
+              className="btn btn--gold"
+            >
+              {busy ? 'Отправляем…' : 'Да, разослать'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              disabled={busy}
+              className="btn btn--ghost"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : undefined}
+      {error ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : undefined}
+      {notice ? (
+        <p className="card__note" role="status">
+          {notice}
+        </p>
+      ) : undefined}
 
       {broadcasts.length === 0 ? (
         <p className="empty">
@@ -89,6 +212,12 @@ export function BroadcastForm({ broadcasts }: { broadcasts: readonly BroadcastVi
                     <Moment at={new Date(broadcast.createdAt).toISOString()} /> · получателей{' '}
                     {broadcast.recipients} · доставлено {broadcast.delivered} · не удалось{' '}
                     {broadcast.failed}
+                    {/*
+                      Без отметки о конце рассылка либо ещё идёт, либо
+                      оборвалась вместе с процессом: числа выше — сколько
+                      успело уйти, и отправлять тот же текст заново не нужно.
+                    */}
+                    {broadcast.finishedAt === null ? ' · не завершена' : ''}
                   </span>
                 </div>
               </li>

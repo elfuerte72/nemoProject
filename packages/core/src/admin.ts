@@ -1,4 +1,4 @@
-import { asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { generateTotpSecret, seal } from '@nemo/crypto';
 import { serviceSettings, settingsAuditLog, staff } from '@nemo/db';
 import { Money, type StaffRole } from '@nemo/types';
@@ -165,6 +165,39 @@ async function requireStaffRow(executor: Executor, staffId: string): Promise<Sta
   return row;
 }
 
+/**
+ * Отказ, если без этого сотрудника в панели не останется действующего
+ * администратора.
+ *
+ * Первого администратора заводит `create-first-admin`, и только на
+ * пустом списке сотрудников: последний, снявший с себя роль или
+ * потерявший доступ, оставлял сервис без того, кто назначает роли и
+ * выдаёт второй фактор, и вернуть это можно было только правкой базы.
+ * Считаются администраторы с открытым доступом: с закрытым в панель не
+ * войти.
+ *
+ * Строки действующих администраторов берутся под замок: двое,
+ * снимающие роль друг с друга разом, иначе прочли бы друг друга
+ * администраторами и оставили бы сервис ни с кем. Второй дождётся
+ * первого и перечитает уже без него. Замок `no key update`, а не
+ * `update`: второй ставит и обычное изменение строки, и с проверкой
+ * внешнего ключа не спорит — передача заявки, ссылающаяся на
+ * администратора, иначе могла бы сцепиться с этой проверкой намертво.
+ */
+async function requireAnotherActiveAdmin(executor: Executor, staffId: string): Promise<void> {
+  const admins = await executor
+    .select({ id: staff.id })
+    .from(staff)
+    .where(and(eq(staff.role, 'admin'), eq(staff.isActive, true)))
+    .for('no key update');
+  if (admins.some((one) => one.id === staffId) && admins.length === 1) {
+    throw new InvalidInputError(
+      'В панели не останется ни одного действующего администратора, и вернуть роль можно ' +
+        'будет только правкой базы. Сначала сделайте администратором другого сотрудника',
+    );
+  }
+}
+
 export async function updateStaffRole(
   ctx: CoreConfig,
   actor: Actor,
@@ -174,6 +207,9 @@ export async function updateStaffRole(
   const admin = requireAdmin(actor);
 
   return ctx.db.transaction(async (tx) => {
+    if (role !== 'admin') {
+      await requireAnotherActiveAdmin(tx, staffId);
+    }
     const current = await requireStaffRow(tx, staffId);
     const [row] = await tx
       .update(staff)
@@ -208,6 +244,9 @@ export async function setStaffActive(
   }
 
   return ctx.db.transaction(async (tx) => {
+    if (!isActive) {
+      await requireAnotherActiveAdmin(tx, staffId);
+    }
     await requireStaffRow(tx, staffId);
     const [row] = await tx
       .update(staff)
