@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { arrangeRateBoard, currencyName, currencyPlace, payoutPerUnit, type Amount } from '@nemo/types';
 import { HowTo, QuietRefresh, Stat, Stats } from '@nemo/ui';
 import { formatAmount, formatMoney, formatRate, formatRateValue } from '@nemo/ui/format';
@@ -47,11 +46,6 @@ export default async function RatesPage() {
           <p className="page__sub">
             Курс с учётом наценки: по нему и обменяем. Обновляется раз в минуту.
           </p>
-        </div>
-        <div className="page__actions">
-          <Link className="btn btn--gold" href="/requests/new">
-            Новая заявка
-          </Link>
         </div>
       </header>
 
