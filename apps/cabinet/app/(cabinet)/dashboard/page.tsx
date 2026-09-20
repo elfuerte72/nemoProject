@@ -24,6 +24,7 @@ import { getCore } from '@/lib/core';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
 import { merchantStats, openCount, requestCounts, viewer } from '@/lib/reads';
 import { AttentionLine } from '@/app/ui/attention-line';
+import { DailyBars } from '@/app/ui/daily-bars';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 
 export const dynamic = 'force-dynamic';
@@ -88,7 +89,6 @@ export default async function OverviewPage({
     from: dayOf(period.from, offset),
     to: dayOf(lastDay, offset),
   }).toString();
-  const maxDay = Math.max(1, ...stats.byDay.map((one) => Math.max(one.submitted, one.completed)));
   const liveKeys = keys.filter((one) => one.revokedAt === null).length;
   const failingHooks = hooks.filter((one) => one.state === 'failing');
   const clock = offset === 0 ? 'по UTC' : 'по вашим часам';
@@ -211,32 +211,9 @@ export default async function OverviewPage({
             {/*
               Столбики, а не таблица: две недели по два числа читаются
               одним взглядом, а таблица на четырнадцать строк — нет.
-              Высоты — от самого высокого дня; день без заявок остаётся
-              на своём месте пустым, а не пропадает.
+              Наведение, подсветка дня и ключи — в самой фигуре.
             */}
-            <div className="bars" role="img" aria-label="Подано и исполнено по дням за две недели">
-              {stats.byDay.map((day) => (
-                <div key={day.day} className="bars__day" title={dayTitle(day)}>
-                  <div className="bars__pair">
-                    <span
-                      className={day.submitted ? 'bars__bar' : 'bars__bar bars__bar--none'}
-                      style={{ height: `${Math.round((day.submitted / maxDay) * 100)}%` }}
-                    />
-                    <span
-                      className={
-                        day.completed ? 'bars__bar bars__bar--done' : 'bars__bar bars__bar--none'
-                      }
-                      style={{ height: `${Math.round((day.completed / maxDay) * 100)}%` }}
-                    />
-                  </div>
-                  <span className="bars__label">{day.day.slice(8, 10)}</span>
-                </div>
-              ))}
-            </div>
-            <p className="bars__legend">
-              <span className="bars__key" /> подано <span className="bars__key bars__key--done" />{' '}
-              исполнено
-            </p>
+            <DailyBars days={stats.byDay} />
           </section>
         </div>
       </section>
@@ -324,6 +301,3 @@ export default async function OverviewPage({
   );
 }
 
-function dayTitle(day: { day: string; submitted: number; completed: number }): string {
-  return `${day.day}: подано ${day.submitted}, исполнено ${day.completed}`;
-}

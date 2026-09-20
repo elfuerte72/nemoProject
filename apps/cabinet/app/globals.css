@@ -669,7 +669,21 @@
   margin-top: 6px;
 }
 
+/*
+ * Колонка дня — кнопка: цель наведения должна быть заметно больше
+ * марки, а двухпиксельный столбик не поймать ни мышью, ни пальцем.
+ * Подсвеченная колонка играет роль курсора биржевого графика, только
+ * прилипает к дню, а не гуляет между ними.
+ */
 .bars__day {
+  appearance: none;
+  border: 0;
+  padding: 2px 0 0;
+  background: transparent;
+  border-radius: 7px;
+  cursor: default;
+  color: inherit;
+  transition: background 0.12s var(--ease);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -689,12 +703,17 @@
 .bars__bar {
   flex: 1;
   min-height: 2px;
-  border-radius: 3px 3px 0 0;
-  background: var(--surface-soft-strong);
+  /* Скруглён только верх: низ сидит на базовой линии. */
+  border-radius: 4px 4px 0 0;
+  background: var(--chart-sent);
+}
+
+.bars__bar--sent {
+  background: var(--chart-sent);
 }
 
 .bars__bar--done {
-  background: var(--gold, #e2b050);
+  background: var(--chart-done);
 }
 
 /* Нулевой день — пустое место, а не точка: точка читалась бы как «одна». */
@@ -709,25 +728,24 @@
 }
 
 .bars__legend {
-  margin: 10px 0 0;
+  /* Отступ сверху снят: фигура расставляет свои части сама. */
+  margin: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* Пара «ключ — подпись» держится вместе, пары — врозь. */
+  gap: 6px 18px;
+  flex-wrap: wrap;
   font-size: 12px;
   color: var(--text-dim);
 }
 
+/* Ключ повторяет форму марки: у столбиков это прямоугольник. */
 .bars__key {
   display: inline-block;
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  background: var(--surface-soft-strong);
-}
-
-.bars__key--done {
-  margin-left: 8px;
-  background: var(--gold, #e2b050);
+  background: var(--chart-sent);
 }
 
 /* ── Витрина ─────────────────────────────────────────────────────── */
@@ -1627,4 +1645,70 @@
     flex-basis: 100%;
     order: 3;
   }
+}
+
+/* ── График по дням: наведение ───────────────────────────────────── */
+
+.bars-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bars__day--active {
+  background: var(--surface-soft);
+}
+
+.bars__day:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 1px;
+}
+
+/*
+ * Числа дня живут строкой под фигурой, а не плавающим пузырём: пузырь
+ * закрывал бы соседние дни — те самые, с которыми читатель сравнивает.
+ * Место занято всегда, поэтому при наведении ничего не прыгает.
+ */
+.bars__readout {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  min-height: 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.bars__readout-day {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Число ведёт, имя ряда следует: ряд читатель уже выбрал глазами. */
+.bars__readout-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bars__readout-pair b {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.bars__readout-hint {
+  color: var(--text-faint);
+}
+
+.bars__key--sent {
+  background: var(--chart-sent);
+}
+
+.bars__key--done {
+  background: var(--chart-done);
 }
