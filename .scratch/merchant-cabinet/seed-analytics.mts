@@ -14,12 +14,41 @@ import { eq } from 'drizzle-orm';
 import { createCore, createDatabase } from '@nemo/core';
 import { exchangeRequests, merchantUsers } from '@nemo/db';
 
-const url = process.env.DATABASE_URL;
-if (!url || !url.endsWith('/nemo_dev')) {
-  throw new Error('Только для nemo_dev');
+/**
+ * Куда сеять — говорится вслух.
+ *
+ * Локальная `nemo_dev` разрешена без вопросов: другой базы с таким
+ * именем у разработчика нет. База контура называется `nemo` — ровно
+ * как продовая, и различить их по имени невозможно, поэтому для неё
+ * цель называют руками: `SEED_ALLOW=nemo@localhost:5433`. Строку
+ * подтверждения скрипт печатает в отказе, так что случайно она не
+ * совпадёт, а осознанно — совпадёт с одного раза.
+ *
+ * Защита эта от опечатки, а не от злого умысла: тот, кто поднял
+ * туннель к проду и повторил строку, снесёт прод. Другой защиты у
+ * скрипта, живущего вне приложения, и не бывает.
+ */
+function seedTarget(url: string): string {
+  const withoutUser = url.replace(/^[a-z]+:\/\/[^@]*@/i, '');
+  const [hostPort, rest] = [withoutUser.split('/')[0], withoutUser.split('/')[1] ?? ''];
+  return `${rest.split('?')[0]}@${hostPort}`;
 }
 
-const db = createDatabase(url);
+function refuseUnlessAllowed(url: string | undefined): void {
+  if (!url) throw new Error('Не задан DATABASE_URL');
+  const target = seedTarget(url);
+  if (target.startsWith('nemo_dev@')) return;
+  if (process.env.SEED_ALLOW === target) return;
+  throw new Error(
+    `Откажусь сеять в ${target}. Локальная nemo_dev — без вопросов; ` +
+      `для контура задайте SEED_ALLOW=${target}, убедившись, что это не прод.`,
+  );
+}
+
+const url = process.env.DATABASE_URL;
+refuseUnlessAllowed(url);
+
+const db = createDatabase(url!);
 const core = createCore({
   db,
   requisites: {
@@ -28,7 +57,12 @@ const core = createCore({
   },
 });
 
-const login = await core.beginStaffLogin(100001n);
+/*
+ * Сотрудник, от чьего имени сид одобряет анкеты и ведёт заявки. На
+ * машине разработчика это тестовый 100001, на контуре — тот, кого там
+ * завели первым: сцена одна, а люди в базах разные.
+ */
+const login = await core.beginStaffLogin(BigInt(process.env.SEED_STAFF_TELEGRAM_ID ?? '100001'));
 const manager = { type: 'staff' as const, staffId: login.staffId, role: login.role };
 
 // Почта у мерчанта больше не лежит: она принадлежит человеку, и
@@ -36,7 +70,9 @@ const manager = { type: 'staff' as const, staffId: login.staffId, role: login.ro
 const [shop] = await db
   .select({ merchantId: merchantUsers.merchantId, userId: merchantUsers.id })
   .from(merchantUsers)
-  .where(eq(merchantUsers.email, 'oplatishka@example.com'))
+  .where(
+    eq(merchantUsers.email, process.env.SEED_MERCHANT_EMAIL ?? 'oplatishka@example.com'),
+  )
   .limit(1);
 if (!shop) throw new Error('Сначала заведите мерчантов: seed-dev.mts');
 const owner = {
@@ -105,7 +141,12 @@ for (const one of SCENE) {
   });
   const submitted = at(one.day, one.hour);
   let finished = submitted;
-  if (one.fate !== 'open') {
+  /*
+   * Прогон не первый: ключ повтора вернул прежнюю заявку, и она уже
+   * доведена. Второй раз взять её в работу нельзя — машина состояний
+   * откажет, и раньше скрипт на этом и падал.
+   */
+  if (one.fate !== 'open' && request.status === 'new') {
     await core.claimExchangeRequest(manager, request.id);
     await core.confirmExchangeRate(manager, request.id, {
       finalRate: '81.5',
