@@ -34,7 +34,7 @@ export default async function AmbassadorLayout({ children }: { children: ReactNo
   }
 
   return (
-    <div className="shell">
+    <div className="shell" data-theme="light">
       <Sidebar
         groups={AMBASSADOR_NAV_GROUPS}
         counts={{}}

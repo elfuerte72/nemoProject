@@ -38,13 +38,13 @@ const mono = IBM_Plex_Mono({
 });
 
 /**
- * Тема кабинета светлая и задаётся здесь, атрибутом на корне: набор
- * токенов один на оба рабочих интерфейса (`@nemo/ui/styles.css`), а
- * значений два.
+ * Тему корень не объявляет: светлая она у рабочих кабинетов, а витрина
+ * с дверями и экраны входа остаются тёмными — там знак в толще и свет
+ * под курсором. Объявляют её обёртки `(cabinet)` и `(ambassador)`.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ru" data-theme="light" className={`${ui.variable} ${mono.variable}`}>
+    <html lang="ru" className={`${ui.variable} ${mono.variable}`}>
       <body>{children}</body>
     </html>
   );
