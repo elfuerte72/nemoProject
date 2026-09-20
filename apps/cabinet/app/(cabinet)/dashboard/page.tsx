@@ -6,7 +6,6 @@ import {
   firstParam,
   formatShare,
   Greeting,
-  HowTo,
   IntegrationTiles,
   Moment,
   MoneyCompare,
@@ -22,7 +21,6 @@ import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@n
 import { merchantRoleCan, WEBHOOK_ENDPOINT_STATE_LABELS } from '@nemo/types';
 import { attentionOf } from '@/lib/attention';
 import { getCore } from '@/lib/core';
-import { OVERVIEW_HOW_TO } from '@/lib/exchange-texts';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
 import { merchantStats, openCount, requestCounts, viewer } from '@/lib/reads';
 import { AttentionLine } from '@/app/ui/attention-line';
@@ -40,6 +38,15 @@ export const dynamic = 'force-dynamic';
  * приходит тем же ответом, что плитки. Последние заявки остаются на
  * первом экране: обзор открывают, чтобы взглянуть на заявку, а не
  * только на плитки.
+ *
+ * Подсказки «как это устроено» здесь нет с 20 сентября 2026. Она
+ * занимала полосу между приветствием и числами — то самое место, куда
+ * смотрят первым, — и объясняла то, что уже подписано под каждой
+ * плиткой: «по дате исполнения», «из поданных в период». Обзор
+ * открывают каждый день, а объяснение нужно один раз; постоянный блок,
+ * ни разу не понадобившийся, глаз начинает перепрыгивать. В разделах,
+ * где правила неочевидны — вебхуки, счета, возвраты, песочница, — она
+ * осталась.
  */
 export default async function OverviewPage({
   searchParams,
@@ -117,8 +124,6 @@ export default async function OverviewPage({
           </p>
         </div>
       </header>
-
-      <HowTo title="Как это устроено" sub="Что происходит с заявкой и откуда числа" items={OVERVIEW_HOW_TO} />
 
       <p className="today">
         <span className="today__label">Сегодня</span>

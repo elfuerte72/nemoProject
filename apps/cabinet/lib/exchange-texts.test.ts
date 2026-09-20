@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { slopComplaints } from '@nemo/core';
-import { OVERVIEW_HOW_TO, RATES_HOW_TO } from './exchange-texts';
+import { RATES_HOW_TO } from './exchange-texts';
 
 /**
  * Подсказки разделов обмена читает мерчант, и машинный ритм в них —
@@ -10,7 +10,6 @@ import { OVERVIEW_HOW_TO, RATES_HOW_TO } from './exchange-texts';
  */
 describe('тексты разделов обмена набраны человеком', () => {
   it.each([
-    ['Обзор', OVERVIEW_HOW_TO],
     ['Курсы', RATES_HOW_TO],
   ] as const)('подсказка «%s»', (_name, items) => {
     for (const item of items) {
