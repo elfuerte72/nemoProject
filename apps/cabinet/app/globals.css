@@ -1479,3 +1479,145 @@
 .card > .pos__equal {
   margin: 6px 0 0;
 }
+
+/* ── Характер кабинета: «Терминал» ───────────────────────────────────
+ *
+ * Выбран 20 сентября 2026 из трёх нарисованных направлений. Держится
+ * на трёх вещах, и ни одна из них не про цвет:
+ *
+ * 1. Числа моноширинные. Цифры одной ширины стоят ровной колонкой, и
+ *    два числа под двумя другими сравниваются взглядом, а не чтением.
+ *    Это же даёт кабинету профессию: приём из банковских выписок.
+ * 2. Плитки слиты в сетку волосками, а не разложены отдельными
+ *    карточками с тенями. Белая карточка с мягкой тенью на светло-сером
+ *    фоне — самый растиражированный приём в мире, и именно он делал
+ *    первый макет безликим.
+ * 3. Плотность: разделитель в пиксель вместо отступа в двенадцать.
+ *
+ * Правила дописывают `@nemo/ui`, а не спорят с ним: там остаются
+ * размеры, радиусы и поведение, здесь — характер.
+ */
+
+.stat__label,
+.stat__value,
+.money,
+.today b {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.stat__value {
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+
+.stat__label {
+  font-weight: 500;
+  letter-spacing: 0.9px;
+}
+
+/*
+ * Плитки сеткой: один общий край и волоски внутри. `overflow` прячет
+ * углы плиток под радиусом группы — иначе на скруглении видны их
+ * прямые углы.
+ */
+.stats {
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.stat {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.card {
+  box-shadow: none;
+  border: 1px solid var(--hairline);
+}
+
+/* ── Что требует внимания ────────────────────────────────────────────
+ *
+ * Ссылкой целиком: беда одна, действие у неё одно. Появляется, только
+ * когда есть о чём сказать (`lib/attention.ts`), поэтому у неё нет
+ * спокойного вида — тихий день выглядит как её отсутствие.
+ */
+.attention {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  font-size: 13.5px;
+  line-height: 1.45;
+  transition: background 0.15s var(--ease);
+}
+
+.attention--alarm {
+  background: rgba(242, 104, 95, 0.1);
+  border-color: rgba(242, 104, 95, 0.3);
+}
+
+.attention--warn {
+  background: var(--surface-soft);
+  border-color: var(--hairline);
+}
+
+.attention:hover {
+  background: rgba(242, 104, 95, 0.16);
+}
+
+.attention--warn:hover {
+  background: var(--surface-soft-hover);
+}
+
+.attention__label {
+  flex-shrink: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.attention--alarm .attention__label {
+  color: var(--danger-text);
+}
+
+.attention--warn .attention__label {
+  color: var(--gold-text);
+}
+
+.attention__text {
+  flex-grow: 1;
+  min-width: 0;
+  color: var(--text);
+  text-wrap: pretty;
+}
+
+.attention__go {
+  flex-shrink: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger-text);
+}
+
+.attention--warn .attention__go {
+  color: var(--gold-text);
+}
+
+/* На узком экране действие уходит под текст, а не сжимает его в столбик. */
+@media (max-width: 720px) {
+  .attention {
+    flex-wrap: wrap;
+  }
+
+  .attention__text {
+    flex-basis: 100%;
+    order: 3;
+  }
+}

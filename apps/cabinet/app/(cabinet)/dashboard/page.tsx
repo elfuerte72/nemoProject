@@ -20,10 +20,12 @@ import { formatMoney } from '@nemo/ui/format';
 import { averageByCurrency, formatByCurrency } from '@nemo/ui/money-list';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 import { merchantRoleCan, WEBHOOK_ENDPOINT_STATE_LABELS } from '@nemo/types';
+import { attentionOf } from '@/lib/attention';
 import { getCore } from '@/lib/core';
 import { OVERVIEW_HOW_TO } from '@/lib/exchange-texts';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
 import { merchantStats, openCount, requestCounts, viewer } from '@/lib/reads';
+import { AttentionLine } from '@/app/ui/attention-line';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 
 export const dynamic = 'force-dynamic';
@@ -83,11 +85,27 @@ export default async function OverviewPage({
   const liveKeys = keys.filter((one) => one.revokedAt === null).length;
   const failingHooks = hooks.filter((one) => one.state === 'failing');
   const clock = offset === 0 ? 'по UTC' : 'по вашим часам';
+  /*
+   * Точки спрошены только у того, кому видна интеграция, и тревоги по
+   * ним у оператора не будет: вести его туда некуда — операция ему
+   * откажет.
+   */
+  const attention = attentionOf({
+    endpoints: hooks,
+    deliveries: current.webhookDeliveries,
+    apiCalls: current.apiCalls,
+  });
 
   return (
     <main className="page">
       <QuietRefresh />
       <DisabledBanner status={session.status} />
+      {/*
+        Первым на экране — то, что требует действия сегодня, и только
+        потом числа за период: мерчант со сломанной интеграцией теряет
+        оплаты, пока смотрит на средний чек. Тихо — строки нет вовсе.
+      */}
+      <AttentionLine one={attention} />
 
       <header className="page__head">
         <div>
