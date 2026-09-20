@@ -665,7 +665,11 @@
   display: grid;
   grid-template-columns: repeat(var(--bars, 14), minmax(0, 1fr));
   gap: var(--bars-gap, 6px);
-  height: 120px;
+  /*
+   * Кадр ниже прежнего: у шкалы мягкий потолок, и на малых числах
+   * высокий кадр оставлял бы сверху пустую половину карточки.
+   */
+  height: 96px;
   margin-top: 6px;
 }
 

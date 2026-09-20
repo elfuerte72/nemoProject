@@ -53,7 +53,7 @@ export function DailyBars({ days }: { days: readonly DailyBar[] }) {
    * сравнивать. Потолок не врёт: столбик по-прежнему пропорционален
    * числу, просто кадр перестаёт схлопываться на малых величинах.
    */
-  const top = Math.max(4, ...days.map((one) => Math.max(one.submitted, one.completed)));
+  const top = Math.max(3, ...days.map((one) => Math.max(one.submitted, one.completed)));
   const shown = active === null ? undefined : days[active];
 
   return (
