@@ -17,6 +17,14 @@ export interface NavItem {
   readonly icon: IconName;
   /** Какой счётчик показывать рядом с названием. Ключ в наборе счётчиков. */
   readonly count?: string | undefined;
+  /**
+   * Разделы, у которых своего пункта в меню нет, а принадлежат они
+   * этому. Аналитику мерчанта владелец просил не выносить отдельной
+   * строкой — вторая строка обещала бы вторую правду о тех же числах, —
+   * и входят в неё с обзора. Без этого поля меню, пока человек там, не
+   * подсвечивает ничего, и раздел читается как место вне кабинета.
+   */
+  readonly owns?: readonly string[] | undefined;
 }
 
 export interface NavGroup {
@@ -48,9 +56,18 @@ export function isCurrentSection(href: string, pathname: string): boolean {
  * месте, и отмечается одно — то, чей адрес точнее.
  */
 export function currentSection(
-  items: readonly { readonly href: string }[],
+  items: readonly { readonly href: string; readonly owns?: readonly string[] | undefined }[],
   pathname: string,
 ): string | undefined {
+  /*
+   * Владение проверяется первым и отдельно: у чужого раздела адрес с
+   * пунктом не пересекается вовсе, и длина здесь ничего не решает.
+   */
+  const owner = items.find((item) =>
+    item.owns?.some((one) => isCurrentSection(one, pathname)),
+  );
+  if (owner) return owner.href;
+
   return items
     .filter((item) => isCurrentSection(item.href, pathname))
     .reduce<string | undefined>(
