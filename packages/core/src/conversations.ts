@@ -388,19 +388,37 @@ export async function replyToClient(
 /**
  * Лента клиента для панели. Сотруднику видна целиком: разговор читают,
  * а не выбирают из него куски.
+ *
+ * Предел — для чужого экрана, а не для самого разговора: в карточке
+ * заявки лента стоит рядом с работой и отвечает на «прислал ли он чек»,
+ * а не на «о чём мы говорили в июне». Просят там хвост, и полная
+ * переписка тянулась бы в каждую открытую карточку целиком.
  */
 export async function listConversation(
   ctx: CoreConfig,
   actor: Actor,
   clientId: bigint,
+  options?: { readonly limit?: number | undefined },
 ): Promise<readonly MessageView[]> {
   requireStaff(actor);
-  const rows = await ctx.db
+  const limit = options?.limit;
+  if (limit !== undefined && limit <= 0) return [];
+
+  const query = ctx.db
     .select({ message: clientMessages, authorName: staff.displayName })
     .from(clientMessages)
     .leftJoin(staff, eq(staff.id, clientMessages.authorStaffId))
-    .where(eq(clientMessages.clientId, clientId))
-    .orderBy(clientMessages.seq);
+    .where(eq(clientMessages.clientId, clientId));
+
+  /*
+   * Хвост берётся с конца и переворачивается здесь: «последние
+   * двадцать» — это порядок убывания в запросе, а читается лента
+   * по-прежнему сверху вниз.
+   */
+  const rows =
+    limit === undefined
+      ? await query.orderBy(clientMessages.seq)
+      : (await query.orderBy(desc(clientMessages.seq)).limit(limit)).reverse();
 
   return rows.map((row) => toView(row.message, row.authorName));
 }

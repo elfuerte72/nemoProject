@@ -296,7 +296,7 @@ export type {
   SeriesStep,
 } from './analytics.js';
 export { seriesSteps } from './analytics.js';
-export { EXPIRED_REASON } from './expiry.js';
+export { EXPIRED_REASON, EXPIRY_WARNING_MINUTES } from './expiry.js';
 export type { ColleagueView, ReassignExchangeRequestInput } from './exchange-reassign.js';
 import type { ReassignExchangeRequestInput } from './exchange-reassign.js';
 
@@ -672,8 +672,11 @@ export function createCore(ctx: CoreConfig) {
     // приложением: клиент выбирает тему и описывает, что оплатить.
     submitInquiry: (input: SubmitInquiryInput) => submitInquiry(ctx, input),
     replyToClient: (actor: Actor, input: ReplyInput) => replyToClient(ctx, actor, input),
-    listConversation: (actor: Actor, clientId: bigint) =>
-      listConversation(ctx, actor, clientId),
+    listConversation: (
+      actor: Actor,
+      clientId: bigint,
+      options?: { readonly limit?: number | undefined },
+    ) => listConversation(ctx, actor, clientId, options),
     listConversations: (actor: Actor, filter?: ConversationFilter) =>
       listConversations(ctx, actor, filter),
     countUnansweredConversations: (actor: Actor) => countUnansweredConversations(ctx, actor),

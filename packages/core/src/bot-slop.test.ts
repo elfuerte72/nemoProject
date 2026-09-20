@@ -149,7 +149,7 @@ const EVERY_NOTIFICATION: readonly Notification[] = [
     to: toClient(1n),
     requestId: 'r',
     status: 'rate_confirmed',
-    finalRate: Money.toAmount('81'),
+    finalRate: { rate: Money.toAmount('81'), fromCode: 'USDT', toCode: 'RUB' },
     paymentInstructions: 'Карта 2200 0000 0000 0000, Иван И.',
     payWithinMinutes: 30,
   },

@@ -1,5 +1,4 @@
 import {
-  Money,
   capitalize,
   sayRate,
   type Amount,
@@ -15,6 +14,9 @@ import {
 import type { InquiryTopic } from './inquiries.js';
 import { ATTACHMENT_DOWNLOAD_LIMIT_BYTES, formatFileSize } from './attachments.js';
 import { merchantAccountMail } from './merchant-mails.js';
+import { humanAmount, sayNotifiedRate, type NotifiedRate } from './notified-rate.js';
+
+export { humanAmount, sayNotifiedRate, type NotifiedRate } from './notified-rate.js';
 
 /**
  * Что нужно сообщить клиенту — следствие операции, а не отдельное
@@ -69,6 +71,7 @@ export function toMerchant(merchantId: string, email: string): Recipient {
   return { kind: 'merchant', merchantId, email };
 }
 
+
 export type Notification =
   | {
       readonly kind: 'referral-joined';
@@ -81,7 +84,7 @@ export type Notification =
       readonly requestId: string;
       readonly status: ExchangeRequestStatus;
       /** Курс, названный менеджером: только в переходе «курс подтверждён». */
-      readonly finalRate?: Amount;
+      readonly finalRate?: NotifiedRate;
       /** Куда клиенту платить: только в переходе «курс подтверждён». */
       readonly paymentInstructions?: string;
       /**
@@ -489,7 +492,7 @@ function renderClientNotification(
       );
     case 'bonus-accrued':
       return (
-        `Вам начислено ${notification.amount} баллов за исполненную заявку ` +
+        `Вам начислено ${humanAmount(notification.amount)} баллов за исполненную заявку ` +
         `реферала ${referralLineWord(notification.line)} линии.`
       );
     case 'withdrawal-request-status':
@@ -653,18 +656,6 @@ export function escapeHtml(value: string): string {
 }
 
 /**
- * Число для человека: разряды через неразрывный пробел, дробная часть
- * через запятую и без хвоста нулей. «10000 USDT» в уведомлении читалось
- * как «1000» — ошибка в порядке величины там, где по числу решают.
- */
-export function humanAmount(value: Amount): string {
-  const [whole = '0', fraction = ''] = String(value).split('.');
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
-  const tail = fraction.replace(/0+$/, '');
-  return tail === '' ? grouped : `${grouped},${tail}`;
-}
-
-/**
  * Сколько ждут, словами.
  *
  * В часах, когда их больше одного: «ждёт 214 минут» менеджер переводит в
@@ -801,7 +792,7 @@ function renderExchangeRequestStatus(
     case 'rate_confirmed':
       return [
         notification.finalRate
-          ? `Курс по вашей заявке на обмен: ${notification.finalRate}.`
+          ? `Курс по вашей заявке на обмен: ${sayNotifiedRate(notification.finalRate)}.`
           : undefined,
         notification.paymentInstructions
           ? `Реквизиты для оплаты: ${notification.paymentInstructions}`
@@ -830,11 +821,11 @@ function renderWithdrawalRequestStatus(
 ): string {
   switch (notification.status) {
     case 'new':
-      return `Заявка на вывод ${notification.amount} баллов принята. Менеджер её рассмотрит.`;
+      return `Заявка на вывод ${humanAmount(notification.amount)} баллов принята. Менеджер её рассмотрит.`;
     case 'approved':
-      return `Заявка на вывод ${notification.amount} баллов одобрена. Готовим выплату.`;
+      return `Заявка на вывод ${humanAmount(notification.amount)} баллов одобрена. Готовим выплату.`;
     case 'paid':
-      return `Выплата ${notification.amount} баллов отправлена. Баллы списаны с бонусного баланса.`;
+      return `Выплата ${humanAmount(notification.amount)} баллов отправлена. Баллы списаны с бонусного баланса.`;
     case 'rejected':
       // Причина обязательна при отклонении, но тип уведомления допускает
       // её отсутствие: язык не даёт выразить «обязательна только здесь».
