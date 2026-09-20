@@ -135,7 +135,12 @@ export function roundPayout(amount: Amount, decimals: number): Amount {
  * проверяют выше по коду, — но если справочник промолчал, целое
  * безопаснее выдумки: так считалось до этой правки.
  */
-async function readPayoutDecimals(executor: Executor, code: string): Promise<number> {
+/**
+ * Знак валюты выдачи. Открыт наружу с 20 сентября 2026: тем же знаком
+ * округляет сумму подтверждение курса у заявки, пришедшей без
+ * котировки, — двух правд о выданном числе быть не должно.
+ */
+export async function readPayoutDecimals(executor: Executor, code: string): Promise<number> {
   const [row] = await executor
     .select({ decimals: currencies.decimals })
     .from(currencies)

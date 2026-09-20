@@ -368,6 +368,36 @@ describe('курс заявки', () => {
 
     expect(confirmed.request.requestRate).toBeNull();
     expect(confirmed.request.finalRate).toBe('93');
+    // Сумму менеджер не называл, и ядро посчитало её по его же курсу:
+    // 1000 USDT по 93 — 93 000 рублей.
+    expect(confirmed.request.toAmount).toBe('93000');
+  });
+
+  /*
+   * Раньше заявка без курса подачи оставалась и без суммы: менеджер
+   * называл курс, сумму никто не спрашивал, и в ленте мерчанта стояло
+   * «58 000 RUB → USDT» — сколько он получил, не знал никто. Теперь
+   * ядро считает её тем же умножением, каким считает котировка.
+   */
+  it('названная сумма к выдаче важнее посчитанной', async () => {
+    await givenCurrencyPair({ fromCode: 'USDT', toCode: 'RUB', kind: 'cash' });
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'cash',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '1000',
+    });
+    await core.claimExchangeRequest(manager, request.id);
+
+    // Наличными округляют до купюры, и менеджер вправе назвать своё
+    // число: он его и выдаёт из кассы.
+    const confirmed = await core.confirmExchangeRate(manager, request.id, {
+      finalRate: '93',
+      toAmount: '92500',
+      paymentInstructions: 'наличными в офисе',
+    });
+
+    expect(confirmed.request.toAmount).toBe('92500');
   });
 
   it('требует курса от менеджера, когда его нет у заявки', async () => {
