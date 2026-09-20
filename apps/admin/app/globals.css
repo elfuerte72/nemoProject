@@ -717,4 +717,25 @@
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
     border-radius: 0 0 var(--radius-card) var(--radius-card);
   }
+
+  /*
+   * Лента внутри карточки заявки высоту не отпускает — в отличие от
+   * своего экрана, где она и есть экран. Здесь она блок среди работы:
+   * растянувшись на все двадцать сообщений, она отодвинула бы историю
+   * заявки на третью прокрутку, а поле ответа, прилипшее к низу окна,
+   * ехало бы поверх этой истории до самого конца страницы.
+   */
+  .chat--inline {
+    height: 360px;
+    overflow: hidden;
+  }
+
+  .chat--inline .chat__feed {
+    flex: 1;
+  }
+
+  .chat--inline .chat__composer {
+    position: static;
+    padding-bottom: 14px;
+  }
 }

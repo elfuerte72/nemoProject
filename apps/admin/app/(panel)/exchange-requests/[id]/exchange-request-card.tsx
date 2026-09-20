@@ -106,6 +106,8 @@ export function ExchangeRequestCard({
    * а событие про переписку приходит по своей теме.
    */
   const [chatTyping, setChatTyping] = useState(false);
+  /** Лента переключает первую линию: обновление ждёт и этого тоже. */
+  const [chatBusy, setChatBusy] = useState(false);
 
   const [finalRate, setFinalRate] = useState('');
   /*
@@ -310,7 +312,7 @@ export function ExchangeRequestCard({
         {...(request.owner.kind === 'client' && conversation
           ? { also: [{ topic: 'conversations' as const, clientId: request.owner.clientId }] }
           : {})}
-        busy={busy}
+        busy={busy || chatBusy}
         typing={chatTyping}
       />
 
@@ -887,6 +889,7 @@ export function ExchangeRequestCard({
                 // тему: вторая подписка стоила бы вкладке второго сокета.
                 listens={false}
                 onTypingChange={setChatTyping}
+                onBusyChange={setChatBusy}
               />
             </section>
           ) : undefined}

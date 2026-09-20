@@ -30,6 +30,7 @@ export function ConversationView({
   inline = false,
   listens = true,
   onTypingChange,
+  onBusyChange,
 }: {
   clientId: string;
   messages: readonly MessageView[];
@@ -54,6 +55,12 @@ export function ConversationView({
    * посреди набранного, отнимает у менеджера написанное клиенту.
    */
   onTypingChange?: ((typing: boolean) => void) | undefined;
+  /**
+   * Идёт собственное действие ленты — переключение первой линии.
+   * Наружу по той же причине, что и набор: обновление, пришедшее
+   * посреди него, показало бы состояние до нажатия.
+   */
+  onBusyChange?: ((busy: boolean) => void) | undefined;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
@@ -70,6 +77,18 @@ export function ConversationView({
     },
     [onTypingChange],
   );
+
+  /*
+   * Переключение первой линии — такое же собственное действие, как
+   * ответ: обновление поверх него показало бы прежнее состояние
+   * разговора. На своём экране его придерживает здешний `LiveRefresh`,
+   * внутри чужого — хозяин экрана, и знать о нём он может только
+   * отсюда.
+   */
+  function switchingChanged(value: boolean): void {
+    setSwitching(value);
+    onBusyChange?.(value);
+  }
 
   /**
    * Отправить ответ словами. Отказ не печатается здесь, над лентой, а
@@ -129,7 +148,7 @@ export function ConversationView({
    */
   async function setHandover(toHuman: boolean) {
     if (switching) return;
-    setSwitching(true);
+    switchingChanged(true);
     setError(undefined);
     try {
       const response = await fetch('/api/conversations/handover', {
@@ -146,7 +165,7 @@ export function ConversationView({
     } catch {
       setError('Не удалось связаться с сервером. Повторите попытку.');
     } finally {
-      setSwitching(false);
+      switchingChanged(false);
     }
   }
 
