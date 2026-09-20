@@ -1656,7 +1656,7 @@
 }
 
 .bars__day--active {
-  background: var(--surface-soft);
+  background: var(--surface-soft-strong);
 }
 
 .bars__day:focus-visible {

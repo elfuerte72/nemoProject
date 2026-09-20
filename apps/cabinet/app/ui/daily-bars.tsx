@@ -46,7 +46,14 @@ function dayTitle(one: DailyBar): string {
 
 export function DailyBars({ days }: { days: readonly DailyBar[] }) {
   const [active, setActive] = useState<number | null>(null);
-  const top = Math.max(1, ...days.map((one) => Math.max(one.submitted, one.completed)));
+  /*
+   * У шкалы мягкий потолок: без него день с единственной заявкой
+   * упирается в верх кадра — максимум-то равен единице, — и две недели
+   * выглядят частоколом одинаковых столбиков, по которому нечего
+   * сравнивать. Потолок не врёт: столбик по-прежнему пропорционален
+   * числу, просто кадр перестаёт схлопываться на малых величинах.
+   */
+  const top = Math.max(4, ...days.map((one) => Math.max(one.submitted, one.completed)));
   const shown = active === null ? undefined : days[active];
 
   return (
