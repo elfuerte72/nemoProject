@@ -76,3 +76,76 @@ export function suggestServiceIncome({
   const coarse = Money.format(income, COARSE_DIGITS);
   return Money.isZero(Money.toAmount(coarse)) ? Money.format(income, FINE_DIGITS) : coarse;
 }
+
+/** Откуда пришло подсказанное число — этими словами оно и объясняется. */
+export type IncomeHintSource = 'schedule' | 'markup';
+
+export interface IncomeHint {
+  readonly value: string;
+  readonly source: IncomeHintSource;
+}
+
+/**
+ * Что подсказать менеджеру в поле дохода — и подсказывать ли вообще.
+ *
+ * Путей к числу два, и выбирает между ними не экран, а то, как считалась
+ * цена заявки.
+ *
+ * У направления со ступенчатой сеткой — THB, CNY, USD, EUR — наценки в
+ * курсе нет вовсе, и до 20 сентября 2026 подсказка тут молчала: ровно на
+ * тех заявках, которых у сервиса больше всего. Зато у такой заявки
+ * удержанное посчитано при подаче и записано в неё (`serviceFeePayout`)
+ * — в валюте выдачи и по тому курсу доллара, который стоял в ту минуту.
+ *
+ * Пересчитывать его в отданную клиентом валюту нечем: курс заявки — уже
+ * после комиссии, и деление на него дало бы не ту величину, а курса
+ * доллара на момент подачи в заявке не лежит. Поэтому при другой
+ * выбранной валюте подсказка молчит, а не угадывает: доход уходит в
+ * начисления рефереру и потом не правится.
+ */
+export function serviceIncomeHint({
+  incomeCode,
+  fromCode,
+  toCode,
+  fromAmount,
+  toAmount,
+  requestRate,
+  feePayout,
+  markupBps,
+  pricedBySchedule,
+}: {
+  /** Валюта, выбранная менеджером в форме исполнения. */
+  incomeCode: string;
+  fromCode: string;
+  toCode: string;
+  fromAmount: string | null;
+  toAmount: string | null;
+  /** Курс подачи: без него цену называл менеджер, и считать нечего. */
+  requestRate: string | null;
+  /** Удержанное по сетке, в валюте выдачи. */
+  feePayout: string | null;
+  markupBps: number;
+  pricedBySchedule: boolean;
+}): IncomeHint | null {
+  if (feePayout !== null && incomeCode === toCode) {
+    /*
+     * Как записано, так и подставляется: число уже округлено ядром до
+     * точности валюты выдачи (`roundPayout`), и второе округление здесь
+     * срезало бы знаки у монетной стороны, где весь доход — сотые.
+     */
+    const value = Money.toAmount(feePayout);
+    return Money.isZero(value) || Money.isNegative(value)
+      ? null
+      : { value, source: 'schedule' };
+  }
+
+  if (requestRate === null || pricedBySchedule) return null;
+
+  const givenSide = incomeCode === fromCode;
+  const value = suggestServiceIncome({
+    amount: givenSide ? fromAmount : toAmount,
+    markupBps,
+    side: givenSide ? 'given' : 'received',
+  });
+  return value === null ? null : { value, source: 'markup' };
+}

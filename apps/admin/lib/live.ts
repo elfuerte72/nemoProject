@@ -70,6 +70,22 @@ export function eventConcerns(event: LiveEvent, screen: LiveScreen): boolean {
   return event.clientId === screen.clientId;
 }
 
+/**
+ * Тем у экрана бывает больше одной.
+ *
+ * Карточка заявки с лентой переписки внутри — про заявку и про разговор
+ * сразу: чек приходит в чат, а перевод отмечает коллега, и застывшее
+ * означает «ничего не происходит» ровно до перезагрузки руками. Второй
+ * подписки ради второй темы при этом не заводится: соединение на
+ * вкладку одно, а какие события его касаются, решает этот список.
+ */
+export function eventConcernsAny(
+  event: LiveEvent,
+  screens: readonly LiveScreen[],
+): boolean {
+  return screens.some((screen) => eventConcerns(event, screen));
+}
+
 /** Строка очереди с полем: что в нём сохранено на сервере. */
 export interface QueueRowField {
   readonly id: string;

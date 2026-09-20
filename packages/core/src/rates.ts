@@ -80,6 +80,17 @@ export interface QuoteView extends Quote {
    * подать на полсотни рублей.
    */
   readonly usdAmount?: Amount;
+  /**
+   * Сколько из этой сделки остаётся сервису — в валюте выдачи. Есть
+   * только там, где цену назначает сетка ступеней.
+   *
+   * Клиенту оно не показывается: он видит курс и сумму к получению, а
+   * комиссия уже сидит внутри них. Нужно оно менеджеру при исполнении —
+   * доход по заявке тот вписывает руками, и без этого числа вписывать
+   * нечего: ставка ступени взята от долларового эквивалента, а курс
+   * доллара к валюте выдачи через день уже другой.
+   */
+  readonly feePayout?: Amount;
 }
 
 export interface QuoteInput extends RatePair {
@@ -334,10 +345,25 @@ async function quoteByFee(
    */
   const rate = Money.divide(payout, fromAmount.data);
 
+  /*
+   * Удержанное сервисом — разница между выдачей без комиссии и той, что
+   * клиент получает. Считается вычитанием, а не сложением долларовой
+   * части с фиксом в валюте выдачи: у ступени бывают обе, складывать их
+   * без курса нечем, а курс тут же под рукой и уже применён к выдаче.
+   *
+   * До той же точности, что и сама выдача: доход в сотых долях бата
+   * менеджеру вписывать некуда.
+   */
+  const feePayout = roundPayout(
+    Money.subtract(Money.multiply(usdAmount, fromBase.rate), payout),
+    payoutDecimals,
+  );
+
   return {
     rate,
     toAmount: payout,
     usdAmount,
+    feePayout,
     fee: {
       toBaseRate: toBase.rate,
       fromBaseRate: fromBase.rate,

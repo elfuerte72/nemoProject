@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { suggestServiceIncome } from './income';
+import { serviceIncomeHint, suggestServiceIncome } from './income';
 
 /**
  * Подсказка дохода по заявке.
@@ -71,5 +71,86 @@ describe('подсказка дохода', () => {
     expect(
       suggestServiceIncome({ amount: '-100', markupBps: 200, side: 'received' }),
     ).toBeNull();
+  });
+});
+
+/**
+ * Что подсказать в поле дохода — и подсказывать ли вообще.
+ *
+ * До 20 сентября 2026 подсказка молчала у всех направлений со
+ * ступенчатой сеткой — бат, юань, доллар, евро, — то есть у большей
+ * части живого потока: наценки в таком курсе нет, и вынимать из него
+ * нечего. Менеджер, закрывающий заявку, видел пустое поле и число,
+ * которое поправить потом нельзя.
+ */
+describe('подсказка дохода: откуда берётся число', () => {
+  /** Заявка «рубли → баты» по сетке: удержанное записано при подаче. */
+  const bySchedule = {
+    incomeCode: 'THB',
+    fromCode: 'RUB',
+    toCode: 'THB',
+    fromAmount: '100000',
+    toAmount: '38500',
+    requestRate: '0.385',
+    feePayout: '1750.25',
+    markupBps: 200,
+    pricedBySchedule: true,
+  };
+
+  it('у цены по сетке подставляет удержанное при подаче', () => {
+    expect(serviceIncomeHint(bySchedule)).toEqual({ value: '1750.25', source: 'schedule' });
+  });
+
+  /*
+   * Ступенчатая комиссия посчитана в валюте выдачи, а курс заявки — уже
+   * после неё: пересчитать удержанное в рубли этим курсом значит
+   * назвать не ту величину. Число уходит в начисления рефереру, и
+   * молчание тут честнее догадки.
+   */
+  it('в отданной клиентом валюте молчит, а не пересчитывает', () => {
+    expect(serviceIncomeHint({ ...bySchedule, incomeCode: 'RUB' })).toBeNull();
+  });
+
+  /*
+   * Заявка по наценке: удержанного в ней нет, и подсказка считается
+   * по-старому — из суммы сделки и наценки сервиса.
+   */
+  it('у цены по наценке считает её из суммы сделки', () => {
+    expect(
+      serviceIncomeHint({
+        incomeCode: 'RUB',
+        fromCode: 'USDT',
+        toCode: 'RUB',
+        fromAmount: '1000',
+        toAmount: '8100',
+        requestRate: '8.1',
+        feePayout: null,
+        markupBps: 200,
+        pricedBySchedule: false,
+      }),
+    ).toEqual({ value: '165.30', source: 'markup' });
+  });
+
+  /*
+   * Заявка по сетке, поданная до появления колонки, и наличная без
+   * сетки: считать нечем ни тем путём, ни другим.
+   */
+  it('без записанного удержания у цены по сетке молчит', () => {
+    expect(serviceIncomeHint({ ...bySchedule, feePayout: null })).toBeNull();
+  });
+
+  it('без курса подачи молчит: цену называл менеджер', () => {
+    expect(
+      serviceIncomeHint({
+        ...bySchedule,
+        feePayout: null,
+        requestRate: null,
+        pricedBySchedule: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('нулевое удержание подсказкой не считает', () => {
+    expect(serviceIncomeHint({ ...bySchedule, feePayout: '0' })).toBeNull();
   });
 });

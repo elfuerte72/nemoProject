@@ -69,6 +69,21 @@ describe('сообщение клиента', () => {
     expect(await core.listConversation(manager, 777n)).toHaveLength(1);
   });
 
+  /*
+   * Хвост — для ленты в карточке заявки: там разговор стоит рядом с
+   * работой и отвечает на «прислал ли он чек». Читается он по-прежнему
+   * сверху вниз, хотя выбирается с конца.
+   */
+  it('отдаёт последние сообщения, когда спрашивают хвост', async () => {
+    for (const body of ['первое', 'второе', 'третье']) {
+      await core.receiveClientMessage({ telegramUserId: 100n, body });
+    }
+
+    const tail = await core.listConversation(manager, 100n, { limit: 2 });
+
+    expect(tail.map((message) => message.body)).toEqual(['второе', 'третье']);
+  });
+
   it('принимает вложение без текста: скриншот вместо объяснения', async () => {
     await core.receiveClientMessage({
       telegramUserId: 100n,

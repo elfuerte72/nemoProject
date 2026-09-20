@@ -1,3 +1,4 @@
+import { sayNotifiedRate } from './notified-rate.js';
 import type { Notification } from './notifications.js';
 
 /**
@@ -167,7 +168,7 @@ function exchangeMail(
         subject: 'Курс подтверждён, заявка ждёт оплаты',
         text: [
           notification.finalRate
-            ? `Курс по заявке: ${notification.finalRate}.`
+            ? `Курс по заявке: ${sayNotifiedRate(notification.finalRate)}.`
             : 'Курс по заявке подтверждён.',
           'Реквизиты для оплаты ждут в кабинете — письмом они не ' +
             'отправляются: перевод по чужим реквизитам не возвращается.',

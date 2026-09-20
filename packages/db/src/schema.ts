@@ -1247,6 +1247,21 @@ export const exchangeRequests = pgTable(
      */
     requestRate: money('request_rate'),
     finalRate: money('final_rate'),
+    /**
+     * Сколько сервис удержал по сетке ступеней — в валюте выдачи и на
+     * момент подачи.
+     *
+     * Записывается тогда же, когда курс, и по тем же числам: ставка
+     * ступени берётся от долларового эквивалента, а курс доллара к
+     * валюте выдачи живёт минуту — восстановить это число через день
+     * нечем, а именно его менеджер вписывает доходом при исполнении.
+     * Пусто у заявок по наценке (там доход считается из неё), у
+     * наличных и у поданных до появления колонки.
+     *
+     * Подсказка, а не сам доход: `service_income` по-прежнему называет
+     * человек — из этого числа начисляются баллы рефереру.
+     */
+    serviceFeePayout: money('service_fee_payout'),
     serviceIncome: money('service_income'),
     serviceIncomeCode: text('service_income_code'),
     status: exchangeRequestStatusEnum('status').default('new').notNull(),

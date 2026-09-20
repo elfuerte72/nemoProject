@@ -10,6 +10,15 @@ import { ExchangeRequestCard } from './exchange-request-card';
 export const dynamic = 'force-dynamic';
 
 /**
+ * Сколько сообщений видно в ленте под заявкой.
+ *
+ * Столько, сколько отвечает на «что у нас с ним происходит прямо
+ * сейчас»: чек, уточнение, ответ. За всем разговором ведёт ссылка в
+ * «Обращения» — там он и живёт целиком.
+ */
+const CONVERSATION_TAIL = 20;
+
+/**
  * Карточка заявки: всё, что менеджеру нужно знать и сделать, на одном
  * экране — состояние, история переходов и доступные действия.
  */
@@ -82,7 +91,7 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
    * панель, а не операция: число уходит в реферальные начисления, и
    * подтверждать его должен человек.
    */
-  const [accounts, markupBps, pricedBySchedule, colleagues] = await Promise.all([
+  const [accounts, markupBps, pricedBySchedule, colleagues, messages] = await Promise.all([
     request.kind === 'electronic'
       ? core.listServiceAccounts(actor, {
           currencyCode: request.fromCode,
@@ -98,7 +107,26 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
     core.isRequestPricedBySchedule(actor, id),
     // Кому можно передать заявку: активные сотрудники, одни имена.
     core.listColleagues(actor),
+    /*
+     * Хвост переписки — для ленты под работой: клиент присылает чек в
+     * чат, и уходить за ним в «Обращения» менеджеру больше не надо.
+     * Хвостом, а не целиком: на вопрос «прислал ли он чек» отвечают
+     * последние сообщения, а весь разговор лежит в своём разделе.
+     *
+     * В общем круге с остальным: страница перечитывает себя по таймеру
+     * и на каждое событие, и отдельным ожиданием этот запрос платил бы
+     * пятым кругом к базе при каждом обновлении.
+     *
+     * У заявки мерчанта ленты нет вовсе: Telegram у бизнеса нет, и
+     * пишут ему почтой из карточки (docs/adr/0017).
+     */
+    owner.kind === 'client'
+      ? core.listConversation(actor, BigInt(owner.clientId), { limit: CONVERSATION_TAIL })
+      : null,
   ]);
+
+  const conversation =
+    messages === null ? null : { messages, handedToHuman: card?.handedToHuman ?? false };
 
   return (
     <ExchangeRequestCard
@@ -112,6 +140,7 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
       viewerStaffId={actor.staffId}
       viewerRole={actor.role}
       colleagues={colleagues}
+      conversation={conversation}
     />
   );
 }

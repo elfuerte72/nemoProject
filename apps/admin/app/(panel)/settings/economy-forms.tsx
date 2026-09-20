@@ -12,12 +12,32 @@ import { useSettingsSend } from './use-settings-send';
  * подразделе «Рефералка»: линий стало до пяти, а с ними уровни и
  * личные ставки, и двумя полями это уже не выразить.
  */
-export function EconomyForms({ settings }: { settings: ServiceSettingsView }) {
+export function EconomyForms({
+  settings,
+  warningMinutes,
+}: {
+  settings: ServiceSettingsView;
+  /**
+   * За сколько до конца срока бот предупреждает клиента. Приходит из
+   * ядра через страницу, а не набрано здесь числом: правило одно, и
+   * своя копия разошлась бы с ним молча.
+   */
+  warningMinutes: number;
+}) {
   const { error, busy, send } = useSettingsSend();
 
   const [markup, setMarkup] = useState(bpsToPercent(settings.markupBps));
   const [minExchange, setMinExchange] = useState<string>(settings.minExchangeAmount);
   const [ttlMinutes, setTtlMinutes] = useState(String(settings.unpaidExchangeRequestTtlMinutes));
+
+  /*
+   * Короткий срок отменяет предупреждение целиком: «за полчаса»
+   * пришлось бы на момент выдачи реквизитов или раньше, и ядро такое
+   * предупреждение не шлёт. Администратор узнаёт об этом до сохранения,
+   * а не из жалобы клиента, которому пришла отмена без предупреждения.
+   */
+  const entered = Number(ttlMinutes);
+  const silentExpiry = Number.isFinite(entered) && entered > 0 && entered <= warningMinutes;
 
   return (
     <>
@@ -62,6 +82,14 @@ export function EconomyForms({ settings }: { settings: ServiceSettingsView }) {
             />
           </label>
         </div>
+        {silentExpiry ? (
+          <p className="card__note">
+            При сроке {warningMinutes} минут и меньше клиент не получит предупреждения о
+            скором истечении: оно уходит за {warningMinutes} минут до конца, а здесь
+            пришлось бы на момент выдачи реквизитов. Клиент увидит реквизиты, а
+            следующим сообщением — отмену.
+          </p>
+        ) : undefined}
         <div className="row__actions">
           <button
             type="button"
