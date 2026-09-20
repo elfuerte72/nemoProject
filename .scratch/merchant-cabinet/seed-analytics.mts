@@ -148,8 +148,15 @@ for (const one of SCENE) {
    */
   if (one.fate !== 'open' && request.status === 'new') {
     await core.claimExchangeRequest(manager, request.id);
+    /*
+     * Курс называется по направлению, а не один на всё. Он означает
+     * «сколько получаемой валюты за единицу отдаваемой»: 81,5 рубля за
+     * USDT — и обратной сделке нужно обратное число, иначе 120 000
+     * рублей превращаются в девять миллионов USDT. Сид, ставивший 81,5
+     * всем подряд, именно такое и записывал до 20 сентября 2026.
+     */
     await core.confirmExchangeRate(manager, request.id, {
-      finalRate: '81.5',
+      finalRate: one.from === 'RUB' ? '0.01227' : '81.5',
       paymentInstructions: 'Реквизиты в кабинете',
     });
     if (one.fate === 'completed') {
