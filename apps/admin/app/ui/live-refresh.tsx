@@ -4,10 +4,11 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import type { LiveEvent, LiveTopic } from '@nemo/core';
 import {
-  eventConcerns,
+  eventConcernsAny,
   LIVE_REFRESH_MS,
   LIVE_STREAM_PATH,
   shouldRefresh,
+  type LiveScreen,
 } from '@/lib/live';
 
 /**
@@ -27,6 +28,12 @@ export function LiveRefresh({
   topic,
   /** Разговор с одним клиентом: чужие сообщения его не касаются. */
   clientId,
+  /**
+   * О чём этот экран ещё. Карточка заявки с лентой переписки внутри —
+   * и про заявку, и про разговор с её клиентом; второе соединение ради
+   * второй темы стоило бы вкладке второго открытого сокета.
+   */
+  also,
   /** Идёт собственное действие менеджера: обновление поверх него лишнее. */
   busy = false,
   /** Пока в форме на экране набирают, обновление ждёт. */
@@ -34,6 +41,7 @@ export function LiveRefresh({
 }: {
   readonly topic?: LiveTopic | undefined;
   readonly clientId?: string | undefined;
+  readonly also?: readonly LiveScreen[] | undefined;
   readonly busy?: boolean;
   readonly typing?: boolean;
 }) {
@@ -46,6 +54,17 @@ export function LiveRefresh({
    */
   const state = useRef({ busy, typing });
   state.current = { busy, typing };
+
+  /*
+   * Темы экрана — тем же приёмом и по той же причине: список собирается
+   * новым массивом на каждый рендер, и в зависимостях эффекта он
+   * пересоздавал бы соединение по кругу. Подписка читает его в момент
+   * события, а не в момент открытия потока.
+   */
+  const screens = useRef<readonly LiveScreen[]>([]);
+  screens.current = topic
+    ? [{ topic, ...(clientId ? { clientId } : {}) }, ...(also ?? [])]
+    : [];
 
   /**
    * Событие, пришедшее в неподходящий момент, не выбрасывается: экран
@@ -85,7 +104,6 @@ export function LiveRefresh({
      */
     const source = topic ? new EventSource(LIVE_STREAM_PATH) : undefined;
     if (source && topic) {
-      const screen = { topic, ...(clientId ? { clientId } : {}) };
       source.addEventListener('message', (message: MessageEvent<string>) => {
         let event: LiveEvent;
         try {
@@ -93,7 +111,7 @@ export function LiveRefresh({
         } catch {
           return;
         }
-        if (eventConcerns(event, screen)) refresh();
+        if (eventConcernsAny(event, screens.current)) refresh();
       });
     }
 

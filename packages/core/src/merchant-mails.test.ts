@@ -99,12 +99,14 @@ describe('письма о заявке', () => {
     const mail = mailFor({
       ...base,
       status: 'rate_confirmed',
-      finalRate: Money.toAmount('81.5'),
+      finalRate: { rate: Money.toAmount('81.5'), fromCode: 'USDT', toCode: 'RUB' },
       paymentInstructions: 'Карта 4276 1234 5678 9010, Пётр П.',
       payWithinMinutes: 60,
     });
     expect(mail.subject).toBe('Курс подтверждён, заявка ждёт оплаты');
-    expect(mail.text).toContain('81.5');
+    // Курс письмом называется так же, как в чате у клиента и в панели у
+    // менеджера, — крупной стороной пары.
+    expect(mail.text).toContain('81,5 RUB за 1 USDT');
     expect(mail.text).toContain('кабинете');
     expect(mail.text).not.toContain('4276');
     expect(mail.text).toContain('60 мин');
@@ -201,7 +203,7 @@ describe('письма набраны человеком', () => {
       to: MERCHANT,
       requestId: 'r1',
       status: 'rate_confirmed',
-      finalRate: Money.toAmount('81.5'),
+      finalRate: { rate: Money.toAmount('81.5'), fromCode: 'USDT', toCode: 'RUB' },
       payWithinMinutes: 60,
     },
     { kind: 'exchange-request-status', to: MERCHANT, requestId: 'r1', status: 'payment_received' },

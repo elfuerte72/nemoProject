@@ -87,6 +87,15 @@ export interface ManagerExchangeRequestView extends ExchangeRequestView {
   readonly serviceIncome: Amount | null;
   readonly serviceIncomeCode: string | null;
   /**
+   * Сколько сервис удержал по сетке ступеней — в валюте выдачи и на
+   * момент подачи. Подсказка менеджеру при исполнении, а не сам доход:
+   * доход называет человек, и от него идут баллы рефереру.
+   *
+   * Пусто у цены по наценке — там доход считается из неё самой, — у
+   * наличных без сетки и у заявок, поданных до появления колонки.
+   */
+  readonly serviceFeePayout: Amount | null;
+  /**
    * Какой счёт сервиса выдали клиенту (docs/adr/0008). Ссылка, а не
    * копия: погашение счёта прошлых заявок не касается, а сам выданный
    * текст лежит рядом, в `paymentInstructions`.
@@ -168,6 +177,8 @@ export function toManagerView(
     assignedManagerId: row.assignedManagerId,
     serviceIncome: row.serviceIncome === null ? null : Money.toAmount(row.serviceIncome),
     serviceIncomeCode: row.serviceIncomeCode,
+    serviceFeePayout:
+      row.serviceFeePayout === null ? null : Money.toAmount(row.serviceFeePayout),
     serviceAccountId: row.serviceAccountId,
     clientUsername,
     merchantName,
@@ -189,7 +200,18 @@ function notificationFor(
     to,
     requestId: row.id,
     status: row.status,
-    ...(row.finalRate === null ? {} : { finalRate: Money.toAmount(row.finalRate) }),
+    // Курс уходит вместе со своей парой: без кодов валют его не
+    // прочитать — мелкая сторона хранится частным, а у направления со
+    // ступенчатой сеткой курс и вовсе выводится из выдачи делением.
+    ...(row.finalRate === null
+      ? {}
+      : {
+          finalRate: {
+            rate: Money.toAmount(row.finalRate),
+            fromCode: row.fromCode,
+            toCode: row.toCode,
+          },
+        }),
     ...(row.paymentInstructions === null
       ? {}
       : { paymentInstructions: row.paymentInstructions }),

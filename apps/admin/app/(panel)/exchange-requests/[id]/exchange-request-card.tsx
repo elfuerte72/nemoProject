@@ -7,6 +7,7 @@ import type {
   ColleagueView,
   ExchangeRequestEventView,
   ManagerExchangeRequestView,
+  MessageView,
   RevealedRequisites,
   ServiceAccountView,
 } from '@nemo/core';
@@ -20,11 +21,13 @@ import { Moment } from '@nemo/ui';
 import { formatAmount, formatMoney, formatRate } from '@nemo/ui/format';
 import { PROMPTPAY_ID_LABELS } from '@nemo/types';
 import { ClientCard, type ClientCardData } from '@/app/ui/client-card';
+import { ConversationView } from '@/app/ui/conversation-view';
+import { LiveRefresh } from '@/app/ui/live-refresh';
 import { MerchantCard, type MerchantCardData } from '@/app/ui/merchant-card';
 import { HowToRunRequest } from '@/app/ui/how-to';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/exchange-request-labels';
 import { decimalFromInput } from '@/lib/decimal-input';
-import { suggestServiceIncome } from '@/lib/income';
+import { serviceIncomeHint } from '@/lib/income';
 import type { OwnerData } from '@/lib/merchant-card';
 import { describeServiceAccount, pillClass, REQUISITE_KIND_LABELS } from '@/lib/labels';
 
@@ -64,6 +67,7 @@ export function ExchangeRequestCard({
   viewerStaffId,
   viewerRole,
   colleagues,
+  conversation,
 }: {
   request: ExchangeRequestForDisplay;
   events: readonly ExchangeRequestEventView[];
@@ -84,10 +88,24 @@ export function ExchangeRequestCard({
   viewerRole: StaffRole;
   /** Кому можно передать заявку: активные сотрудники. */
   colleagues: readonly ColleagueView[];
+  /**
+   * Хвост переписки с клиентом и кто её ведёт. Пусто у заявки мерчанта:
+   * у бизнеса чата нет вовсе — ему пишут почтой (docs/adr/0017).
+   */
+  conversation: {
+    readonly messages: readonly MessageView[];
+    readonly handedToHuman: boolean;
+  } | null;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /*
+   * В поле ответа клиенту набирают: тихое обновление карточки ждёт.
+   * Отдельным состоянием, потому что поля самой заявки живут здесь же,
+   * а событие про переписку приходит по своей теме.
+   */
+  const [chatTyping, setChatTyping] = useState(false);
 
   const [finalRate, setFinalRate] = useState('');
   /*
@@ -115,27 +133,23 @@ export function ExchangeRequestCard({
   const [qrImage, setQrImage] = useState<string | null>(null);
 
   /*
-   * Подсказка дохода — из того, что уже на экране: сумма сделки в
-   * выбранной валюте и наценка сервиса. Считается для той стороны, в
-   * которой доход называют: доход в рублях — от рублёвой стороны, в
-   * монетах — от монетной.
-   *
-   * Только там, где курс пришёл из котировки по наценке: она сидит в
-   * нём, и оттуда её и вынимают. Курс, названный менеджером, и курс,
-   * посчитанный по сетке ступеней, наценки не содержат — и то же число,
-   * поданное как расчёт, было бы выдумкой. Доход при этом уходит в
-   * реферальные начисления и потом не правится, поэтому подсказка
-   * молчит, а не угадывает.
+   * Подсказка дохода — из того, что уже известно о заявке: у цены по
+   * наценке она вынимается из курса, у цены по сетке ступеней взята из
+   * самой заявки, где записана при подаче. Правило выбора — в
+   * `lib/income.ts` и под тестом: разметке его знать незачем, а
+   * подтверждает число всё равно менеджер.
    */
-  const givenSide = serviceIncomeCode === request.fromCode;
-  const incomeHint =
-    request.requestRate && !pricedBySchedule
-      ? suggestServiceIncome({
-          amount: givenSide ? request.fromAmount : request.toAmount,
-          markupBps,
-          side: givenSide ? 'given' : 'received',
-        })
-      : null;
+  const incomeHint = serviceIncomeHint({
+    incomeCode: serviceIncomeCode,
+    fromCode: request.fromCode,
+    toCode: request.toCode,
+    fromAmount: request.fromAmount,
+    toAmount: request.toAmount,
+    requestRate: request.requestRate,
+    feePayout: request.serviceFeePayout,
+    markupBps,
+    pricedBySchedule,
+  });
 
   /**
    * Что можно сделать с заявкой на обмен прямо сейчас.
@@ -285,6 +299,20 @@ export function ExchangeRequestCard({
           </span>
         </div>
       </header>
+
+      {/*
+        Карточка перечитывает себя сама: переход по заявке делает и
+        коллега, а чек приходит в ленту, которая стоит здесь же. Тем у
+        неё две, а поток один — второй сокет вкладке ни к чему.
+      */}
+      <LiveRefresh
+        topic="exchange"
+        {...(request.owner.kind === 'client' && conversation
+          ? { also: [{ topic: 'conversations' as const, clientId: request.owner.clientId }] }
+          : {})}
+        busy={busy}
+        typing={chatTyping}
+      />
 
       {error ? (
         <p className="error" role="alert">
@@ -760,19 +788,24 @@ export function ExchangeRequestCard({
               {/*
             Подсказка, а не подстановка: наличные и ручной курс расчёт
             не покрывает — там сервис покупает не по котировке, — и
-            последнее слово остаётся за менеджером.
+            последнее слово остаётся за менеджером. Откуда взялось
+            число, сказано прямо: по одной заявке сервис удержал
+            ступенчатую комиссию, по другой — наценку, и менеджер должен
+            видеть, с чем соглашается.
           */}
               {incomeHint ? (
                 <div className="row__actions">
                   <span className="row__meta">
-                    По наценке {(markupBps / 100).toString().replace('.', ',')}% выходит{' '}
-                    {formatMoney(incomeHint, serviceIncomeCode)}
+                    {incomeHint.source === 'schedule'
+                      ? 'По сетке ступеней сервис удержал '
+                      : `По наценке ${(markupBps / 100).toString().replace('.', ',')}% выходит `}
+                    {formatMoney(incomeHint.value, serviceIncomeCode)}
                   </span>
                   <button
                     type="button"
                     className="btn btn--soft"
                     disabled={busy}
-                    onClick={() => setServiceIncome(incomeHint)}
+                    onClick={() => setServiceIncome(incomeHint.value)}
                   >
                     Подставить
                   </button>
@@ -819,6 +852,42 @@ export function ExchangeRequestCard({
                   Отменить заявку
                 </button>
               </div>
+            </section>
+          ) : undefined}
+
+          {/*
+            Переписка — под работой и в той же колонке: клиент присылает
+            чек в чат, а менеджер до 20 сентября 2026 уходил за ним в
+            «Обращения» и возвращался обратно за следующим шагом. Ниже
+            работы, а не выше: сверху то, что делают сейчас.
+
+            Хвост, а не весь разговор: здесь спрашивают «прислал ли он
+            чек», а не «о чём мы говорили в июне» — за этим ведёт ссылка
+            на сам раздел.
+          */}
+          {request.owner.kind === 'client' && conversation ? (
+            <section className="section">
+              <div className="section__head">
+                <h2 className="section__title">Переписка</h2>
+                <span className="section__rule" />
+                <Link
+                  href={`/conversations/${request.owner.clientId}?request=${request.id}`}
+                  className="btn btn--ghost btn--tiny"
+                >
+                  Весь разговор
+                </Link>
+              </div>
+              <ConversationView
+                clientId={request.owner.clientId}
+                messages={conversation.messages}
+                handedToHuman={conversation.handedToHuman}
+                requestId={request.id}
+                inline
+                // Поток событий у карточки свой, и он же слушает эту
+                // тему: вторая подписка стоила бы вкладке второго сокета.
+                listens={false}
+                onTypingChange={setChatTyping}
+              />
             </section>
           ) : undefined}
         </div>
