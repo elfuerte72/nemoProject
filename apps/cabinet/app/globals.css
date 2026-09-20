@@ -725,7 +725,15 @@
   min-height: 0;
 }
 
+/*
+ * Место под подписью занято всегда, даже когда подписи нет: у шага с
+ * длинной подписью показан каждый второй столбик, а схлопнувшаяся
+ * пустая строка опускала соседние столбики ниже остальных — ряд терял
+ * общую базу, и разница в высоте читалась как разница в числах.
+ */
 .bars__label {
+  min-height: 13px;
+  line-height: 13px;
   font-size: 10px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
@@ -1683,11 +1691,17 @@
   color: var(--text-muted);
 }
 
+/*
+ * Имя корзины в одну строку: «III квартал 2026» переносился надвое, и
+ * карточка подрастала под курсором — ровно тот прыжок, ради
+ * отсутствия которого строка и живёт под фигурой, а не пузырём.
+ */
 .bars__readout-day {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11px;
-  letter-spacing: 0.9px;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
+  white-space: nowrap;
   color: var(--text-faint);
 }
 
@@ -1715,4 +1729,97 @@
 
 .bars__key--done {
   background: var(--chart-done);
+}
+
+/* ── Выбор шага ряда ─────────────────────────────────────────────── */
+
+/*
+ * Меню на заголовке карточки, устроенное как меню сотрудника в шапке
+ * (`.menu` в `@nemo/ui`): та же механика `details`, та же всплывающая
+ * плашка. Своё тут — что кнопкой служит сам заголовок: четыре
+ * равноправные кнопки над одним рядом обещали бы четыре показателя, а
+ * заголовок, меняющий имя ряда, называет ровно то, что показано.
+ */
+.steps {
+  position: relative;
+  /* Ширина по заголовку: раскрывать меню нажатием в пустоту незачем. */
+  align-self: flex-start;
+}
+
+.steps__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px -8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  list-style: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.steps__summary::-webkit-details-marker {
+  display: none;
+}
+
+.steps__summary:hover,
+.steps[open] .steps__summary {
+  background: var(--surface-soft);
+}
+
+.steps__summary:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 1px;
+}
+
+.steps__chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+  transition: transform 0.15s var(--ease);
+}
+
+.steps[open] .steps__chevron {
+  transform: rotate(180deg);
+}
+
+.steps__list {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 6;
+  min-width: 180px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  animation: nm-fade-up 0.18s var(--ease) both;
+}
+
+.steps__item {
+  display: block;
+  padding: 9px 10px;
+  border-radius: var(--radius-inner);
+  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.steps__item:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+/* Выбранный назван цветом акцента, а не галочкой: он же стоит в заголовке. */
+.steps__item--on {
+  color: var(--gold-text);
 }

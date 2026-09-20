@@ -99,21 +99,36 @@ export const WEEKDAY_LABELS: readonly string[] = [
   'Вс',
 ];
 
-/** Шаг сетки динамики словами. */
+/** Шаг сетки динамики словами — все, какие знает ядро. */
 export const STEP_LABELS = {
   day: 'По дням',
   week: 'По неделям',
   month: 'По месяцам',
+  quarter: 'По кварталам',
 } as const;
 
 export type StepKey = keyof typeof STEP_LABELS;
 
+/*
+ * Какие шаги предложить, решает экран — как и с периодами.
+ *
+ * В аналитике ряд идёт по выбранному наверху периоду, а он не длиннее
+ * ста восьмидесяти дней: квартальных столбиков там вышло бы два, и
+ * сравнивать в них нечего. На обзоре глубину ряду задаёт сам шаг — два
+ * года по кварталам, — и квартал там осмыслен.
+ */
 export const STEP_KEYS: readonly StepKey[] = ['day', 'week', 'month'];
 
+export const SERIES_STEP_KEYS: readonly StepKey[] = ['day', 'week', 'month', 'quarter'];
+
 /**
- * Шаг из адреса. Незнакомое слово — сутки: параметр приходит из
- * адресной строки, и отказом на опечатку отвечать незачем.
+ * Шаг из адреса — из списка того экрана, который спрашивает.
+ * Незнакомое слово — сутки: параметр приходит из адресной строки, и
+ * отказом на опечатку отвечать незачем.
  */
-export function resolveStep(raw: string | undefined): StepKey {
-  return STEP_KEYS.includes(raw as StepKey) ? (raw as StepKey) : 'day';
+export function resolveStep(
+  raw: string | undefined,
+  allowed: readonly StepKey[] = STEP_KEYS,
+): StepKey {
+  return allowed.includes(raw as StepKey) ? (raw as StepKey) : 'day';
 }

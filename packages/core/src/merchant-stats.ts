@@ -12,16 +12,20 @@ import {
   type AnalyticsPeriod,
   DAY_MS,
   type MoneyByCurrency,
+  SERIES_BUCKETS,
+  type SeriesStep,
   cancelledWithin,
   completedWithin,
   dayKey,
-  localDayOf,
   localMidnight,
+  localStepOf,
   minutesToComplete,
   periodOf,
   previousPeriod,
   requireOffset,
   requirePeriod,
+  requireStep,
+  stepsBack,
   stillOpen,
   submittedWithin,
 } from './analytics.js';
@@ -73,9 +77,14 @@ export interface MerchantPeriodSummary {
   readonly webhookDeliveries: { readonly total: number; readonly failed: number };
 }
 
-export interface MerchantDay {
-  /** День «2026-09-02» по местному времени того, кто смотрит. */
-  readonly day: string;
+export interface MerchantSeriesBar {
+  /**
+   * Начало корзины — днём «2026-09-02» по местному времени того, кто
+   * смотрит. У шага «день» это сам день, у недели — понедельник, у
+   * месяца и квартала — первое число; вид ключа один на все четыре, и
+   * разбирать его на экране не приходится.
+   */
+  readonly at: string;
   readonly submitted: number;
   readonly completed: number;
 }
@@ -87,15 +96,25 @@ export interface MerchantStats {
   readonly previous: MerchantPeriodSummary;
   /** Сегодняшние сутки по часам того, кто смотрит — строкой над плитками. */
   readonly today: { readonly submitted: number; readonly completed: number; readonly cancelled: number };
-  /** Подано и исполнено по дням за две недели до «сейчас», с нулями. */
-  readonly byDay: readonly MerchantDay[];
+  /** Шаг столбиков: по нему же считается, насколько глубок ряд. */
+  readonly step: SeriesStep;
+  /**
+   * Подано и исполнено по шагу — до «сейчас», с нулями в пустых
+   * корзинах. Период наверху ряду не указ: он отвечает на «как шли
+   * дела», а не «сколько за выбранные семь дней», и глубину ему задаёт
+   * шаг — две недели по дням, двенадцать недель, год по месяцам, два
+   * года по кварталам.
+   */
+  readonly series: readonly MerchantSeriesBar[];
 }
 
 export interface MerchantStatsOptions {
   /** Смещение часового пояса того, кто смотрит, минуты к востоку от UTC. */
   readonly offsetMinutes?: number | undefined;
-  /** «Сейчас»: от него считаются «сегодня» и две недели столбиков. Не задано — часы сервера. */
+  /** «Сейчас»: от него считаются «сегодня» и столбики ряда. Не задано — часы сервера. */
   readonly now?: Date | undefined;
+  /** Шаг столбиков. Не задан — сутки. */
+  readonly step?: SeriesStep | undefined;
 }
 
 /** Исполнено с даты и оборот по валютам — строка списка мерчантов. */
@@ -103,9 +122,6 @@ export interface MerchantActivity {
   readonly completed: number;
   readonly turnover: readonly MoneyByCurrency[];
 }
-
-/** Сколько дней в столбиках обзора: две недели читаются одним взглядом. */
-const BY_DAY_DAYS = 14;
 
 /**
  * Кому можно читать сводку: мерчанту — свою, сотруднику — любую.
@@ -184,13 +200,29 @@ export async function summarizeMerchant(
   const todayStart = localMidnight(now, offset);
   const tomorrow = new Date(todayStart.getTime() + DAY_MS);
   const today = { from: todayStart, to: tomorrow };
-  const window = { from: new Date(tomorrow.getTime() - BY_DAY_DAYS * DAY_MS), to: tomorrow };
+  const step = requireStep(options.step);
+  /*
+   * Окно ряда считается корзинами, а не сутками: у месяца их то
+   * тридцать, то двадцать восемь, и «год назад» через умножение на
+   * DAY_MS попадал бы в середину месяца, оставляя первую корзину
+   * надкушенной. Начало — местная полночь первой корзины.
+   */
+  const todayKey = dayKey(now, offset);
+  const buckets = SERIES_BUCKETS[step];
+  const first = stepsBack(todayKey, step, buckets - 1);
+  const window = {
+    from: new Date(Date.parse(`${first}T00:00:00Z`) - offset * 60_000),
+    to: tomorrow,
+  };
 
   const mine = eq(exchangeRequests.merchantId, merchantId);
-  const submittedDay = localDayOf(exchangeRequests.createdAt, offset);
-  const completedDay = localDayOf(exchangeRequests.completedAt, offset);
+  // Группирует база, а не память: корзин у квартального ряда восемь, а
+  // дней за два года — семьсот с лишним, и возить их в приложение ради
+  // сложения нечего.
+  const submittedStep = localStepOf(exchangeRequests.createdAt, offset, step);
+  const completedStep = localStepOf(exchangeRequests.completedAt, offset, step);
 
-  const [counts, turnover, calls, deliveries, submittedByDay, completedByDay] = await Promise.all([
+  const [counts, turnover, calls, deliveries, submittedByStep, completedByStep] = await Promise.all([
     ctx.db
       .select({
         current: sql<Counted>`json_build_object('submitted', ${countColumns(current).submitted}, 'converted', ${countColumns(current).converted}, 'open', ${countColumns(current).open}, 'completed', ${countColumns(current).completed}, 'cancelled', ${countColumns(current).cancelled}, 'minutes', ${countColumns(current).minutes})`,
@@ -235,15 +267,15 @@ export async function summarizeMerchant(
       .innerJoin(webhookEndpoints, eq(webhookDeliveries.endpointId, webhookEndpoints.id))
       .where(eq(webhookEndpoints.merchantId, merchantId)),
     ctx.db
-      .select({ day: submittedDay, n: count() })
+      .select({ at: submittedStep, n: count() })
       .from(exchangeRequests)
       .where(and(mine, submittedWithin(window)))
-      .groupBy(submittedDay),
+      .groupBy(submittedStep),
     ctx.db
-      .select({ day: completedDay, n: count() })
+      .select({ at: completedStep, n: count() })
       .from(exchangeRequests)
       .where(and(mine, completedWithin(window)))
-      .groupBy(completedDay),
+      .groupBy(completedStep),
   ]);
 
   const counted = counts[0];
@@ -270,15 +302,19 @@ export async function summarizeMerchant(
 
   const call = calls[0];
   const hook = deliveries[0];
-  const submittedBy = new Map(submittedByDay.map((row) => [row.day, row.n]));
-  const completedBy = new Map(completedByDay.map((row) => [row.day, row.n]));
-  // Дни окна по местному времени — все, включая пустые: столбики, в
-  // которых пропали дни, читаются как столбики без провалов.
-  const byDay: MerchantDay[] = [];
-  for (let at = window.from.getTime(); at < window.to.getTime(); at += DAY_MS) {
-    const day = dayKey(new Date(at), offset);
-    byDay.push({ day, submitted: submittedBy.get(day) ?? 0, completed: completedBy.get(day) ?? 0 });
-  }
+  const submittedBy = new Map(submittedByStep.map((row) => [row.at, row.n]));
+  const completedBy = new Map(completedByStep.map((row) => [row.at, row.n]));
+  /*
+   * Корзины окна — все, включая пустые: ряд, из которого выпали тихие
+   * дни, читается как ряд без провалов. Перебираются они сдвигом назад
+   * от сегодняшней, а не шагом вперёд от первой: правило о границе
+   * корзины тогда одно и то же, и последняя корзина гарантированно
+   * приходится на сегодня.
+   */
+  const series: MerchantSeriesBar[] = Array.from({ length: buckets }, (_, index) => {
+    const at = stepsBack(todayKey, step, buckets - 1 - index);
+    return { at, submitted: submittedBy.get(at) ?? 0, completed: completedBy.get(at) ?? 0 };
+  });
 
   return {
     period: current,
@@ -299,7 +335,8 @@ export async function summarizeMerchant(
       completed: counted?.today.completed ?? 0,
       cancelled: counted?.today.cancelled ?? 0,
     },
-    byDay,
+    step,
+    series,
   };
 }
 

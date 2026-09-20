@@ -60,10 +60,15 @@ export const requestCounts = cache(
  * и датами в объекте он бы не сошёлся.
  */
 export const merchantStats = cache(
-  async (from: number, to: number, offsetMinutes: number): Promise<MerchantStats> => {
+  async (
+    from: number,
+    to: number,
+    offsetMinutes: number,
+    step: SeriesStep = 'day',
+  ): Promise<MerchantStats> => {
     const { actor } = await viewer();
     const period: AnalyticsPeriod = { from: new Date(from), to: new Date(to) };
-    return getCore().summarizeMerchant(actor, actor.merchantId, period, { offsetMinutes });
+    return getCore().summarizeMerchant(actor, actor.merchantId, period, { offsetMinutes, step });
   },
 );
 

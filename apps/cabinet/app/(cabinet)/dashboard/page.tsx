@@ -21,10 +21,12 @@ import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@n
 import { merchantRoleCan, WEBHOOK_ENDPOINT_STATE_LABELS } from '@nemo/types';
 import { attentionOf } from '@/lib/attention';
 import { getCore } from '@/lib/core';
+import { SERIES_STEP_KEYS, resolveStep } from '@/lib/analytics-texts';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
+import { SERIES_SPAN } from '@/lib/series-labels';
 import { merchantStats, openCount, requestCounts, viewer } from '@/lib/reads';
 import { AttentionLine } from '@/app/ui/attention-line';
-import { DailyBars } from '@/app/ui/daily-bars';
+import { SeriesBars } from '@/app/ui/series-bars';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 
 export const dynamic = 'force-dynamic';
@@ -74,8 +76,13 @@ export default async function OverviewPage({
    * то место, где человек узнаёт об этом пятисотым ответом.
    */
   const ownsIntegration = merchantRoleCan(session.role, 'integration');
+  /*
+   * Шаг ряда — свой параметр адреса, рядом с периодом: он спрашивает
+   * не «за сколько», а «как крупно», и глубину ряду задаёт сам.
+   */
+  const step = resolveStep(firstParam(params.step), SERIES_STEP_KEYS);
   const [stats, recent, counts, keys, hooks] = await Promise.all([
-    merchantStats(period.from.getTime(), period.to.getTime(), offset),
+    merchantStats(period.from.getTime(), period.to.getTime(), offset, step),
     core.listExchangeRequests(actor, { limit: 5 }),
     requestCounts(),
     ownsIntegration ? core.listApiKeys(actor) : Promise.resolve([]),
@@ -89,6 +96,18 @@ export default async function OverviewPage({
     from: dayOf(period.from, offset),
     to: dayOf(lastDay, offset),
   }).toString();
+  /*
+   * Адреса шагов собираются здесь: период живёт в адресе, и ссылка,
+   * потерявшая его, увела бы мерчанта с выбранных им дат.
+   */
+  const stepQuery = new URLSearchParams(csvQuery);
+  const stepHrefs = Object.fromEntries(
+    SERIES_STEP_KEYS.map((key) => {
+      const query = new URLSearchParams(stepQuery);
+      query.set('step', key);
+      return [key, `/dashboard?${query.toString()}`];
+    }),
+  ) as Record<(typeof SERIES_STEP_KEYS)[number], string>;
   const liveKeys = keys.filter((one) => one.revokedAt === null).length;
   const failingHooks = hooks.filter((one) => one.state === 'failing');
   const clock = offset === 0 ? 'по UTC' : 'по вашим часам';
@@ -206,14 +225,18 @@ export default async function OverviewPage({
           </section>
 
           <section className="card">
-            <h2 className="card__title">По дням</h2>
-            <p className="card__note">Подано и исполнено за две недели, {clock}</p>
             {/*
-              Столбики, а не таблица: две недели по два числа читаются
-              одним взглядом, а таблица на четырнадцать строк — нет.
-              Наведение, подсветка дня и ключи — в самой фигуре.
+              Столбики, а не таблица: ряд по два числа читается одним
+              взглядом, а таблица на четырнадцать строк — нет. Заголовок
+              карточки здесь же и переключает шаг; наведение, подсветка
+              и ключи — в самой фигуре.
             */}
-            <DailyBars days={stats.byDay} />
+            <SeriesBars
+              bars={stats.series}
+              step={step}
+              hrefs={stepHrefs}
+              note={`Подано и исполнено ${SERIES_SPAN[step]}, ${clock}`}
+            />
           </section>
         </div>
       </section>

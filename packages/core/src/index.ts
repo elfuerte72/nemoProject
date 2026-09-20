@@ -852,7 +852,7 @@ export type { InquiryTopic, SubmitInquiryInput } from './inquiries.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
 export type {
   MerchantActivity,
-  MerchantDay,
+  MerchantSeriesBar,
   MerchantPeriodSummary,
   MerchantStats,
 } from './merchant-stats.js';
