@@ -1,50 +1,59 @@
-import { arrangeRateBoard, currencyName, currencyPlace, payoutPerUnit, type Amount } from '@nemo/types';
-import { HowTo, QuietRefresh, Stat, Stats } from '@nemo/ui';
-import { formatAmount, formatMoney, formatRate, formatRateValue } from '@nemo/ui/format';
+import { exchangeKindSchema } from '@nemo/types';
+import { firstParam, HowTo, Stat, Stats } from '@nemo/ui';
+import { formatMoney } from '@nemo/ui/format';
 import { getCore } from '@/lib/core';
 import { listDirectionRates } from '@/lib/direction-rates';
 import { RATES_HOW_TO } from '@/lib/exchange-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { RatesBoard } from './board';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Раздел «Курсы»: весь справочник безналичных направлений живым курсом
- * — то же, что бот показывает клиенту по кнопке «Курс», и той же
- * раскладкой (`arrangeRateBoard` из `@nemo/types`): рубль двумя
- * строками, потому что котировок у него две; валюты выдачи столбцом с
- * одной стороной на все строки — перевёрнутый курс отвечал бы на
- * обратный вопрос, а заметить это среди одинаковых строк невозможно;
- * прочие направления — своими строками. Курс — для наименьшей суммы
- * направления; точную цену на свою сумму даёт форма новой заявки.
+ * Раздел «Курсы»: весь справочник направлений живым курсом — тем же,
+ * что бот показывает клиенту по кнопке «Курс».
  *
- * Отметки времени над курсом нет: биржевая котировка живёт минуту,
- * опорный курс банка сутками, и одна отметка врала бы про половину
- * строк. Экран перечитывает себя по таймеру, как остальные.
+ * Табло, а не три карточки подряд: мерчант приходит сюда с одним
+ * вопросом — «какой у вас курс», — и ответ стоит одним плотным списком.
+ * Рублёвая пара при этом остаётся отдельным блоком: сервис стоит по обе
+ * её стороны, и котировок у неё две.
+ *
+ * Курс приходит в открытую страницу сам, потоком событий
+ * (`app/api/rates/stream`), поэтому числа живут в клиентской части, а
+ * сервер отдаёт лишь первый снимок. Отметка времени у каждой строки
+ * своя: биржевая котировка живёт минуту, опорный курс банка — сутки, и
+ * одна отметка на всё табло соврала бы про половину строк.
  */
+export default async function RatesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const asked = exchangeKindSchema.safeParse(firstParam(params.kind));
+  const kind = asked.success ? asked.data : 'electronic';
 
-/** Число в столбце валют выдачи — одним правилом с сообщением бота; здесь только разряды. */
-function payoutValue(rate: Amount): string {
-  return formatAmount(payoutPerUnit(rate));
-}
-
-export default async function RatesPage() {
   const { session } = await viewer();
-  const { directions, terms } = await listDirectionRates(getCore());
-
-  const { sell, buy, payout, rest } = arrangeRateBoard(directions);
+  const core = getCore();
+  const [shown, terms] = await Promise.all([
+    listDirectionRates(core, kind),
+    // Есть ли наличные направления вовсе: таба, за которым пусто, быть
+    // не должно — он обещает раздел, которого нет.
+    core.getExchangeTerms(),
+  ]);
+  const hasCash = terms.pairs.some((pair) => pair.kind === 'cash');
 
   return (
     <main className="page">
-      <QuietRefresh />
       <DisabledBanner status={session.status} />
 
       <header className="page__head">
         <div>
           <h1 className="page__title">Курсы</h1>
           <p className="page__sub">
-            Курс с учётом наценки: по нему и обменяем. Обновляется раз в минуту.
+            Курс с учётом наценки: по нему и обменяем. Обновляется раз в минуту — прямо на
+            странице.
           </p>
         </div>
       </header>
@@ -54,132 +63,27 @@ export default async function RatesPage() {
       <Stats>
         <Stat
           label="Минимальная сумма"
-          value={formatMoney(terms.minAmount, terms.minAmountCode)}
+          value={formatMoney(shown.terms.minAmount, shown.terms.minAmountCode)}
           note="считается по стороне заявки в USDT"
         />
         <Stat
           label="Срок оплаты"
-          value={`${terms.unpaidTtlMinutes} мин`}
+          value={`${shown.terms.unpaidTtlMinutes} мин`}
           note="с выдачи реквизитов; столько держится курс"
         />
-        <Stat label="Направлений" value={directions.length} note="безналичных, из кабинета и по API" />
+        <Stat
+          label="Направлений"
+          value={shown.directions.length}
+          note={kind === 'cash' ? 'наличных' : 'безналичных, из кабинета и по API'}
+        />
       </Stats>
 
-      {directions.length === 0 ? (
-        <section className="card">
-          <p className="muted">Направления обмена ещё не заведены. Загляните позже.</p>
-        </section>
-      ) : undefined}
-
-      {sell || buy ? (
-        <section className="card">
-          <h2 className="card__title">USDT и рубль</h2>
-          <dl className="summary">
-            {sell ? (
-              <div className="summary__row">
-                <dt>Продаёте USDT</dt>
-                <dd className="summary__strong">
-                  {sell.rate ? `по ${formatRateValue(sell.rate)} ₽` : 'курс назовёт менеджер'}
-                </dd>
-              </div>
-            ) : undefined}
-            {buy ? (
-              <div className="summary__row">
-                <dt>Покупаете USDT</dt>
-                <dd className="summary__strong">
-                  {buy.rate ? `по ${formatRateValue(buy.rate)} ₽` : 'курс назовёт менеджер'}
-                </dd>
-              </div>
-            ) : undefined}
-          </dl>
-        </section>
-      ) : undefined}
-
-      {payout.length > 0 ? (
-        <section className="card">
-          <h2 className="card__title">Выдаём за 1 USDT</h2>
-          <ul className="table table--rates">
-            <li className="table__head" aria-hidden>
-              <span>Валюта</span>
-              <span>Где ходит</span>
-              <span>За 1 USDT</span>
-              <span>Минимум направления</span>
-            </li>
-            {payout.map((one) => (
-              <li key={`${one.fromCode}-${one.toCode}`} className="table__item">
-                <span className="table__row">
-                  <span className="cell">
-                    <span className="cell__label">Валюта</span>
-                    <span className="cell__value">
-                      {one.toCode}
-                      <span className="muted"> · {currencyName(one.toCode)}</span>
-                    </span>
-                  </span>
-                  <span className="cell">
-                    <span className="cell__label">Где ходит</span>
-                    <span className="cell__value">{currencyPlace(one.toCode) || '—'}</span>
-                  </span>
-                  <span className="cell cell--num">
-                    <span className="cell__label">За 1 USDT</span>
-                    <span className="cell__value">
-                      {one.rate ? `${payoutValue(one.rate)} ${one.toCode}` : 'назовёт менеджер'}
-                    </span>
-                  </span>
-                  <span className="cell">
-                    <span className="cell__label">Минимум направления</span>
-                    <span className="cell__value">
-                      {one.minAmountUsd ? formatMoney(one.minAmountUsd, '$') : '—'}
-                    </span>
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : undefined}
-
-      {rest.length > 0 ? (
-        <section className="card">
-          <h2 className="card__title">Другие направления</h2>
-          <ul className="table table--rates">
-            <li className="table__head" aria-hidden>
-              <span>Отдаёте</span>
-              <span>Получаете</span>
-              <span>Курс</span>
-              <span>Минимум направления</span>
-            </li>
-            {rest.map((one) => (
-              <li key={`${one.fromCode}-${one.toCode}`} className="table__item">
-                <span className="table__row">
-                  <span className="cell">
-                    <span className="cell__label">Отдаёте</span>
-                    <span className="cell__value">{one.fromCode}</span>
-                  </span>
-                  <span className="cell">
-                    <span className="cell__label">Получаете</span>
-                    <span className="cell__value">
-                      {one.toCode}
-                      <span className="muted"> · {currencyName(one.toCode)}</span>
-                    </span>
-                  </span>
-                  <span className="cell cell--num">
-                    <span className="cell__label">Курс</span>
-                    <span className="cell__value">
-                      {one.rate ? formatRate(one.rate, one.fromCode, one.toCode) : 'назовёт менеджер'}
-                    </span>
-                  </span>
-                  <span className="cell">
-                    <span className="cell__label">Минимум направления</span>
-                    <span className="cell__value">
-                      {one.minAmountUsd ? formatMoney(one.minAmountUsd, '$') : '—'}
-                    </span>
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : undefined}
+      <RatesBoard
+        directions={shown.directions}
+        minAmount={shown.terms.minAmount}
+        kind={kind}
+        hasCash={hasCash}
+      />
     </main>
   );
 }

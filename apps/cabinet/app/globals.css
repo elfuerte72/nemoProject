@@ -621,10 +621,170 @@
   font-weight: 700;
 }
 
-/* ── Курсы ───────────────────────────────────────────────────────── */
+/* ── Курсы: табло ────────────────────────────────────────────────── */
 
-.table--rates {
-  --cols: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+/*
+ * Пара, курс, минимум направления, свежесть котировки и путь в заявку.
+ * Пара шире прочего: в ней два значка, два кода и название валюты — по
+ * ней строку и находят глазами.
+ */
+.table--board {
+  --cols: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 0.8fr);
+}
+
+/*
+ * С набранной суммой колонок столько же: место минимума занимает то,
+ * что получат. Набор колонок задаётся здесь, в одном месте, — шапка и
+ * строки берут его отсюда, иначе подпись разъезжается со своим
+ * столбцом.
+ */
+.table--board-sum {
+  --cols: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 0.7fr);
+}
+
+/* Два значка валют внахлёст — пара читается как пара, а не как две
+   валюты рядом. */
+.pair {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pair__marks {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.pair__marks > :last-child {
+  margin-left: -8px;
+  /* Кант вокруг верхнего значка: без него два флага сливаются в пятно. */
+  box-shadow: 0 0 0 2px var(--surface-soft-strong);
+  border-radius: 999px;
+}
+
+.pair__names {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* Свежесть котировки и «назовёт менеджер»: сказано, но не кричит. */
+.cell__value--quiet {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/*
+ * Строка, в которой курс только что сменился.
+ *
+ * Гаснет сама за полторы секунды: подсветка говорит «вот это изменилось
+ * с того, что вы видели», а не «эта строка особенная». Цвета — те же,
+ * которыми в панели красят рост и падение показателя.
+ */
+@keyframes nm-rate-up {
+  from {
+    background: rgba(79, 192, 138, 0.16);
+  }
+  to {
+    background: var(--surface-soft);
+  }
+}
+
+@keyframes nm-rate-down {
+  from {
+    background: rgba(242, 104, 95, 0.16);
+  }
+  to {
+    background: var(--surface-soft);
+  }
+}
+
+.table__item--up {
+  animation: nm-rate-up 1.4s ease-out;
+}
+
+.table__item--down {
+  animation: nm-rate-down 1.4s ease-out;
+}
+
+.table__item--up .cell--num .cell__value {
+  color: var(--up);
+}
+
+.table__item--down .cell--num .cell__value {
+  color: var(--down);
+}
+
+/* ── Курсы: рублёвая пара ────────────────────────────────────────── */
+
+/*
+ * Единственное направление, где сервис стоит по обе стороны: его и
+ * показывают покупкой, продажей и разницей между ними. У остальных
+ * второй стороны не существует, и «спред» у них был бы выдуманным
+ * числом.
+ */
+.pairbox__sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.pairbox__side {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  transition: background 0.3s ease;
+}
+
+.pairbox__value {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pairbox__side--up .pairbox__value {
+  color: var(--up);
+}
+
+.pairbox__side--down .pairbox__value {
+  color: var(--down);
+}
+
+/* ── Курсы: что спрашивают у табло ───────────────────────────────── */
+
+/*
+ * Валюта отдачи, сумма и поиск — одной строкой над таблицей. Сумма
+ * необязательна: без неё табло называет курс для наименьшей суммы
+ * направления, с ней — цену на свою, посчитанную тем же правилом, что
+ * и в заявке.
+ */
+.board__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.board__controls .field--narrow {
+  flex: 0 0 170px;
+}
+
+.board__controls .chip {
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .board__controls .field--narrow {
+    flex: 1 1 140px;
+  }
 }
 
 /* ── Обзор: столбики по дням ─────────────────────────────────────── */

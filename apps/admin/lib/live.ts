@@ -1,12 +1,26 @@
 import type { LiveEvent, LiveTopic } from '@nemo/core';
-import { hasUnsentText, LIVE_REFRESH_MS, shouldRefresh, type LiveState } from '@nemo/ui/live';
+import {
+  hasUnsentText,
+  LIVE_HEARTBEAT_MS,
+  LIVE_REFRESH_MS,
+  LIVE_STREAM_MAX_MS,
+  shouldRefresh,
+  type LiveState,
+} from '@nemo/ui/live';
 
 /*
  * Общее с кабинетом мерчанта — как часто обновляться, когда можно и
  * набрано ли в поле — живёт в `@nemo/ui/live`. Здесь оно реэкспортом,
  * чтобы экраны панели брали всё об обновлении из одного места.
  */
-export { hasUnsentText, LIVE_REFRESH_MS, shouldRefresh, type LiveState };
+export {
+  hasUnsentText,
+  LIVE_HEARTBEAT_MS,
+  LIVE_REFRESH_MS,
+  LIVE_STREAM_MAX_MS,
+  shouldRefresh,
+  type LiveState,
+};
 
 /**
  * Тихое обновление экрана: толчком от сервера, а таймером — вслед.
@@ -33,20 +47,6 @@ export { hasUnsentText, LIVE_REFRESH_MS, shouldRefresh, type LiveState };
  * второго открытого сокета.
  */
 export const LIVE_STREAM_PATH = '/api/live';
-
-/**
- * Как часто сервер напоминает о себе в молчащий поток. Молчащее
- * соединение закрывают промежуточные узлы, и делают это не сообщая
- * никому: страница осталась бы открытой, а событий в ней больше не
- * появилось бы.
- */
-export const LIVE_HEARTBEAT_MS = 30_000;
-
-/**
- * Сколько живёт одно соединение. Браузер откроет его заново сам, а
- * процесс не копит потоки забытых с вечера вкладок.
- */
-export const LIVE_STREAM_MAX_MS = 30 * 60_000;
 
 /** Экран, который слушает события: своя тема и, у разговора, свой клиент. */
 export interface LiveScreen {

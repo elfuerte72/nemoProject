@@ -53,7 +53,9 @@ export { Tabs, type TabItem } from './tabs.js';
 export { Topbar } from './topbar.js';
 export {
   hasUnsentText,
+  LIVE_HEARTBEAT_MS,
   LIVE_REFRESH_MS,
+  LIVE_STREAM_MAX_MS,
   shouldRefresh,
   type LiveState,
 } from './live.js';

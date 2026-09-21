@@ -23,7 +23,7 @@ export const GET = v1(async () => {
       from: one.fromCode,
       to: one.toCode,
       rate: one.rate,
-      quotedAt: one.quotedAt?.toISOString() ?? null,
+      quotedAt: one.quotedAt,
       minAmountUsd: one.minAmountUsd,
     })),
     minAmount: terms.minAmount,
