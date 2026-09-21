@@ -11,11 +11,13 @@ import {
   type RateSource,
 } from './index.js';
 import {
+  asClient,
   givenCurrency,
   givenCurrencyPair,
   givenFeeSchedule,
   givenServiceSettings,
   givenStaff,
+  testRequisiteKeys,
 } from './test-support.js';
 
 /**
@@ -79,7 +81,17 @@ const BANK_TIERS_AS_SENT = [
 ];
 
 const db = testDatabase();
-const core = createCore({ db, rateSource: givenRates(RATES) });
+// Ключи шифрования — ради одной заявки с реквизитом получателя: подача
+// без них отвергается, а проверяется здесь как раз то, что уходит в
+// заявку вместе с ценой.
+const core = createCore({
+  db,
+  rateSource: givenRates(RATES),
+  requisites: {
+    publicKey: testRequisiteKeys.publicKey,
+    privateKey: testRequisiteKeys.privateKey,
+  },
+});
 
 let admin: Actor & { type: 'staff' };
 let manager: Actor & { type: 'staff' };
@@ -143,6 +155,82 @@ describe('сетки комиссии в панели', () => {
     // 100 000 ₽ — это 1 000 $. Ступень до двух тысяч: 4,5% — 45 $.
     // Остаётся 955 $, по тридцать бат за доллар — 28 650 ฿.
     expect(quote?.toAmount).toBe('28650');
+  });
+
+  /*
+   * Сколько из сделки осталось сервису — в валюте выдачи и на момент
+   * подачи. Число это менеджер вписывает доходом при исполнении, а
+   * восстановить его через день нечем: ставка взята от долларового
+   * эквивалента, а курс доллара к бату живёт минуту. Поэтому оно
+   * считается вместе с ценой и записывается вместе с курсом.
+   */
+  it('называет удержанное сервисом в валюте выдачи', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
+    const saved = await core.saveFeeSchedule(admin, {
+      toCode: 'THB',
+      payoutMethod: 'bank',
+      tiers: BANK_TIERS,
+    });
+    await core.setFeeScheduleActive(admin, saved.id, true);
+
+    const quote = await core.getQuote({
+      fromCode: 'RUB',
+      toCode: 'THB',
+      fromAmount: '100000',
+      payoutMethod: 'bank',
+    });
+
+    // Без комиссии тысяча долларов дала бы 30 000 ฿, клиент получает
+    // 28 650 ฿ — разница и есть то, что осталось сервису.
+    expect(quote?.toAmount).toBe('28650');
+    expect(quote?.feePayout).toBe('1350');
+  });
+
+  /*
+   * И оно же ложится в заявку. Менеджер закрывает её через день, курс
+   * доллара к бату к тому времени другой, а доход, который он впишет,
+   * уходит в начисления рефереру и потом не правится.
+   */
+  it('удержанное по сетке ложится в заявку, а у цены по наценке его нет', async () => {
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB' });
+    await givenCurrencyPair({ fromCode: 'RUB', toCode: 'THB', kind: 'cash' });
+    const saved = await core.saveFeeSchedule(admin, {
+      toCode: 'THB',
+      payoutMethod: 'bank',
+      tiers: BANK_TIERS,
+    });
+    await core.setFeeScheduleActive(admin, saved.id, true);
+    await core.registerClient({ telegramUserId: 100n });
+    const requisites = await core.saveRequisites(asClient(100n), {
+      kind: 'account',
+      bankName: 'Kasikorn',
+      accountNumber: '1234567890',
+      holderName: 'SOMCHAI J.',
+    });
+
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'electronic',
+      fromCode: 'RUB',
+      toCode: 'THB',
+      fromAmount: '100000',
+      requisitesId: requisites.id,
+    });
+    const seen = await core.getExchangeRequestForStaff(manager, request.id);
+    expect(seen.serviceFeePayout).toBe('1350');
+
+    /*
+     * Наличная выдача бата своей сетки здесь не имеет, и цена ей
+     * считается по наценке: доход из неё вынимается обратно, а
+     * записанного удержания у заявки нет вовсе.
+     */
+    const byMarkup = await core.submitExchangeRequest(asClient(100n), {
+      kind: 'cash',
+      fromCode: 'RUB',
+      toCode: 'THB',
+      fromAmount: '100000',
+    });
+    const seenByMarkup = await core.getExchangeRequestForStaff(manager, byMarkup.request.id);
+    expect(seenByMarkup.serviceFeePayout).toBeNull();
   });
 
   it('переписывает ступени целиком, а не дописывает к прежним', async () => {

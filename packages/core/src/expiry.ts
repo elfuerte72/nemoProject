@@ -26,8 +26,15 @@ import { readServiceSettings } from './settings.js';
  * прислать клиенту два одинаковых предупреждения.
  */
 
-/** За сколько до истечения бот предупреждает клиента. */
-const WARNING_MINUTES = 30;
+/**
+ * За сколько до истечения бот предупреждает клиента.
+ *
+ * Наружу — чтобы форма настроек сказала администратору, что при сроке
+ * оплаты короче этого предупреждения не будет вовсе: клиент получит
+ * реквизиты, а следующим сообщением отмену. Своей копией числа в панели
+ * это разошлось бы молча.
+ */
+export const EXPIRY_WARNING_MINUTES = 30;
 
 /*
  * Срок применяется ко всем заявкам, а не только к безналичным. Курс
@@ -148,7 +155,7 @@ export async function warnAboutExpiringExchangeRequests(
 ): Promise<readonly Notification[]> {
   return ctx.db.transaction(async (tx) => {
     const { unpaidExchangeRequestTtlMinutes: ttl } = await readServiceSettings(tx);
-    if (ttl <= WARNING_MINUTES) return [];
+    if (ttl <= EXPIRY_WARNING_MINUTES) return [];
 
     const warned = await tx
       .update(exchangeRequests)
@@ -161,7 +168,7 @@ export async function warnAboutExpiringExchangeRequests(
           // Уже пора предупреждать, но ещё не пора отменять: заявке,
           // чей срок истёк, предупреждение бессмысленно — её закроет
           // тот же прогон.
-          sql`${dueBy(ttl - WARNING_MINUTES)} <= ${moment(at)}`,
+          sql`${dueBy(ttl - EXPIRY_WARNING_MINUTES)} <= ${moment(at)}`,
           sql`${dueBy(ttl)} > ${moment(at)}`,
         ),
       )

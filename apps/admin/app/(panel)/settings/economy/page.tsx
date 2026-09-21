@@ -1,3 +1,4 @@
+import { EXPIRY_WARNING_MINUTES } from '@nemo/core';
 import { getCore } from '@/lib/core';
 import { EconomyForms } from '../economy-forms';
 import { SectionLead, SettingsSection, settingsActor } from '../section';
@@ -13,7 +14,7 @@ export default async function EconomyPage() {
         return (
           <>
             <SectionLead href="/settings/economy" />
-            <EconomyForms settings={settings} />
+            <EconomyForms settings={settings} warningMinutes={EXPIRY_WARNING_MINUTES} />
           </>
         );
       }}

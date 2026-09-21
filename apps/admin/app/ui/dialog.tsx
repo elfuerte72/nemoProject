@@ -37,6 +37,7 @@ export function Dialog({
   onSendFile,
   onTyping,
   head,
+  inline = false,
 }: {
   readonly messages: readonly MessageView[];
   /** Что уже стоит в поле ответа: номер заявки, если писать из карточки. */
@@ -60,6 +61,12 @@ export function Dialog({
   readonly onTyping?: ((typing: boolean) => void) | undefined;
   /** Строка над лентой: кто ведёт разговор. */
   readonly head?: ReactNode;
+  /**
+   * Лента внутри чужого экрана — в карточке заявки. Там она один из
+   * блоков работы, а не сам экран, и в полный рост отодвигала бы
+   * историю заявки на вторую прокрутку.
+   */
+  readonly inline?: boolean;
 }) {
   const [body, setBody] = useState(draft ?? '');
   const [busy, setBusy] = useState(false);
@@ -163,7 +170,7 @@ export function Dialog({
 
   return (
     <div
-      className="chat"
+      className={inline ? 'chat chat--inline' : 'chat'}
       /*
         Файл берётся и перетаскиванием, и целится он в окно переписки
         целиком, а не в поле ответа: чек приходит менеджеру в соседнем

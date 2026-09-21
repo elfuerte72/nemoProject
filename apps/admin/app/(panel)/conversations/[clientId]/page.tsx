@@ -6,7 +6,7 @@ import { requireStaffPage } from '@/lib/auth/require-session';
 import { toClientCardData } from '@/lib/client-card';
 import { getCore } from '@/lib/core';
 import { ClientCard } from '@/app/ui/client-card';
-import { ConversationView } from './conversation-view';
+import { ConversationView } from '@/app/ui/conversation-view';
 
 export const dynamic = 'force-dynamic';
 

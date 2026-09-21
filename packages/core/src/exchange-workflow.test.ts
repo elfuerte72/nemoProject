@@ -160,7 +160,9 @@ describe('финальный курс', () => {
     expect(notifications).toEqual([
       expect.objectContaining({
         status: 'rate_confirmed',
-        finalRate: '95.5',
+        // Курс уходит вместе со своей парой: без кодов валют его не
+        // прочитать — мелкая сторона хранится частным.
+        finalRate: { rate: '95.5', fromCode: 'USDT', toCode: 'RUB' },
         paymentInstructions: expect.stringContaining('TRC20') as unknown as string,
       }),
     ]);

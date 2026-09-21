@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Money } from '@nemo/types';
-import { humanAmount, renderNotification, type Notification } from './notifications';
+import { humanAmount, renderNotification, toClient, type Notification } from './notifications';
 
 /*
  * Уведомление сотруднику читается с телефона между двумя делами, и
@@ -399,5 +399,49 @@ describe('renderNotification: вложение', () => {
     expect(parseMode).toBeUndefined();
     expect(text).toContain('20 МБ');
     expect(text).toMatch(/снимк|скриншот/i);
+  });
+});
+
+/*
+ * Курс клиенту называется тем же правилом, что менеджеру в панели и
+ * клиенту на экране обмена, — крупной стороной пары (`sayRate`).
+ *
+ * До 20 сентября 2026 в сообщении о выданных реквизитах стояло само
+ * хранимое число, а курс мелкой стороны хранится частным: клиент,
+ * менявший рубли на монету, читал «0.011934598400763814» там, где
+ * менеджер видел «83,79 RUB за 1 USDT». При тестировании панели это
+ * описано как «непонятная сумма, будто курс битка».
+ */
+describe('renderNotification: курс клиенту', () => {
+  const confirmed = (rate: string, fromCode: string, toCode: string): string =>
+    renderNotification({
+      kind: 'exchange-request-status',
+      to: toClient(1n),
+      requestId: 'r',
+      status: 'rate_confirmed',
+      finalRate: { rate: Money.toAmount(rate), fromCode, toCode },
+      paymentInstructions: 'Карта 2200 0000 0000 0000, Иван И.',
+      payWithinMinutes: 120,
+    }).text;
+
+  it('перевёрнутую пару называет крупной стороной, а не частным', () => {
+    const text = confirmed('0.011934598400763814', 'RUB', 'USDT');
+    expect(text).toContain('83,79 RUB за 1 USDT');
+    expect(text).not.toMatch(/0[.,]0119/);
+  });
+
+  it('прямую пару называет как есть', () => {
+    expect(confirmed('83.79', 'USDT', 'RUB')).toContain('83,79 RUB за 1 USDT');
+  });
+
+  /*
+   * У направления со ступенчатой сеткой курс не округляется вовсе — он
+   * выводится из посчитанной выдачи делением, — и в сообщение уходил
+   * восемнадцатизначным.
+   */
+  it('курс, выведенный из выдачи, не тащит в сообщение хвост деления', () => {
+    const text = confirmed('0.392156862745098039', 'RUB', 'THB');
+    expect(text).toContain('2,55 RUB за 1 THB');
+    expect(text).not.toMatch(/\d{6}/);
   });
 });
