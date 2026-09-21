@@ -754,3 +754,33 @@ describe('поиск своей заявки', () => {
     expect(new Set(seen).size).toBe(5);
   });
 });
+
+/**
+ * Источник заявки доезжает до ответа о ней. Он писался при подаче и
+ * читался только разрезами аналитики, а карточке заявки нечем было
+ * сказать, откуда заявка взялась. У поданной без отметки он пуст, и
+ * пустота так и отдаётся: угаданный источник читался бы как записанный.
+ */
+describe('источник заявки', () => {
+  const body = {
+    kind: 'electronic',
+    fromCode: 'USDT',
+    toCode: 'RUB',
+    fromAmount: '100',
+    payout: PAYOUT,
+  } as const;
+
+  it('названный при подаче — отдаётся и в ответе подачи, и в списке, и по номеру', async () => {
+    const { request } = await core.submitExchangeRequest(merchant, { ...body, source: 'api' });
+    expect(request.source).toBe('api');
+
+    const [listed] = await core.listExchangeRequests(merchant);
+    expect(listed?.source).toBe('api');
+    expect((await core.getExchangeRequest(merchant, request.id)).source).toBe('api');
+  });
+
+  it('не названный — пуст, а не угадан', async () => {
+    const { request } = await core.submitExchangeRequest(merchant, body);
+    expect(request.source).toBeNull();
+  });
+});

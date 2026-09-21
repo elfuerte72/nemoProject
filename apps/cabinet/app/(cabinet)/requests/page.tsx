@@ -42,7 +42,7 @@ export default async function RequestsPage({
   const search = pickSearch(single(params.q));
 
   const core = getCore();
-  const [rows, counts, people] = await Promise.all([
+  const [rows, counts] = await Promise.all([
     core.listExchangeRequests(actor, {
       limit: REQUESTS_PAGE,
       ...withStatuses(tab),
@@ -51,9 +51,6 @@ export default async function RequestsPage({
     // Числа на табах считают найденное, а не всё: иначе над двумя
     // строками стояло бы «Исполнены 10».
     requestCounts(search),
-    // Состав кабинета читает один владелец (тикет 17): с именами
-    // приходит и колонка «Кто подал», без них её нет вовсе.
-    session.role === 'owner' ? core.listMerchantUsers(actor) : Promise.resolve(undefined),
   ]);
 
   const total = countOf(counts, statusesOf(tab));
@@ -66,7 +63,13 @@ export default async function RequestsPage({
       <header className="page__head">
         <div>
           <h1 className="page__title">Заявки</h1>
-          <p className="page__sub">Всё, что подано по API и заведено менеджером.</p>
+          {/*
+            Заявок за мерчанта сервис не заводит: подаёт их только его
+            интеграция. До 21 сентября 2026 строка обещала ещё и
+            «заведено менеджером» — такого пути нет, и колонка «Кто
+            подал» под этой строкой отличала то, чего не бывает.
+          */}
+          <p className="page__sub">Всё, что подала ваша интеграция по API.</p>
         </div>
       </header>
 
@@ -91,9 +94,6 @@ export default async function RequestsPage({
         total={total}
         tab={tab}
         search={search}
-        {...(people === undefined
-          ? {}
-          : { names: Object.fromEntries(people.map((one) => [one.id, one.name])) })}
       />
     </main>
   );

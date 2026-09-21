@@ -1,4 +1,4 @@
-import type { ExchangeRequestStatus } from '@nemo/types';
+import type { ExchangeRequestSource, ExchangeRequestStatus } from '@nemo/types';
 
 /**
  * Что карточка заявки говорит о реквизитах — по состоянию заявки.
@@ -199,3 +199,21 @@ export function leftWords(minutes: number): string {
   const rest = minutes % 60;
   return rest === 0 ? `${hours} ч` : `${hours} ч ${rest} мин`;
 }
+
+/* ── Откуда заявка ───────────────────────────────────────────────── */
+
+/**
+ * Как заявка подана — словами для подзаголовка карточки: «подана по
+ * API». Пустой источник слов не имеет: у поданных до появления отметки
+ * он не записан, и угаданный читался бы как записанный.
+ *
+ * В списке заявок источника нет намеренно. Колонка «Кто подал» стояла
+ * там до 21 сентября 2026 и говорила «по ключу API» на любую пустоту; а
+ * колонка «Источник» говорила бы «API» в каждой строке — подаёт заявки
+ * только интеграция. Столбец, одинаковый во всех строках, — не столбец.
+ */
+export const SUBMITTED_VIA: Record<ExchangeRequestSource, string> = {
+  api: 'по API',
+  cabinet: 'из кабинета',
+  miniapp: 'из Mini App',
+};

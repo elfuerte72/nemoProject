@@ -122,6 +122,13 @@ export interface ExchangeRequestView {
    * ключом API — ключ ничей — и у поданных до появления отметки.
    */
   readonly submittedByUserId: string | null;
+  /**
+   * Откуда заявка пришла — со слов того, кто принял запрос: операция
+   * подачи у Mini App и API одна, и различить их изнутри нечем. Пусто у
+   * поданных до появления отметки, и пустота так и отдаётся: угаданный
+   * источник читался бы как записанный.
+   */
+  readonly source: ExchangeRequestSource | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly completedAt: Date | null;
@@ -254,6 +261,7 @@ export function toExchangeRequestView(row: ExchangeRequestRow): ExchangeRequestV
     cancelReason: row.cancelReason,
     reference: row.reference,
     submittedByUserId: row.submittedByUserId,
+    source: row.source,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     completedAt: row.completedAt,

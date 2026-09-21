@@ -7,7 +7,7 @@ import { formatMoney, formatRate } from '@nemo/ui/format';
 import { getCore } from '@/lib/core';
 import { viewer } from '@/lib/reads';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
-import { pathOf, paymentBlockOf } from '@/lib/request-card';
+import { pathOf, paymentBlockOf, SUBMITTED_VIA } from '@/lib/request-card';
 import { CancelRequest } from './cancel-request';
 import { PaymentDeadlineLine } from './payment-deadline';
 
@@ -77,7 +77,9 @@ export default async function RequestPage({
             {request.reference ?? `Заявка ${request.id.slice(0, 8)}`}
           </h1>
           <p className="page__sub">
-            {KIND_LABELS[request.kind]} · подана <Moment at={request.createdAt.toISOString()} />
+            {KIND_LABELS[request.kind]} · подана{' '}
+            {request.source ? `${SUBMITTED_VIA[request.source]} · ` : ''}
+            <Moment at={request.createdAt.toISOString()} />
           </p>
           {/*
             Наш номер — целиком и с копированием: по нему заявку называют

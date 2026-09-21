@@ -18,7 +18,6 @@ export function RequestsTable({
   total,
   tab,
   search,
-  names,
 }: {
   readonly rows: readonly RequestRow[];
   readonly total: number;
@@ -29,12 +28,6 @@ export function RequestsTable({
    * которых не искали.
    */
   readonly search: string;
-  /**
-   * Имена людей кабинета по идентификатору. Пусто у всех, кроме
-   * владельца: состав кабинета читает он один (тикет 17), и колонка
-   * «Кто подал» появляется вместе с именами, а не пустая.
-   */
-  readonly names?: Readonly<Record<string, string>> | undefined;
 }) {
   const [extra, setExtra] = useState<readonly RequestRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -75,7 +68,6 @@ export function RequestsTable({
   }
 
   const remaining = Math.max(total - shown.length, 0);
-  const withNames = names !== undefined;
 
   const more = async () => {
     const cursor = cursorOf(shown);
@@ -105,12 +97,11 @@ export function RequestsTable({
 
   return (
     <>
-      <ul className={`table ${withNames ? 'table--requests-staff' : 'table--requests'}`}>
+      <ul className="table table--requests">
         <li className="table__head" aria-hidden>
           <span>Отдаю</span>
           <span>Получаю</span>
           <span>Свой номер</span>
-          {withNames ? <span>Кто подал</span> : undefined}
           <span>Состояние</span>
           <span>Подана</span>
         </li>
@@ -135,20 +126,6 @@ export function RequestsTable({
                 <span className="cell__label">Свой номер</span>
                 <span className="cell__value">{request.reference ?? '—'}</span>
               </span>
-              {withNames ? (
-                <span className="cell">
-                  <span className="cell__label">Кто подал</span>
-                  <span className="cell__value">
-                    {request.submittedByUserId === null ? (
-                      // Заявка по ключу API ничья: ключ принадлежит
-                      // кабинету, а не человеку.
-                      <span className="muted">по ключу API</span>
-                    ) : (
-                      (names?.[request.submittedByUserId] ?? <span className="muted">—</span>)
-                    )}
-                  </span>
-                </span>
-              ) : undefined}
               <span className="cell">
                 <span className="cell__label">Состояние</span>
                 <span className={`pill pill--${STATUS_TONES[request.status]}`}>

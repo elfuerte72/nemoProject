@@ -23,7 +23,6 @@ export interface RequestRow {
    * поданных до появления отметки; имя по нему подставляет страница —
    * список людей мерчанта читает один владелец (тикет 17).
    */
-  readonly submittedByUserId: string | null;
   /** ISO-строка: она же курсор дочитывания вместе с идентификатором. */
   readonly createdAt: string;
 }
@@ -38,7 +37,6 @@ export function toRequestRow(request: ExchangeRequestView): RequestRow {
     toAmount: request.toAmount,
     status: request.status,
     reference: request.reference,
-    submittedByUserId: request.submittedByUserId,
     createdAt: request.createdAt.toISOString(),
   };
 }
