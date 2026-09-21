@@ -133,7 +133,12 @@ export function ownerColumns(
  * без приватного ключа, но и отдавать его клиентскому приложению
  * незачем.
  */
-function toView(row: RequisitesRow, isAvailable = true): RequisitesView {
+/**
+ * Строка записи — в то, что видно без расшифровки. Открыта модулю
+ * заявок: получателя заявки он отдаёт тем же видом, что и список, и
+ * второй сборщик разошёлся бы с первым на первом новом поле.
+ */
+export function toView(row: RequisitesRow, isAvailable = true): RequisitesView {
   return {
     id: row.id,
     kind: row.kind,

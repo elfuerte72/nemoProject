@@ -1986,3 +1986,11 @@
     padding-right: 6px;
   }
 }
+
+/* Получатель: строка, по которой сверяют, — крупнее пояснений вокруг. */
+.recipient {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

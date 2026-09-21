@@ -784,3 +784,53 @@ describe('источник заявки', () => {
     expect(request.source).toBeNull();
   });
 });
+
+/**
+ * Куда ушли деньги по заявке — первый вопрос при жалобе покупателя:
+ * мерчант сверяет карту из своей системы с той, на которую отправил
+ * сервис. Прочитать запись ему было нечем: поданная по API запись
+ * архивируется сразу, а список получателей отдаёт только неархивные, —
+ * то есть у заявок интеграции запись была всегда и не была видна
+ * никогда.
+ */
+describe('получатель заявки', () => {
+  const body = {
+    kind: 'electronic',
+    fromCode: 'USDT',
+    toCode: 'RUB',
+    fromAmount: '100',
+  } as const;
+
+  it('архивная запись своей заявки читается — без расшифровки', async () => {
+    const { request } = await core.submitExchangeRequest(merchant, { ...body, payout: PAYOUT });
+    // Запись из тела запроса в список получателей не попадает…
+    expect(await core.listRequisites(merchant)).toEqual([]);
+
+    // …а по заявке она видна: вид, банк и открытый хвост.
+    const recipient = await core.getExchangeRequestRecipient(merchant, request.id);
+    expect(recipient?.kind).toBe('card');
+    expect(recipient?.bankName).toBe('Сбербанк');
+    expect(recipient?.cardLast4).toBe('1111');
+    // Полного номера в ответе нет ни в каком поле.
+    expect(JSON.stringify(recipient)).not.toContain('4111111111111111');
+  });
+
+  it('чужая заявка — «не найдена», а не запись чужого получателя', async () => {
+    const other = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    const { request } = await core.submitExchangeRequest(other, { ...body, payout: PAYOUT });
+
+    await expect(core.getExchangeRequestRecipient(merchant, request.id)).rejects.toMatchObject({
+      code: 'not-found',
+    });
+  });
+
+  it('заявка без получателя отвечает пустотой, а не ошибкой', async () => {
+    const { request } = await core.submitExchangeRequest(merchant, { ...body, payout: PAYOUT });
+    await db
+      .update(exchangeRequests)
+      .set({ requisitesId: null })
+      .where(eq(exchangeRequests.id, request.id));
+
+    expect(await core.getExchangeRequestRecipient(merchant, request.id)).toBeNull();
+  });
+});

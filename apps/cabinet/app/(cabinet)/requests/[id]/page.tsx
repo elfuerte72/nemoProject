@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { isCoreError } from '@nemo/http';
-import { isUuid } from '@nemo/types';
+import { describeRequisites, isUuid, REQUISITE_KIND_LABELS } from '@nemo/types';
 import { CopyValue, Moment, QuietRefresh } from '@nemo/ui';
 import { formatMoney, formatRate } from '@nemo/ui/format';
 import { getCore } from '@/lib/core';
@@ -42,9 +42,12 @@ export default async function RequestPage({
     if (isCoreError(error) && error.code === 'not-found') notFound();
     throw error;
   });
-  const [events, terms] = await Promise.all([
+  const [events, terms, recipient] = await Promise.all([
     core.listExchangeRequestEventsForOwner(actor, id),
     core.getExchangeTerms(),
+    // Отдельной операцией, а не списком получателей: поданная по API
+    // запись архивируется сразу, и список её не отдаёт.
+    core.getExchangeRequestRecipient(actor, id),
   ]);
 
   const rate = request.finalRate ?? request.requestRate;
@@ -145,6 +148,22 @@ export default async function RequestPage({
           </span>
         </div>
       </section>
+
+      {/*
+        Куда ушли деньги — первый вопрос при жалобе покупателя: мерчант
+        сверяет карту из своей системы с той, на которую отправил
+        сервис. Открытый хвост, а не номер целиком: расшифровывать в
+        клиентском контуре нечем (ADR-0002), и сверке он не нужен. У
+        заявки без получателя блока нет вовсе, а не прочерк.
+      */}
+      {recipient ? (
+        <section className="card">
+          <h2 className="card__title">Получатель</h2>
+          <p className="card__note">{REQUISITE_KIND_LABELS[recipient.kind]}</p>
+          <p className="recipient">{describeRequisites(recipient)}</p>
+          {recipient.holderName ? <p className="muted">{recipient.holderName}</p> : undefined}
+        </section>
+      ) : undefined}
 
       {/*
         Что сказать о реквизитах, решает состояние заявки, а не их

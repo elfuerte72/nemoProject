@@ -87,6 +87,7 @@ import {
   countExchangeRequests,
   countExchangeRequestsByStatus,
   getExchangeRequest,
+  getExchangeRequestRecipient,
   getExchangeTerms,
   listExchangeRequests,
   submitExchangeRequest,
@@ -484,6 +485,8 @@ export function createCore(ctx: CoreConfig) {
     getClientHistory: (actor: Actor) => getClientHistory(ctx, actor),
     getExchangeRequest: (actor: Actor, requestId: string) =>
       getExchangeRequest(ctx, actor, requestId),
+    getExchangeRequestRecipient: (actor: Actor, requestId: string) =>
+      getExchangeRequestRecipient(ctx, actor, requestId),
 
     saveRequisites: (actor: Actor, input: SaveRequisitesInput) =>
       saveRequisites(ctx, actor, input),

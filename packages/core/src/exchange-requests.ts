@@ -47,8 +47,10 @@ import {
   payoutMethodOfInput,
   requireSuitableRequisites,
   requisitesOf,
+  type RequisitesView,
   saveRequisitesIn,
   type SaveRequisitesInput,
+  toView,
 } from './requisites.js';
 import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
 
@@ -869,6 +871,45 @@ export function ownedBy(owner: Owner): SQL {
   return owner.kind === 'client'
     ? eq(exchangeRequests.clientId, owner.clientId)
     : eq(exchangeRequests.merchantId, owner.merchantId);
+}
+
+/**
+ * Куда ушли деньги по заявке — запись получателя для владельца заявки.
+ *
+ * Отдельная операция, а не список получателей: поданная по API запись
+ * архивируется сразу при подаче, чтобы список не рос на каждую заявку,
+ * и `listRequisites` её не отдаёт. У заявок интеграции запись была
+ * всегда и не была видна никогда — а «туда ли вы перевели» мерчант
+ * спрашивает первым делом, когда жалуется покупатель.
+ *
+ * Отдаётся то, что видно без расшифровки: вид, банк или сеть, открытый
+ * хвост. Полного номера здесь нет и быть не может — приватного ключа в
+ * клиентском контуре нет (ADR-0002), да он и не нужен: сверяют хвост.
+ * Чужая заявка — «не найдена», как везде. Заявка без получателя
+ * отвечает пустотой, а не ошибкой: наличной он и не положен.
+ */
+export async function getExchangeRequestRecipient(
+  ctx: CoreConfig,
+  actor: Actor,
+  requestId: string,
+): Promise<RequisitesView | null> {
+  const owner = requireOwner(actor);
+  const [request] = await ctx.db
+    .select({ requisitesId: exchangeRequests.requisitesId })
+    .from(exchangeRequests)
+    .where(and(eq(exchangeRequests.id, requestId), ownedBy(owner)))
+    .limit(1);
+  if (!request) throw new NotFoundError('Заявка не найдена');
+  if (!request.requisitesId) return null;
+
+  // Принадлежность записи сверяется отдельно от заявки: ссылка на
+  // чужую запись в своей заявке — не повод её показать.
+  const [row] = await ctx.db
+    .select()
+    .from(clientRequisites)
+    .where(and(eq(clientRequisites.id, request.requisitesId), requisitesOf(owner)))
+    .limit(1);
+  return row ? toView(row) : null;
 }
 
 /**
