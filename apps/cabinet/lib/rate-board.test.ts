@@ -4,6 +4,7 @@ import type { DirectionRate } from './direction-rates';
 import {
   boardOf,
   flashes,
+  priceOn,
   quoteAge,
   rowsMatching,
   sameRates,
@@ -139,6 +140,54 @@ describe('sameRates', () => {
   it('пришедший курс там, где его не было, — изменение', () => {
     const silent = [direction('USDT', 'THB', null)];
     expect(sameRates(silent, [direction('USDT', 'THB', '32.2')])).toBe(false);
+  });
+});
+
+describe('priceOn', () => {
+  const minAmount = Money.toAmount('35');
+
+  /** Направление со ступенчатой сеткой: фикс в долларах и процент сверху. */
+  function withFee(): DirectionRate {
+    return {
+      ...direction('RUB', 'THB', '0.26'),
+      quote: {
+        rate: Money.toAmount('0'),
+        payoutDecimals: 2,
+        fee: {
+          toBaseRate: Money.toAmount('0.011'),
+          fromBaseRate: Money.toAmount('32'),
+          tiers: [{ upToUsd: null, fixedUsd: Money.toAmount('10'), rateBps: 450 }],
+          minUsd: Money.toAmount('500'),
+          thresholdInclusive: true,
+        },
+      },
+    };
+  }
+
+  it('без котировки не считает ничего', () => {
+    const price = priceOn(direction('USDT', 'TRY', null), Money.toAmount('100'), minAmount);
+    expect(price.line.kind).toBe('none');
+    expect(price.payout).toBeNull();
+  });
+
+  it('сумма ниже порога направления — черта говорит «от», а выдачи нет', () => {
+    const price = priceOn(withFee(), Money.toAmount('1000'), minAmount);
+    expect(price.line.kind).toBe('from');
+    expect(price.payout).toBeNull();
+  });
+
+  it('выдача, съеденная комиссией, не показывается нулём', () => {
+    // Сто рублей — это доллар с небольшим, а фикс ступени десять
+    // долларов: после комиссии не остаётся ничего, и «0 THB» читалось
+    // бы как «столько и дадут».
+    const price = priceOn(withFee(), Money.toAmount('100'), minAmount);
+    expect(price.payout).toBeNull();
+  });
+
+  it('на достаточной сумме считает выдачу и курс на неё', () => {
+    const price = priceOn(withFee(), Money.toAmount('100000'), minAmount);
+    expect(price.line.kind).toBe('rate');
+    expect(price.payout).not.toBeNull();
   });
 });
 

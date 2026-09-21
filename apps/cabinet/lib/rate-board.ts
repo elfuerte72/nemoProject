@@ -123,10 +123,23 @@ export function priceOn(
 ): Price {
   const quote = direction.quote;
   if (!quote) return { line: { kind: 'none' }, payout: null };
-  return {
-    line: rateLine(quote, give, serviceMinUsd),
-    payout: give ? payoutOf(give, quote) : null,
-  };
+
+  const line = rateLine(quote, give, serviceMinUsd);
+  const payout = give ? payoutOf(give, quote) : null;
+
+  /*
+   * Выдача показывается только там, где сделка возможна.
+   *
+   * `payoutOf` посчитает её и на тысяче рублей при минимуме направления
+   * в пятьсот долларов — арифметике порог неизвестен. Показать это
+   * число значило бы пообещать заявку, которую подача отвергнет;
+   * поэтому спрашивается черта курса: она на такой сумме говорит «от
+   * N», и в колонке выдачи тогда стоит прочерк. Ноль отбрасывается по
+   * той же причине, по какой его нет на черте: «0 THB» читается как
+   * «столько и дадут», а не как «сумма мала».
+   */
+  const possible = line.kind === 'rate' && payout !== null && !Money.isZero(payout);
+  return { line, payout: possible ? payout : null };
 }
 
 /** Чем направление зовётся в разметке и в сравнении кадров. */
