@@ -6,7 +6,6 @@ import {
   flashes,
   priceOn,
   quoteAge,
-  rowsMatching,
   sameRates,
   shownRate,
   spreadPercent,
@@ -304,27 +303,5 @@ describe('flashes', () => {
     const before = [direction('USDT', 'RUB', '83')];
     const after = [direction('USDT', 'RUB', '83.000000000000000000')];
     expect(flashes(before, after)).toEqual({});
-  });
-});
-
-describe('rowsMatching', () => {
-  const rows = [
-    direction('USDT', 'THB', '32.2'),
-    direction('USDT', 'EUR', '0.85'),
-    direction('RUB', 'THB', '0.26'),
-  ];
-
-  it('пустой поиск не сужает', () => {
-    expect(rowsMatching(rows, '   ')).toHaveLength(3);
-  });
-
-  it('ищет по коду валюты с любой стороны', () => {
-    expect(rowsMatching(rows, 'thb')).toHaveLength(2);
-    expect(rowsMatching(rows, 'rub')).toHaveLength(1);
-  });
-
-  it('ищет по русскому названию: код помнит не всякий', () => {
-    expect(rowsMatching(rows, 'бат')).toHaveLength(2);
-    expect(rowsMatching(rows, 'евро')).toHaveLength(1);
   });
 });

@@ -1,6 +1,5 @@
 import {
   arrangeRateBoard,
-  currencyName,
   Money,
   payoutOf,
   rateLine,
@@ -250,27 +249,4 @@ export function sameRates(
       JSON.stringify(one.quote) === JSON.stringify(other.quote)
     );
   });
-}
-
-/**
- * Строки, подходящие под набранное в поиске: код валюты или её
- * название по-русски.
- *
- * Поиск здесь клиентский, в отличие от очереди заявок, — и это не
- * исключение из правила, а другой случай: в очередь приходит страница
- * из базы, и «фильтр» поверх неё означал бы спрятанный разметкой
- * хвост, а табло целиком помещается на экране, и прятать за ним
- * нечего.
- */
-export function rowsMatching(
-  rows: readonly DirectionRate[],
-  query: string,
-): readonly DirectionRate[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return rows;
-  return rows.filter((one) =>
-    [one.fromCode, one.toCode, currencyName(one.fromCode), currencyName(one.toCode)].some(
-      (word) => word.toLowerCase().includes(needle),
-    ),
-  );
 }

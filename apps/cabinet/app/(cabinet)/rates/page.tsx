@@ -1,6 +1,5 @@
 import { exchangeKindSchema } from '@nemo/types';
-import { firstParam, HowTo, Stat, Stats } from '@nemo/ui';
-import { formatMoney } from '@nemo/ui/format';
+import { firstParam, HowTo } from '@nemo/ui';
 import { getCore } from '@/lib/core';
 import { listDirectionRates } from '@/lib/direction-rates';
 import { RATES_HOW_TO } from '@/lib/exchange-texts';
@@ -18,6 +17,13 @@ export const dynamic = 'force-dynamic';
  * вопросом — «какой у вас курс», — и ответ стоит одним плотным списком.
  * Рублёвая пара при этом остаётся отдельным блоком: сервис стоит по обе
  * её стороны, и котировок у неё две.
+ *
+ * Ряда плиток над таблицей нет намеренно. Минимальная сумма и срок
+ * оплаты — про заявку, а не про курс: срок идёт с выдачи реквизитов, то
+ * есть уже внутри сделки, а минимум направления и так стоит колонкой в
+ * строке. Счётчик направлений считал строки, которые видно. Оба числа
+ * названы словами в подсказке, а первый экран остался под тем, за чем
+ * сюда приходят.
  *
  * Курс приходит в открытую страницу сам, потоком событий
  * (`app/api/rates/stream`), поэтому числа живут в клиентской части, а
@@ -60,24 +66,6 @@ export default async function RatesPage({
       </header>
 
       <HowTo title="Как это устроено" sub="Что за число и как долго оно держится" items={RATES_HOW_TO} />
-
-      <Stats>
-        <Stat
-          label="Минимальная сумма"
-          value={formatMoney(shown.terms.minAmount, shown.terms.minAmountCode)}
-          note="считается по стороне заявки в USDT"
-        />
-        <Stat
-          label="Срок оплаты"
-          value={`${shown.terms.unpaidTtlMinutes} мин`}
-          note="с выдачи реквизитов; столько держится курс"
-        />
-        <Stat
-          label="Направлений"
-          value={shown.directions.length}
-          note={kind === 'cash' ? 'наличных' : 'безналичных, из кабинета и по API'}
-        />
-      </Stats>
 
       <RatesBoard
         directions={shown.directions}

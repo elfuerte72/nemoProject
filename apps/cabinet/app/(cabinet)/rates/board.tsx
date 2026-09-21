@@ -21,7 +21,6 @@ import {
   pairKey,
   priceOn,
   quoteAge,
-  rowsMatching,
   sameRates,
   shownRate,
   type Flash,
@@ -72,7 +71,6 @@ export function RatesBoard({
   const [marks, setMarks] = useState<Readonly<Record<string, Flash>>>({});
   const [now, setNow] = useState(() => new Date());
   const [typed, setTyped] = useState('');
-  const [query, setQuery] = useState('');
 
   /*
    * Серверный снимок приезжает заново после каждого `router.refresh()`
@@ -173,9 +171,14 @@ export function RatesBoard({
   }, [fromCodes, fromCode]);
 
   const give = parseTyped(typed);
+  /*
+   * Строки той валюты, которую мерчант отдаёт. Поиска по валюте здесь
+   * нет: направлений полтора десятка, они целиком на экране, и поле
+   * поиска над ними только притворялось бы выбором валюты.
+   */
   const visible = useMemo(
-    () => rowsMatching(board.rows.filter((one) => one.fromCode === fromCode), query),
-    [board.rows, fromCode, query],
+    () => board.rows.filter((one) => one.fromCode === fromCode),
+    [board.rows, fromCode],
   );
 
   return (
@@ -225,29 +228,11 @@ export function RatesBoard({
             onChange={(event) => setTyped(event.target.value)}
           />
         </div>
-
-        <div className="field field--narrow">
-          <label className="label" htmlFor="board-find">
-            Валюта
-          </label>
-          <input
-            id="board-find"
-            className="input"
-            autoComplete="off"
-            placeholder="THB или бат"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
       </div>
 
       {visible.length === 0 ? (
         <section className="card">
-          <p className="muted">
-            {board.rows.length === 0
-              ? 'Направления обмена ещё не заведены. Загляните позже.'
-              : 'Ни одна валюта не подошла под поиск.'}
-          </p>
+          <p className="muted">Направления обмена ещё не заведены. Загляните позже.</p>
         </section>
       ) : (
         <ul className={give ? 'table table--board table--board-sum' : 'table table--board'}>
