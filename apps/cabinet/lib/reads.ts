@@ -47,17 +47,30 @@ export const supportUsername = cache(
  * счётчик в меню: состояний шесть, и шесть запросов «сколько там» —
  * это шесть заходов в базу за одно и то же число.
  */
-export const requestCounts = cache(
-  /*
-   * Поиск — ключом памяти: меню спрашивает без него, список заявок с
-   * ним, и на одной странице это два разных числа. Строкой, а не
-   * объектом: `cache` сравнивает аргументы по ссылке.
-   */
-  async (search = ''): Promise<Readonly<Record<ExchangeRequestStatus, number>>> => {
+const countsFor = cache(
+  async (search: string): Promise<Readonly<Record<ExchangeRequestStatus, number>>> => {
     const { actor } = await viewer();
     return getCore().countExchangeRequestsByStatus(actor, search ? { search } : {});
   },
 );
+
+/**
+ * Поиск — ключом памяти: меню спрашивает без него, список заявок с ним,
+ * и на одной странице это два разных числа. Строкой, а не объектом:
+ * `cache` сравнивает аргументы по ссылке.
+ *
+ * Обёрткой, а не самим `cache`: тот различает вызов без аргумента и
+ * вызов с пустой строкой — ключ он строит и по числу аргументов. Меню
+ * звало `requestCounts()`, список — `requestCounts('')`, и на самой
+ * частой странице счёт шёл в базу дважды за показ, при каждом тихом
+ * обновлении. Найдено ревью 21 сентября 2026 и подтверждено счётчиком
+ * вызовов. Здесь аргумент у памяти всегда один.
+ */
+export function requestCounts(
+  search = '',
+): Promise<Readonly<Record<ExchangeRequestStatus, number>>> {
+  return countsFor(search);
+}
 
 /**
  * Сводка за период — один пакет запросов на страницу. Ключ памяти —

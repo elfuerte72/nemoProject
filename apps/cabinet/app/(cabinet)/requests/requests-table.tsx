@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EmptyState, Moment } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
 import { cursorOf, cursorToParams, mergePages } from '@nemo/ui/paging';
@@ -44,6 +44,16 @@ export function RequestsTable({
     setExtra((current) => current.filter((row) => !rows.some((one) => one.id === row.id)));
   }, [rows]);
 
+  /*
+   * Какая выборка на экране сейчас. Дочитывание сверяется с ней, когда
+   * ответ пришёл: сменили таб или запрос, пока он шёл, — ответ прежней
+   * выборки к новой не дописывается. С поиском это стало вероятнее:
+   * запрос меняется с каждой набранной буквой.
+   */
+  const shownKey = `${tab}\n${search}`;
+  const liveKey = useRef(shownKey);
+  liveKey.current = shownKey;
+
   /* Сменился таб или запрос — хвост от прежней выборки чужой ей целиком. */
   useEffect(() => {
     setExtra([]);
@@ -60,7 +70,7 @@ export function RequestsTable({
               ? 'Заявки с таким номером нет. Проверьте номер: он тот, который ваша система передала при подаче.'
               : 'В этом состоянии такой заявки нет. Посмотрите во «Всех»: ищущий номер обычно не знает, исполнена она или отменена.'
             : tab === 'open'
-              ? 'Незакрытых заявок нет. Поданные встанут сюда — и из кабинета, и по API.'
+              ? 'Незакрытых заявок нет. Поданные вашей интеграцией встанут сюда.'
               : 'В этом состоянии заявок нет.'
         }
       />
@@ -73,6 +83,7 @@ export function RequestsTable({
     const cursor = cursorOf(shown);
     if (!cursor) return;
 
+    const askedFor = shownKey;
     setLoading(true);
     setFailed(false);
     try {
@@ -84,6 +95,7 @@ export function RequestsTable({
       const response = await fetch(`/api/requests?${params.toString()}`);
       if (!response.ok) throw new Error(String(response.status));
       const body = (await response.json()) as { rows: RequestRow[] };
+      if (liveKey.current !== askedFor) return;
       setExtra((current) => mergePages(current, body.rows));
     } catch {
       // Дочитать не удалось — показанное остаётся на месте, а о неудаче

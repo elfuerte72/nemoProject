@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { tabHref } from '@/lib/request-rows';
+import { SEARCH_MAX, tabHref } from '@/lib/request-rows';
 
 /**
  * Поиск заявки по своему номеру: живёт в адресе, уходит с паузой в
@@ -50,7 +50,7 @@ export function RequestsSearch({ query }: { readonly query: string }) {
         type="search"
         inputMode="search"
         autoComplete="off"
-        maxLength={100}
+        maxLength={SEARCH_MAX}
       />
     </label>
   );

@@ -569,8 +569,10 @@ describe('доставки по заявке', () => {
     } as const;
     const { request } = await submit();
 
+    // По коду, а не «что-нибудь бросил»: так прошла бы и опечатка в
+    // самом тесте — `TypeError` тоже исключение.
     await expect(
       core.listWebhookDeliveries(operator, { requestId: request.id }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: 'forbidden' });
   });
 });

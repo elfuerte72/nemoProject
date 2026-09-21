@@ -18,11 +18,6 @@ export interface RequestRow {
   readonly toAmount: string | null;
   readonly status: ExchangeRequestStatus;
   readonly reference: string | null;
-  /**
-   * Кто подал внутри кабинета. Пусто у заявок по ключу API и у
-   * поданных до появления отметки; имя по нему подставляет страница —
-   * список людей мерчанта читает один владелец (тикет 17).
-   */
   /** ISO-строка: она же курсор дочитывания вместе с идентификатором. */
   readonly createdAt: string;
 }
@@ -88,8 +83,12 @@ export function pickTab(value: string | undefined): RequestTab {
 /** Столько строк на странице: экран ноутбука вмещает их без второй прокрутки. */
 export const REQUESTS_PAGE = 25;
 
-/** Длиннее своих номеров не бывает, а адрес присылает кто угодно. */
-export const SEARCH_MAX = 100;
+/**
+ * Столько знаков у самого длинного своего номера (`MAX_MERCHANT_FIELD` в
+ * ядре): вставленный целиком, он ищется целиком. Длиннее незачем, а
+ * адрес присылает кто угодно.
+ */
+export const SEARCH_MAX = 200;
 
 /**
  * Запрос поиска из адреса. Берут его отсюда и страница, и маршрут
@@ -98,7 +97,14 @@ export const SEARCH_MAX = 100;
  * отказом на неё отвечать незачем.
  */
 export function pickSearch(raw: string | undefined): string {
-  return (raw ?? '').trim().slice(0, SEARCH_MAX);
+  /*
+   * Управляющие знаки вычищаются до обрезки краёв. Нулевой байт база в
+   * текстовом параметре отвергает ошибкой, и `/requests?q=%00` отвечал
+   * пятисотым — а адресной строке отказом не отвечают. Остальным
+   * (табуляция, перевод строки) в номере заказа тоже делать нечего.
+   */
+  // eslint-disable-next-line no-control-regex
+  return (raw ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, SEARCH_MAX);
 }
 
 /** Адрес таба. Поиск едет с ним: иначе таб сбрасывал бы найденное. */

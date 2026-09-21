@@ -21,6 +21,8 @@ import {
  */
 
 export interface TrailEventInput {
+  /** Откуда переход. У подачи пусто; равно `toStatus` у передачи заявки. */
+  readonly fromStatus: ExchangeRequestStatus | null;
   readonly toStatus: ExchangeRequestStatus;
   readonly createdAt: Date;
   readonly comment: string | null;
@@ -36,6 +38,8 @@ export interface TrailDeliveryInput {
   readonly responseStatus: number | null;
   readonly nextAttemptAt: Date;
   readonly endpointUrl: string;
+  /** Что записано о последней неудаче. Пусто, пока неудач не было. */
+  readonly error: string | null;
   readonly createdAt: Date;
 }
 
@@ -62,7 +66,15 @@ export function trailOf(
   const byTime = [...deliveries].sort(
     (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
   );
-  return events.map((event) => {
+  /*
+   * Передача заявки другому менеджеру пишет в историю событие без смены
+   * состояния: «откуда» и «куда» равны. Мерчанту она не меняет ничего —
+   * кто ведёт заявку, дело сервиса, — а в ленте вставала второй строкой
+   * «Курс подтверждён», и под обеими оказывался один и тот же вебхук:
+   * читалось как «прислали дважды». Найдено ревью 21 сентября 2026.
+   */
+  const moves = events.filter((event) => event.fromStatus !== event.toStatus);
+  return moves.map((event) => {
     const expected = webhookEventForStatus(event.toStatus);
     return {
       status: event.toStatus,
@@ -93,10 +105,34 @@ export function deliveryWords(delivery: TrailDeliveryInput): {
     };
   }
   if (delivery.status === 'failed') {
+    /*
+     * Провал раньше последней попытки бывает одним путём: точку удалили,
+     * и её ждущие доставки закрыты разом, при любом числе попыток. Число
+     * берётся у доставки, а не у константы: «после пяти попыток» стояло
+     * у доставки, которую ни разу не отправляли.
+     */
+    if (delivery.attempt < WEBHOOK_MAX_ATTEMPTS) {
+      return {
+        text:
+          delivery.attempt === 0
+            ? 'не отправлен: точку удалили'
+            : `не доставлен: точку удалили после попытки ${delivery.attempt}, ${answer}`,
+        tone: 'bad',
+      };
+    }
     const attempts = ATTEMPT_WORDS[WEBHOOK_MAX_ATTEMPTS] ?? String(WEBHOOK_MAX_ATTEMPTS);
     return { text: `не доставлен после ${attempts} попыток, ${answer}`, tone: 'bad' };
   }
   if (delivery.attempt === 0) return { text: 'ждёт отправки', tone: 'wait' };
+  /*
+   * Номер попытки растёт, когда воркер доставку забирает, — до ответа
+   * приёмника. Пока о неудаче ничего не записано, первая попытка ещё
+   * идёт, и «не доставлен» о ней — неправда. У второй и дальше так не
+   * различить: запись о прошлой неудаче остаётся до нового исхода.
+   */
+  if (delivery.responseStatus === null && delivery.error === null) {
+    return { text: 'отправляется', tone: 'wait' };
+  }
   return {
     text: `не доставлен, попытка ${delivery.attempt} из ${WEBHOOK_MAX_ATTEMPTS}, ${answer} — будет повтор`,
     tone: 'wait',

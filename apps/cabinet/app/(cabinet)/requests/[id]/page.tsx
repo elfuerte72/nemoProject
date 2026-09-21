@@ -48,22 +48,21 @@ export default async function RequestPage({
     if (isCoreError(error) && error.code === 'not-found') notFound();
     throw error;
   });
-  const [events, terms, recipient] = await Promise.all([
-    core.listExchangeRequestEventsForOwner(actor, id),
-    core.getExchangeTerms(),
-    // Отдельной операцией, а не списком получателей: поданная по API
-    // запись архивируется сразу, и список её не отдаёт.
-    core.getExchangeRequestRecipient(actor, id),
-  ]);
   /*
    * Доставки вебхуков — вторая половина истории, и видит её тот, кому
    * видна интеграция: у владельца (ADR-0023). Решает операция, а не
    * экран — оператору она откажет, — поэтому экран её и не зовёт: лента
    * у оператора остаётся лентой состояний, а не пятисотым ответом.
    */
-  const deliveries = merchantRoleCan(session.role, 'integration')
-    ? await core.listWebhookDeliveries(actor, { requestId: id })
-    : [];
+  const seesHooks = merchantRoleCan(session.role, 'integration');
+  const [events, terms, recipient, deliveries] = await Promise.all([
+    core.listExchangeRequestEventsForOwner(actor, id),
+    core.getExchangeTerms(),
+    // Отдельной операцией, а не списком получателей: поданная по API
+    // запись архивируется сразу, и список её не отдаёт.
+    core.getExchangeRequestRecipient(actor, id),
+    seesHooks ? core.listWebhookDeliveries(actor, { requestId: id }) : Promise.resolve([]),
+  ]);
   const trail = trailOf(events, deliveries);
 
   const rate = request.finalRate ?? request.requestRate;
@@ -74,7 +73,11 @@ export default async function RequestPage({
    * что отменой не было.
    */
   const reached = [...events].reverse().find((one) => one.toStatus !== 'cancelled')?.toStatus;
-  const path = pathOf({ status: request.status, reached });
+  const path = pathOf({
+    status: request.status,
+    reached,
+    cancelReason: request.cancelReason,
+  });
 
   return (
     <main className="page">
@@ -89,10 +92,10 @@ export default async function RequestPage({
           {/*
             Заголовком — номер мерчанта: «заказ 1013» знают его система и
             его покупатель, а нашего номера он не видел нигде, кроме этой
-            страницы. Нет своего — заголовком остаётся наш: у заявки,
-            заведённой менеджером, своего может не быть.
+            страницы. Нет своего — заголовком остаётся наш: свой номер
+            интеграция называть не обязана.
           */}
-          <h1 className="page__title">
+          <h1 className="page__title page__title--own">
             {request.reference ?? `Заявка ${request.id.slice(0, 8)}`}
           </h1>
           <p className="page__sub">

@@ -62,9 +62,18 @@ describe('блок реквизитов', () => {
     }
   });
 
-  it('каждое состояние заявки разобрано — новое не проскочит молча', () => {
+  /*
+   * Прежняя проверка — «не бросает» — не проверяла ничего: у
+   * неразобранного состояния функция вернула бы `undefined` молча.
+   * Полноту таблицы сторожит тип, а тест — то, что ответ осмыслен: либо
+   * блока нет, либо у него есть слова.
+   */
+  it('о каждом состоянии ответ осмыслен: блока нет или у него есть слова', () => {
     for (const status of exchangeRequestStatuses) {
-      expect(() => paymentBlockOf({ status, paymentInstructions: INSTRUCTIONS })).not.toThrow();
+      const block = paymentBlockOf({ status, paymentInstructions: INSTRUCTIONS });
+      if (block === null) continue;
+      expect(block.title.length).toBeGreaterThan(0);
+      expect(block.note.length).toBeGreaterThan(0);
     }
   });
 
@@ -131,6 +140,21 @@ describe('строка пути', () => {
     const path = pathOf({ status: 'cancelled', reached: 'rate_confirmed' });
     expect(path.steps.map((one) => one.state)).toEqual(['done', 'stopped', 'ahead', 'ahead']);
     expect(path.waitsForMerchant).toBe(false);
+  });
+
+  /*
+   * Найдено ревью 21 сентября 2026. Заявку, отменённую самим мерчантом,
+   * — кнопкой в карточке или по API — ядро закрывает без причины, и это
+   * самый частый путь отмены. Строка пути при этом обещала «причина
+   * стоит ниже», а ниже не было ничего.
+   */
+  it('причину обещает, только когда она записана', () => {
+    expect(pathOf({ status: 'cancelled', cancelReason: 'Покупатель не заплатил' }).note).toMatch(
+      /Причина стоит ниже/,
+    );
+    const own = pathOf({ status: 'cancelled', cancelReason: null }).note;
+    expect(own).not.toMatch(/причин/i);
+    expect(slopComplaints(own)).toEqual([]);
   });
 
   it('отменённая без истории оборвалась на первом шаге', () => {

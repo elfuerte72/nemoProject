@@ -116,8 +116,11 @@ const PATH_NOTES: Record<ExchangeRequestStatus, string> = {
   rate_confirmed: 'Ждёт вашей оплаты. Реквизиты и срок стоят ниже.',
   payment_received: 'Оплата получена, отправляем деньги получателю.',
   completed: 'Исполнена: деньги отправлены получателю.',
-  cancelled: 'Отменена на этом шаге, дальше заявка не пошла. Причина стоит ниже.',
+  cancelled: 'Отменена на этом шаге, дальше заявка не пошла.',
 };
+
+/** Дописывается к отмене, когда причина записана — и только тогда. */
+const REASON_BELOW = ' Причина стоит ниже.';
 
 export function pathOf(request: {
   readonly status: ExchangeRequestStatus;
@@ -127,6 +130,13 @@ export function pathOf(request: {
    * которую мерчант отменил сам, пока её не взяли.
    */
   readonly reached?: ExchangeRequestStatus | undefined;
+  /**
+   * Причина отмены, если записана. Заявку, отменённую самим мерчантом —
+   * кнопкой в карточке или по API, — ядро закрывает без причины, и это
+   * самый частый путь отмены: обещать «причина стоит ниже» можно только
+   * когда ниже и правда что-то стоит.
+   */
+  readonly cancelReason?: string | null | undefined;
 }): RequestPath {
   const cancelled = request.status === 'cancelled';
   const at = cancelled
@@ -146,7 +156,7 @@ export function pathOf(request: {
               ? 'stopped'
               : 'current',
     })),
-    note: PATH_NOTES[request.status],
+    note: PATH_NOTES[request.status] + (cancelled && request.cancelReason ? REASON_BELOW : ''),
     waitsForMerchant: request.status === 'rate_confirmed',
   };
 }

@@ -824,13 +824,45 @@ describe('получатель заявки', () => {
     });
   });
 
-  it('заявка без получателя отвечает пустотой, а не ошибкой', async () => {
-    const { request } = await core.submitExchangeRequest(merchant, { ...body, payout: PAYOUT });
+  /*
+   * Защита в глубину, и сцена у неё намеренно недостижимая: ссылку на
+   * чужую запись операция подачи отвергает, и поставить её можно только
+   * мимо ядра. Проверяется здесь ровно поэтому — принадлежность записи
+   * операция сверяет отдельно от принадлежности заявки, и без теста эту
+   * вторую сверку можно убрать, ничего не уронив. А цена ошибки —
+   * хвост чужой карты на экране.
+   */
+  it('чужую запись не показывает, даже если на неё ссылается своя заявка', async () => {
+    const stranger = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    const theirs = await core.submitExchangeRequest(stranger, {
+      ...body,
+      payout: { kind: 'card', bankName: 'Т-Банк', cardNumber: '5555555555554444' },
+    });
+    const mine = await core.submitExchangeRequest(merchant, { ...body, payout: PAYOUT });
     await db
       .update(exchangeRequests)
-      .set({ requisitesId: null })
-      .where(eq(exchangeRequests.id, request.id));
+      .set({ requisitesId: theirs.request.requisitesId })
+      .where(eq(exchangeRequests.id, mine.request.id));
 
-    expect(await core.getExchangeRequestRecipient(merchant, request.id)).toBeNull();
+    const recipient = await core.getExchangeRequestRecipient(merchant, mine.request.id);
+    expect(recipient).toBeNull();
+    expect(JSON.stringify(recipient)).not.toContain('4444');
+  });
+
+  /*
+   * Сцена — наличная заявка клиента, а не заявка мерчанта с затёртой
+   * ссылкой: у мерчанта заявок без получателя не бывает, наличную ядро
+   * у него не принимает. Операция же общая на обоих владельцев, и
+   * получателя нет именно у наличной — ей он не положен.
+   */
+  it('заявка без получателя отвечает пустотой, а не ошибкой', async () => {
+    await core.registerClient({ telegramUserId: 100n });
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      ...body,
+      kind: 'cash',
+    });
+    expect(request.requisitesId).toBeNull();
+
+    expect(await core.getExchangeRequestRecipient(asClient(100n), request.id)).toBeNull();
   });
 });

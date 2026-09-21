@@ -186,9 +186,6 @@ export function signWebhookBody(secret: string, body: string): string {
   return `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
 }
 
-// Правило «состояние → событие» живёт в `@nemo/types`: им же карточка
-// заявки в кабинете кладёт доставку под свою смену состояния.
-export { webhookEventForStatus };
 
 const SECRET_LENGTH = 32;
 const MAX_URL = 500;
