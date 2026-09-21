@@ -7,6 +7,7 @@ import { formatMoney, formatRate } from '@nemo/ui/format';
 import { getCore } from '@/lib/core';
 import { viewer } from '@/lib/reads';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
+import { paymentBlockOf } from '@/lib/request-card';
 import { CancelRequest } from './cancel-request';
 
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,7 @@ export default async function RequestPage({
   ]);
 
   const rate = request.finalRate ?? request.requestRate;
+  const payment = paymentBlockOf(request);
 
   return (
     <main className="page">
@@ -96,15 +98,19 @@ export default async function RequestPage({
         </div>
       </section>
 
-      {request.paymentInstructions ? (
+      {/*
+        Что сказать о реквизитах, решает состояние заявки, а не их
+        наличие (`lib/request-card.ts`): есть они у заявки до самого
+        конца, а платить по ним надо только пока она ждёт оплаты.
+      */}
+      {payment ? (
         <section className="card">
-          <h2 className="card__title">Куда платить</h2>
-          <p className="card__note">
-            Проверьте получателя перед переводом: деньги, ушедшие по опечатке, не
-            возвращаются.
+          <h2 className="card__title">{payment.title}</h2>
+          <p className="card__note">{payment.note}</p>
+          <p className={payment.kind === 'void' ? 'instructions instructions--void' : 'instructions'}>
+            {request.paymentInstructions}
           </p>
-          <p className="instructions">{request.paymentInstructions}</p>
-          {request.requisitesIssuedAt ? (
+          {payment.deadline && request.requisitesIssuedAt ? (
             <p className="muted">
               Реквизиты выданы <Moment at={request.requisitesIssuedAt.toISOString()} />. На
               оплату — {terms.unpaidTtlMinutes} мин с этого момента: столько держится
