@@ -1,8 +1,12 @@
+import { cookies } from 'next/headers';
 import { cursorFromParams } from '@nemo/ui/paging';
+import { TZ_COOKIE, readTzOffset } from '@nemo/ui/period';
 import { errorResponse, json } from '@/lib/api';
 import { requireViewer } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import {
+  boundsOf,
+  pickPeriod,
   pickSearch,
   pickTab,
   REQUESTS_PAGE,
@@ -26,6 +30,16 @@ export async function GET(request: Request): Promise<Response> {
     const params = new URL(request.url).searchParams;
     const tab = pickTab(params.get('tab') ?? undefined);
     const search = pickSearch(params.get('q') ?? undefined);
+    const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
+    const picked = pickPeriod(
+      {
+        period: params.get('period') ?? undefined,
+        from: params.get('from') ?? undefined,
+        to: params.get('to') ?? undefined,
+      },
+      new Date(),
+      offset,
+    );
     const cursor = cursorFromParams(params);
     const statuses = statusesOf(tab);
 
@@ -33,6 +47,7 @@ export async function GET(request: Request): Promise<Response> {
       limit: REQUESTS_PAGE,
       ...(statuses ? { statuses } : {}),
       ...(search ? { search } : {}),
+      ...boundsOf(picked),
       ...(cursor ? { after: { createdAt: new Date(cursor.createdAt), id: cursor.id } } : {}),
     });
 

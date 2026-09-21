@@ -15,7 +15,14 @@ import { SEARCH_MAX, tabHref } from '@/lib/request-rows';
  * «ничего нет» про заявку, которая есть. Табы при этом остаются: нашёл
  * двадцать — сузил до исполненных.
  */
-export function RequestsSearch({ query }: { readonly query: string }) {
+export function RequestsSearch({
+  query,
+  period,
+}: {
+  readonly query: string;
+  /** Период параметрами адреса: набранный номер не должен сбрасывать даты. */
+  readonly period: Readonly<Record<string, string>>;
+}) {
   const router = useRouter();
   const [typed, setTyped] = useState(query);
   const pushed = useRef(query);
@@ -34,10 +41,10 @@ export function RequestsSearch({ query }: { readonly query: string }) {
     const timer = setTimeout(() => {
       const asked = typed.trim();
       pushed.current = asked;
-      router.replace(tabHref(asked ? 'all' : 'open', asked), { scroll: false });
+      router.replace(tabHref(asked ? 'all' : 'open', asked, period), { scroll: false });
     }, 300);
     return () => clearTimeout(timer);
-  }, [typed, query, router]);
+  }, [typed, query, period, router]);
 
   return (
     <label className="filters__field">

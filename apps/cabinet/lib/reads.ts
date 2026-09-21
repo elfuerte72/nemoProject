@@ -48,9 +48,22 @@ export const supportUsername = cache(
  * это шесть заходов в базу за одно и то же число.
  */
 const countsFor = cache(
-  async (search: string): Promise<Readonly<Record<ExchangeRequestStatus, number>>> => {
+  /*
+   * Границы — числами, а не датами: `cache` сравнивает аргументы по
+   * ссылке, и две одинаковые даты он счёл бы разными ключами. Ноль —
+   * «границы нет».
+   */
+  async (
+    search: string,
+    from: number,
+    to: number,
+  ): Promise<Readonly<Record<ExchangeRequestStatus, number>>> => {
     const { actor } = await viewer();
-    return getCore().countExchangeRequestsByStatus(actor, search ? { search } : {});
+    return getCore().countExchangeRequestsByStatus(actor, {
+      ...(search ? { search } : {}),
+      ...(from ? { from: new Date(from) } : {}),
+      ...(to ? { to: new Date(to) } : {}),
+    });
   },
 );
 
@@ -68,8 +81,9 @@ const countsFor = cache(
  */
 export function requestCounts(
   search = '',
+  bounds: { readonly from?: Date | undefined; readonly to?: Date | undefined } = {},
 ): Promise<Readonly<Record<ExchangeRequestStatus, number>>> {
-  return countsFor(search);
+  return countsFor(search, bounds.from?.getTime() ?? 0, bounds.to?.getTime() ?? 0);
 }
 
 /**

@@ -838,10 +838,12 @@ export async function countExchangeRequestsByStatus(
   ctx: CoreConfig,
   actor: Actor,
   /**
-   * Поиск сужает и раскладку: числа на табах обязаны считать найденное,
-   * иначе над двумя найденными строками стояло бы «Исполнены 10».
+   * Поиск и даты сужают и раскладку: числа на плитках обязаны считать
+   * то, что показано под ними, иначе над двумя строками за неделю стояло
+   * бы «Исполнены 10». Состояния сюда не передаются намеренно: раскладка
+   * по состояниям и есть ответ.
    */
-  filter: Pick<OwnExchangeFilter, 'search'> = {},
+  filter: Pick<OwnExchangeFilter, 'search' | 'from' | 'to'> = {},
 ): Promise<Readonly<Record<ExchangeRequestStatus, number>>> {
   const owner = requireOwner(actor);
   const rows = await ctx.db

@@ -1,7 +1,12 @@
-import { QuietRefresh, Stat, Stats } from '@nemo/ui';
+import { cookies } from 'next/headers';
+import { PeriodChips, QuietRefresh, Stat, Stats } from '@nemo/ui';
+import { TZ_COOKIE, readTzOffset } from '@nemo/ui/period';
 import { getCore } from '@/lib/core';
 import { countOf, requestCounts, viewer } from '@/lib/reads';
 import {
+  boundsOf,
+  LIST_PERIOD_KEYS,
+  pickPeriod,
   pickSearch,
   pickTab,
   REQUESTS_PAGE,
@@ -42,6 +47,18 @@ export default async function RequestsPage({
   const params = await searchParams;
   const tab = pickTab(single(params.tab));
   const search = pickSearch(single(params.q));
+  /*
+   * Период — по часам того, кто смотрит: «с 1 по 10 сентября» в Бангкоке
+   * начинается на семь часов раньше, чем на сервере. Смещение кладёт в
+   * куку шапка, как и для обзора.
+   */
+  const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
+  const picked = pickPeriod(
+    { period: single(params.period), from: single(params.from), to: single(params.to) },
+    new Date(),
+    offset,
+  );
+  const bounds = boundsOf(picked);
 
   const core = getCore();
   const [rows, counts] = await Promise.all([
@@ -49,10 +66,11 @@ export default async function RequestsPage({
       limit: REQUESTS_PAGE,
       ...withStatuses(tab),
       ...(search ? { search } : {}),
+      ...bounds,
     }),
-    // Числа на табах считают найденное, а не всё: иначе над двумя
-    // строками стояло бы «Исполнены 10».
-    requestCounts(search),
+    // Числа на плитках считают то, что показано под ними, — найденное и
+    // за выбранные даты: иначе над двумя строками стояло бы «Исполнены 10».
+    requestCounts(search, bounds),
   ]);
 
   const total = countOf(counts, statusesOf(tab));
@@ -76,8 +94,23 @@ export default async function RequestsPage({
       </header>
 
       <div className="filters">
-        <RequestsSearch query={search} />
+        <RequestsSearch query={search} period={picked?.query ?? {}} />
       </div>
+
+      {/*
+        Даты — те же чипы, что на обзоре, и те же слова на них: выборка
+        «30 дней» там и здесь одна и та же. Своё у списка — «За всё
+        время»: периода у него может не быть, и так он и открывается.
+      */}
+      <PeriodChips
+        current={picked?.period.key ?? null}
+        basePath="/requests"
+        from={picked?.days.from ?? ''}
+        to={picked?.days.to ?? ''}
+        quick={LIST_PERIOD_KEYS}
+        allTime="За всё время"
+        keep={{ tab, ...(search ? { q: search } : {}) }}
+      />
 
       {/*
         Плитками, как на обзоре, а не строкой табов: число за каждым
@@ -95,10 +128,10 @@ export default async function RequestsPage({
                 key={one}
                 label={TAB_LABELS[one]}
                 value={count}
-                note={search ? 'из найденных' : TAB_NOTES[one]}
+                note={noteOf(one, Boolean(search), picked !== null)}
                 // Тон — только когда есть о чём: нулю он не нужен.
                 tone={count > 0 ? TAB_TONES[one] : 'plain'}
-                href={tabHref(one, search)}
+                href={tabHref(one, search, picked?.query)}
                 current={one === tab}
               />
             );
@@ -111,9 +144,23 @@ export default async function RequestsPage({
         total={total}
         tab={tab}
         search={search}
+        period={picked?.query ?? {}}
       />
     </main>
   );
+}
+
+/**
+ * Строка под числом плитки. Пока список не сужен, она говорит, что
+ * посчитано; суженный — чем сужен: «Исполнены 2 · за выбранные даты»
+ * честнее, чем «2 · деньги отправлены получателю» рядом с десятью на
+ * обзоре.
+ */
+function noteOf(tab: ReturnType<typeof pickTab>, searched: boolean, dated: boolean): string {
+  if (searched && dated) return 'из найденных за выбранные даты';
+  if (searched) return 'из найденных';
+  if (dated) return 'за выбранные даты';
+  return TAB_NOTES[tab];
 }
 
 function withStatuses(tab: ReturnType<typeof pickTab>) {

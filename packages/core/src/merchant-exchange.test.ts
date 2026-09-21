@@ -866,3 +866,71 @@ describe('получатель заявки', () => {
     expect(await core.getExchangeRequestRecipient(asClient(100n), request.id)).toBeNull();
   });
 });
+
+/**
+ * Даты в списке заявок. Отбор по дате подачи у списка и счёта был и
+ * раньше — им пользуется выгрузка CSV, — а раскладка по состояниям дат
+ * не знала: на странице заявок она кормит плитки, и плитка «Исполнены
+ * 10» над списком за неделю из двух строк считала бы не то, что
+ * показано под ней.
+ */
+describe('заявки за период', () => {
+  async function submitAt(when: string, reference: string): Promise<string> {
+    const { request } = await core.submitExchangeRequest(merchant, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      payout: PAYOUT,
+      reference,
+    });
+    await db
+      .update(exchangeRequests)
+      .set({ createdAt: new Date(when) })
+      .where(eq(exchangeRequests.id, request.id));
+    return request.id;
+  }
+
+  const from = new Date('2026-09-14T00:00:00Z');
+  const to = new Date('2026-09-20T23:59:59.999Z');
+
+  it('список, счёт и раскладка считают одни и те же заявки', async () => {
+    await submitAt('2026-09-10T12:00:00Z', 'до периода');
+    const inside = await submitAt('2026-09-15T12:00:00Z', 'в периоде');
+    const cancelled = await submitAt('2026-09-16T12:00:00Z', 'в периоде, отменена');
+    await submitAt('2026-09-21T00:00:00Z', 'после периода');
+    await core.cancelOwnExchangeRequest(merchant, cancelled);
+
+    const rows = await core.listExchangeRequests(merchant, { from, to });
+    expect(rows.map((row) => row.id).sort()).toEqual([inside, cancelled].sort());
+    expect(await core.countExchangeRequests(merchant, { from, to })).toBe(2);
+    expect(await core.countExchangeRequestsByStatus(merchant, { from, to })).toEqual({
+      new: 1,
+      in_progress: 0,
+      rate_confirmed: 0,
+      payment_received: 0,
+      completed: 0,
+      cancelled: 1,
+    });
+  });
+
+  it('границы включительны с обеих сторон', async () => {
+    const first = await submitAt('2026-09-14T00:00:00Z', 'первая миллисекунда');
+    const last = await submitAt('2026-09-20T23:59:59.999Z', 'последняя миллисекунда');
+
+    const rows = await core.listExchangeRequests(merchant, { from, to });
+    expect(rows.map((row) => row.id).sort()).toEqual([first, last].sort());
+  });
+
+  it('период сужает и поиск: оба условия действуют разом', async () => {
+    await submitAt('2026-09-10T12:00:00Z', 'order-1');
+    const wanted = await submitAt('2026-09-15T12:00:00Z', 'order-2');
+    await submitAt('2026-09-16T12:00:00Z', 'booking-3');
+
+    const rows = await core.listExchangeRequests(merchant, { from, to, search: 'order' });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+    expect(
+      (await core.countExchangeRequestsByStatus(merchant, { from, to, search: 'order' })).new,
+    ).toBe(1);
+  });
+});

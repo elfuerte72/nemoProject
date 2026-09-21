@@ -1,3 +1,4 @@
+import { dayOf, resolvePeriod, type Period, type PeriodKey } from '@nemo/ui/period';
 import type { ExchangeRequestView } from '@nemo/core';
 import type { ExchangeKind, ExchangeRequestStatus } from '@nemo/types';
 
@@ -129,9 +130,91 @@ export function pickSearch(raw: string | undefined): string {
   return (raw ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, SEARCH_MAX);
 }
 
-/** Адрес таба. Поиск едет с ним: иначе таб сбрасывал бы найденное. */
-export function tabHref(tab: RequestTab, search: string): string {
+/**
+ * Адрес таба. Поиск и период едут с ним: иначе плитка сбрасывала бы и
+ * найденное, и выбранные даты.
+ */
+export function tabHref(
+  tab: RequestTab,
+  search: string,
+  period: Readonly<Record<string, string>> = {},
+): string {
   const params = new URLSearchParams({ tab });
   if (search) params.set('q', search);
+  for (const [key, value] of Object.entries(period)) params.set(key, value);
   return `/requests?${params.toString()}`;
+}
+
+/* ── Период ──────────────────────────────────────────────────────── */
+
+/**
+ * Какие периоды предлагает список: неделя, месяц, три месяца — и свой,
+ * с числа по число. Названы теми же словами, что на обзоре («7 дней»,
+ * «30 дней», «90 дней»): там те же выборки стоят рядом с теми же
+ * числами, и «месяц» здесь при «30 днях» там читался бы как календарный
+ * — то есть как другой отрезок.
+ */
+export const LIST_PERIOD_KEYS: readonly PeriodKey[] = ['7d', '30d', '90d'];
+
+export interface ListPeriod {
+  readonly period: Period;
+  /** Те же границы параметрами адреса — чтобы плитки и поиск несли период с собой. */
+  readonly query: Readonly<Record<string, string>>;
+  /**
+   * Первый и последний день периода — для полей «с» и «по». Названы и у
+   * быстрого периода: «7 дней» без чисел оставляет гадать, входит ли
+   * сегодня, а свой период удобнее начинать с готового отрезка.
+   */
+  readonly days: { readonly from: string; readonly to: string };
+}
+
+/**
+ * Период списка из адреса — или его отсутствие.
+ *
+ * Отличие от обзора одно, и оно главное: у списка периода может не быть
+ * вовсе. Обзор без периода не посчитать, и там незнакомый адрес значит
+ * «тридцать дней» (`resolvePeriod`). А список без периода — это все
+ * заявки, и молча сузить его до месяца значило бы спрятать от мерчанта
+ * заявку, за которой он пришёл. Поэтому всё, чего список не узнал, —
+ * «всё время»; сами же границы считает общее правило, и день у него тот
+ * же, что на обзоре.
+ */
+export function pickPeriod(
+  params: {
+    readonly period?: string | undefined;
+    readonly from?: string | undefined;
+    readonly to?: string | undefined;
+  },
+  now: Date,
+  offsetMinutes: number,
+): ListPeriod | null {
+  const asked = params.period;
+  const known = asked === 'custom' || LIST_PERIOD_KEYS.includes(asked as PeriodKey);
+  if (!asked || !known) return null;
+
+  const period = resolvePeriod(params, now, offsetMinutes);
+  // Общее правило на битые даты отвечает «тридцать дней» — для списка
+  // это и есть молчаливое сужение: узнаётся оно по сменившемуся ключу.
+  if (period.key !== asked) return null;
+
+  const lastDay = new Date(period.to.getTime() - 1);
+  const days = { from: dayOf(period.from, offsetMinutes), to: dayOf(lastDay, offsetMinutes) };
+  // В адрес дни идут только у своего периода: «7 дней» завтра — уже
+  // другие числа, и ссылка с ними перестала бы значить «последняя неделя».
+  return {
+    period,
+    days,
+    query: period.key === 'custom' ? { period: 'custom', ...days } : { period: period.key },
+  };
+}
+
+/**
+ * Период — в границы отбора ядра. У периода верхняя граница не входит
+ * (`[с, по)`), у отбора своих заявок — входит; перевод жил строкой в
+ * выгрузке CSV, а теперь нужен ещё странице и дочитыванию, и трёх копий
+ * «минус миллисекунда» быть не должно.
+ */
+export function boundsOf(picked: Pick<ListPeriod, 'period'> | null): { from?: Date; to?: Date } {
+  if (!picked) return {};
+  return { from: picked.period.from, to: new Date(picked.period.to.getTime() - 1) };
 }

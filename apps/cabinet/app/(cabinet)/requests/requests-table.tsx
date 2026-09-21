@@ -18,6 +18,7 @@ export function RequestsTable({
   total,
   tab,
   search,
+  period,
 }: {
   readonly rows: readonly RequestRow[];
   readonly total: number;
@@ -28,6 +29,11 @@ export function RequestsTable({
    * которых не искали.
    */
   readonly search: string;
+  /**
+   * Период параметрами адреса — едет в дочитывание по той же причине,
+   * что и поиск: вторая страница обязана отбираться так же, как первая.
+   */
+  readonly period: Readonly<Record<string, string>>;
 }) {
   const [extra, setExtra] = useState<readonly RequestRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,26 +56,29 @@ export function RequestsTable({
    * выборки к новой не дописывается. С поиском это стало вероятнее:
    * запрос меняется с каждой набранной буквой.
    */
-  const shownKey = `${tab}\n${search}`;
+  const periodKey = new URLSearchParams(period).toString();
+  const shownKey = `${tab}\n${search}\n${periodKey}`;
   const liveKey = useRef(shownKey);
   liveKey.current = shownKey;
 
   /* Сменился таб или запрос — хвост от прежней выборки чужой ей целиком. */
   useEffect(() => {
     setExtra([]);
-  }, [tab, search]);
+  }, [tab, search, periodKey]);
 
   if (shown.length === 0) {
     return (
       <EmptyState
         icon="exchange"
-        title={search ? 'Ничего не нашлось' : 'Пока пусто'}
+        title={search ? 'Ничего не нашлось' : periodKey ? 'За эти даты пусто' : 'Пока пусто'}
         text={
           search
             ? tab === 'all'
               ? 'Заявки с таким номером нет. Проверьте номер: он тот, который ваша система передала при подаче.'
               : 'В этом состоянии такой заявки нет. Посмотрите во «Всех»: ищущий номер обычно не знает, исполнена она или отменена.'
-            : tab === 'open'
+            : periodKey
+              ? 'За выбранные даты таких заявок нет. Расширьте период или откройте «За всё время».'
+              : tab === 'open'
               ? 'Незакрытых заявок нет. Поданные вашей интеграцией встанут сюда.'
               : 'В этом состоянии заявок нет.'
         }
@@ -90,6 +99,7 @@ export function RequestsTable({
       const params = new URLSearchParams({
         tab,
         ...(search ? { q: search } : {}),
+        ...period,
         ...cursorToParams(cursor),
       });
       const response = await fetch(`/api/requests?${params.toString()}`);

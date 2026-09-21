@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PERIOD_LABELS, type PeriodKey } from './period.js';
 
 /** Что показывает панель по умолчанию: смена, неделя, месяц, квартал. */
@@ -21,8 +21,11 @@ export function PeriodChips({
   to,
   basePath,
   quick = PANEL_QUICK,
+  keep,
+  allTime,
 }: {
-  current: PeriodKey;
+  /** Выбранный период. Пусто — периода нет: так бывает только с `allTime`. */
+  current: PeriodKey | null;
   /** Раздел, в адрес которого уходит период: у каждого экрана свой. */
   basePath: string;
   /** Границы своего периода днями «2026-09-02» — для полей. */
@@ -34,18 +37,58 @@ export function PeriodChips({
    * «сколько принесло за полгода».
    */
   quick?: readonly PeriodKey[];
+  /**
+   * Параметры адреса, которые период не должен затирать. У списка заявок
+   * рядом с периодом живут таб и поиск, и чип, собравший адрес из одного
+   * периода, сбрасывал бы найденное.
+   */
+  keep?: Readonly<Record<string, string>> | undefined;
+  /**
+   * Подпись чипа «без периода». Сводку без периода не посчитать, и у
+   * обзора его нет; а список без периода — это все записи, и там он
+   * стоит первым и выбран по умолчанию.
+   */
+  allTime?: string | undefined;
 }) {
   const router = useRouter();
   const [draftFrom, setDraftFrom] = useState(from);
   const [draftTo, setDraftTo] = useState(to);
 
+  /*
+   * Поля идут за периодом. Чип меняет адрес, а не страницу: компонент
+   * остаётся тем же, и начальное значение состояния второй раз не
+   * читается — после «7 дней» в полях стояли бы даты прежнего периода.
+   * Набранное человеком при этом не теряется: границы приходят новыми
+   * только тогда, когда период и правда сменился.
+   */
+  useEffect(() => {
+    setDraftFrom(from);
+    setDraftTo(to);
+  }, [from, to]);
+
+  /** Адрес раздела с периодом — поверх сохраняемых параметров. */
+  const hrefWith = (period: Readonly<Record<string, string>>): string => {
+    const params = new URLSearchParams({ ...keep, ...period });
+    const query = params.toString();
+    return query ? `${basePath}?${query}` : basePath;
+  };
+
   return (
     <div className="period">
       <div className="chips">
+        {allTime ? (
+          <Link
+            href={hrefWith({})}
+            className={current === null ? 'chip chip--on' : 'chip'}
+            scroll={false}
+          >
+            {allTime}
+          </Link>
+        ) : undefined}
         {quick.map((key) => (
           <Link
             key={key}
-            href={`${basePath}?period=${key}`}
+            href={hrefWith({ period: key })}
             className={current === key ? 'chip chip--on' : 'chip'}
             scroll={false}
           >
@@ -57,7 +100,7 @@ export function PeriodChips({
         className="period__custom"
         onSubmit={(event) => {
           event.preventDefault();
-          router.push(`${basePath}?period=custom&from=${draftFrom}&to=${draftTo}`);
+          router.push(hrefWith({ period: 'custom', from: draftFrom, to: draftTo }));
         }}
       >
         <label className="field field--narrow">
