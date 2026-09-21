@@ -59,6 +59,14 @@ export default async function RequestPage({
    * у оператора остаётся лентой состояний, а не пятисотым ответом.
    */
   const seesHooks = merchantRoleCan(session.role, 'integration');
+  /*
+   * Ключ подачи называется подписью, а не идентификатором: «сайт»,
+   * «бухгалтерия» — так мерчант его и завёл. Подпись живёт у ключа и
+   * меняется, поэтому читается сейчас, а не копируется в заявку.
+   * Список ключей — у того же, кому видна интеграция.
+   */
+  const keys = seesHooks && request.apiKeyId ? await core.listApiKeys(actor) : [];
+  const submittedKey = keys.find((one) => one.id === request.apiKeyId);
   const [events, terms, recipient, deliveries] = await Promise.all([
     core.listExchangeRequestEventsForOwner(actor, id),
     core.getExchangeTerms(),
@@ -97,7 +105,9 @@ export default async function RequestPage({
           </h1>
           <p className="page__sub">
             {KIND_LABELS[request.kind]} · подана{' '}
-            {request.source ? `${SUBMITTED_VIA[request.source]} · ` : ''}
+            {request.source ? `${SUBMITTED_VIA[request.source]}` : ''}
+            {submittedKey ? `, ключ «${submittedKey.label}»` : ''}
+            {request.source ? ' · ' : ''}
             <Moment at={request.createdAt.toISOString()} />
           </p>
           {/*

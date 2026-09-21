@@ -21,7 +21,8 @@ import {
 
 const db = testDatabase();
 const keys = generateRequisiteKeyPair();
-const core = createCore({ db, requisites: { publicKey: keys.publicKey } });
+// Префикс ключей нужен подаче по API: ею заводится ключ в сцене.
+const core = createCore({ db, requisites: { publicKey: keys.publicKey }, apiKeyPrefix: 'sk_test_' });
 
 let merchant: Actor & { type: 'merchant' };
 
@@ -932,5 +933,79 @@ describe('заявки за период', () => {
     expect(
       (await core.countExchangeRequestsByStatus(merchant, { from, to, search: 'order' })).new,
     ).toBe(1);
+  });
+});
+
+/**
+ * Каким ключом подана заявка.
+ *
+ * Пишется в момент подачи, потому что задним числом не восстанавливается:
+ * журнал вызовов с заявкой не связан, а у `POST /v1/exchange-requests`
+ * заявки в момент записи вызова ещё нет. Так уже случилось с источником
+ * (`source`, миграция 0033) — у всех заявок до него он пуст навсегда, и
+ * второй такой дырки заводить не стали.
+ *
+ * Отвечает на два вопроса. Мерчанту: «каким ключом это подано» — когда
+ * ключей несколько, у сайта и у бухгалтерии свой. И на более важный:
+ * отзывая ключ, видно, что через него прошло.
+ */
+describe('ключ подачи', () => {
+  const body = {
+    kind: 'electronic',
+    fromCode: 'USDT',
+    toCode: 'RUB',
+    fromAmount: '100',
+    payout: PAYOUT,
+  } as const;
+
+  it('названный при подаче — доезжает до ответа, списка и карточки', async () => {
+    const { key } = await core.issueApiKey(merchant, { label: 'сайт' });
+
+    const { request } = await core.submitExchangeRequest(merchant, {
+      ...body,
+      source: 'api',
+      apiKeyId: key.id,
+    });
+    expect(request.apiKeyId).toBe(key.id);
+
+    const [listed] = await core.listExchangeRequests(merchant);
+    expect(listed?.apiKeyId).toBe(key.id);
+    expect((await core.getExchangeRequest(merchant, request.id)).apiKeyId).toBe(key.id);
+  });
+
+  it('поданная из кабинета ключа не имеет', async () => {
+    const { request } = await core.submitExchangeRequest(merchant, { ...body, source: 'cabinet' });
+    expect(request.apiKeyId).toBeNull();
+  });
+
+  /*
+   * Ключ принадлежит кабинету, и заявка ссылается на свой. Чужой
+   * отвергает база — так же, как чужого получателя: ограничение надёжнее
+   * проверки, которую можно забыть повторить во втором месте подачи.
+   */
+  it('чужой ключ база не принимает', async () => {
+    const stranger = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    const { key: theirs } = await core.issueApiKey(stranger, { label: 'чужой' });
+
+    await expect(
+      core.submitExchangeRequest(merchant, { ...body, source: 'api', apiKeyId: theirs.id }),
+    ).rejects.toThrow();
+  });
+
+  /*
+   * Отозванный ключ заявок больше не подаёт, но поданные им остаются с
+   * ним: отзыв — это «больше не пускать», а не «забыть, что было».
+   */
+  it('отзыв ключа заявку с ним не трогает', async () => {
+    const { key } = await core.issueApiKey(merchant, { label: 'сайт' });
+    const { request } = await core.submitExchangeRequest(merchant, {
+      ...body,
+      source: 'api',
+      apiKeyId: key.id,
+    });
+
+    await core.revokeApiKey(merchant, key.id);
+
+    expect((await core.getExchangeRequest(merchant, request.id)).apiKeyId).toBe(key.id);
   });
 });

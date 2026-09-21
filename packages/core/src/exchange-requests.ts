@@ -131,6 +131,12 @@ export interface ExchangeRequestView {
    * источник читался бы как записанный.
    */
   readonly source: ExchangeRequestSource | null;
+  /**
+   * Ключ API, которым заявка подана. Пусто у поданных человеком и до
+   * появления отметки. Имя ключа читается отдельно: подпись мерчант
+   * меняет, и хранить её копией в заявке значило бы показывать старую.
+   */
+  readonly apiKeyId: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly completedAt: Date | null;
@@ -178,6 +184,11 @@ export interface SubmitExchangeRequestInput {
    * угаданный источник читался бы как записанный.
    */
   readonly source?: ExchangeRequestSource | undefined;
+  /**
+   * Ключ API, которым подана. Называет его адаптер v1: ядро не знает,
+   * откуда пришёл запрос, и узнать ключ ему неоткуда.
+   */
+  readonly apiKeyId?: string | undefined;
 }
 
 export interface SubmitExchangeRequestResult {
@@ -264,6 +275,7 @@ export function toExchangeRequestView(row: ExchangeRequestRow): ExchangeRequestV
     reference: row.reference,
     submittedByUserId: row.submittedByUserId,
     source: row.source,
+    apiKeyId: row.apiKeyId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     completedAt: row.completedAt,
@@ -541,6 +553,7 @@ export async function submitExchangeRequest(
       ...(reference === undefined ? {} : { reference }),
       ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
       ...(input.source === undefined ? {} : { source: input.source }),
+      ...(input.apiKeyId === undefined ? {} : { apiKeyId: input.apiKeyId }),
       kind: input.kind,
       fromCode: input.fromCode,
       toCode: input.toCode,
