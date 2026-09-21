@@ -28,6 +28,27 @@ function direction(
   };
 }
 
+/** Направление со ступенчатой сеткой: ставка верхней ступени — на выбор. */
+function withTiers(rateBps: number): DirectionRate {
+  return {
+    ...direction('RUB', 'THB', '0.26'),
+    quote: {
+      rate: Money.toAmount('0'),
+      payoutDecimals: 2,
+      fee: {
+        toBaseRate: Money.toAmount('0.011'),
+        fromBaseRate: Money.toAmount('32'),
+        tiers: [
+          { upToUsd: Money.toAmount('2000'), fixedUsd: Money.toAmount('10'), rateBps: 450 },
+          { upToUsd: null, rateBps },
+        ],
+        minUsd: null,
+        thresholdInclusive: true,
+      },
+    },
+  };
+}
+
 describe('boardOf', () => {
   it('ставит рублёвую пару блоком, остальное строками', () => {
     const board = boardOf([
@@ -141,6 +162,20 @@ describe('sameRates', () => {
     const silent = [direction('USDT', 'THB', null)];
     expect(sameRates(silent, [direction('USDT', 'THB', '32.2')])).toBe(false);
   });
+
+  it('правленая ступень сетки — изменение, даже когда курс и отметка те же', () => {
+    // Администратор поднял ставку верхней ступени: опорный курс берётся
+    // на минимуме направления и не двигается, отметка у пары от банка
+    // суточная, — и без этого сравнения табло считало бы сумму по
+    // вчерашним ступеням до самой ночи.
+    const before = [withTiers(450)];
+    const after = [withTiers(550)];
+    expect(sameRates(before, after)).toBe(false);
+  });
+
+  it('тот же курс с той же сеткой — кадра нет', () => {
+    expect(sameRates([withTiers(450)], [withTiers(450)])).toBe(true);
+  });
 });
 
 describe('priceOn', () => {
@@ -184,6 +219,44 @@ describe('priceOn', () => {
     expect(price.payout).toBeNull();
   });
 
+  it('на самой границе ступени читает порог тем же знаком, что и ядро', () => {
+    /*
+     * Двести тысяч рублей — это ровно две тысячи долларов, то есть та
+     * самая граница, из-за которой у сетки есть признак
+     * `thresholdInclusive`: у бата и юаня «до 2 000 включительно», у
+     * доллара по ТЗ от 29 августа 2026 «меньше 2 000». Экран, прочитавший
+     * границу не тем знаком, разошёлся бы с заявкой на целую ставку.
+     */
+    function atBorder(inclusive: boolean): DirectionRate {
+      return {
+        ...direction('RUB', 'THB', '0.26'),
+        quote: {
+          rate: Money.toAmount('0'),
+          payoutDecimals: 2,
+          fee: {
+            toBaseRate: Money.toAmount('0.01'),
+            fromBaseRate: Money.toAmount('32'),
+            tiers: [
+              { upToUsd: Money.toAmount('2000'), rateBps: 450 },
+              { upToUsd: null, rateBps: 1000 },
+            ],
+            minUsd: null,
+            thresholdInclusive: inclusive,
+          },
+        },
+      };
+    }
+
+    const border = Money.toAmount('200000');
+    const included = priceOn(atBorder(true), border, minAmount);
+    const excluded = priceOn(atBorder(false), border, minAmount);
+
+    // Включительный порог оставляет границу нижней ступени — 4,5 %
+    // против 10 %, и выдача по ней больше.
+    expect(included.payout).toBe('61120');
+    expect(excluded.payout).toBe('57600');
+  });
+
   it('на достаточной сумме считает выдачу и курс на неё', () => {
     const price = priceOn(withFee(), Money.toAmount('100000'), minAmount);
     expect(price.line.kind).toBe('rate');
@@ -222,6 +295,15 @@ describe('flashes', () => {
   it('тот же курс — без подсветки', () => {
     const rows = [direction('USDT', 'THB', '32.2')];
     expect(flashes(rows, [...rows])).toEqual({});
+  });
+
+  it('тот же курс, записанный иначе, не подсвечивается', () => {
+    // «83» и «83.000000000000000000» — одно число, пришедшее из
+    // `numeric(38, 18)` разными путями. Сравнение записями красило бы
+    // строку красным там, где не изменилось ничего.
+    const before = [direction('USDT', 'RUB', '83')];
+    const after = [direction('USDT', 'RUB', '83.000000000000000000')];
+    expect(flashes(before, after)).toEqual({});
   });
 });
 

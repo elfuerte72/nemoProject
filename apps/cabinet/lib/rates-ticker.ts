@@ -36,6 +36,18 @@ export type RatesReader = (kind: ExchangeKind) => Promise<readonly DirectionRate
  */
 export const RATES_TICK_MS = 30_000;
 
+/**
+ * Сколько ждать один обход справочника.
+ *
+ * Тот же потолок, что у ожидания котировки в `packages/rates`, и
+ * заведён по той же причине: 27 августа 2026 запрос к провайдеру завис
+ * посреди сетевого сбоя, не ответив и не отказав, и ждали его девять
+ * часов. Здесь зависшее чтение стоило бы дороже — обход идёт под
+ * защёлкой, и не сняв её, тикер замолчал бы навсегда для всех открытых
+ * вкладок процесса, ничего об этом не сказав.
+ */
+const READ_DEADLINE_MS = 15_000;
+
 interface Watch {
   readonly listeners: Set<RatesListener>;
   /** Последний разосланный снимок: с ним сравнивается прочитанное. */
@@ -110,8 +122,13 @@ async function tick(state: Ticker, read: RatesReader): Promise<void> {
       if (watch.listeners.size === 0) continue;
       let directions: readonly DirectionRate[];
       try {
-        directions = await read(kind);
-      } catch {
+        directions = await within(read(kind));
+      } catch (error) {
+        // Молчание базы и отказ источника — обычное дело, а не авария:
+        // табло переживёт пропущенный обход. В журнал это всё же
+        // ложится: зависшее чтение иначе не отличить от тишины на
+        // рынке.
+        console.warn('Обход справочника курсов не удался', error);
         continue;
       }
       if (watch.last && sameRates(watch.last, directions)) continue;
@@ -121,6 +138,21 @@ async function tick(state: Ticker, read: RatesReader): Promise<void> {
   } finally {
     state.reading = false;
   }
+}
+
+/**
+ * Ожидание с потолком: зависший промис не должен держать защёлку
+ * обхода. Отказ по сроку — обычный отказ, его ловит тот же `catch`.
+ */
+function within<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('Справочник курсов не ответил за отведённый срок')),
+      READ_DEADLINE_MS,
+    );
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer)) as Promise<T>;
 }
 
 /** Только для теста: тикер живёт на `globalThis` и переживает файл теста. */

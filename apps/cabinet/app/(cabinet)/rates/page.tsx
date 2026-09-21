@@ -35,14 +35,15 @@ export default async function RatesPage({
   const kind = asked.success ? asked.data : 'electronic';
 
   const { session } = await viewer();
-  const core = getCore();
-  const [shown, terms] = await Promise.all([
-    listDirectionRates(core, kind),
-    // Есть ли наличные направления вовсе: таба, за которым пусто, быть
-    // не должно — он обещает раздел, которого нет.
-    core.getExchangeTerms(),
-  ]);
-  const hasCash = terms.pairs.some((pair) => pair.kind === 'cash');
+  const shown = await listDirectionRates(getCore(), kind);
+
+  /*
+   * Есть ли наличные направления вовсе: таба, за которым пусто, быть не
+   * должно — он обещает раздел, которого нет. Спрашивать справочник
+   * второй раз для этого незачем: `listDirectionRates` отдаёт условия
+   * целиком, со всеми парами, а по виду сделки фильтрует свой список.
+   */
+  const hasCash = shown.terms.pairs.some((pair) => pair.kind === 'cash');
 
   return (
     <main className="page">

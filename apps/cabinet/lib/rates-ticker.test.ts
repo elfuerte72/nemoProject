@@ -85,6 +85,31 @@ describe('тикер курсов', () => {
     expect(read).toHaveBeenCalledTimes(1);
   });
 
+  it('зависшее чтение не глушит тикер навсегда', async () => {
+    // 27 августа 2026 запрос к провайдеру завис, не ответив и не
+    // отказав, и его ждали девять часов. Здесь такой же запрос держал
+    // бы защёлку обхода: тикер замолчал бы для всех вкладок процесса и
+    // не сказал бы об этом ничего.
+    let attempt = 0;
+    const read = vi.fn(async () => {
+      attempt += 1;
+      if (attempt === 1) return new Promise<readonly DirectionRate[]>(() => {});
+      return [direction('32.9')];
+    });
+    const frames: (readonly DirectionRate[])[] = [];
+
+    subscribeToRates(read, 'electronic', (directions) => frames.push(directions));
+
+    await vi.advanceTimersByTimeAsync(RATES_TICK_MS);
+    expect(frames).toHaveLength(0);
+
+    // Срок ожидания снимает защёлку, и следующий обход идёт своим чередом.
+    await vi.advanceTimersByTimeAsync(20_000);
+    await vi.advanceTimersByTimeAsync(RATES_TICK_MS);
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.[0]?.rate).toBe('32.9');
+  });
+
   it('отказ чтения не рвёт подписку: следующий обход идёт как ни в чём не бывало', async () => {
     let attempt = 0;
     const read = vi.fn(async () => {

@@ -32,6 +32,7 @@ const config: NextConfig = {
     '@nemo/brand',
     '@nemo/core',
     '@nemo/email',
+    '@nemo/flags',
     '@nemo/http',
     '@nemo/qr',
     '@nemo/rates',
