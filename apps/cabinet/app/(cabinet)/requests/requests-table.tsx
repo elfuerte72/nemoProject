@@ -6,7 +6,7 @@ import { EmptyState, Moment } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
 import { cursorOf, cursorToParams, mergePages } from '@nemo/ui/paging';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
-import type { RequestRow, RequestTab, WhoKey } from '@/lib/request-rows';
+import type { RequestRow, RequestTab } from '@/lib/request-rows';
 
 /**
  * Список заявок с дочитыванием по курсору — тем же правилом, что у
@@ -17,18 +17,11 @@ export function RequestsTable({
   rows,
   total,
   tab,
-  who,
   names,
 }: {
   readonly rows: readonly RequestRow[];
   readonly total: number;
   readonly tab: RequestTab;
-  /**
-   * Чьи заявки показаны. Едет в запрос дочитывания: без него вторая
-   * страница приехала бы по всему кабинету, и в «моих» появились бы
-   * чужие строки.
-   */
-  readonly who: WhoKey;
   /**
    * Имена людей кабинета по идентификатору. Пусто у всех, кроме
    * владельца: состав кабинета читает он один (тикет 17), и колонка
@@ -51,10 +44,10 @@ export function RequestsTable({
     setExtra((current) => current.filter((row) => !rows.some((one) => one.id === row.id)));
   }, [rows]);
 
-  /* Сменился таб или выборка — хвост от прежней чужой ей целиком. */
+  /* Сменился таб — хвост от прежнего чужой ему целиком. */
   useEffect(() => {
     setExtra([]);
-  }, [tab, who]);
+  }, [tab]);
 
   if (shown.length === 0) {
     return (
@@ -80,7 +73,7 @@ export function RequestsTable({
     setLoading(true);
     setFailed(false);
     try {
-      const params = new URLSearchParams({ tab, who, ...cursorToParams(cursor) });
+      const params = new URLSearchParams({ tab, ...cursorToParams(cursor) });
       const response = await fetch(`/api/requests?${params.toString()}`);
       if (!response.ok) throw new Error(String(response.status));
       const body = (await response.json()) as { rows: RequestRow[] };

@@ -89,32 +89,3 @@ export function pickTab(value: string | undefined): RequestTab {
 
 /** Столько строк на странице: экран ноутбука вмещает их без второй прокрутки. */
 export const REQUESTS_PAGE = 25;
-
-/**
- * Чьи заявки показывать (тикет 17): все кабинета или только свои.
- *
- * Живёт рядом с табами и по той же причине: отбор берут отсюда и
- * страница, и маршрут дочитывания, и разойтись они не должны — иначе
- * вторая страница приезжала бы с чужими заявками, а заметил бы это
- * тот, кто дочитал до конца.
- */
-export const WHO_KEYS = ['all', 'me'] as const;
-export type WhoKey = (typeof WHO_KEYS)[number];
-
-export const WHO_LABELS: Record<WhoKey, string> = {
-  all: 'Все',
-  me: 'Мои',
-};
-
-/** Незнакомое слово — «все»: параметр приходит из адресной строки. */
-export function pickWho(raw: string | undefined): WhoKey {
-  return WHO_KEYS.includes(raw as WhoKey) ? (raw as WhoKey) : 'all';
-}
-
-/** Условие отбора по автору — то же на странице и в маршруте. */
-export function submittedByFilter(
-  who: WhoKey,
-  userId: string,
-): { submittedByUserId?: string } {
-  return who === 'me' ? { submittedByUserId: userId } : {};
-}
