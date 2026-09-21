@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { slopComplaints } from '@nemo/core';
-import { deliveryWords, trailOf, type TrailDeliveryInput } from './request-trail.js';
+import {
+  deliveryWords,
+  pathWithHistory,
+  trailOf,
+  type TrailDeliveryInput,
+} from './request-trail.js';
 
 /**
  * Хронология заявки вместе с вебхуками.
@@ -193,5 +198,97 @@ describe('исход доставки словами', () => {
     ]) {
       expect(slopComplaints(`Вебхук ${deliveryWords(one).text}.`)).toEqual([]);
     }
+  });
+});
+
+/**
+ * Строка пути вместе с историей.
+ *
+ * До 21 сентября 2026 время и вебхуки стояли отдельным блоком «Что
+ * происходило» под карточкой, и владелец его убрал: блок повторял
+ * строку пути теми же словами — «Новая», «Курс подтверждён», — только
+ * столбиком. Время шага и его доставки переехали под сам шаг.
+ *
+ * Правило проверяется тестом, потому что ошибка в нём правдоподобна:
+ * время отмены под шагом «Курс подтверждён» выглядит как время
+ * подтверждения курса.
+ */
+describe('путь с историей', () => {
+  const events = [
+    { fromStatus: null, toStatus: 'new', createdAt: at(0), comment: null },
+    { fromStatus: 'new', toStatus: 'in_progress', createdAt: at(5), comment: null },
+    { fromStatus: 'in_progress', toStatus: 'rate_confirmed', createdAt: at(7), comment: null },
+  ] as const;
+
+  it('под шагом стоит время, когда заявка до него дошла', () => {
+    const path = pathWithHistory({ status: 'rate_confirmed' }, events, []);
+
+    expect(path.steps.map((one) => [one.label, one.at?.toISOString() ?? null])).toEqual([
+      ['Новая', at(0).toISOString()],
+      ['Курс подтверждён', at(7).toISOString()],
+      ['Оплата получена', null],
+      ['Исполнена', null],
+    ]);
+  });
+
+  /*
+   * «Новая» и «в работе» — один шаг, и время у него — подача: когда
+   * менеджер заявку взял, мерчанту не важно, а под шагом «Новая» оно
+   * читалось бы как время подачи.
+   */
+  it('время первого шага — подача, а не взятие в работу', () => {
+    const path = pathWithHistory({ status: 'in_progress' }, events.slice(0, 2), []);
+    expect(path.steps[0]?.at?.toISOString()).toBe(at(0).toISOString());
+  });
+
+  it('вебхук стоит под своим шагом', () => {
+    const path = pathWithHistory({ status: 'rate_confirmed' }, events, [
+      delivery({ id: 'a', event: 'exchange_request.created', createdAt: at(0) }),
+      delivery({ id: 'b', event: 'exchange_request.rate_confirmed' }),
+    ]);
+
+    expect(path.steps.map((one) => one.deliveries.map((d) => d.id))).toEqual([['a'], ['b'], [], []]);
+  });
+
+  /*
+   * Отмена — не шаг пути: заявка обрывается на том шаге, где её
+   * застали, и время у этого шага своё. Время и вебхук отмены стоят
+   * отдельно, иначе «отменена в 17:30» читалась бы как «курс
+   * подтверждён в 17:30».
+   */
+  it('отмена стоит отдельно от шага, на котором оборвалась', () => {
+    const path = pathWithHistory(
+      { status: 'cancelled', cancelReason: 'Покупатель не заплатил' },
+      [
+        ...events,
+        { fromStatus: 'rate_confirmed', toStatus: 'cancelled', createdAt: at(30), comment: null },
+      ],
+      [
+        delivery({ id: 'b', event: 'exchange_request.rate_confirmed' }),
+        delivery({ id: 'c', event: 'exchange_request.cancelled', createdAt: at(30) }),
+      ],
+    );
+
+    expect(path.steps.map((one) => one.state)).toEqual(['done', 'stopped', 'ahead', 'ahead']);
+    expect(path.steps[1]?.at?.toISOString()).toBe(at(7).toISOString());
+    expect(path.steps[1]?.deliveries.map((d) => d.id)).toEqual(['b']);
+    expect(path.cancelled?.at.toISOString()).toBe(at(30).toISOString());
+    expect(path.cancelled?.deliveries.map((d) => d.id)).toEqual(['c']);
+  });
+
+  it('у неотменённой отмены нет', () => {
+    expect(pathWithHistory({ status: 'rate_confirmed' }, events, []).cancelled).toBeNull();
+  });
+
+  it('передача заявки время шага не перебивает', () => {
+    const path = pathWithHistory(
+      { status: 'rate_confirmed' },
+      [
+        ...events,
+        { fromStatus: 'rate_confirmed', toStatus: 'rate_confirmed', createdAt: at(20), comment: null },
+      ],
+      [],
+    );
+    expect(path.steps[1]?.at?.toISOString()).toBe(at(7).toISOString());
   });
 });

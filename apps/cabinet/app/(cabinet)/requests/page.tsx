@@ -1,4 +1,4 @@
-import { QuietRefresh, Tabs } from '@nemo/ui';
+import { QuietRefresh, Stat, Stats } from '@nemo/ui';
 import { getCore } from '@/lib/core';
 import { countOf, requestCounts, viewer } from '@/lib/reads';
 import {
@@ -9,6 +9,8 @@ import {
   statusesOf,
   tabHref,
   TAB_LABELS,
+  TAB_NOTES,
+  TAB_TONES,
   toRequestRow,
 } from '@/lib/request-rows';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
@@ -77,17 +79,32 @@ export default async function RequestsPage({
         <RequestsSearch query={search} />
       </div>
 
-      <div className="filters">
-        <Tabs
-          label="Какие заявки показывать"
-          items={REQUEST_TABS.map((one) => ({
-            href: tabHref(one, search),
-            label: TAB_LABELS[one],
-            count: countOf(counts, statusesOf(one)),
-            current: one === tab,
-          }))}
-        />
-      </div>
+      {/*
+        Плитками, как на обзоре, а не строкой табов: число за каждым
+        состоянием здесь не подпись к кнопке, а то, зачем на неё смотрят,
+        — «сколько в работе» читается раньше, чем «открыть в работе».
+        Плитка при этом остаётся ссылкой, и выборку по-прежнему сужает
+        сервер.
+      */}
+      <nav aria-label="Какие заявки показывать">
+        <Stats>
+          {REQUEST_TABS.map((one) => {
+            const count = countOf(counts, statusesOf(one));
+            return (
+              <Stat
+                key={one}
+                label={TAB_LABELS[one]}
+                value={count}
+                note={search ? 'из найденных' : TAB_NOTES[one]}
+                // Тон — только когда есть о чём: нулю он не нужен.
+                tone={count > 0 ? TAB_TONES[one] : 'plain'}
+                href={tabHref(one, search)}
+                current={one === tab}
+              />
+            );
+          })}
+        </Stats>
+      </nav>
 
       <RequestsTable
         rows={rows.map(toRequestRow)}

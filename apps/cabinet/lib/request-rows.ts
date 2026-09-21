@@ -80,6 +80,28 @@ export function pickTab(value: string | undefined): RequestTab {
   return REQUEST_TABS.find((one) => one === value) ?? 'open';
 }
 
+/**
+ * Строка под числом плитки — то, что делает число честным: что именно
+ * посчитано. При поиске её место занимает «из найденных».
+ */
+export const TAB_NOTES: Record<RequestTab, string> = {
+  open: 'ждут менеджера или оплаты',
+  completed: 'деньги отправлены получателю',
+  cancelled: 'вами, менеджером или по сроку',
+  all: 'за всё время',
+};
+
+/**
+ * Тон плитки — по правилу плиток и пилюль: медовое ждёт человека,
+ * зелёное готово, красное — отказ. «Все» никого не зовёт.
+ */
+export const TAB_TONES: Record<RequestTab, 'plain' | 'wait' | 'up' | 'down'> = {
+  open: 'wait',
+  completed: 'up',
+  cancelled: 'down',
+  all: 'plain',
+};
+
 /** Столько строк на странице: экран ноутбука вмещает их без второй прокрутки. */
 export const REQUESTS_PAGE = 25;
 

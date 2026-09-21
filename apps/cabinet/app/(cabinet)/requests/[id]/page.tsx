@@ -12,8 +12,12 @@ import { formatMoney, formatRate } from '@nemo/ui/format';
 import { getCore } from '@/lib/core';
 import { viewer } from '@/lib/reads';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
-import { pathOf, paymentBlockOf, SUBMITTED_VIA } from '@/lib/request-card';
-import { deliveryWords, trailOf } from '@/lib/request-trail';
+import { paymentBlockOf, SUBMITTED_VIA } from '@/lib/request-card';
+import {
+  deliveryWords,
+  pathWithHistory,
+  type TrailDeliveryInput,
+} from '@/lib/request-trail';
 import { CancelRequest } from './cancel-request';
 import { PaymentDeadlineLine } from './payment-deadline';
 
@@ -63,21 +67,14 @@ export default async function RequestPage({
     core.getExchangeRequestRecipient(actor, id),
     seesHooks ? core.listWebhookDeliveries(actor, { requestId: id }) : Promise.resolve([]),
   ]);
-  const trail = trailOf(events, deliveries);
-
   const rate = request.finalRate ?? request.requestRate;
   const payment = paymentBlockOf(request);
   /*
-   * Где отменённая оборвалась, говорит её история: последнее состояние
-   * перед отменой. Лента идёт по времени, и берётся из неё последнее,
-   * что отменой не было.
+   * Путь вместе с историей: время шага и его вебхуки стоят под самим
+   * шагом. Отдельного блока «Что происходило» больше нет — он повторял
+   * строку пути теми же словами, только столбиком.
    */
-  const reached = [...events].reverse().find((one) => one.toStatus !== 'cancelled')?.toStatus;
-  const path = pathOf({
-    status: request.status,
-    reached,
-    cancelReason: request.cancelReason,
-  });
+  const path = pathWithHistory(request, events, deliveries);
 
   return (
     <main className="page">
@@ -126,7 +123,7 @@ export default async function RequestPage({
         оно здесь — про текущий шаг этой заявки.
       */}
       <section className="card" aria-label="Путь заявки">
-        <ol className="path">
+        <ol className={path.waitsForMerchant ? 'path path--wait' : 'path'}>
           {path.steps.map((step) => (
             <li
               key={step.label}
@@ -135,12 +132,34 @@ export default async function RequestPage({
             >
               <span className="path__mark" aria-hidden="true" />
               <span className="path__label">{step.label}</span>
+              {/*
+                Время — когда заявка дошла до шага. Место под ним занято и
+                у шагов впереди: иначе подписи пройденных и будущих шагов
+                стояли бы на разной высоте.
+              */}
+              <span className="path__when">
+                {step.at ? <Moment at={step.at.toISOString()} /> : '\u00a0'}
+              </span>
+              <Hooks deliveries={step.deliveries} />
             </li>
           ))}
         </ol>
         <p className={path.waitsForMerchant ? 'path__note path__note--wait' : 'path__note'}>
           {path.note}
         </p>
+        {/*
+          Отмена — не шаг пути: у шага, на котором заявка оборвалась,
+          время своё, и «отменена в 17:30» под ним читалась бы как «курс
+          подтверждён в 17:30».
+        */}
+        {path.cancelled ? (
+          <div className="path__cancelled">
+            <span>
+              Отменена <Moment at={path.cancelled.at.toISOString()} />
+            </span>
+            <Hooks deliveries={path.cancelled.deliveries} />
+          </div>
+        ) : undefined}
       </section>
 
       <section className="card">
@@ -212,54 +231,37 @@ export default async function RequestPage({
         </section>
       ) : undefined}
 
-      <section className="card">
-        <h2 className="card__title">Что происходило</h2>
-        {trail.length === 0 ? (
-          <p className="muted">Пока ничего: заявка только подана.</p>
-        ) : (
-          <ul className="trail">
-            {trail.map((row) => (
-              <li key={`${row.at.toISOString()}-${row.status}`} className="trail__item">
-                <span className="trail__when">
-                  <Moment at={row.at.toISOString()} />
-                </span>
-                <span>{STATUS_LABELS[row.status]}</span>
-                {row.comment ? <span className="muted">{row.comment}</span> : undefined}
-                {/*
-                  Узнала ли о переходе система мерчанта. Под своей сменой
-                  состояния, а не отдельным списком: вопрос задают про
-                  переход — «вы говорите, исполнено, а у нас висит».
-                */}
-                {row.deliveries.length > 0 ? (
-                  <ul className="trail__hooks">
-                    {row.deliveries.map((one) => {
-                      const words = deliveryWords(one);
-                      return (
-                        <li key={one.id} className={`trail__hook trail__hook--${words.tone}`}>
-                          {/*
-                            Ведёт в историю точки: страницы одной доставки у
-                            кабинета нет, а ответ приёмника виден там.
-                          */}
-                          <Link href={`/webhooks?endpoint=${one.endpointId}`}>
-                            вебхук <span className="mono">{one.event}</span> {words.text}
-                          </Link>
-                          {one.status === 'pending' && one.attempt > 0 ? (
-                            <span className="muted">
-                              следующая попытка <Moment at={one.nextAttemptAt.toISOString()} />
-                            </span>
-                          ) : undefined}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : undefined}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
       {request.status === 'new' ? <CancelRequest id={request.id} /> : undefined}
     </main>
+  );
+}
+
+/**
+ * Вебхуки шага: узнала ли о переходе система мерчанта. Под своим шагом,
+ * а не отдельным списком: вопрос задают про переход — «вы говорите,
+ * исполнено, а у нас висит».
+ */
+function Hooks({ deliveries }: { readonly deliveries: readonly TrailDeliveryInput[] }) {
+  if (deliveries.length === 0) return null;
+  return (
+    <ul className="path__hooks">
+      {deliveries.map((one) => {
+        const words = deliveryWords(one);
+        return (
+          <li key={one.id} className={`path__hook path__hook--${words.tone}`}>
+            {/*
+              Ведёт в историю точки: страницы одной доставки у кабинета
+              нет, а ответ приёмника виден там.
+            */}
+            <Link href={`/webhooks?endpoint=${one.endpointId}`}>вебхук {words.text}</Link>
+            {one.status === 'pending' && one.attempt > 0 ? (
+              <span className="muted">
+                снова <Moment at={one.nextAttemptAt.toISOString()} />
+              </span>
+            ) : undefined}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

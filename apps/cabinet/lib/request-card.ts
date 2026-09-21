@@ -101,7 +101,7 @@ export interface RequestPath {
 const STEP_LABELS = ['Новая', 'Курс подтверждён', 'Оплата получена', 'Исполнена'] as const;
 
 /** Состояние — в номер шага. Отменённая своего шага не имеет. */
-const STEP_OF: Record<ExchangeRequestStatus, number | null> = {
+export const STEP_OF: Record<ExchangeRequestStatus, number | null> = {
   new: 0,
   in_progress: 0,
   rate_confirmed: 1,

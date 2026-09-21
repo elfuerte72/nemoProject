@@ -1,4 +1,5 @@
 import { WEBHOOK_MAX_ATTEMPTS } from '@nemo/core';
+import { pathOf, STEP_OF, type RequestPath } from './request-card';
 import {
   webhookEventForStatus,
   type ExchangeRequestStatus,
@@ -136,5 +137,74 @@ export function deliveryWords(delivery: TrailDeliveryInput): {
   return {
     text: `не доставлен, попытка ${delivery.attempt} из ${WEBHOOK_MAX_ATTEMPTS}, ${answer} — будет повтор`,
     tone: 'wait',
+  };
+}
+
+/* ── Путь с историей ─────────────────────────────────────────────── */
+
+export interface PathStepWithHistory {
+  readonly label: string;
+  readonly state: RequestPath['steps'][number]['state'];
+  /** Когда заявка дошла до шага. Пусто у тех, до которых не дошла. */
+  readonly at: Date | null;
+  readonly deliveries: readonly TrailDeliveryInput[];
+}
+
+export interface PathWithHistory extends Omit<RequestPath, 'steps'> {
+  readonly steps: readonly PathStepWithHistory[];
+  /**
+   * Отмена — отдельно от шага, на котором заявка оборвалась: у шага
+   * время своё, и «отменена в 17:30» под ним читалась бы как «курс
+   * подтверждён в 17:30».
+   */
+  readonly cancelled: {
+    readonly at: Date;
+    readonly deliveries: readonly TrailDeliveryInput[];
+  } | null;
+}
+
+/**
+ * Строка пути вместе с временем шагов и их вебхуками.
+ *
+ * До 21 сентября 2026 время и доставки стояли отдельным блоком «Что
+ * происходило», и владелец его убрал: блок повторял строку пути теми же
+ * словами, только столбиком. Собирается из тех же двух правил — `pathOf`
+ * и `trailOf`, — а не третьей копией сопоставления: петли передачи
+ * отсеяны там же, где и для ленты, и вебхук встаёт под шаг тем же
+ * `webhookEventForStatus`, по которому ядро ставит его в очередь.
+ */
+export function pathWithHistory(
+  request: {
+    readonly status: ExchangeRequestStatus;
+    readonly cancelReason?: string | null | undefined;
+  },
+  events: readonly TrailEventInput[],
+  deliveries: readonly TrailDeliveryInput[],
+): PathWithHistory {
+  const trail = trailOf(events, deliveries);
+  // Где оборвалась отменённая: последнее, что отменой не было.
+  const reached = [...trail].reverse().find((row) => row.status !== 'cancelled')?.status;
+  const path = pathOf({ status: request.status, reached, cancelReason: request.cancelReason });
+
+  const steps = path.steps.map((step, index) => {
+    /*
+     * Первая строка ленты, пришедшаяся на шаг. Первая, а не последняя:
+     * «новая» и «в работе» — один шаг, и время у него — подача. Когда
+     * менеджер заявку взял, мерчанту не важно, а под шагом «Новая» это
+     * читалось бы как время подачи.
+     */
+    const rows = trail.filter((row) => STEP_OF[row.status] === index);
+    return {
+      ...step,
+      at: rows[0]?.at ?? null,
+      deliveries: rows.flatMap((row) => row.deliveries),
+    };
+  });
+
+  const cancel = trail.find((row) => row.status === 'cancelled');
+  return {
+    ...path,
+    steps,
+    cancelled: cancel ? { at: cancel.at, deliveries: cancel.deliveries } : null,
   };
 }
