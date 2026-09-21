@@ -89,3 +89,23 @@ export function pickTab(value: string | undefined): RequestTab {
 
 /** Столько строк на странице: экран ноутбука вмещает их без второй прокрутки. */
 export const REQUESTS_PAGE = 25;
+
+/** Длиннее своих номеров не бывает, а адрес присылает кто угодно. */
+export const SEARCH_MAX = 100;
+
+/**
+ * Запрос поиска из адреса. Берут его отсюда и страница, и маршрут
+ * дочитывания: разойдись они, вторая страница искала бы не то, что
+ * первая. Длинный обрезается, а не отвергается: это адресная строка, и
+ * отказом на неё отвечать незачем.
+ */
+export function pickSearch(raw: string | undefined): string {
+  return (raw ?? '').trim().slice(0, SEARCH_MAX);
+}
+
+/** Адрес таба. Поиск едет с ним: иначе таб сбрасывал бы найденное. */
+export function tabHref(tab: RequestTab, search: string): string {
+  const params = new URLSearchParams({ tab });
+  if (search) params.set('q', search);
+  return `/requests?${params.toString()}`;
+}

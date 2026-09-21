@@ -28,6 +28,7 @@ import {
   type ExchangeRequestSource,
   type ExchangeRequestStatus,
   type PayoutMethod,
+  isUuid,
   minimumMeasure,
 } from '@nemo/types';
 import { requireOwner, requireOwnerAbility, type Actor, type Owner } from './actor.js';
@@ -36,6 +37,7 @@ import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
 import { publishLiveEvent } from './live-events.js';
+import { cyrillicLike, likePattern } from './search.js';
 import { enqueueWebhookDeliveries } from './webhooks.js';
 import type { Notification } from './notifications.js';
 import { quoteForSubmission } from './rates.js';
@@ -692,8 +694,57 @@ export interface OwnExchangeFilter {
    * не то, что видно.
    */
   readonly submittedByUserId?: string | undefined;
+  /**
+   * Поиск по своему номеру — куском, без учёта регистра, — или по
+   * нашему идентификатору целиком. Это главный путь в список: мерчанту
+   * пишут «заказ 1013, где деньги», и ищет он по номеру, который знает
+   * его система. Пустая строка — отсутствие поиска, а не пустой ответ:
+   * она приезжает из адреса вместе с очищенным полем.
+   */
+  readonly search?: string | undefined;
   readonly limit?: number | undefined;
   readonly after?: { readonly createdAt: Date; readonly id: string } | undefined;
+}
+
+/**
+ * Условие поиска. Свой номер ищется с коллацией ICU: база собрана с
+ * локалью `C`, и обычный `ilike` «Бронь» на запрос «бронь» не находит —
+ * при том что латинские номера ищутся, и на глаз поиск выглядит рабочим.
+ *
+ * Наш идентификатор сравнивается только целиком и только когда запрос
+ * на него похож: по куску `uuid` база не ищет, а непохожую строку в
+ * сравнении с ним отвергает ошибкой, а не пустотой.
+ */
+function searchedFor(raw: string | undefined): SQL | undefined {
+  const asked = raw?.trim() ?? '';
+  if (!asked) return undefined;
+  const byReference = cyrillicLike(exchangeRequests.reference, likePattern(asked));
+  return isUuid(asked) ? or(byReference, eq(exchangeRequests.id, asked)) : byReference;
+}
+
+/**
+ * Условия отбора своих заявок — одни на список, счёт и раскладку по
+ * состояниям. До поиска они были записаны дважды, слово в слово; третья
+ * копия разошлась бы с первыми на первой же правке, и счётчик таба
+ * считал бы не то, что показано под ним.
+ */
+function ownConditions(
+  owner: Owner,
+  filter: Omit<OwnExchangeFilter, 'limit' | 'after'>,
+): SQL[] {
+  const conditions: SQL[] = [ownedBy(owner)];
+  if (filter.status) conditions.push(eq(exchangeRequests.status, filter.status));
+  if (filter.statuses?.length) {
+    conditions.push(inArray(exchangeRequests.status, [...filter.statuses]));
+  }
+  if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
+  if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
+  if (filter.submittedByUserId) {
+    conditions.push(eq(exchangeRequests.submittedByUserId, filter.submittedByUserId));
+  }
+  const searched = searchedFor(filter.search);
+  if (searched) conditions.push(searched);
+  return conditions;
 }
 
 /** Столько заявок отдаётся за раз, когда предел не назван. */
@@ -707,16 +758,7 @@ export async function listExchangeRequests(
   filter: OwnExchangeFilter = {},
 ): Promise<readonly ExchangeRequestView[]> {
   const owner = requireOwner(actor);
-  const conditions: SQL[] = [ownedBy(owner)];
-  if (filter.status) conditions.push(eq(exchangeRequests.status, filter.status));
-  if (filter.statuses?.length) {
-    conditions.push(inArray(exchangeRequests.status, [...filter.statuses]));
-  }
-  if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
-  if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
-  if (filter.submittedByUserId) {
-    conditions.push(eq(exchangeRequests.submittedByUserId, filter.submittedByUserId));
-  }
+  const conditions = ownConditions(owner, filter);
   if (filter.after) {
     /*
      * Пара «время и идентификатор» — двумя условиями, а не кортежем в
@@ -764,16 +806,7 @@ export async function countExchangeRequests(
   filter: Omit<OwnExchangeFilter, 'limit' | 'after'> = {},
 ): Promise<number> {
   const owner = requireOwner(actor);
-  const conditions: SQL[] = [ownedBy(owner)];
-  if (filter.status) conditions.push(eq(exchangeRequests.status, filter.status));
-  if (filter.statuses?.length) {
-    conditions.push(inArray(exchangeRequests.status, [...filter.statuses]));
-  }
-  if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
-  if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
-  if (filter.submittedByUserId) {
-    conditions.push(eq(exchangeRequests.submittedByUserId, filter.submittedByUserId));
-  }
+  const conditions = ownConditions(owner, filter);
 
   const [row] = await ctx.db
     .select({ total: count() })
@@ -794,12 +827,17 @@ export async function countExchangeRequests(
 export async function countExchangeRequestsByStatus(
   ctx: CoreConfig,
   actor: Actor,
+  /**
+   * Поиск сужает и раскладку: числа на табах обязаны считать найденное,
+   * иначе над двумя найденными строками стояло бы «Исполнены 10».
+   */
+  filter: Pick<OwnExchangeFilter, 'search'> = {},
 ): Promise<Readonly<Record<ExchangeRequestStatus, number>>> {
   const owner = requireOwner(actor);
   const rows = await ctx.db
     .select({ status: exchangeRequests.status, total: count() })
     .from(exchangeRequests)
-    .where(ownedBy(owner))
+    .where(and(...ownConditions(owner, filter)))
     .groupBy(exchangeRequests.status);
 
   // Состояние, которого у владельца нет, — это ноль, а не отсутствие

@@ -637,3 +637,120 @@ describe('курсор своего списка', () => {
   });
 });
 
+/**
+ * Поиск по своему номеру — главный путь в список: покупатель пишет
+ * мерчанту «заказ 1013, где деньги», и тот идёт искать заявку по
+ * номеру, который знает его система. Нашего идентификатора он не видел
+ * нигде, кроме письма и вебхука, — оттуда его копируют целиком.
+ *
+ * Проверяется тестом, потому что ломается тихо: база собрана с локалью
+ * `C`, и обычный `ilike` кириллицу по регистру не сводит — «Бронь» на
+ * запрос «бронь» не находится, а латинские номера при этом ищутся, и
+ * на глаз поиск выглядит рабочим.
+ */
+describe('поиск своей заявки', () => {
+  async function submit(actor: Actor, reference?: string): Promise<string> {
+    const { request } = await core.submitExchangeRequest(actor, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      payout: PAYOUT,
+      ...(reference === undefined ? {} : { reference }),
+    });
+    return request.id;
+  }
+
+  it('находит по куску своего номера', async () => {
+    const wanted = await submit(merchant, 'order-1013');
+    await submit(merchant, 'order-2044');
+
+    const rows = await core.listExchangeRequests(merchant, { search: '1013' });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+  });
+
+  it('кириллицу находит в любом регистре', async () => {
+    const wanted = await submit(merchant, 'Бронь №1024');
+
+    const rows = await core.listExchangeRequests(merchant, { search: 'бронь' });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+  });
+
+  it('наш идентификатор целиком тоже находит заявку', async () => {
+    const wanted = await submit(merchant, 'order-1');
+    await submit(merchant, 'order-2');
+
+    const rows = await core.listExchangeRequests(merchant, { search: wanted });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+    // И с пробелами по краям: копируют из письма вместе с ними.
+    const padded = await core.listExchangeRequests(merchant, { search: `  ${wanted} ` });
+    expect(padded.map((row) => row.id)).toEqual([wanted]);
+  });
+
+  it('чужую заявку не находит ни по номеру, ни по идентификатору', async () => {
+    const other = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    const theirs = await submit(other, 'order-1013');
+
+    expect(await core.listExchangeRequests(merchant, { search: '1013' })).toEqual([]);
+    expect(await core.listExchangeRequests(merchant, { search: theirs })).toEqual([]);
+  });
+
+  it('знаки шаблона ищет буквально, а не как «что угодно»', async () => {
+    await submit(merchant, 'order-1013');
+    const wanted = await submit(merchant, 'скидка 100%');
+
+    const rows = await core.listExchangeRequests(merchant, { search: '100%' });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+    expect(await core.listExchangeRequests(merchant, { search: '_' })).toEqual([]);
+  });
+
+  it('пустой запрос — это отсутствие поиска, а не пустой ответ', async () => {
+    await submit(merchant, 'order-1');
+    await submit(merchant);
+
+    expect(await core.listExchangeRequests(merchant, { search: '   ' })).toHaveLength(2);
+  });
+
+  it('счёт и раскладка по состояниям считают найденное, а не всё', async () => {
+    const cancelled = await submit(merchant, 'order-1013');
+    await submit(merchant, 'order-1014');
+    await submit(merchant, 'booking-7');
+    await core.cancelOwnExchangeRequest(merchant, cancelled);
+
+    expect(await core.countExchangeRequests(merchant, { search: 'order' })).toBe(2);
+    expect(await core.countExchangeRequestsByStatus(merchant, { search: 'order' })).toEqual({
+      new: 1,
+      in_progress: 0,
+      rate_confirmed: 0,
+      payment_received: 0,
+      completed: 0,
+      cancelled: 1,
+    });
+    // Без поиска раскладка прежняя — по всем заявкам.
+    expect((await core.countExchangeRequestsByStatus(merchant)).new).toBe(2);
+  });
+
+  it('курсор с поиском дочитывает без потерь и дублей', async () => {
+    for (let i = 0; i < 5; i += 1) await submit(merchant, `order-${i}`);
+    await submit(merchant, 'booking-9');
+    const at = new Date('2026-09-07T10:00:00Z');
+    await db.update(exchangeRequests).set({ createdAt: at });
+
+    const seen: string[] = [];
+    let after: { createdAt: Date; id: string } | undefined;
+    for (let page = 0; page < 4; page += 1) {
+      const rows = await core.listExchangeRequests(merchant, {
+        search: 'order',
+        limit: 2,
+        ...(after ? { after } : {}),
+      });
+      if (rows.length === 0) break;
+      seen.push(...rows.map((row) => row.id));
+      const last = rows[rows.length - 1]!;
+      after = { createdAt: last.createdAt, id: last.id };
+    }
+
+    expect(seen).toHaveLength(5);
+    expect(new Set(seen).size).toBe(5);
+  });
+});

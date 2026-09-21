@@ -474,7 +474,10 @@ export function createCore(ctx: CoreConfig) {
       listExchangeRequests(ctx, actor, filter),
     countExchangeRequests: (actor: Actor, filter?: Omit<OwnExchangeFilter, 'limit' | 'after'>) =>
       countExchangeRequests(ctx, actor, filter),
-    countExchangeRequestsByStatus: (actor: Actor) => countExchangeRequestsByStatus(ctx, actor),
+    countExchangeRequestsByStatus: (
+      actor: Actor,
+      filter?: Parameters<typeof countExchangeRequestsByStatus>[2],
+    ) => countExchangeRequestsByStatus(ctx, actor, filter),
     /** Лента своей заявки — владельцу: без имён сотрудников. */
     listExchangeRequestEventsForOwner: (actor: Actor, requestId: string) =>
       listExchangeRequestEventsForOwner(ctx, actor, requestId),

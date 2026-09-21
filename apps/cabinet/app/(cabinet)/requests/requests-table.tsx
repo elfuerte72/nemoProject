@@ -17,11 +17,18 @@ export function RequestsTable({
   rows,
   total,
   tab,
+  search,
   names,
 }: {
   readonly rows: readonly RequestRow[];
   readonly total: number;
   readonly tab: RequestTab;
+  /**
+   * Что ищут. Едет в запрос дочитывания: без него вторая страница
+   * приехала бы по всему кабинету, и под найденным появились бы строки,
+   * которых не искали.
+   */
+  readonly search: string;
   /**
    * Имена людей кабинета по идентификатору. Пусто у всех, кроме
    * владельца: состав кабинета читает он один (тикет 17), и колонка
@@ -44,20 +51,24 @@ export function RequestsTable({
     setExtra((current) => current.filter((row) => !rows.some((one) => one.id === row.id)));
   }, [rows]);
 
-  /* Сменился таб — хвост от прежнего чужой ему целиком. */
+  /* Сменился таб или запрос — хвост от прежней выборки чужой ей целиком. */
   useEffect(() => {
     setExtra([]);
-  }, [tab]);
+  }, [tab, search]);
 
   if (shown.length === 0) {
     return (
       <EmptyState
         icon="exchange"
-        title="Пока пусто"
+        title={search ? 'Ничего не нашлось' : 'Пока пусто'}
         text={
-          tab === 'open'
-            ? 'Незакрытых заявок нет. Поданные встанут сюда — и из кабинета, и по API.'
-            : 'В этом состоянии заявок нет.'
+          search
+            ? tab === 'all'
+              ? 'Заявки с таким номером нет. Проверьте номер: он тот, который ваша система передала при подаче.'
+              : 'В этом состоянии такой заявки нет. Посмотрите во «Всех»: ищущий номер обычно не знает, исполнена она или отменена.'
+            : tab === 'open'
+              ? 'Незакрытых заявок нет. Поданные встанут сюда — и из кабинета, и по API.'
+              : 'В этом состоянии заявок нет.'
         }
       />
     );
@@ -73,7 +84,11 @@ export function RequestsTable({
     setLoading(true);
     setFailed(false);
     try {
-      const params = new URLSearchParams({ tab, ...cursorToParams(cursor) });
+      const params = new URLSearchParams({
+        tab,
+        ...(search ? { q: search } : {}),
+        ...cursorToParams(cursor),
+      });
       const response = await fetch(`/api/requests?${params.toString()}`);
       if (!response.ok) throw new Error(String(response.status));
       const body = (await response.json()) as { rows: RequestRow[] };

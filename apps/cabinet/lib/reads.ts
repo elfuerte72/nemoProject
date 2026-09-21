@@ -48,9 +48,14 @@ export const supportUsername = cache(
  * это шесть заходов в базу за одно и то же число.
  */
 export const requestCounts = cache(
-  async (): Promise<Readonly<Record<ExchangeRequestStatus, number>>> => {
+  /*
+   * Поиск — ключом памяти: меню спрашивает без него, список заявок с
+   * ним, и на одной странице это два разных числа. Строкой, а не
+   * объектом: `cache` сравнивает аргументы по ссылке.
+   */
+  async (search = ''): Promise<Readonly<Record<ExchangeRequestStatus, number>>> => {
     const { actor } = await viewer();
-    return getCore().countExchangeRequestsByStatus(actor);
+    return getCore().countExchangeRequestsByStatus(actor, search ? { search } : {});
   },
 );
 
