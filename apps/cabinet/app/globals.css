@@ -224,9 +224,9 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px 16px;
-  border: 1px solid rgba(var(--gold-rgb, 226, 176, 80), 0.45);
+  border: 1px solid rgba(var(--wait-rgb, 226, 176, 80), 0.45);
   border-radius: var(--radius-inner);
-  background: rgba(var(--gold-rgb, 226, 176, 80), 0.08);
+  background: rgba(var(--wait-rgb, 226, 176, 80), 0.08);
 }
 
 .secret__title {
@@ -547,7 +547,7 @@
 
 .calc__swap:hover:not(:disabled) {
   color: var(--gold-light);
-  border-color: rgba(249, 160, 60, 0.4);
+  border-color: rgba(var(--gold-rgb), 0.4);
 }
 
 .calc__swap:disabled {
@@ -827,7 +827,7 @@
   border-radius: 999px;
   background: radial-gradient(
     closest-side,
-    rgba(249, 160, 60, 0.24) 0%,
+    rgba(var(--gold-rgb), 0.24) 0%,
     rgba(226, 138, 52, 0.11) 28%,
     rgba(112, 88, 180, 0.09) 48%,
     rgba(58, 50, 108, 0) 68%

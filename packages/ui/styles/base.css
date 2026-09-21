@@ -57,6 +57,25 @@
   --gold: #f9a03c;
   --gold-light: #ffc46b;
   /*
+   * Акцент состояния каналом, а не готовым цветом: подсветка выбранного
+   * набрана полупрозрачными заливками разной плотности, и без канала
+   * светлая тема не может сменить акцент, не переписав полтора десятка
+   * правил с их альфами.
+   */
+  --gold-rgb: 249, 160, 60;
+  /* Полоса и галочка выбранного: в тёмной теме это прежняя медь. */
+  --gold-mark: #f9a03c;
+  /*
+   * Ждущее внимания — своим каналом, и в обеих темах он медовый.
+   * Золотом в этом сервисе красится не «выбранное», а «ждёт человека»
+   * (правило панели), и там, где акцент интерфейса сменился, цвет
+   * ожидания остаётся прежним: иначе ждущая заявка перестала бы
+   * отличаться от выбранного раздела.
+   */
+  --wait-rgb: 249, 160, 60;
+  /* Марка ожидания — точка, полоса, заливка воронки. */
+  --wait-mark: #f9a03c;
+  /*
    * Акцент, набранный текстом. В тёмной это тот же медовый, в светлой —
    * его тёмный извод: на белом #f9a03c даёт около 2:1 и нормы не
    * держит, а ссылка цветом акцента нужна в обеих темах.
@@ -142,6 +161,18 @@
 
   --gold-text: #8a4f0c;
 
+  /*
+   * Акцент состояния — выбранный раздел, выбранный чип, кольцо фокуса.
+   *
+   * Светлый мёд `#ffc46b` держится только на тёмной поверхности: на
+   * белом он даёт 1,57:1 при норме 4,5:1, и «Обзор» в меню с выбранным
+   * периодом читались выцветшими. Цвет здесь свой, а не осветлённый
+   * тёмный: полоса яркости у белой поверхности другая.
+   */
+  --gold-light: #4a3f8f;
+  --gold-rgb: 107, 95, 168;
+  --gold-mark: #4a3f8f;
+
   --menu-bg: #ffffff;
   --danger-text: #a92e22;
   --topbar-bg: rgba(255, 255, 255, 0.86);
@@ -152,6 +183,7 @@
   --up: #2f6f4a;
   --down: #a92e22;
   --wait: #8a4f0c;
+  --wait-mark: #8a4f0c;
 
   --lift: inset 0 1px 0 rgba(255, 255, 255, 0.7);
   --drop: 0 1px 2px rgba(26, 23, 38, 0.08);
@@ -375,9 +407,9 @@ a {
  * тёмном мало — вкладки различаются на глаз, только если смотреть.
  */
 .sidebar__link[aria-current='page'] {
-  background: rgba(249, 160, 60, 0.1);
+  background: rgba(var(--gold-rgb), 0.1);
   color: var(--gold-light);
-  box-shadow: inset 2px 0 0 var(--gold);
+  box-shadow: inset 2px 0 0 var(--gold-mark);
 }
 
 .sidebar__icon {
@@ -401,7 +433,7 @@ a {
 }
 
 .sidebar__link[aria-current='page'] .sidebar__count {
-  background: rgba(249, 160, 60, 0.18);
+  background: rgba(var(--gold-rgb), 0.18);
   color: var(--gold-light);
 }
 
@@ -450,12 +482,12 @@ a {
 }
 
 .topbar__search:focus-within {
-  border-color: rgba(249, 160, 60, 0.55);
+  border-color: rgba(var(--gold-rgb), 0.55);
   background: var(--surface-soft);
 }
 
 .topbar__search:hover {
-  border-color: rgba(249, 160, 60, 0.35);
+  border-color: rgba(var(--gold-rgb), 0.35);
 }
 
 .topbar__search {
@@ -556,7 +588,7 @@ a {
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: var(--gold);
+  accent-color: var(--gold-mark);
 }
 
 /* Плотная таблица: те же колонки, меньше воздуха. */
@@ -622,7 +654,7 @@ a {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: rgba(249, 160, 60, 0.18);
+  background: rgba(var(--gold-rgb), 0.18);
   color: var(--gold-light);
   font-size: 13px;
   font-weight: 700;
@@ -784,7 +816,7 @@ a {
 
 .quick__link:hover {
   background: var(--surface-soft-hover);
-  border-color: rgba(249, 160, 60, 0.35);
+  border-color: rgba(var(--gold-rgb), 0.35);
   color: var(--text);
 }
 
@@ -877,7 +909,7 @@ a.stat:hover {
 }
 
 .stat--wait .stat__dot {
-  background: var(--gold);
+  background: var(--wait-mark);
 }
 
 .stat--up .stat__dot {
@@ -897,7 +929,7 @@ a.stat:hover {
 }
 
 .stat--wait .stat__value {
-  color: var(--gold-light);
+  color: var(--wait);
 }
 
 .stat__note {
@@ -1322,7 +1354,7 @@ a.row:hover {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: rgba(249, 160, 60, 0.12);
+  background: rgba(var(--gold-rgb), 0.12);
   color: var(--gold-light);
 }
 
@@ -1499,8 +1531,8 @@ a.row:hover {
 }
 
 .chip--on {
-  background: rgba(249, 160, 60, 0.14);
-  border-color: rgba(249, 160, 60, 0.3);
+  background: rgba(var(--gold-rgb), 0.14);
+  border-color: rgba(var(--gold-rgb), 0.3);
   color: var(--gold-light);
 }
 
@@ -1670,8 +1702,8 @@ a.table__row:hover,
  * позже.
  */
 .table__item--fresh {
-  background: rgba(249, 160, 60, 0.07);
-  box-shadow: inset 2px 0 0 var(--gold), var(--lift);
+  background: rgba(var(--wait-rgb), 0.07);
+  box-shadow: inset 2px 0 0 var(--wait-mark), var(--lift);
 }
 
 .table__item--fresh .cell__value {
@@ -1681,11 +1713,11 @@ a.table__row:hover,
 
 /* Ждёт дольше порога напоминания: то же золото, что у уведомления. */
 .cell__value--late {
-  color: var(--gold-light);
+  color: var(--wait);
 }
 
 .table__item--fresh .cell__value--late {
-  color: var(--gold-light);
+  color: var(--wait);
 }
 
 .table__item--settled .cell__value {
@@ -1699,7 +1731,7 @@ a.table__row:hover,
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: var(--gold);
+  background: var(--wait-mark);
 }
 
 .dot--off {
@@ -1708,7 +1740,7 @@ a.table__row:hover,
 
 /* Отметка золотом в строке: «постоянный». */
 .tag--gold {
-  color: var(--gold-light);
+  color: var(--wait);
 }
 
 /*
@@ -1768,8 +1800,8 @@ a.table__row:hover,
 
 /* Ждёт человека — золото: столько же внимания, сколько кнопке. */
 .pill--wait {
-  background: rgba(249, 160, 60, 0.14);
-  color: var(--gold-light);
+  background: rgba(var(--wait-rgb), 0.14);
+  color: var(--wait);
 }
 
 .pill--done {
@@ -1850,7 +1882,7 @@ a.table__row:hover,
 }
 
 .btn--ghost:hover:not(:disabled) {
-  border-color: rgba(249, 160, 60, 0.5);
+  border-color: rgba(var(--gold-rgb), 0.5);
   color: var(--text);
 }
 
@@ -1911,7 +1943,7 @@ a.table__row:hover,
 
 .input:focus {
   outline: none;
-  border-color: rgba(249, 160, 60, 0.55);
+  border-color: rgba(var(--gold-rgb), 0.55);
   background: var(--surface-soft);
 }
 
@@ -1978,9 +2010,9 @@ select.input {
   align-items: center;
   gap: 8px 16px;
   padding: 14px 16px;
-  border: 1px solid rgba(249, 160, 60, 0.3);
+  border: 1px solid rgba(var(--gold-rgb), 0.3);
   border-radius: var(--radius-control);
-  background: rgba(249, 160, 60, 0.08);
+  background: rgba(var(--gold-rgb), 0.08);
 }
 
 .callout__body {
@@ -2167,7 +2199,7 @@ select.input {
   width: 440px;
   height: 380px;
   border-radius: 999px;
-  background: radial-gradient(closest-side, rgba(249, 160, 60, 0.16), rgba(249, 160, 60, 0));
+  background: radial-gradient(closest-side, rgba(var(--gold-rgb), 0.16), rgba(var(--gold-rgb), 0));
   pointer-events: none;
 }
 
@@ -2375,7 +2407,7 @@ select.input {
 }
 
 .funnel__step--wait .funnel__fill {
-  background: var(--gold);
+  background: var(--wait-mark);
 }
 
 .funnel__step--up .funnel__fill {
