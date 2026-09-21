@@ -2,13 +2,14 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { isCoreError } from '@nemo/http';
 import { isUuid } from '@nemo/types';
-import { Moment, QuietRefresh } from '@nemo/ui';
+import { CopyValue, Moment, QuietRefresh } from '@nemo/ui';
 import { formatMoney, formatRate } from '@nemo/ui/format';
 import { getCore } from '@/lib/core';
 import { viewer } from '@/lib/reads';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
-import { paymentBlockOf } from '@/lib/request-card';
+import { pathOf, paymentBlockOf } from '@/lib/request-card';
 import { CancelRequest } from './cancel-request';
+import { PaymentDeadlineLine } from './payment-deadline';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +49,13 @@ export default async function RequestPage({
 
   const rate = request.finalRate ?? request.requestRate;
   const payment = paymentBlockOf(request);
+  /*
+   * Где отменённая оборвалась, говорит её история: последнее состояние
+   * перед отменой. Лента идёт по времени, и берётся из неё последнее,
+   * что отменой не было.
+   */
+  const reached = [...events].reverse().find((one) => one.toStatus !== 'cancelled')?.toStatus;
+  const path = pathOf({ status: request.status, reached });
 
   return (
     <main className="page">
@@ -59,11 +67,26 @@ export default async function RequestPage({
               Заявки
             </Link>
           </p>
-          <h1 className="page__title">Заявка {request.id.slice(0, 8)}</h1>
+          {/*
+            Заголовком — номер мерчанта: «заказ 1013» знают его система и
+            его покупатель, а нашего номера он не видел нигде, кроме этой
+            страницы. Нет своего — заголовком остаётся наш: у заявки,
+            заведённой менеджером, своего может не быть.
+          */}
+          <h1 className="page__title">
+            {request.reference ?? `Заявка ${request.id.slice(0, 8)}`}
+          </h1>
           <p className="page__sub">
-            {KIND_LABELS[request.kind]}
-            {request.reference ? ` · ваш номер: ${request.reference}` : ''} · подана{' '}
-            <Moment at={request.createdAt.toISOString()} />
+            {KIND_LABELS[request.kind]} · подана <Moment at={request.createdAt.toISOString()} />
+          </p>
+          {/*
+            Наш номер — целиком и с копированием: по нему заявку называют
+            в поддержке и по нему же ходит API. Обрезок из восьми знаков
+            скопировать можно, а найти по нему нельзя.
+          */}
+          <p className="page__id">
+            <span className="page__id-label">Номер в Tobee</span>
+            <CopyValue value={request.id} />
           </p>
         </div>
         <div className="page__actions">
@@ -72,6 +95,29 @@ export default async function RequestPage({
           </span>
         </div>
       </header>
+
+      {/*
+        Где заявка и кого она ждёт. Пилюля в углу отвечает только на
+        первое; второе раньше лежало абзацем над списком заявок, а нужно
+        оно здесь — про текущий шаг этой заявки.
+      */}
+      <section className="card" aria-label="Путь заявки">
+        <ol className="path">
+          {path.steps.map((step) => (
+            <li
+              key={step.label}
+              className={`path__step path__step--${step.state}`}
+              {...(step.state === 'current' ? { 'aria-current': 'step' as const } : {})}
+            >
+              <span className="path__mark" aria-hidden="true" />
+              <span className="path__label">{step.label}</span>
+            </li>
+          ))}
+        </ol>
+        <p className={path.waitsForMerchant ? 'path__note path__note--wait' : 'path__note'}>
+          {path.note}
+        </p>
+      </section>
 
       <section className="card">
         <div className="deal">
@@ -111,11 +157,10 @@ export default async function RequestPage({
             {request.paymentInstructions}
           </p>
           {payment.deadline && request.requisitesIssuedAt ? (
-            <p className="muted">
-              Реквизиты выданы <Moment at={request.requisitesIssuedAt.toISOString()} />. На
-              оплату — {terms.unpaidTtlMinutes} мин с этого момента: столько держится
-              курс. Неоплаченную заявку сервис отменит.
-            </p>
+            <PaymentDeadlineLine
+              issuedAt={request.requisitesIssuedAt.toISOString()}
+              ttlMinutes={terms.unpaidTtlMinutes}
+            />
           ) : undefined}
         </section>
       ) : undefined}

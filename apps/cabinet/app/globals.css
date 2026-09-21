@@ -1833,3 +1833,165 @@
 .steps__item--on {
   color: var(--gold-text);
 }
+
+/* ── Карточка заявки ─────────────────────────────────────────────── */
+
+/* Наш номер под заголовком: тише своего, но целиком и с копированием. */
+.page__id {
+  margin: 8px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  /* Идентификатор неразрывен: на телефоне переносится по любому знаку. */
+  overflow-wrap: anywhere;
+}
+
+.page__id-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+}
+
+/*
+ * Строка пути. Шаги соединены линией через псевдоэлемент шага, а не
+ * отдельными узлами: линия принадлежит шагу, до которого ведёт, и
+ * красится вместе с ним — пройденный отрезок темнее непройденного.
+ */
+.path {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.path__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 12px;
+  min-width: 0;
+}
+
+.path__step::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 14px;
+  right: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--hairline);
+}
+
+.path__step:last-child::before {
+  display: none;
+}
+
+.path__step--done::before {
+  background: var(--text-muted);
+}
+
+.path__mark {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid var(--hairline);
+  background: var(--surface);
+}
+
+.path__step--done .path__mark {
+  border-color: var(--text-muted);
+  background: var(--text-muted);
+}
+
+.path__step--current .path__mark {
+  border-color: var(--gold-light);
+  background: var(--gold-light);
+  box-shadow: 0 0 0 4px rgba(var(--gold-rgb), 0.16);
+}
+
+/* Оборвалась здесь: тоном отказа и пустой внутри — шаг не пройден. */
+.path__step--stopped .path__mark {
+  border-color: var(--down);
+  background: var(--surface);
+}
+
+.path__label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.path__step--done .path__label {
+  color: var(--text-muted);
+}
+
+.path__step--current .path__label {
+  color: var(--text);
+}
+
+.path__step--stopped .path__label {
+  color: var(--danger-text);
+}
+
+.path__note {
+  margin: 16px 0 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* Ждёт самого мерчанта — медовым, как всё, что ждёт человека. */
+.path__note--wait {
+  color: var(--wait);
+  font-weight: 600;
+}
+
+/* Срок оплаты: момент, остаток и одна строка о том, зачем он. */
+.deadline {
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.deadline__left {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.deadline--soon .deadline__left {
+  color: var(--wait);
+}
+
+.deadline__why {
+  flex-basis: 100%;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.deadline--over {
+  color: var(--danger-text);
+}
+
+@media (max-width: 560px) {
+  /* Четыре подписи в ряд на телефоне не помещаются: мельче и плотнее. */
+  .path__label {
+    font-size: 11px;
+  }
+
+  .path__step {
+    padding-right: 6px;
+  }
+}

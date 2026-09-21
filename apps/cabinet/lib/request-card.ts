@@ -68,3 +68,134 @@ export function paymentBlockOf(request: {
   const kind = BY_STATUS[request.status];
   return kind === null ? null : BLOCKS[kind];
 }
+
+/* ── Строка пути ─────────────────────────────────────────────────── */
+
+/**
+ * Где заявка и кого она ждёт.
+ *
+ * Пилюля состояния отвечает «где», но не отвечает на то, зачем карточку
+ * открывают: кто сейчас ходит и что будет дальше. «Курс подтверждён»
+ * значит «ждёт вашей оплаты», и по двум словам об этом не догадаться.
+ * Объяснение раньше лежало абзацем над списком заявок; нужно оно здесь,
+ * про текущий шаг этой заявки.
+ */
+export interface RequestPath {
+  readonly steps: readonly {
+    readonly label: string;
+    /** Пройден, текущий, впереди — или тот, на котором заявку отменили. */
+    readonly state: 'done' | 'current' | 'ahead' | 'stopped';
+  }[];
+  /** Одно предложение о текущем шаге: кто ходит и что случится дальше. */
+  readonly note: string;
+  /** Ждёт ли заявка самого мерчанта: такое отмечается медовым. */
+  readonly waitsForMerchant: boolean;
+}
+
+/*
+ * Шагов четыре, а состояний у открытой заявки пять: «новая» и «в
+ * работе» для мерчанта — один шаг. Разница между ними — взял ли заявку
+ * менеджер, — и мерчанту она ничего не меняет: в обоих случаях он ждёт
+ * курса.
+ */
+const STEP_LABELS = ['Новая', 'Курс подтверждён', 'Оплата получена', 'Исполнена'] as const;
+
+/** Состояние — в номер шага. Отменённая своего шага не имеет. */
+const STEP_OF: Record<ExchangeRequestStatus, number | null> = {
+  new: 0,
+  in_progress: 0,
+  rate_confirmed: 1,
+  payment_received: 2,
+  completed: 3,
+  cancelled: null,
+};
+
+const PATH_NOTES: Record<ExchangeRequestStatus, string> = {
+  new: 'Заявка у менеджера: он назовёт курс и выдаст реквизиты для оплаты.',
+  in_progress: 'Менеджер взял заявку в работу: назовёт курс и выдаст реквизиты для оплаты.',
+  rate_confirmed: 'Ждёт вашей оплаты. Реквизиты и срок стоят ниже.',
+  payment_received: 'Оплата получена, отправляем деньги получателю.',
+  completed: 'Исполнена: деньги отправлены получателю.',
+  cancelled: 'Отменена на этом шаге, дальше заявка не пошла. Причина стоит ниже.',
+};
+
+export function pathOf(request: {
+  readonly status: ExchangeRequestStatus;
+  /**
+   * До какого состояния заявка дошла перед отменой — из её истории. Без
+   * истории отменённая оборвалась на первом шаге: так и есть у заявки,
+   * которую мерчант отменил сам, пока её не взяли.
+   */
+  readonly reached?: ExchangeRequestStatus | undefined;
+}): RequestPath {
+  const cancelled = request.status === 'cancelled';
+  const at = cancelled
+    ? ((request.reached ? STEP_OF[request.reached] : null) ?? 0)
+    : (STEP_OF[request.status] ?? 0);
+  const finished = request.status === 'completed';
+
+  return {
+    steps: STEP_LABELS.map((label, index) => ({
+      label,
+      state:
+        index < at || finished
+          ? 'done'
+          : index > at
+            ? 'ahead'
+            : cancelled
+              ? 'stopped'
+              : 'current',
+    })),
+    note: PATH_NOTES[request.status],
+    waitsForMerchant: request.status === 'rate_confirmed',
+  };
+}
+
+/* ── Срок оплаты ─────────────────────────────────────────────────── */
+
+/** Сколько минут до конца срока считается «срочно». */
+const SOON_MINUTES = 15;
+
+export interface PaymentDeadline {
+  /** До какого момента платить. Печатает его браузер, а не сервер. */
+  readonly at: Date;
+  /** Целых минут осталось — вверх: идёт последняя минута, значит «1». */
+  readonly leftMinutes: number;
+  /**
+   * `over` — срок вышел, а заявка ещё не отменена: отменяет её
+   * планировщик, а не сам срок, и в этом промежутке экран говорит об
+   * этом словами, а не показывает ноль или минус.
+   */
+  readonly state: 'ok' | 'soon' | 'over';
+}
+
+/**
+ * Срок оплаты — моментом и остатком. Раньше карточка говорила
+ * «реквизиты выданы в 17:07, на оплату — 120 мин», и складывать время с
+ * минутами мерчант должен был сам. Считать срок — работа сервиса: он же
+ * его и назначил.
+ */
+export function paymentDeadlineOf(
+  issuedAt: Date | null,
+  ttlMinutes: number,
+  now: Date,
+): PaymentDeadline | null {
+  if (!issuedAt) return null;
+  const at = new Date(issuedAt.getTime() + ttlMinutes * 60_000);
+  const left = Math.ceil((at.getTime() - now.getTime()) / 60_000);
+  if (left <= 0) return { at, leftMinutes: 0, state: 'over' };
+  return { at, leftMinutes: left, state: left < SOON_MINUTES ? 'soon' : 'ok' };
+}
+
+/**
+ * Остаток — часами и минутами, а не десятичной дробью. У `formatMinutes`
+ * из `@nemo/ui` «1,2 ч» — так читается среднее время до исполнения; а
+ * обратный отсчёт сверяют с часами на стене, и «1,2 ч» человек
+ * переводит в минуты сам.
+ */
+export function leftWords(minutes: number): string {
+  if (minutes < 60) return `${minutes} мин`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} ч` : `${hours} ч ${rest} мин`;
+}

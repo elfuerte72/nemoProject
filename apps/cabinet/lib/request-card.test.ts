@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { slopComplaints } from '@nemo/core';
 import { exchangeRequestStatuses } from '@nemo/types';
-import { paymentBlockOf } from './request-card.js';
+import { leftWords, pathOf, paymentBlockOf, paymentDeadlineOf } from './request-card.js';
 
 /**
  * Блок реквизитов в карточке заявки.
@@ -73,5 +73,138 @@ describe('блок реквизитов', () => {
       const block = paymentBlockOf({ status, paymentInstructions: INSTRUCTIONS });
       expect(slopComplaints(`${block?.title}. ${block?.note}`)).toEqual([]);
     }
+  });
+});
+
+/**
+ * Строка пути: где заявка и кого она ждёт.
+ *
+ * Пилюля «Курс подтверждён» отвечает «где», но не отвечает на то, зачем
+ * карточку открывают: кто сейчас ходит. Соответствие «состояние → шаг
+ * → кого ждём» глазом по одной заявке не проверить — на экране видно
+ * одно состояние из шести.
+ */
+describe('строка пути', () => {
+  it('шагов четыре: «новая» и «в работе» для мерчанта — один шаг', () => {
+    const fresh = pathOf({ status: 'new' });
+    const taken = pathOf({ status: 'in_progress' });
+    expect(fresh.steps.map((one) => one.label)).toEqual([
+      'Новая',
+      'Курс подтверждён',
+      'Оплата получена',
+      'Исполнена',
+    ]);
+    // В обоих случаях заявку ведёт менеджер, и шаг у них один и тот же.
+    expect(fresh.steps.map((one) => one.state)).toEqual(taken.steps.map((one) => one.state));
+    expect(fresh.steps[0]?.state).toBe('current');
+  });
+
+  it('пройденное отмечено, текущее одно, остальное впереди', () => {
+    expect(pathOf({ status: 'payment_received' }).steps.map((one) => one.state)).toEqual([
+      'done',
+      'done',
+      'current',
+      'ahead',
+    ]);
+  });
+
+  it('у исполненной пройдено всё, и текущего шага нет', () => {
+    expect(pathOf({ status: 'completed' }).steps.map((one) => one.state)).toEqual([
+      'done',
+      'done',
+      'done',
+      'done',
+    ]);
+  });
+
+  it('мерчанта ждёт только заявка с подтверждённым курсом', () => {
+    for (const status of exchangeRequestStatuses) {
+      expect(pathOf({ status }).waitsForMerchant).toBe(status === 'rate_confirmed');
+    }
+  });
+
+  /*
+   * Отменённая путь не проходит. Где она оборвалась, говорит её
+   * история: последнее состояние перед отменой.
+   */
+  it('отменённая обрывается на том шаге, где её отменили', () => {
+    const path = pathOf({ status: 'cancelled', reached: 'rate_confirmed' });
+    expect(path.steps.map((one) => one.state)).toEqual(['done', 'stopped', 'ahead', 'ahead']);
+    expect(path.waitsForMerchant).toBe(false);
+  });
+
+  it('отменённая без истории оборвалась на первом шаге', () => {
+    expect(pathOf({ status: 'cancelled' }).steps.map((one) => one.state)).toEqual([
+      'stopped',
+      'ahead',
+      'ahead',
+      'ahead',
+    ]);
+  });
+
+  it('о каждом состоянии сказано, кто ходит, и сказано по-человечески', () => {
+    for (const status of exchangeRequestStatuses) {
+      const { note } = pathOf({ status });
+      expect(note.length).toBeGreaterThan(10);
+      expect(slopComplaints(note)).toEqual([]);
+    }
+  });
+});
+
+/**
+ * Срок оплаты — моментом и остатком. Считать его — работа сервиса: он
+ * же его и назначил. Граница «срок вышел» проверяется тестом, потому
+ * что видна она одну минуту из ста двадцати.
+ */
+describe('срок оплаты', () => {
+  const issued = new Date('2026-09-21T17:07:00Z');
+
+  it('момент — выдача плюс срок жизни неоплаченной заявки', () => {
+    const deadline = paymentDeadlineOf(issued, 120, new Date('2026-09-21T17:55:00Z'));
+    expect(deadline?.at.toISOString()).toBe('2026-09-21T19:07:00.000Z');
+    expect(deadline?.leftMinutes).toBe(72);
+    expect(deadline?.state).toBe('ok');
+  });
+
+  it('меньше четверти часа — срочно', () => {
+    expect(paymentDeadlineOf(issued, 120, new Date('2026-09-21T18:53:00Z'))?.state).toBe('soon');
+    expect(paymentDeadlineOf(issued, 120, new Date('2026-09-21T18:52:00Z'))?.state).toBe('ok');
+  });
+
+  it('остаток считается вверх: «осталась 1 мин», пока идёт последняя', () => {
+    const deadline = paymentDeadlineOf(issued, 120, new Date('2026-09-21T19:06:30Z'));
+    expect(deadline?.leftMinutes).toBe(1);
+    expect(deadline?.state).toBe('soon');
+  });
+
+  it('срок вышел — не ноль и не минус, а отдельное состояние', () => {
+    for (const now of ['2026-09-21T19:07:00Z', '2026-09-21T23:00:00Z']) {
+      const deadline = paymentDeadlineOf(issued, 120, new Date(now));
+      expect(deadline?.state).toBe('over');
+      expect(deadline?.leftMinutes).toBe(0);
+    }
+  });
+
+  it('без момента выдачи срока нет', () => {
+    expect(paymentDeadlineOf(null, 120, new Date())).toBeNull();
+  });
+});
+
+/*
+ * Остаток — часами и минутами, а не десятичной дробью: «1,2 ч» человек
+ * переводит в минуты сам, а обратный отсчёт сверяют с часами на стене.
+ */
+describe('остаток словами', () => {
+  it('до часа — минутами', () => {
+    expect(leftWords(12)).toBe('12 мин');
+    expect(leftWords(1)).toBe('1 мин');
+  });
+
+  it('от часа — часами и минутами', () => {
+    expect(leftWords(72)).toBe('1 ч 12 мин');
+  });
+
+  it('ровный час — без хвоста «0 мин»', () => {
+    expect(leftWords(120)).toBe('2 ч');
   });
 });
