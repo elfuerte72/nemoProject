@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, inArray, isNull, lte, sql, type SQL } from '
 import { merchants, webhookDeliveries, webhookEndpoints } from '@nemo/db';
 import {
   isWebhookEvent,
+  webhookEventForStatus,
   webhookEvents,
   type ExchangeRequestStatus,
   type WebhookDeliveryStatus,
@@ -185,23 +186,9 @@ export function signWebhookBody(secret: string, body: string): string {
   return `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
 }
 
-/** Событие перехода; «взята в работу» — не событие, для мерчанта оно ничего не значит. */
-export function webhookEventForStatus(status: ExchangeRequestStatus): WebhookEvent | undefined {
-  switch (status) {
-    case 'new':
-      return 'exchange_request.created';
-    case 'rate_confirmed':
-      return 'exchange_request.rate_confirmed';
-    case 'payment_received':
-      return 'exchange_request.payment_received';
-    case 'completed':
-      return 'exchange_request.completed';
-    case 'cancelled':
-      return 'exchange_request.cancelled';
-    case 'in_progress':
-      return undefined;
-  }
-}
+// Правило «состояние → событие» живёт в `@nemo/types`: им же карточка
+// заявки в кабинете кладёт доставку под свою смену состояния.
+export { webhookEventForStatus };
 
 const SECRET_LENGTH = 32;
 const MAX_URL = 500;
@@ -430,17 +417,34 @@ async function deliveriesOf(
   return rows.map((row) => toDeliveryView(row.delivery, row.url));
 }
 
-/** Последние доставки мерчанта — свежие первыми, с ответом приёмника; по одной точке, если названа. */
+/**
+ * Последние доставки мерчанта — свежие первыми, с ответом приёмника; по
+ * одной точке или по одной заявке, если названы.
+ *
+ * Отбор по заявке — для её карточки: там доставки стоят под сменами
+ * состояния, и это вторая половина истории — узнала ли о переходе
+ * система мерчанта. Отдельной операции под это нет намеренно: право то
+ * же (`integration`), вид тот же, и вторая выборка тех же строк
+ * разошлась бы с первой. Чужая заявка отвечает пустотой — точки-то
+ * свои, — и существования её не подтверждает.
+ */
 export async function listWebhookDeliveries(
   ctx: CoreConfig,
   actor: Actor,
-  filter: { readonly endpointId?: string | undefined; readonly limit?: number | undefined } = {},
+  filter: {
+    readonly endpointId?: string | undefined;
+    readonly requestId?: string | undefined;
+    readonly limit?: number | undefined;
+  } = {},
 ): Promise<readonly WebhookDeliveryView[]> {
   const { merchantId } = requireMerchantAbility(actor, 'integration');
+  const conditions: SQL[] = [];
+  if (filter.endpointId) conditions.push(eq(webhookDeliveries.endpointId, filter.endpointId));
+  if (filter.requestId) conditions.push(eq(webhookDeliveries.requestId, filter.requestId));
   return deliveriesOf(
     ctx,
     merchantId,
-    filter.endpointId ? [eq(webhookDeliveries.endpointId, filter.endpointId)] : [],
+    conditions,
     Math.min(filter.limit ?? DELIVERIES_LIMIT, DELIVERIES_MAX),
   );
 }

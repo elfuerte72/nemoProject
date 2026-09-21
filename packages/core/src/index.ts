@@ -453,7 +453,9 @@ export function createCore(ctx: CoreConfig) {
       removeWebhookEndpoint(ctx, actor, endpointId),
     listWebhookDeliveries: (
       actor: Actor,
-      filter?: { endpointId?: string | undefined; limit?: number | undefined },
+      // Тип отбора — у самой операции: переписанный здесь руками, он
+      // отстал от неё на первом же новом поле.
+      filter?: Parameters<typeof listWebhookDeliveries>[2],
     ) => listWebhookDeliveries(ctx, actor, filter),
     getWebhookDelivery: (actor: Actor, deliveryId: string) =>
       getWebhookDelivery(ctx, actor, deliveryId),

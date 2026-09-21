@@ -1994,3 +1994,47 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+
+/*
+ * Доставки вебхуков под сменой состояния: строкой на всю ширину ленты,
+ * с отступом под текст состояния, — это подробность перехода, а не
+ * отдельное событие.
+ */
+.trail__hooks {
+  flex-basis: 100%;
+  margin: 2px 0 4px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12.5px;
+}
+
+.trail__hook {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  overflow-wrap: anywhere;
+}
+
+.trail__hook a {
+  color: var(--text-muted);
+}
+
+.trail__hook a:hover {
+  color: var(--text);
+}
+
+.trail__hook--ok a {
+  color: var(--up);
+}
+
+/* Ждёт отправки или повтора — медовым: это ждёт внимания. */
+.trail__hook--wait a {
+  color: var(--wait);
+}
+
+.trail__hook--bad a {
+  color: var(--danger-text);
+}

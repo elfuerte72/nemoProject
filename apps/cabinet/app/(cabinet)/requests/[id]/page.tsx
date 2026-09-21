@@ -1,13 +1,19 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { isCoreError } from '@nemo/http';
-import { describeRequisites, isUuid, REQUISITE_KIND_LABELS } from '@nemo/types';
+import {
+  describeRequisites,
+  isUuid,
+  merchantRoleCan,
+  REQUISITE_KIND_LABELS,
+} from '@nemo/types';
 import { CopyValue, Moment, QuietRefresh } from '@nemo/ui';
 import { formatMoney, formatRate } from '@nemo/ui/format';
 import { getCore } from '@/lib/core';
 import { viewer } from '@/lib/reads';
 import { KIND_LABELS, STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
 import { pathOf, paymentBlockOf, SUBMITTED_VIA } from '@/lib/request-card';
+import { deliveryWords, trailOf } from '@/lib/request-trail';
 import { CancelRequest } from './cancel-request';
 import { PaymentDeadlineLine } from './payment-deadline';
 
@@ -26,7 +32,7 @@ export default async function RequestPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { actor } = await viewer();
+  const { actor, session } = await viewer();
   const { id } = await params;
   // Номер не того вида — «не найдена», как и чужая: база на него
   // отвечает не пустотой, а ошибкой.
@@ -49,6 +55,16 @@ export default async function RequestPage({
     // запись архивируется сразу, и список её не отдаёт.
     core.getExchangeRequestRecipient(actor, id),
   ]);
+  /*
+   * Доставки вебхуков — вторая половина истории, и видит её тот, кому
+   * видна интеграция: у владельца (ADR-0023). Решает операция, а не
+   * экран — оператору она откажет, — поэтому экран её и не зовёт: лента
+   * у оператора остаётся лентой состояний, а не пятисотым ответом.
+   */
+  const deliveries = merchantRoleCan(session.role, 'integration')
+    ? await core.listWebhookDeliveries(actor, { requestId: id })
+    : [];
+  const trail = trailOf(events, deliveries);
 
   const rate = request.finalRate ?? request.requestRate;
   const payment = paymentBlockOf(request);
@@ -195,20 +211,45 @@ export default async function RequestPage({
 
       <section className="card">
         <h2 className="card__title">Что происходило</h2>
-        {events.length === 0 ? (
+        {trail.length === 0 ? (
           <p className="muted">Пока ничего: заявка только подана.</p>
         ) : (
           <ul className="trail">
-            {events.map((event) => (
-              <li
-                key={`${event.createdAt.toISOString()}-${event.toStatus}`}
-                className="trail__item"
-              >
+            {trail.map((row) => (
+              <li key={`${row.at.toISOString()}-${row.status}`} className="trail__item">
                 <span className="trail__when">
-                  <Moment at={event.createdAt.toISOString()} />
+                  <Moment at={row.at.toISOString()} />
                 </span>
-                <span>{STATUS_LABELS[event.toStatus]}</span>
-                {event.comment ? <span className="muted">{event.comment}</span> : undefined}
+                <span>{STATUS_LABELS[row.status]}</span>
+                {row.comment ? <span className="muted">{row.comment}</span> : undefined}
+                {/*
+                  Узнала ли о переходе система мерчанта. Под своей сменой
+                  состояния, а не отдельным списком: вопрос задают про
+                  переход — «вы говорите, исполнено, а у нас висит».
+                */}
+                {row.deliveries.length > 0 ? (
+                  <ul className="trail__hooks">
+                    {row.deliveries.map((one) => {
+                      const words = deliveryWords(one);
+                      return (
+                        <li key={one.id} className={`trail__hook trail__hook--${words.tone}`}>
+                          {/*
+                            Ведёт в историю точки: страницы одной доставки у
+                            кабинета нет, а ответ приёмника виден там.
+                          */}
+                          <Link href={`/webhooks?endpoint=${one.endpointId}`}>
+                            вебхук <span className="mono">{one.event}</span> {words.text}
+                          </Link>
+                          {one.status === 'pending' && one.attempt > 0 ? (
+                            <span className="muted">
+                              следующая попытка <Moment at={one.nextAttemptAt.toISOString()} />
+                            </span>
+                          ) : undefined}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : undefined}
               </li>
             ))}
           </ul>

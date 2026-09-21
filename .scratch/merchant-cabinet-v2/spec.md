@@ -194,14 +194,15 @@ API отозван, а интеграция им стучится. Первое 
 
 ## Тикеты
 
-В порядке, в котором их стоит брать: сначала то, что отвечает на
-«найти» и «кого ждёт», затем то, что требует операций ядра.
+Семь из восьми сделаны 21 сентября 2026; в каждом тикете записано, что
+вышло и где пришлось отойти от заведённого. Открыт один — десятый.
 
 - `issues/12-requests-list-search-by-own-number.md` — поиск, главный путь
 - `issues/05-request-card-own-number.md` — свой номер в шапке
 - `issues/06-request-card-path.md` — строка пути
 - `issues/07-request-card-payment-deadline.md` — срок остатком
-- `issues/11-requests-list-source-column.md` — «Источник» вместо «Кто подал»
+- `issues/11-requests-list-source-column.md` — колонка «Кто подал» убрана
+  без замены: посылка тикета не подтвердилась, менеджер заявок не заводит
 - `issues/08-request-card-recipient.md` — получатель, операция ядра
 - `issues/09-request-card-trail-with-webhooks.md` — хронология с вебхуками
 - `issues/10-request-card-integration-block.md` — needs-triage: упирается
