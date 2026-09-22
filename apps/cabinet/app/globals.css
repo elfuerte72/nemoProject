@@ -1576,14 +1576,6 @@
   padding: 16px 18px;
 }
 
-/* Подпись строки и наценка рядом с ней: обе относятся к числу под ними. */
-.calc__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
-}
-
 .calc__line {
   display: flex;
   align-items: center;
@@ -1773,53 +1765,49 @@ button.calc__code:hover,
 }
 
 /*
- * Наценка владельца — рядом с подписью строки оплаты, у числа, которое
- * она поднимает. Набрана подписью, а не кнопкой: на экране кассы
- * главное это суммы, и вторая кнопка рядом с ними спорила бы с ними за
- * внимание. Что её можно нажать, говорит пунктир под словом — тот же
- * приём, каким в тексте отмечают раскрываемое.
+ * Наценка владельца — полем под расчётом, рядом с верификацией: её
+ * задают перед сменой, а не ищут, и поле, которое видно всегда, отвечает
+ * на это лучше кнопки с раскрытием. Знак процента стоит в самом поле,
+ * справа: подпись «%» рядом с ним читалась бы как отдельное слово.
  */
-.markup__mark {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-bottom: 1px dashed var(--hairline);
-  transition: color 0.15s ease;
-}
-
-.markup__mark:hover,
-.markup__mark--on {
-  color: var(--gold-light);
-}
-
-/* Показанная, но не правимая наценка — то же слово без пунктира. */
-.markup__mark--still {
-  border-bottom: 0;
-  cursor: default;
-}
-
-.markup__panel {
+.markup {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 4px 0 2px;
-  padding: 12px 14px;
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  box-shadow: var(--lift);
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  margin-top: 16px;
 }
 
 .markup__field {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-width: 160px;
+}
+
+.markup__input {
+  position: relative;
+  display: inline-flex;
+  width: 120px;
+}
+
+.markup__input .input {
+  padding-right: 30px;
+  font-variant-numeric: tabular-nums;
+}
+
+.markup__sign {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.markup .hint {
+  margin: 0;
+  align-self: flex-end;
+  padding-bottom: 10px;
 }
 
 .pos__label {

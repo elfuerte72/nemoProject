@@ -211,6 +211,13 @@ export interface CurrencyPairView {
 export interface TermsCurrencyView {
   readonly code: string;
   readonly kind: CurrencyKind;
+  /**
+   * До скольких знаков делится единица валюты. Нужна там, где сумму
+   * округляют на стороне, которую котировка не описывает: у котировки
+   * знак только валюты выдачи, а POS-терминал ровняет ещё и то, что
+   * платит покупатель.
+   */
+  readonly decimals: number;
 }
 
 /**
@@ -963,7 +970,7 @@ export async function getExchangeTerms(ctx: CoreConfig): Promise<ExchangeTermsVi
     .orderBy(asc(currencyPairs.fromCode), asc(currencyPairs.toCode), asc(currencyPairs.kind));
 
   const active = await ctx.db
-    .select({ code: currencies.code, kind: currencies.kind })
+    .select({ code: currencies.code, kind: currencies.kind, decimals: currencies.decimals })
     .from(currencies)
     .where(eq(currencies.isActive, true))
     .orderBy(asc(currencies.code));
