@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * Знак «?» у заголовка колонки: объяснение там, где возник вопрос.
@@ -22,8 +22,28 @@ export function ColumnHint({
   readonly detail: string;
 }) {
   const [open, setOpen] = useState(false);
+  /* Плашка прижата к правому краю знака, а не к левому: справа места нет. */
+  const [toEnd, setToEnd] = useState(false);
   const id = useId();
   const root = useRef<HTMLSpanElement>(null);
+  const pop = useRef<HTMLSpanElement>(null);
+
+  /*
+   * Куда открываться, плашка решает сама и до первого кадра: у последней
+   * колонки справа край страницы, и плашка, открытая вправо, вылезала
+   * за него — документ становился шире окна, появлялась горизонтальная
+   * прокрутка, а за краем светлой оболочки кабинета показывался тёмный
+   * фон сайта. Мерить, а не назначать сторону колонке: на узком окне
+   * за край вылезает и предпоследняя.
+   */
+  useLayoutEffect(() => {
+    if (!open || !pop.current || !root.current) return;
+    // От знака, а не от самой плашки: та при повторном открытии уже
+    // прижата и померилась бы влезающей — и ушла бы обратно вправо.
+    const edge = document.documentElement.clientWidth - 12;
+    const left = root.current.getBoundingClientRect().left - 12;
+    setToEnd(left + pop.current.offsetWidth > edge);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -54,7 +74,12 @@ export function ColumnHint({
         ?
       </button>
       {open ? (
-        <span id={id} role="note" className="hint__pop">
+        <span
+          id={id}
+          ref={pop}
+          role="note"
+          className={toEnd ? 'hint__pop hint__pop--end' : 'hint__pop'}
+        >
           <span className="hint__title">{title}</span>
           {detail}
         </span>

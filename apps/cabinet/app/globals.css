@@ -926,6 +926,12 @@
   white-space: normal;
 }
 
+/* Справа края страницы нет места — плашка прижата к правому краю знака. */
+.hint__pop--end {
+  left: auto;
+  right: -12px;
+}
+
 .hint__title {
   display: block;
   margin-bottom: 3px;
