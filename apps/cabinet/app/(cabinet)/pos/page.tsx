@@ -11,6 +11,7 @@ import { POS_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
+import { MarkupPanel } from './markup-panel';
 import { Terminal, type RecentInvoice } from './terminal';
 
 export const dynamic = 'force-dynamic';
@@ -33,8 +34,7 @@ const RECENT = 8;
  * Валюты — все, которые сервис выдаёт за рубли: покупатель у стойки
  * платит рублями, а получает то, за чем пришёл. Курс тот же, что в
  * разделе «Курсы» и на экране новой заявки, с наценкой мерчанта
- * поверх; наценку владелец задаёт в разделе «Настройки», и здесь её
- * только видно.
+ * поверх; её владелец задаёт здесь же, кнопкой над терминалом.
  */
 export default async function PosPage() {
   const access = await allowedHere('/pos');
@@ -118,17 +118,26 @@ export default async function PosPage() {
           />
         </>
       ) : (
-        <Terminal
-          directions={sellable}
-          shift={shift}
-          authorName={session.userName}
-          minAmount={terms.minAmount}
-          markupBps={settings.markupBps}
-          canPrice={merchantRoleCan(session.role, 'pricing')}
-          ttlMinutes={terms.unpaidTtlMinutes}
-          provider={{ title: provider.title, imitation: provider.name === IMITATION }}
-          recent={recent}
-        />
+        <>
+          {/*
+            Наценку правит владелец — право `pricing` из той же таблицы,
+            по которой откажет маршрут. Оператору кнопка не
+            показывается: меню, ведущее в отказ, хуже отсутствующего.
+          */}
+          {merchantRoleCan(session.role, 'pricing') ? (
+            <MarkupPanel markupBps={settings.markupBps} />
+          ) : undefined}
+          <Terminal
+            directions={sellable}
+            shift={shift}
+            authorName={session.userName}
+            minAmount={terms.minAmount}
+            markupBps={settings.markupBps}
+            ttlMinutes={terms.unpaidTtlMinutes}
+            provider={{ title: provider.title, imitation: provider.name === IMITATION }}
+            recent={recent}
+          />
+        </>
       )}
     </main>
   );

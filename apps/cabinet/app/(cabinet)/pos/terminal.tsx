@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CurrencyFlag } from '@nemo/flags';
 import { currencyName, Money, type Quote } from '@nemo/types';
 import { HowTo, LIVE_REFRESH_MS, Moment, shouldRefresh } from '@nemo/ui';
-import { formatMoney, formatRate } from '@nemo/ui/format';
+import { formatAmount, formatMoney, formatRate } from '@nemo/ui/format';
 import {
   INVOICE_STATUS_LABELS,
   INVOICE_STATUS_TONES,
@@ -44,13 +44,13 @@ type QuoteReply = Quote & { readonly asOf: string };
  * Валюта выбирается теми же кнопками, что на табло «Курсов», — флаг и
  * код: 22 сентября 2026 владелец попросил «вместо кнопок с валютами
  * использовать кнопки, которые есть в приложении и на странице
- * „Курсы“». Курса на кнопке нет — он стоит под суммой, там, где
- * считается. Полей «Назначение» и «Покупатель» нет с того же дня по
+ * „Курсы“». Полей «Назначение» и «Покупатель» нет с того же дня по
  * его слову: у стойки их никто не заполнял.
  *
- * Итог — две суммы одного веса: сколько покупатель платит и сколько
- * получает. У стойки вслух называют обе, и мельче одна другой быть не
- * должна; курс между ними — подпись, а не третье число.
+ * Сам расчёт собран калькулятором Mini App: две строки с крупными
+ * суммами одного веса, пилюля валюты у каждой, курс на черте между
+ * ними. Набирают в любой строке. У стойки вслух называют обе суммы, и
+ * мельче одна другой быть не должна.
  *
  * После «Создать счёт» на месте формы встаёт сам счёт: QR, обратный
  * отсчёт, что с ним стало. Об оплате говорит поток событий
@@ -66,6 +66,18 @@ type QuoteReply = Quote & { readonly asOf: string };
  */
 
 const QUOTE_REFRESH_MS = 30_000;
+
+/**
+ * Ступени набора для длинных сумм — то же правило, что в Mini App:
+ * обратный счёт даёт длинный хвост, и такое число в кегль, рассчитанный
+ * на «5 000», не помещается. Обрезать его нельзя — это ровно та сумма,
+ * которую называют покупателю.
+ */
+function amountClass(value: string): string {
+  if (value.length > 13) return 'calc__amount calc__amount--tiny';
+  if (value.length > 9) return 'calc__amount calc__amount--small';
+  return 'calc__amount';
+}
 
 export interface PosDirection {
   readonly fromCode: string;
@@ -104,7 +116,6 @@ export function Terminal({
   authorName,
   minAmount,
   markupBps,
-  canPrice,
   ttlMinutes,
   provider,
   recent,
@@ -116,10 +127,8 @@ export function Terminal({
   readonly authorName: string;
   /** Минимум сервиса в долларах: по нему черта курса решает, что сказать. */
   readonly minAmount: string;
-  /** Наценка мерчанта из настроек кабинета. */
+  /** Наценка мерчанта: задаётся кнопкой над терминалом, здесь только считается. */
   readonly markupBps: number;
-  /** Смотрящий вправе менять наценку — ему показывается дорога в настройки. */
-  readonly canPrice: boolean;
   /** Сколько минут счёт ждёт оплаты. */
   readonly ttlMinutes: number;
   readonly provider: { readonly title: string; readonly imitation: boolean };
@@ -362,6 +371,44 @@ export function Terminal({
 
   /* ── Разметка ──────────────────────────────────────────────────── */
 
+  /*
+   * Калькулятор — тем же устройством, что экран обмена Mini App
+   * (`apps/miniapp/app/exchange-screen.tsx`): две строки с крупными
+   * суммами, пилюля валюты у каждой, курс на черте между ними. Так
+   * попросил владелец 22 сентября 2026: «сделать POS-терминал так же,
+   * как в самом Mini App, такой же дизайн, это визуально удобнее».
+   *
+   * Взято устройство, а не палитра: Mini App тёмный и фиксированно, а
+   * кабинет светлый, и двух правд о том, как выглядит поверхность, быть
+   * не должно. То же правило, по которому панель менеджера собрана по
+   * образцу чужого кабинета.
+   *
+   * Набирают в любой строке, и набранная становится той, от которой
+   * считают встречную: «сколько покупатель заплатит за две тысячи бат»
+   * спрашивают у стойки не реже, чем «сколько бат выйдет за пять
+   * тысяч». Прежние чипы «В RUB / В CNY» этим и заменены.
+   *
+   * Кнопки-переворота здесь нет, в отличие от Mini App: у стойки
+   * покупатель всегда платит рублями, и обратного направления не
+   * существует.
+   */
+  function shown(which: PosSide): string {
+    if (side === which) return typed;
+    const value = which === 'pay' ? sides.pay : sides.buy;
+    return value ? formatAmount(value) : '';
+  }
+
+  /** Набор в поле делает его тем, по которому считают встречное. */
+  function type(which: PosSide, value: string): void {
+    setSide(which);
+    setTyped(value);
+  }
+
+  /** Разряды по окончании набора — только там, где набирали. */
+  function settle(which: PosSide): void {
+    if (side === which) setTyped(normalizeTyped(typed));
+  }
+
   const form = (
     <>
       {/*
@@ -370,7 +417,7 @@ export function Terminal({
         подписи отвечают «что есть», а не «что выбрать».
       */}
       <div className="field">
-        <span className="label">Покупатель получает</span>
+        <span className="label">Валюта покупателя</span>
         <div className="chips">
           {directions.map((one) => (
             <button
@@ -390,71 +437,70 @@ export function Terminal({
         </div>
       </div>
 
-      <div className="pos__field">
-        <label className="label" htmlFor="pos-amount">
-          Сумма
-        </label>
-        <div className="chips chips--tight" role="group" aria-label="В какой валюте набираете">
-          <button
-            type="button"
-            className={side === 'pay' ? 'chip chip--on' : 'chip'}
-            onClick={() => setSide('pay')}
-            aria-pressed={side === 'pay'}
-          >
-            В {fromCode}
-          </button>
-          <button
-            type="button"
-            className={side === 'buy' ? 'chip chip--on' : 'chip'}
-            onClick={() => setSide('buy')}
-            aria-pressed={side === 'buy'}
-          >
-            В {toCode}
-          </button>
+      <div className="calc">
+        <div className="calc__side">
+          <span className="label">Покупатель платит</span>
+          <div className="calc__line">
+            <input
+              className={amountClass(shown('pay'))}
+              inputMode="decimal"
+              autoComplete="off"
+              value={shown('pay')}
+              onChange={(event) => type('pay', event.target.value)}
+              onBlur={() => settle('pay')}
+              placeholder="0"
+              aria-label={`Сумма в ${fromCode}`}
+            />
+            <span className="calc__code">
+              <CurrencyFlag code={fromCode} size={18} />
+              {fromCode}
+            </span>
+          </div>
         </div>
-        <input
-          id="pos-amount"
-          className="input input--big"
-          inputMode="decimal"
-          autoComplete="off"
-          value={typed}
-          onChange={(event) => setTyped(event.target.value)}
-          onBlur={() => setTyped(normalizeTyped(typed))}
-          placeholder="0"
-        />
-      </div>
 
-      {/*
-        Две суммы одного размера: обе называют покупателю вслух, и
-        мельче одна другой быть не должна. Подписи стоят своей строкой
-        сетки, значения своей — иначе подпись из двух слов роняет своё
-        число ниже соседнего. Курс — строкой под ними и тусклым, а не
-        акцентом: акцентный цвет в кабинете означает «нажми» и «ждёт
-        тебя», а курс ни то ни другое.
-      */}
-      <div className="pos__deal" aria-live="polite">
-        <span className="pos__label pos__deal-paylabel">Покупатель заплатит</span>
-        <span className="pos__amount pos__deal-payvalue">
-          {sides.pay ? formatMoney(sides.pay, fromCode) : '—'}
-        </span>
-        <span className="pos__deal-arrow" aria-hidden>
-          →
-        </span>
-        <span className="pos__label pos__deal-getlabel">Получит</span>
-        <span className="pos__amount pos__deal-getvalue">
-          {sides.buy ? formatMoney(sides.buy, toCode) : '—'}
-        </span>
-        <span className="pos__deal-rate">
-          {line.kind === 'rate'
-            ? `по курсу ${formatRate(line.rate, fromCode, toCode)}${markupBps > 0 ? ` · с наценкой ${markupPercent(markupBps)} %` : ''}`
-            : line.kind === 'from'
-              ? `счёт от ${formatMoney(line.giveAtLeast, fromCode)}`
-              : rate === null
-                ? 'курса сейчас нет — счёт по нему не создать'
-                : amount === null
-                  ? 'наберите сумму'
-                  : 'спрашиваем курс…'}
-        </span>
+        {/*
+          Курс стоит на самой черте между отданным и полученным — там,
+          где одно превращается в другое, и тем же приёмом, что в Mini
+          App. Наценка названа рядом: у стойки её держит в уме тот, кто
+          назначил, а смотрит на экран тот, кто продаёт.
+        */}
+        <div className="calc__divider">
+          <span className={line.kind === 'rate' ? 'calc__rate' : 'calc__rate calc__rate--absent'}>
+            {line.kind === 'rate'
+              ? `${formatRate(line.rate, fromCode, toCode)}${markupBps > 0 ? ` · наценка ${markupPercent(markupBps)} %` : ''}`
+              : line.kind === 'from'
+                ? `счёт от ${formatMoney(line.giveAtLeast, fromCode)}`
+                : rate === null
+                  ? 'курса сейчас нет'
+                  : amount === null
+                    ? ''
+                    : 'спрашиваем курс…'}
+          </span>
+          <span className="calc__rule" />
+        </div>
+
+        <div className="calc__side">
+          <span className="label">Покупатель получает</span>
+          <div className="calc__line">
+            <input
+              className={amountClass(shown('buy'))}
+              inputMode="decimal"
+              autoComplete="off"
+              value={shown('buy')}
+              // Без курса считать обратно нечем: набор в этом поле
+              // обещал бы пересчёт, которого не будет.
+              readOnly={!rate}
+              onChange={(event) => type('buy', event.target.value)}
+              onBlur={() => settle('buy')}
+              placeholder="0"
+              aria-label={`Сумма в ${toCode}`}
+            />
+            <span className="calc__code">
+              <CurrencyFlag code={toCode} size={18} />
+              {toCode}
+            </span>
+          </div>
+        </div>
       </div>
 
       <label className="check">
@@ -695,14 +741,7 @@ export function Terminal({
                     {busy ? 'Создаём…' : 'Создать счёт'}
                   </button>
                   <span className="muted">
-                    создал {authorName} · за смену {made} ·{' '}
-                    {markupBps > 0 ? `наценка ${markupPercent(markupBps)} %` : 'без наценки'}
-                    {canPrice ? (
-                      <>
-                        {' · '}
-                        <Link href="/settings">изменить</Link>
-                      </>
-                    ) : undefined}
+                    создал {authorName} · за смену {made}
                   </span>
                 </div>
               </>
