@@ -6,7 +6,14 @@ import {
   type MerchantAbility,
 } from './merchant-roles.js';
 
-const ALL: readonly MerchantAbility[] = ['submit', 'recipients', 'till', 'integration', 'staff'];
+const ALL: readonly MerchantAbility[] = [
+  'submit',
+  'recipients',
+  'till',
+  'pricing',
+  'integration',
+  'staff',
+];
 
 describe('права роли мерчанта', () => {
   it('владельцу можно всё', () => {
@@ -19,6 +26,9 @@ describe('права роли мерчанта', () => {
     expect(merchantRoleCan('operator', 'submit')).toBe(true);
     expect(merchantRoleCan('operator', 'recipients')).toBe(true);
     expect(merchantRoleCan('operator', 'till')).toBe(true);
+    // За кассой стоит, а почём торгует кабинет — не решает: наценка это
+    // деньги владельца.
+    expect(merchantRoleCan('operator', 'pricing')).toBe(false);
     expect(merchantRoleCan('operator', 'integration')).toBe(false);
     expect(merchantRoleCan('operator', 'staff')).toBe(false);
   });

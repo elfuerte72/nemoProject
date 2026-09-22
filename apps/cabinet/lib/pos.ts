@@ -1,4 +1,4 @@
-import { Money, giveFor, payoutOf, type Amount, type Quote } from '@nemo/types';
+import { Money, giveFor, payoutOf, rateLine, type Amount, type Quote, type RateLine } from '@nemo/types';
 import type { MockInvoice } from './invoice-rows';
 
 /**
@@ -9,9 +9,13 @@ import type { MockInvoice } from './invoice-rows';
  * правд о цене быть не должно — покупатель у стойки и мерчант в
  * кабинете смотрят на одно число.
  *
- * Денег за этим экраном нет: счёт — запись макета, оплату он нигде не
- * обещает. Чем платит покупатель мерчанта и через кого приходят деньги,
- * владелец ещё не назвал (`backlog.md`).
+ * Поверх курса сервиса стоит наценка мерчанта (`pos/settings.ts`): его
+ * доход с продажи у стойки. Применяется она к стороне оплаты и одним
+ * множителем в обе стороны счёта, чтобы «дай батов на пять тысяч» и
+ * «нужно ровно две тысячи батов» сходились друг с другом.
+ *
+ * Денег за этим экраном нет: платёж принимает имитация
+ * (`pos/acquirer.ts`), и на экране это сказано словами.
  */
 
 export type PosSide = 'buy' | 'pay';
@@ -25,6 +29,24 @@ export type PosSide = 'buy' | 'pay';
  */
 export function buyerPays(amount: Amount): Amount {
   return Money.ceil(amount);
+}
+
+/** Множитель наценки: 250 базисных пунктов — «1,025». */
+export function markupFactor(markupBps: number): Amount {
+  if (!Number.isInteger(markupBps) || markupBps < 0) {
+    throw new RangeError(`Наценка — целые неотрицательные базисные пункты: ${markupBps}`);
+  }
+  return Money.divide(Money.toAmount(10_000 + markupBps), Money.toAmount(10_000));
+}
+
+/** Курс «валюта за 1 RUB» с наценкой мерчанта: за тот же рубль дают меньше. */
+export function markupRate(rate: Amount, markupBps: number): Amount {
+  return markupBps === 0 ? rate : Money.divide(rate, markupFactor(markupBps));
+}
+
+/** Сумма, которую видит сервис, из суммы, которую платит покупатель. */
+function beforeMarkup(pay: Amount, markupBps: number): Amount {
+  return markupBps === 0 ? pay : Money.divide(pay, markupFactor(markupBps));
 }
 
 export interface PosSides {
@@ -43,14 +65,19 @@ export interface PosSides {
  * когда его набрали руками: набранные «5 000,40 ₽» это та же копейка
  * у стойки.
  */
-export function posSides(value: Amount | null, side: PosSide, quote: Quote | null): PosSides {
+export function posSides(
+  value: Amount | null,
+  side: PosSide,
+  quote: Quote | null,
+  markupBps = 0,
+): PosSides {
   if (value === null) return { buy: null, pay: null };
   if (side === 'pay') {
     const pay = buyerPays(value);
     // Выдача, съеденная комиссией целиком, — не сделка: арифметика
     // клампит отрицательное в ноль, и без этого счёт уходил бы на «0 THB
     // по курсу 0». Теми же словами это отвергает подача заявки в ядре.
-    const buy = quote ? payoutOf(pay, quote) : null;
+    const buy = quote ? payoutOf(beforeMarkup(pay, markupBps), quote) : null;
     return { buy: buy !== null && Money.isZero(buy) ? null : buy, pay };
   }
   // Сколько нужно отдать, чтобы вышло ровно столько, — вверх, как у
@@ -58,7 +85,33 @@ export function posSides(value: Amount | null, side: PosSide, quote: Quote | nul
   // Обратный счёт по сетке иногда не сходится вовсе — тогда счёта нет,
   // а не «ноль рублей».
   const back = quote ? giveFor(value, quote) : null;
-  return { buy: value, pay: back === null ? null : buyerPays(back) };
+  return {
+    buy: value,
+    pay: back === null ? null : buyerPays(Money.multiply(back, markupFactor(markupBps))),
+  };
+}
+
+/**
+ * Что стоит на черте курса — тем же `rateLine`, что у формы заявки, но с
+ * наценкой мерчанта поверх: без неё черта называла бы курс, по которому
+ * счёт не сходится с суммой над ней.
+ */
+export function posRateLine(
+  quote: Quote,
+  pay: Amount | null,
+  serviceMinUsd: Amount,
+  markupBps = 0,
+): RateLine {
+  const line = rateLine(quote, pay === null ? null : beforeMarkup(pay, markupBps), serviceMinUsd);
+  if (markupBps === 0) return line;
+  if (line.kind === 'rate') return { ...line, rate: markupRate(line.rate, markupBps) };
+  if (line.kind === 'from') {
+    return {
+      ...line,
+      giveAtLeast: buyerPays(Money.multiply(line.giveAtLeast, markupFactor(markupBps))),
+    };
+  }
+  return line;
 }
 
 export interface NewInvoiceInput {
@@ -71,7 +124,12 @@ export interface NewInvoiceInput {
   readonly payCode: string;
   readonly payAmount: Amount;
   readonly rate: Amount;
+  readonly markupBps: number;
+  readonly kycRequired: boolean;
   readonly at: Date;
+  /** Пусто — счёт без срока: так заводились счета до провайдера. */
+  readonly expiresAt: Date | null;
+  readonly demo?: boolean | undefined;
 }
 
 /** Счёт-макет со своей лентой: первая строка в ней — как он появился. */
@@ -88,9 +146,15 @@ export function makeInvoice(input: NewInvoiceInput): MockInvoice {
     payCode: input.payCode,
     payAmount: input.payAmount,
     rate: input.rate,
+    markupBps: input.markupBps,
     status: 'issued',
     createdAt: at,
+    expiresAt: input.expiresAt === null ? null : input.expiresAt.toISOString(),
     paidAt: null,
+    kycRequired: input.kycRequired,
+    kycPassedAt: null,
+    payment: null,
+    demo: input.demo ?? false,
     events: [{ at, what: `Счёт создан: ${input.author}` }],
   };
 }

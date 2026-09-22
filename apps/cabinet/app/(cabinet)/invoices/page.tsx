@@ -33,6 +33,7 @@ import { INVOICES_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
+import { PosLive } from '@/app/ui/pos-live';
 import { Columns } from './columns';
 
 export const dynamic = 'force-dynamic';
@@ -41,8 +42,10 @@ export const dynamic = 'force-dynamic';
  * Счета POS-терминала: список с числами над ним.
  *
  * Макет без денег — записи живут в памяти процесса и до перезапуска
- * (`backlog.md`). Сказано об этом сверху: мерчант, потерявший счёт
- * после выкатки, решит, что сервис теряет деньги.
+ * (`backlog.md`), платёж принимает имитация провайдера. Сказано об
+ * этом сверху: мерчант, потерявший счёт после выкатки, решит, что
+ * сервис теряет деньги. Список перечитывает себя по событиям
+ * терминала: оплата видна без перезагрузки.
  *
  * Устроен как остальные списки кабинета: подсказка, плитки, табы со
  * счётчиками, поиск, личный набор колонок и выгрузка. Ничего своего в
@@ -89,6 +92,7 @@ export default async function InvoicesPage({
 
   return (
     <main className="page page--wide">
+      <PosLive />
       <DisabledBanner status={session.status} />
 
       <header className="page__head">
@@ -115,7 +119,7 @@ export default async function InvoicesPage({
         <Stat
           label="Оплаченные счета"
           value={paid.length}
-          note="отмечаете вы сами: деньги идут мимо сервиса"
+          note="об оплате сообщает провайдер приёма; пока это имитация"
           tone={paid.length > 0 ? 'up' : 'plain'}
         />
         <Stat

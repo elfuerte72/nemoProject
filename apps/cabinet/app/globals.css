@@ -2589,3 +2589,171 @@ a.stat--current:hover {
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+
+/* ── POS-терминал: счёт рядом с формой, QR, последние счета ──────── */
+
+/*
+ * Слева форма или открытый счёт, справа последние счета. Список стоит
+ * рядом, а не под формой: у стойки спрашивают «прошла ли оплата» о
+ * счёте, который только что создали, и искать его в разделе «Счета»
+ * значит уйти с кассы.
+ */
+.pos__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(220px, 2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.pos__main,
+.pos__side {
+  min-width: 0;
+}
+
+.recent__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.recent__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Точка живого обновления: мигает, пока вкладка слушает поток. */
+.recent__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: recent-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes recent-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Строка последних счетов — кнопка на всю ширину: нажатие открывает счёт на месте формы. */
+.recent__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recent__row:hover,
+.recent__row[aria-current='true'] {
+  background: var(--surface-soft);
+}
+
+/* Открытый счёт: то, что показывают покупателю через плечо. */
+.pay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px;
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  text-align: center;
+}
+
+/* QR на белом: сканеры читают тёмный код на светлом, а фон кабинета тёмный. */
+.pay__qr,
+.invoice__qr img {
+  display: block;
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.pay__note {
+  font-size: 13px;
+  color: var(--text-dim);
+  max-width: 34ch;
+}
+
+.pay__state {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.pay__state--paid {
+  color: var(--gold-light);
+}
+
+.pay .actions {
+  justify-content: center;
+}
+
+/* Карточка счёта: суммы слева, QR справа, пока счёт ждёт денег. */
+.invoice__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.invoice__qr {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 220px;
+}
+
+/* Настройки терминала: две кнопки в ряд, поле раскрывается под ними. */
+.pos-settings__panel {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Вид терминала: форма или счёт слева, последние счета справа. */
+.desk__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(240px, 2fr);
+  gap: 24px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.desk__side {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .pos__layout,
+  .desk__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

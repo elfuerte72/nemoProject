@@ -36,6 +36,7 @@ export const merchantAbilities = [
   'submit', // подать и отменить заявку
   'recipients', // заводить и архивировать получателей
   'till', // касса: счёт покупателю и возврат
+  'pricing', // наценка терминала и состав валют в нём: чем и почём торгует кабинет
   'integration', // ключи API, вебхуки, журнал вызовов, подпись запросов
   'staff', // люди мерчанта: завести, сменить роль, закрыть доступ
 ] as const;
@@ -48,7 +49,7 @@ export type MerchantAbility = z.infer<typeof merchantAbilitySchema>;
  * а не достаться ему молча.
  */
 const ABILITIES: Readonly<Record<MerchantUserRole, readonly MerchantAbility[]>> = {
-  owner: ['submit', 'recipients', 'till', 'integration', 'staff'],
+  owner: ['submit', 'recipients', 'till', 'pricing', 'integration', 'staff'],
   /*
    * Ключей у оператора нет намеренно: ключ API — это право подать
    * заявку от имени мерчанта без пароля, то есть тот же доступ,
@@ -93,6 +94,7 @@ const ABILITY_COMPLAINTS: Readonly<Record<MerchantAbility, string>> = {
   submit: 'Наблюдатель заявки не подаёт: попросите оператора или владельца',
   recipients: 'Наблюдатель получателей не ведёт: попросите оператора или владельца',
   till: 'Наблюдатель кассой не пользуется: попросите оператора или владельца',
+  pricing: 'Наценку и валюты терминала задаёт владелец кабинета',
   integration: 'Ключи, вебхуки и подпись запросов ведёт владелец кабинета',
   staff: 'Людей кабинета ведёт его владелец',
 };

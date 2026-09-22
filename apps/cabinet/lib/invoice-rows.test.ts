@@ -39,7 +39,10 @@ const invoice = (over: Partial<MockInvoice> = {}): MockInvoice => ({
     payCode: 'RUB',
     payAmount: Money.toAmount('5600'),
     rate: Money.toAmount('2.8'),
+    markupBps: 0,
+    kycRequired: false,
     at,
+    expiresAt: null,
   }),
   ...over,
 });
@@ -127,6 +130,9 @@ describe('колонки списка счетов', () => {
         reason: 'Отменили запись',
         status: 'pending',
         createdAt: at.toISOString(),
+        doneAt: null,
+        provider: null,
+        demo: false,
       },
       'retained',
     );
@@ -212,6 +218,9 @@ describe('остаток по счёту', () => {
     reason: 'причина',
     status: 'pending',
     createdAt: at.toISOString(),
+    doneAt: null,
+    provider: null,
+    demo: false,
     ...over,
   });
 
