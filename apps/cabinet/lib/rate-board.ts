@@ -141,6 +141,21 @@ export function priceOn(
   return { line, payout: possible ? payout : null };
 }
 
+/**
+ * Сумма, на которой объяснение показывает путь денег, пока своя не
+ * набрана.
+ *
+ * Круглая и в валюте отдачи: сто тысяч рублей или тысяча монет — числа,
+ * которые мерчант узнаёт как «обычную сделку», а не как случайные.
+ * Считается по ней всё по-настоящему, и подпись зовёт её примером —
+ * это не число, которого нет в данных, а данные, показанные на
+ * знакомой сумме. Набранная своя сумма выигрывает всегда.
+ */
+export function exampleGive(fromCode: string, typed: Amount | null): Amount {
+  if (typed && !Money.isZero(typed)) return typed;
+  return Money.toAmount(fromCode === 'RUB' ? '100000' : '1000');
+}
+
 /** Чем направление зовётся в разметке и в сравнении кадров. */
 export function pairKey(direction: DirectionRate): string {
   return `${direction.fromCode}/${direction.toCode}`;

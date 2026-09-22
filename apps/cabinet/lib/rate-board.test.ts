@@ -3,6 +3,7 @@ import { Money } from '@nemo/types';
 import type { DirectionRate } from './direction-rates';
 import {
   boardOf,
+  exampleGive,
   flashes,
   priceOn,
   quoteAge,
@@ -260,6 +261,22 @@ describe('priceOn', () => {
     const price = priceOn(withFee(), Money.toAmount('100000'), minAmount);
     expect(price.line.kind).toBe('rate');
     expect(price.payout).not.toBeNull();
+  });
+});
+
+describe('exampleGive', () => {
+  it('своя сумма выигрывает всегда', () => {
+    expect(exampleGive('RUB', Money.toAmount('250000'))).toBe('250000');
+    expect(exampleGive('USDT', Money.toAmount('7'))).toBe('7');
+  });
+
+  it('без своей — круглый пример в валюте отдачи', () => {
+    expect(exampleGive('RUB', null)).toBe('100000');
+    expect(exampleGive('USDT', null)).toBe('1000');
+  });
+
+  it('ноль — не сумма, и пример остаётся', () => {
+    expect(exampleGive('RUB', Money.toAmount('0'))).toBe('100000');
   });
 });
 

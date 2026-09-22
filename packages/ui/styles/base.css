@@ -1398,6 +1398,19 @@ a.row:hover {
   transform: rotate(180deg);
 }
 
+/* Показ перед словами — своей полосой, с теми же полями, что у тела. */
+.howto__show {
+  padding: 4px 16px 14px;
+}
+
+.howto__show + .howto__body {
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline-soft);
+  margin: 0 16px;
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .howto__body {
   display: grid;
   gap: 14px 24px;

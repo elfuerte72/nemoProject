@@ -11,7 +11,7 @@ import {
   type Amount,
   type ExchangeKind,
 } from '@nemo/types';
-import { Tabs } from '@nemo/ui';
+import { HowTo, Tabs } from '@nemo/ui';
 import { formatAmount, formatMoney } from '@nemo/ui/format';
 import { LIVE_HEARTBEAT_MS, shouldRefresh } from '@nemo/ui/live';
 import { parseTyped } from '@/lib/new-request';
@@ -26,6 +26,9 @@ import {
   type Flash,
 } from '@/lib/rate-board';
 import type { DirectionRate } from '@/lib/direction-rates';
+import { COLUMN_HINTS, RATES_HOW_TO } from '@/lib/exchange-texts';
+import { PathOfMoney } from './explainer';
+import { ColumnHint } from './hint';
 
 /**
  * Табло курсов: весь справочник одним списком, и число в нём меняется
@@ -71,6 +74,8 @@ export function RatesBoard({
   const [marks, setMarks] = useState<Readonly<Record<string, Flash>>>({});
   const [now, setNow] = useState(() => new Date());
   const [typed, setTyped] = useState('');
+  /* Строка, на которой объяснение разбирает путь денег. */
+  const [chosen, setChosen] = useState<string>();
 
   /*
    * Серверный снимок приезжает заново после каждого `router.refresh()`
@@ -180,9 +185,19 @@ export function RatesBoard({
     () => board.rows.filter((one) => one.fromCode === fromCode),
     [board.rows, fromCode],
   );
+  /*
+   * Пример для объяснения: выбранная строка, а если её нет среди видимых
+   * — сменили валюту отдачи — первая. Объяснять устройство удобнее на
+   * той строке, за которой человек пришёл.
+   */
+  const example = visible.find((one) => pairKey(one) === chosen) ?? visible[0];
 
   return (
     <>
+      <HowTo title="Как это устроено" sub="Путь ваших денег на живых числах" items={RATES_HOW_TO}>
+        <PathOfMoney direction={example} typed={give} minAmount={minAmount} now={now} />
+      </HowTo>
+
       {hasCash ? (
         <Tabs
           label="Вид сделки"
@@ -236,11 +251,17 @@ export function RatesBoard({
         </section>
       ) : (
         <ul className={give ? 'table table--board table--board-sum' : 'table table--board'}>
-          <li className="table__head" aria-hidden>
+          <li className="table__head">
             <span>Пара</span>
             <span>Курс</span>
-            <span>{give ? 'Получите' : 'Минимум'}</span>
-            <span>Котировка</span>
+            <span>
+              {give ? 'Получите' : 'Минимум'}
+              {give ? undefined : <ColumnHint {...COLUMN_HINTS.minimum} />}
+            </span>
+            <span>
+              Котировка
+              <ColumnHint {...COLUMN_HINTS.quotedAt} />
+            </span>
           </li>
           {visible.map((one) => (
             <BoardRow
@@ -250,6 +271,8 @@ export function RatesBoard({
               minAmount={minAmount}
               now={now}
               flash={marks[pairKey(one)]}
+              chosen={example !== undefined && pairKey(one) === pairKey(example)}
+              onChoose={() => setChosen(pairKey(one))}
             />
           ))}
         </ul>
@@ -346,19 +369,42 @@ function BoardRow({
   minAmount,
   now,
   flash,
+  chosen,
+  onChoose,
 }: {
   readonly direction: DirectionRate;
   readonly give: Amount | null;
   readonly minAmount: Amount;
   readonly now: Date;
   readonly flash: Flash | undefined;
+  /** Эту строку разбирает объяснение над таблицей. */
+  readonly chosen: boolean;
+  readonly onChoose: () => void;
 }) {
   const { line, payout } = priceOn(direction, give, minAmount);
   const reading = line.kind === 'rate' ? readRate(line.rate, direction.fromCode, direction.toCode) : null;
 
   return (
-    <li className={flash ? `table__item table__item--${flash}` : 'table__item'}>
-      <span className="table__row">
+    <li
+      className={[
+        'table__item',
+        'table__item--clickable',
+        chosen ? 'table__item--chosen' : '',
+        flash ? `table__item--${flash}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {/*
+        Кнопка во всю строку, а не обработчик на `li`: нажатие выбирает
+        строку для объяснения, и до него должны доходить с клавиатуры.
+      */}
+      <button
+        type="button"
+        className="table__row table__row--button"
+        onClick={onChoose}
+        aria-pressed={chosen}
+      >
         <span className="cell">
           <span className="cell__label">Пара</span>
           <span className="pair">
@@ -418,7 +464,7 @@ function BoardRow({
             {quoteAge(direction.quotedAt, now) || '—'}
           </span>
         </span>
-      </span>
+      </button>
     </li>
   );
 }

@@ -754,6 +754,208 @@
   }
 }
 
+/* ── Курсы: объяснение путём денег ───────────────────────────────── */
+
+/*
+ * Три шага на живых числах: отдаёте → по курсу → получаете. Показ
+ * вместо рассказа; абзацы, которых показом не выразить, идут ниже
+ * отдельной полосой (`howto__body` в `@nemo/ui`).
+ */
+.money-path {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.money-path__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.money-path__pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.money-path__pair > svg + svg {
+  margin-left: -8px;
+}
+
+.money-path__steps {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.money-path__step {
+  flex: 1 1 170px;
+  /* Иначе шаг не сожмётся уже своей самой длинной подписи и на телефоне
+     вылезет за край — у flex-элемента минимум по умолчанию «по содержимому». */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+
+/* Подпись шага — с переносом: это объяснение, а не ячейка таблицы,
+   и обрывать его многоточием нельзя. */
+.money-path__note {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.money-path__value {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.money-path__value--quiet {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.money-path__arrow {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--text-faint);
+  font-size: 16px;
+}
+
+.money-path__fresh,
+.money-path__empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* На телефоне шаги идут столбцом, и стрелка между ними смотрит вниз. */
+@media (max-width: 760px) {
+  .money-path__steps {
+    flex-direction: column;
+  }
+
+  /* В колонке базис ряда стал бы высотой — и шаг растянулся бы пустотой. */
+  .money-path__step {
+    flex: 0 0 auto;
+  }
+
+  .money-path__arrow {
+    transform: rotate(90deg);
+    align-self: flex-start;
+    margin-left: 14px;
+  }
+}
+
+/* ── Курсы: подсказка у колонки ──────────────────────────────────── */
+
+.hint {
+  position: relative;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/*
+ * Знак мал, а цель нажатия — нет: поле вокруг добирает её до того,
+ * во что попадают, не целясь. Шапка таблицы на телефоне скрыта, так
+ * что палец сюда не приходит вовсе, но и курсору лучше не целиться.
+ */
+.hint__ask {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  margin: -6px;
+  box-sizing: content-box;
+  border: 6px solid transparent;
+  background: var(--surface);
+  background-clip: padding-box;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--hairline);
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1;
+  cursor: help;
+}
+
+.hint__ask:hover,
+.hint__ask--on {
+  color: var(--gold-light);
+  box-shadow: 0 0 0 1px var(--gold-light);
+}
+
+.hint__pop {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 10px);
+  left: -12px;
+  width: max-content;
+  max-width: 340px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  box-shadow: 0 14px 32px -22px rgba(26, 23, 38, 0.9);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: normal;
+}
+
+.hint__title {
+  display: block;
+  margin-bottom: 3px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── Курсы: строка, выбранная для объяснения ─────────────────────── */
+
+/*
+ * Кнопка во всю строку, а не обработчик на ряду: до выбора доходят с
+ * клавиатуры. Сброс — как у ссылки-строки в панели.
+ */
+.table__row--button {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.table__item--chosen {
+  background: var(--surface-soft-strong);
+  box-shadow:
+    inset 2px 0 0 var(--gold-light),
+    var(--lift);
+}
+
 /* ── Курсы: рублёвая пара ────────────────────────────────────────── */
 
 /*

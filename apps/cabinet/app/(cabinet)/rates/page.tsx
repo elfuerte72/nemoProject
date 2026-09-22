@@ -1,8 +1,7 @@
 import { exchangeKindSchema } from '@nemo/types';
-import { firstParam, HowTo } from '@nemo/ui';
+import { firstParam } from '@nemo/ui';
 import { getCore } from '@/lib/core';
 import { listDirectionRates } from '@/lib/direction-rates';
-import { RATES_HOW_TO } from '@/lib/exchange-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { RatesBoard } from './board';
@@ -24,6 +23,10 @@ export const dynamic = 'force-dynamic';
  * строке. Счётчик направлений считал строки, которые видно. Оба числа
  * названы словами в подсказке, а первый экран остался под тем, за чем
  * сюда приходят.
+ *
+ * Подсказка «как устроено» тоже живёт в клиентской части — внутри
+ * табло, а не здесь: она показывает путь денег на живых числах той
+ * строки, которую мерчант выбрал, и на той сумме, которую набрал.
  *
  * Курс приходит в открытую страницу сам, потоком событий
  * (`app/api/rates/stream`), поэтому числа живут в клиентской части, а
@@ -64,8 +67,6 @@ export default async function RatesPage({
           </p>
         </div>
       </header>
-
-      <HowTo title="Как это устроено" sub="Что за число и как долго оно держится" items={RATES_HOW_TO} />
 
       <RatesBoard
         directions={shown.directions}
