@@ -1,5 +1,4 @@
 import { cookies } from 'next/headers';
-import Link from 'next/link';
 import { merchantRoleCan } from '@nemo/types';
 import { EmptyState, HowTo } from '@nemo/ui';
 import { TZ_COOKIE, localMidnight, readTzOffset } from '@nemo/ui/period';
@@ -92,11 +91,6 @@ export default async function PosPage() {
         <div>
           <h1 className="page__title">POS-терминал</h1>
           <p className="page__sub">{PREVIEW_NOTE}</p>
-        </div>
-        <div className="page__actions">
-          <Link className="btn btn--soft btn--tiny" href="/invoices">
-            Счета
-          </Link>
         </div>
       </header>
 

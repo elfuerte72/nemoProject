@@ -482,11 +482,22 @@ export function Terminal({
 
   const recentList = (
     <div className="recent">
+      {/*
+        «Все счета» стоит здесь, а не в заголовке страницы: уходят
+        отсюда — из списка, который кончился восемью строками, — а не с
+        экрана кассы вообще. В шапке страницы та же кнопка звала со
+        всего экрана, включая момент, когда счёт ещё создают.
+      */}
       <div className="recent__head">
-        <span className="card__title">Последние счета</span>
-        <span className="recent__live" aria-label="обновляется само">
-          <span className="recent__dot" aria-hidden /> live
+        <span className="recent__name">
+          <span className="card__title">Последние счета</span>
+          <span className="recent__live" aria-label="обновляется само">
+            <span className="recent__dot" aria-hidden /> live
+          </span>
         </span>
+        <Link className="btn btn--soft btn--tiny" href="/invoices">
+          Все счета
+        </Link>
       </div>
       {recent.length === 0 ? (
         <p className="muted">Счетов ещё не было: первый появится здесь.</p>
