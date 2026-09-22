@@ -616,7 +616,9 @@ pnpm typecheck --force && pnpm exec turbo test --force && pnpm build --force
   платежа стоит за швом провайдера с единственной реализацией,
   имитацией
   ([ADR-0024](docs/adr/0024-priyom-platezha-za-shvom-provaydera.md)),
-  и банк встанет за тот же интерфейс.
+  и банк встанет за тот же интерфейс. Что кабинет умеет и как
+  устроен, одним документом для показа заказчику —
+  [docs/merchant-cabinet.md](docs/merchant-cabinet.md).
 - `packages/core` — прикладные операции: единственное место, где
   меняется состояние системы.
 - `packages/http` — общая обвязка маршрутов всех приложений: как
