@@ -6,6 +6,7 @@ import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
 import { listDirectionRates } from '@/lib/direction-rates';
 import { countSince, getPosSettings, listInvoices } from '@/lib/mock/store';
+import { payRounding } from '@/lib/pos';
 import { acquirer, IMITATION } from '@/lib/pos/acquirer';
 import { POS_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
@@ -30,10 +31,11 @@ const RECENT = 8;
  * (`lib/pos/acquirer.ts`), и сказано об этом сверху и прямо. Умолчать
  * значило бы обещать приём платежей, которого у сервиса не существует.
  *
- * Валюты — все, которые сервис выдаёт за рубли: покупатель у стойки
- * платит рублями, а получает то, за чем пришёл. Курс тот же, что в
- * разделе «Курсы» и на экране новой заявки, с наценкой мерчанта
- * поверх; её владелец задаёт здесь же, в строке «Покупатель платит».
+ * Направления — все, какими сервис торгует: покупатель платит рублями
+ * или монетой, а получает то, за чем пришёл, и обе стороны выбираются
+ * в самом расчёте. Курс тот же, что в разделе «Курсы» и на экране новой
+ * заявки, с наценкой мерчанта поверх; её владелец задаёт здесь же,
+ * полем под расчётом.
  */
 export default async function PosPage() {
   const access = await allowedHere('/pos');
@@ -60,9 +62,25 @@ export default async function PosPage() {
   // не с полуночи по UTC.
   const shift = countSince(actor.merchantId, localMidnight(new Date(), offset));
 
-  const sellable = directions
-    .filter((one) => one.fromCode === 'RUB')
-    .map((one) => ({ fromCode: one.fromCode, toCode: one.toCode, rate: one.rate }));
+  /*
+   * Все направления, а не только рублёвые: сервис принимает и рубли, и
+   * монету, и у стойки платят то одним, то другим. Чем платить, мерчант
+   * выбирает в самом расчёте.
+   */
+  const sellable = directions.map((one) => ({
+    fromCode: one.fromCode,
+    toCode: one.toCode,
+    rate: one.rate,
+  }));
+
+  /*
+   * До какого знака ровнять сумму к оплате в каждой валюте: у фиата до
+   * целой единицы (мелочь у стойки не отдают), у монеты до её знака —
+   * целая монета стоит под сотню рублей.
+   */
+  const payRound = Object.fromEntries(
+    terms.currencies.map((one) => [one.code, payRounding(one)] as const),
+  );
 
   const recent: RecentInvoice[] = listInvoices(actor.merchantId)
     .slice(0, RECENT)
@@ -112,8 +130,8 @@ export default async function PosPage() {
           {howTo}
           <EmptyState
             icon="exchange"
-            title="Направлений с рублями нет"
-            text="POS-терминал считает цену по направлениям, в которых сервис выдаёт валюту за рубли. Пока таких нет, создать счёт не из чего."
+            title="Направлений обмена нет"
+            text="POS-терминал считает цену по направлениям из справочника сервиса. Пока их нет, создать счёт не из чего."
           />
         </>
       ) : (
@@ -129,6 +147,7 @@ export default async function PosPage() {
            * знать, из чего сложилась цена, продавцу нужно.
            */
           canPrice={merchantRoleCan(session.role, 'pricing')}
+          payRound={payRound}
           ttlMinutes={terms.unpaidTtlMinutes}
           provider={{ title: provider.title, imitation: provider.name === IMITATION }}
           recent={recent}

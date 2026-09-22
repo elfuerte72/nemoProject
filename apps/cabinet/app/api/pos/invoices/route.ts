@@ -7,7 +7,7 @@ import { errorResponse, json } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import { addInvoice, getPosSettings, listInvoices, replaceInvoice } from '@/lib/mock/store';
-import { makeInvoice, nextNumber, posSides } from '@/lib/pos';
+import { makeInvoice, nextNumber, payRounding, posSides } from '@/lib/pos';
 import { acquirer } from '@/lib/pos/acquirer';
 import { publishPos } from '@/lib/pos/bus';
 import { requireTill } from '@/lib/mock/guard';
@@ -85,7 +85,21 @@ export async function POST(request: Request): Promise<Response> {
      * бы счёт на ноль. Двух правд о цене быть не должно ни между экраном
      * и сервером, ни между сервером и ядром.
      */
-    const { buy, pay } = posSides(value.data, body.side, quote, settings.markupBps);
+    /*
+     * Знак, до которого ровняется сумма к оплате, — тот же, каким её
+     * посчитал экран: у рубля целая единица, у монеты её знак. Берётся
+     * он из справочника валют, а не из котировки: котировка знает знак
+     * только той валюты, которую выдают.
+     */
+    const payCurrency = terms.currencies.find((one) => one.code === body.from);
+    const payDecimals = payCurrency ? payRounding(payCurrency) : 0;
+    const { buy, pay } = posSides(
+      value.data,
+      body.side,
+      quote,
+      settings.markupBps,
+      payDecimals,
+    );
     if (buy === null || pay === null) {
       throw new InvalidInputError(
         'На эту сумму счёт не создать: после комиссии покупателю ничего не остаётся',

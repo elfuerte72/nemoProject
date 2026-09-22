@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isCoreError } from '@nemo/http';
 import { Money, type Quote } from '@nemo/types';
-import { examplePay, makeInvoice, markupRate, posRateLine, posSides } from '../pos';
+import { examplePay, makeInvoice, markupRate, payRounding, posRateLine, posSides } from '../pos';
 import { addInvoice, findInvoice, forgetMock, getPosSettings, listInvoices, savePosSettings } from '../mock/store';
 import { acquirer, IMITATION, QR_TTL_MS } from './acquirer';
 import { listenersOf, publishPos, subscribePos, type PosEvent } from './bus';
@@ -106,6 +106,37 @@ describe('настройки терминала', () => {
     // Пример должен узнаваться как обычная продажа у стойки.
     expect(examplePay()).toBe('5000');
     expect(posSides(examplePay(), 'pay', quote, 0).buy).toBe('2000');
+  });
+});
+
+/*
+ * Чем платит покупатель: рублями или монетой. Сервис принимает обе, и
+ * ровняются они по-разному — у рубля до целой единицы, у монеты до её
+ * знака: целая монета стоит под сотню рублей, и ровнять до неё значит
+ * просить с покупателя лишнюю сотню.
+ */
+describe('валюта оплаты', () => {
+  it('фиат ровняется до целой единицы, монета — до своего знака', () => {
+    expect(payRounding({ kind: 'fiat', decimals: 2 })).toBe(0);
+    expect(payRounding({ kind: 'crypto', decimals: 6 })).toBe(6);
+  });
+
+  it('счёт в рублях остаётся ровным', () => {
+    // Полтиража копейки у стойки не отдают: вверх до рубля.
+    expect(posSides(Money.toAmount('4999.01'), 'pay', quote, 0, 0).pay).toBe('5000');
+  });
+
+  it('счёт в монете не поднимается до целой монеты', () => {
+    // Вверх на шестом знаке — а не «55,648303 → 56», то есть плюс
+    // тридцать тысяч рублей на ровном месте.
+    const pay = posSides(Money.toAmount('55.6483031'), 'pay', quote, 0, 6).pay;
+    expect(pay).toBe('55.648304');
+  });
+
+  it('обратный счёт в монете ровняется тем же знаком', () => {
+    // «Нужно ровно 2 000 бат» при курсе 0,4: 5 000 монет ровно, и
+    // хвоста, который пришлось бы поднимать, тут нет.
+    expect(posSides(Money.toAmount('2000'), 'buy', quote, 0, 6).pay).toBe('5000');
   });
 });
 

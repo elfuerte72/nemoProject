@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Money, type Quote } from '@nemo/types';
+import { Money, sortCurrencies, type Quote } from '@nemo/types';
 import { HowTo, LIVE_REFRESH_MS, Moment, shouldRefresh } from '@nemo/ui';
 import { formatAmount, formatMoney, formatRate } from '@nemo/ui/format';
 import {
@@ -120,6 +120,7 @@ export function Terminal({
   minAmount,
   markupBps,
   canPrice,
+  payRound,
   ttlMinutes,
   provider,
   recent,
@@ -133,8 +134,14 @@ export function Terminal({
   readonly minAmount: string;
   /** Наценка мерчанта: ею считают цену, и владелец правит её тут же. */
   readonly markupBps: number;
-  /** Смотрящий вправе менять наценку: оператор её только видит. */
+  /** Смотрящий вправе менять наценку: оператору поля не показывают. */
   readonly canPrice: boolean;
+  /**
+   * До какого знака ровнять сумму к оплате в каждой валюте, которой
+   * платят. У рубля ноль, у монеты её знак: до целой монеты ровнять
+   * нельзя, она стоит под сотню рублей.
+   */
+  readonly payRound: Readonly<Record<string, number>>;
   /** Сколько минут счёт ждёт оплаты. */
   readonly ttlMinutes: number;
   readonly provider: { readonly title: string; readonly imitation: boolean };
@@ -142,6 +149,7 @@ export function Terminal({
 }) {
   const router = useRouter();
   const first = directions[0];
+  const [fromCode, setFromCode] = useState(first?.fromCode ?? '');
   const [toCode, setToCode] = useState(first?.toCode ?? '');
   const [side, setSide] = useState<PosSide>('pay');
   const [typed, setTyped] = useState('');
@@ -156,13 +164,30 @@ export function Terminal({
   // Счётчик смены сервер знает точнее: после перечитывания его слово главнее.
   useEffect(() => setMade(shift), [shift]);
 
+  /*
+   * Чем платят и что получают — два отдельных выбора: сервис принимает
+   * и рубли, и монету, и у стойки просят то одно, то другое. Пары
+   * односторонние, поэтому список получения зависит от того, чем платят.
+   */
+  const fromCodes = useMemo(
+    () => sortCurrencies([...new Set(directions.map((one) => one.fromCode))]),
+    [directions],
+  );
+  const toCodes = useMemo(
+    () => directions.filter((one) => one.fromCode === fromCode).map((one) => one.toCode),
+    [directions, fromCode],
+  );
+
   // Направление пропало из справочника — терминал переходит на первое.
   useEffect(() => {
-    if (!directions.some((one) => one.toCode === toCode)) setToCode(first?.toCode ?? '');
-  }, [directions, toCode, first]);
+    if (fromCodes.length > 0 && !fromCodes.includes(fromCode)) setFromCode(fromCodes[0]!);
+  }, [fromCodes, fromCode]);
+  useEffect(() => {
+    if (toCodes.length > 0 && !toCodes.includes(toCode)) setToCode(toCodes[0]!);
+  }, [toCodes, toCode]);
 
-  const direction = directions.find((one) => one.toCode === toCode) ?? first;
-  const fromCode = direction?.fromCode ?? 'RUB';
+  /** До какого знака ровнять то, что платит покупатель. */
+  const payDecimals = payRound[fromCode] ?? 0;
 
   /* Курс — на направление, не на сумму; перечитывается по кругу. */
   const pairKey = `${fromCode}/${toCode}`;
@@ -203,8 +228,8 @@ export function Terminal({
 
   const amount = parseTyped(typed);
   const sides = useMemo(
-    () => posSides(amount, side, rate ?? null, markupBps),
-    [amount, side, rate, markupBps],
+    () => posSides(amount, side, rate ?? null, markupBps, payDecimals),
+    [amount, side, rate, markupBps, payDecimals],
   );
   const ready = sides.buy !== null && sides.pay !== null && !busy;
 
@@ -216,7 +241,7 @@ export function Terminal({
    * котировке он пуст.
    */
   const line = rate
-    ? posRateLine(rate, sides.pay, Money.toAmount(minAmount), markupBps)
+    ? posRateLine(rate, sides.pay, Money.toAmount(minAmount), markupBps, payDecimals)
     : ({ kind: 'none' } as const);
 
   /* ── Открытый счёт: QR, отсчёт, исход ─────────────────────────── */
@@ -419,23 +444,7 @@ export function Terminal({
     <>
       <div className="calc">
         <div className="calc__side">
-          <div className="calc__head">
-            <span className="label">Покупатель платит</span>
-            {/*
-              Наценка — здесь, у числа, которое она поднимает, а не
-              кнопкой над расчётом: 22 сентября 2026 владелец сказал про
-              верхнюю «это неудобно и плохо видно». Показана она всем,
-              кто работает за стойкой, а правит её владелец: знать, из
-              чего сложилась цена, продавцу нужно, менять её — нет.
-            */}
-            {canPrice ? (
-              <MarkupPanel markupBps={markupBps} />
-            ) : markupBps > 0 ? (
-              <span className="markup__mark markup__mark--still">
-                наценка {markupPercent(markupBps)} %
-              </span>
-            ) : undefined}
-          </div>
+          <span className="label">Покупатель платит</span>
           <div className="calc__line">
             <input
               className={amountClass(shown('pay'))}
@@ -448,14 +457,13 @@ export function Terminal({
               aria-label={`Сумма в ${fromCode}`}
             />
             {/*
-              Валюта оплаты у стойки одна — рубли, и пилюля неподвижна:
-              нажатие, за которым ничего не происходит, читается как
-              поломка.
+              Чем платят, выбирают здесь же: сервис принимает и рубли, и
+              монету, и у стойки просят то одно, то другое.
             */}
             <CurrencyPick
-              codes={[fromCode]}
+              codes={fromCodes}
               selected={fromCode}
-              onPick={() => undefined}
+              onPick={setFromCode}
               label="Чем платит покупатель"
             />
           </div>
@@ -482,9 +490,7 @@ export function Terminal({
         </div>
 
         <div className="calc__side">
-          <div className="calc__head">
-            <span className="label">Покупатель получает</span>
-          </div>
+          <span className="label">Покупатель получает</span>
           <div className="calc__line">
             <input
               className={amountClass(shown('buy'))}
@@ -505,7 +511,7 @@ export function Terminal({
               «выбрать валюту прямо внутри, как в самом Mini App».
             */}
             <CurrencyPick
-              codes={directions.map((one) => one.toCode)}
+              codes={toCodes}
               selected={toCode}
               onPick={setToCode}
               label="Что получает покупатель"
@@ -513,6 +519,18 @@ export function Terminal({
           </div>
         </div>
       </div>
+
+      {/*
+        Наценка — под расчётом и над верификацией, полем, а не кнопкой:
+        так попросил владелец 22 сентября 2026, пройдя по ней четырежды.
+        Оператору поля не показывают, но само число он видит: знать, из
+        чего сложилась цена, продавцу нужно, менять её — нет.
+      */}
+      {canPrice ? (
+        <MarkupPanel markupBps={markupBps} />
+      ) : markupBps > 0 ? (
+        <p className="muted">Наценка кабинета: {markupPercent(markupBps)} %</p>
+      ) : undefined}
 
       <label className="check">
         <input type="checkbox" checked={kyc} onChange={(event) => setKyc(event.target.checked)} />
@@ -729,6 +747,7 @@ export function Terminal({
           side={side}
           markupBps={markupBps}
           minAmount={Money.toAmount(minAmount)}
+          payDecimals={payDecimals}
         />
       </HowTo>
 

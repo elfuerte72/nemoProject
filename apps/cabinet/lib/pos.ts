@@ -21,14 +21,30 @@ import type { MockInvoice } from './invoice-rows';
 export type PosSide = 'buy' | 'pay';
 
 /**
- * Сколько покупатель заплатит — вверх до целой единицы валюты оплаты.
+ * Сколько покупатель заплатит — вверх до того знака, до какого ровняют
+ * эту валюту у стойки.
  *
  * Вверх, а не к ближайшему: у образца так, и владелец описывал это
  * словами «плюс один-два рубля». Копейки у стойки не отдают, а
  * округление вниз стоило бы мерчанту той же копейки на каждой продаже.
+ *
+ * Знак приходит из `payRounding`: у рубля он нулевой, у монеты — свой.
  */
-export function buyerPays(amount: Amount): Amount {
-  return Money.ceil(amount);
+export function buyerPays(amount: Amount, decimals = 0): Amount {
+  return decimals === 0 ? Money.ceil(amount) : Money.ceilTo(amount, decimals);
+}
+
+/**
+ * До какого знака ровнять сумму, которую платит покупатель.
+ *
+ * У фиата — до целой единицы: мелочь у стойки не отдают, и «плюс
+ * один-два рубля» это слова владельца. У криптовалюты так нельзя:
+ * монета USDT стоит под сотню рублей, и ровнять до неё значит просить
+ * с покупателя лишнюю сотню. Там ровняют до знака самой валюты, каким
+ * его знает справочник.
+ */
+export function payRounding(currency: { readonly kind: string; readonly decimals: number }): number {
+  return currency.kind === 'crypto' ? currency.decimals : 0;
 }
 
 /** Множитель наценки: 250 базисных пунктов — «1,025». */
@@ -52,7 +68,7 @@ function beforeMarkup(pay: Amount, markupBps: number): Amount {
 export interface PosSides {
   /** Сколько покупатель получит в своей валюте. */
   readonly buy: Amount | null;
-  /** Сколько он за это заплатит — целыми единицами валюты оплаты. */
+  /** Сколько он за это заплатит — ровно на знаке своей валюты. */
   readonly pay: Amount | null;
 }
 
@@ -63,17 +79,19 @@ export interface PosSides {
  *
  * Счёт к оплате всегда округляется вверх — и когда его посчитали, и
  * когда его набрали руками: набранные «5 000,40 ₽» это та же копейка
- * у стойки.
+ * у стойки. До какого знака ровнять, говорит `payDecimals`: у рубля он
+ * нулевой, у монеты свой (`payRounding`).
  */
 export function posSides(
   value: Amount | null,
   side: PosSide,
   quote: Quote | null,
   markupBps = 0,
+  payDecimals = 0,
 ): PosSides {
   if (value === null) return { buy: null, pay: null };
   if (side === 'pay') {
-    const pay = buyerPays(value);
+    const pay = buyerPays(value, payDecimals);
     // Выдача, съеденная комиссией целиком, — не сделка: арифметика
     // клампит отрицательное в ноль, и без этого счёт уходил бы на «0 THB
     // по курсу 0». Теми же словами это отвергает подача заявки в ядре.
@@ -87,7 +105,10 @@ export function posSides(
   const back = quote ? giveFor(value, quote) : null;
   return {
     buy: value,
-    pay: back === null ? null : buyerPays(Money.multiply(back, markupFactor(markupBps))),
+    pay:
+      back === null
+        ? null
+        : buyerPays(Money.multiply(back, markupFactor(markupBps)), payDecimals),
   };
 }
 
@@ -101,6 +122,7 @@ export function posRateLine(
   pay: Amount | null,
   serviceMinUsd: Amount,
   markupBps = 0,
+  payDecimals = 0,
 ): RateLine {
   const line = rateLine(quote, pay === null ? null : beforeMarkup(pay, markupBps), serviceMinUsd);
   if (markupBps === 0) return line;
@@ -108,7 +130,7 @@ export function posRateLine(
   if (line.kind === 'from') {
     return {
       ...line,
-      giveAtLeast: buyerPays(Money.multiply(line.giveAtLeast, markupFactor(markupBps))),
+      giveAtLeast: buyerPays(Money.multiply(line.giveAtLeast, markupFactor(markupBps)), payDecimals),
     };
   }
   return line;

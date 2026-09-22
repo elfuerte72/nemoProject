@@ -30,6 +30,7 @@ export function PosPath({
   side,
   markupBps,
   minAmount,
+  payDecimals,
 }: {
   readonly fromCode: string;
   readonly toCode: string;
@@ -40,13 +41,15 @@ export function PosPath({
   readonly side: PosSide;
   readonly markupBps: number;
   readonly minAmount: Amount;
+  /** До какого знака ровняется сумма к оплате в этой валюте. */
+  readonly payDecimals: number;
 }) {
   const own = typed !== null && !Money.isZero(typed);
   const sides = own
-    ? posSides(typed, side, quote ?? null, markupBps)
-    : posSides(examplePay(), 'pay', quote ?? null, markupBps);
+    ? posSides(typed, side, quote ?? null, markupBps, payDecimals)
+    : posSides(examplePay(), 'pay', quote ?? null, markupBps, payDecimals);
   const line = quote
-    ? posRateLine(quote, sides.pay, minAmount, markupBps)
+    ? posRateLine(quote, sides.pay, minAmount, markupBps, payDecimals)
     : ({ kind: 'none' } as const);
   const reading = line.kind === 'rate' ? readRate(line.rate, fromCode, toCode) : null;
 
@@ -74,7 +77,11 @@ export function PosPath({
             {sides.pay ? formatMoney(sides.pay, fromCode) : '—'}
           </span>
           <span className="money-path__note">
-            {own ? 'ваша сумма, вверх до целого рубля' : 'для примера; наберите свою ниже'}
+            {own
+              ? payDecimals === 0
+                ? 'ваша сумма, вверх до целой единицы'
+                : 'ваша сумма, вверх на знаке валюты'
+              : 'для примера; наберите свою ниже'}
           </span>
         </div>
 

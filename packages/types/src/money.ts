@@ -158,6 +158,21 @@ export function roundTo(value: Amount, decimals: number): Amount {
   return toAmount(new Decimal(value).toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP));
 }
 
+/**
+ * Округление вверх на знаке валюты.
+ *
+ * Им ровняют сумму, которую платят: у рубля знак нулевой — мелочь у
+ * стойки не отдают, — а у монеты свой, потому что до целой монеты
+ * ровнять нельзя, она стоит под сотню рублей. Вверх, а не к
+ * ближайшему: отброшенный вниз хвост это деньги того, кто принимает.
+ */
+export function ceilTo(value: Amount, decimals: number): Amount {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > SCALE) {
+    throw new RangeError(`Знаков после запятой должно быть от 0 до ${SCALE}: ${decimals}`);
+  }
+  return toAmount(new Decimal(value).toDecimalPlaces(decimals, Decimal.ROUND_UP));
+}
+
 /** Доля от суммы в базисных пунктах: 100 bps = 1%. */
 export function percentOf(amount: Amount, basisPoints: number): Amount {
   if (!Number.isInteger(basisPoints) || basisPoints < 0) {
