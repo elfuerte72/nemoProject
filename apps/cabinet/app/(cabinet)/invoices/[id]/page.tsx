@@ -148,22 +148,6 @@ export default async function InvoicePage({
               </div>
             </li>
           ) : undefined}
-          {invoice.purpose ? (
-            <li className="row">
-              <div className="row__main">
-                <span className="row__title">{invoice.purpose}</span>
-                <span className="row__meta">назначение</span>
-              </div>
-            </li>
-          ) : undefined}
-          {invoice.buyer ? (
-            <li className="row">
-              <div className="row__main">
-                <span className="row__title">{invoice.buyer}</span>
-                <span className="row__meta">покупатель</span>
-              </div>
-            </li>
-          ) : undefined}
         </ul>
 
         {/*

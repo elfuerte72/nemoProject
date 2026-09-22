@@ -213,7 +213,7 @@ export function RatesBoard({
               <button
                 key={code}
                 type="button"
-                className={code === fromCode ? 'chip chip--on' : 'chip'}
+                className={code === fromCode ? 'chip chip--currency chip--on' : 'chip chip--currency'}
                 onClick={() => setFromCode(code)}
                 aria-pressed={code === fromCode}
               >

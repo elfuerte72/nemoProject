@@ -233,7 +233,7 @@
   padding: 14px 16px;
   border-radius: var(--radius-inner);
   background: var(--surface-soft);
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12.5px;
   line-height: 1.55;
   overflow-x: auto;
@@ -253,7 +253,8 @@
 /* ── Журнал вызовов ──────────────────────────────────────────────── */
 
 .table--calls {
-  --cols: 130px 64px minmax(0, 1.1fr) 64px 80px minmax(0, 0.9fr) minmax(0, 1.3fr);
+  --cols: 130px 64px minmax(0, 1.1fr) 64px 80px minmax(0, 0.9fr)
+    minmax(0, 1.3fr);
 }
 
 /*
@@ -1047,11 +1048,12 @@
 }
 
 /*
- * Чипы валюты — в рост поля суммы и табов: ряд выровнен по низу, и
+ * Чип валюты — флаг и код, один и тот же на табло курсов и в
+ * POS-терминале. В рост поля суммы и табов: ряд выровнен по низу, и
  * чип на восемь пикселей ниже соседей утаскивал бы свою подпись с
- * общей линии заголовков.
+ * общей линии заголовков; заодно это цель под палец у стойки.
  */
-.board__controls .chip {
+.chip--currency {
   gap: 6px;
   height: 40px;
 }
@@ -1490,7 +1492,7 @@
  * текст, который и подсвечивает.
  */
 .door::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: -40% 0 auto;
   height: 150%;
@@ -1634,26 +1636,19 @@
   color: #2f9fdf;
 }
 
-/* ── Касса ───────────────────────────────────────────────────────── */
+/* ── POS-терминал ────────────────────────────────────────────────── */
 
 /*
- * Касса: слева набор, справа крупно то, что называют покупателю вслух.
- * Числа у стойки читают в полуметре от экрана и через плечо, поэтому
- * итог набран крупнее всего остального на странице.
+ * Терминал: слева набор, справа крупно то, что называют покупателю
+ * вслух. Числа у стойки читают в полуметре от экрана и через плечо,
+ * поэтому итог набран крупнее всего остального на странице.
  */
-.pos__sum {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-  margin-top: 14px;
-}
-
 .pos__field {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  margin-top: 18px;
 }
 
 .input--big {
@@ -1664,15 +1659,74 @@
   padding: 12px 14px;
 }
 
-.pos__total {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/*
+ * Итог: две суммы одного веса — сколько покупатель платит и сколько
+ * получает. До 22 сентября 2026 первая стояла в 34 пункта жирным, а
+ * вторая подписью в 15: владелец прочёл это как «одно число важнее
+ * другого» и не понял, почему. У стойки вслух называют обе.
+ *
+ * Полосой во всю ширину, а не колонкой рядом с полем набора: в
+ * половине ширины две суммы по 26 пунктов переносились по слогам —
+ * «5 000 / RUB». Подписи стоят своей строкой сетки, значения своей,
+ * иначе подпись из двух слов роняет своё число ниже соседнего.
+ *
+ * Курс — строкой под ними и тусклым: акцентный цвет в кабинете
+ * означает «нажми» и «ждёт тебя», а курс ни то ни другое.
+ */
+.pos__deal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas:
+    "paylabel .     getlabel"
+    "payvalue arrow getvalue"
+    "rate     rate  rate";
+  align-items: baseline;
+  gap: 4px 14px;
+  margin-top: 16px;
   padding: 16px 18px;
   border-radius: var(--radius-control);
   background: var(--surface-soft);
   box-shadow: var(--lift);
   min-width: 0;
+}
+
+.pos__deal-paylabel {
+  grid-area: paylabel;
+}
+
+.pos__deal-payvalue {
+  grid-area: payvalue;
+}
+
+.pos__deal-getlabel {
+  grid-area: getlabel;
+}
+
+.pos__deal-getvalue {
+  grid-area: getvalue;
+}
+
+.pos__deal-arrow {
+  grid-area: arrow;
+  color: var(--text-faint);
+  font-size: 18px;
+}
+
+.pos__amount {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.pos__deal-rate {
+  grid-area: rate;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
 }
 
 .pos__label {
@@ -1696,18 +1750,6 @@
   overflow-wrap: anywhere;
 }
 
-.pos__rate {
-  font-size: 13px;
-  color: var(--gold-light);
-}
-
-.pos__about {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
-  margin-top: 18px;
-}
-
 .pos__actions {
   display: flex;
   flex-wrap: wrap;
@@ -1716,102 +1758,34 @@
   margin-top: 18px;
 }
 
-/* Курс прямо на плитке валюты: у стойки спрашивают «почём», а не «что есть». */
-.chip__rate {
-  margin-left: 6px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-}
-
 .chips--tight {
   gap: 6px;
 }
 
+/* На телефоне итог идёт столбцом: две суммы в 26 пунктов в ряд не помещаются. */
 @media (max-width: 760px) {
-  .pos__sum,
-  .pos__about {
+  .pos__deal {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "paylabel"
+      "payvalue"
+      "arrow"
+      "getlabel"
+      "getvalue"
+      "rate";
+    justify-items: start;
+  }
+
+  .pos__deal-arrow {
+    transform: rotate(90deg);
+  }
+
+  .pos__deal-getlabel {
+    margin-top: 6px;
   }
 }
 
-/* ── Режим кассы ─────────────────────────────────────────────────── */
-
-/*
- * Не узкая вёрстка того же экрана, а свой режим: планшет у стойки,
- * меню убрано, клавиши под палец. Поверх всего порталом не уходит —
- * ему нечего перекрывать, кроме кабинета, а кабинет здесь и не нужен.
- */
-.desk {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-  background: var(--bg);
-  overflow-y: auto;
-}
-
-.desk__bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.desk__clock {
-  font-size: 22px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.desk__shift {
-  color: var(--text-muted);
-  font-size: 14px;
-}
-
-.desk__actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-}
-
-.desk__body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.desk__keys {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-/*
- * Цель под палец: шестьдесят четыре точки в высоту — заметно больше
- * сорока восьми, ниже которых промахиваются. У стойки промах стоит
- * второго набора суммы при покупателе.
- */
-.desk__key {
-  min-height: 64px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-control);
-  background: var(--surface-soft);
-  color: var(--text);
-  font-size: 22px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-
-.desk__key:active {
-  background: var(--surface-soft-hover);
-}
-
+/* Кнопка во всю ширину на экранах входа: под палец, от 56 точек. */
 .btn--wide {
   width: 100%;
   min-height: 56px;
@@ -1986,7 +1960,9 @@
 /* Текущая плитка в сетке: волосок остаётся, полоса акцента — поверх. */
 .stat--current,
 a.stat--current:hover {
-  box-shadow: 0 0 0 1px var(--hairline), inset 0 -2px 0 var(--gold-mark);
+  box-shadow:
+    0 0 0 1px var(--hairline),
+    inset 0 -2px 0 var(--gold-mark);
 }
 
 .card {
@@ -2299,7 +2275,7 @@ a.stat--current:hover {
 }
 
 .path__step::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 6px;
   left: 14px;
@@ -2666,7 +2642,7 @@ a.stat--current:hover {
 }
 
 .recent__row:hover,
-.recent__row[aria-current='true'] {
+.recent__row[aria-current="true"] {
   background: var(--surface-soft);
 }
 
@@ -2729,31 +2705,8 @@ a.stat--current:hover {
   max-width: 220px;
 }
 
-/* Настройки терминала: две кнопки в ряд, поле раскрывается под ними. */
-.pos-settings__panel {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* Вид терминала: форма или счёт слева, последние счета справа. */
-.desk__layout {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(240px, 2fr);
-  gap: 24px;
-  width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
-}
-
-.desk__side {
-  min-width: 0;
-}
-
 @media (max-width: 900px) {
-  .pos__layout,
-  .desk__layout {
+  .pos__layout {
     grid-template-columns: minmax(0, 1fr);
   }
 }

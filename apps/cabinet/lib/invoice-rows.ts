@@ -51,8 +51,6 @@ export interface MockInvoice {
   readonly id: string;
   /** Короткий номер: его называют покупателю вслух. */
   readonly number: string;
-  readonly purpose: string;
-  readonly buyer: string;
   /** Кто создал: имя того, кто нажал «Создать счёт». */
   readonly author: string;
   /** Валюта покупателя и сумма в ней. */
@@ -90,7 +88,6 @@ export interface MockInvoice {
 
 export const invoiceColumns = [
   'number',
-  'buyer',
   'author',
   'amount',
   'status',
@@ -100,7 +97,6 @@ export type InvoiceColumn = (typeof invoiceColumns)[number];
 
 export const INVOICE_COLUMN_LABELS: Record<InvoiceColumn, string> = {
   number: 'Счёт',
-  buyer: 'Покупатель',
   author: 'Создатель',
   amount: 'Сумма',
   status: 'Состояние',
@@ -116,7 +112,7 @@ export const REQUIRED_INVOICE_COLUMNS: readonly InvoiceColumn[] = ['number', 'am
 export interface Cell {
   /** Главное в ячейке. */
   readonly text: string;
-  /** Вторая строка под ним: назначение, эквивалент, время. */
+  /** Вторая строка под ним: эквивалент, время. */
   readonly meta?: string | undefined;
   /** Числовая — прижимается вправо. */
   readonly numeric?: boolean | undefined;
@@ -137,9 +133,7 @@ export function invoiceCell(
 ): Cell {
   switch (column) {
     case 'number':
-      return { text: one.number, meta: one.purpose || undefined };
-    case 'buyer':
-      return { text: one.buyer || '—' };
+      return { text: one.number };
     case 'author':
       return { text: one.author };
     case 'amount':
@@ -343,7 +337,11 @@ export function countByStatus<T extends { status: string }>(
 }
 
 /**
- * Поиск по списку счетов: номер, назначение, покупатель.
+ * Поиск по списку счетов — по номеру: другого слова у счёта нет.
+ *
+ * До 22 сентября 2026 у счёта были назначение и покупатель, и поиск шёл
+ * и по ним; владелец попросил оба поля убрать — у стойки их никто не
+ * набирал, а заявку по API они и не описывали.
  *
  * Сужает сам список, а не прячет строки разметкой: список макета живёт
  * в памяти процесса целиком, и «нашлось 3» обязано означать, что
@@ -356,6 +354,6 @@ export function searchInvoices(
   const needle = query?.trim().toLowerCase();
   if (!needle) return invoices;
   return invoices.filter((one) =>
-    [one.number, one.purpose, one.buyer].some((field) => field.toLowerCase().includes(needle)),
+    one.number.toLowerCase().includes(needle),
   );
 }

@@ -41,46 +41,40 @@ interface Sample {
   readonly hour: number;
   readonly code: string;
   readonly amount: string;
-  readonly buyer: string;
-  readonly purpose: string;
   readonly outcome: 'paid' | 'expired' | 'cancelled' | 'issued';
   readonly kyc?: boolean;
   readonly refund?: { readonly amount: string; readonly reason: string };
 }
 
 const SAMPLES: readonly Sample[] = [
-  { daysAgo: 9, hour: 11, code: 'THB', amount: '1500', buyer: 'Анна', purpose: 'Маникюр', outcome: 'paid' },
-  { daysAgo: 9, hour: 15, code: 'CNY', amount: '300', buyer: 'Олег', purpose: 'Сувениры', outcome: 'expired' },
+  { daysAgo: 9, hour: 11, code: 'THB', amount: '1500', outcome: 'paid' },
+  { daysAgo: 9, hour: 15, code: 'CNY', amount: '300', outcome: 'expired' },
   {
     daysAgo: 8,
     hour: 16,
     code: 'THB',
     amount: '4200',
-    buyer: 'Мария',
-    purpose: 'Ужин на четверых',
     outcome: 'paid',
     refund: { amount: '1200', reason: 'Одно блюдо не принесли' },
   },
-  { daysAgo: 7, hour: 10, code: 'USDT', amount: '150', buyer: 'Дмитрий', purpose: 'Аренда байка на неделю', outcome: 'paid', kyc: true },
-  { daysAgo: 7, hour: 15, code: 'THB', amount: '900', buyer: 'Ирина', purpose: 'Массаж', outcome: 'expired' },
-  { daysAgo: 6, hour: 9, code: 'THB', amount: '2600', buyer: 'Сергей', purpose: 'Экскурсия на острова', outcome: 'paid' },
-  { daysAgo: 5, hour: 13, code: 'CNY', amount: '1200', buyer: 'Наталья', purpose: 'Оплата отеля', outcome: 'cancelled' },
+  { daysAgo: 7, hour: 10, code: 'USDT', amount: '150', outcome: 'paid', kyc: true },
+  { daysAgo: 7, hour: 15, code: 'THB', amount: '900', outcome: 'expired' },
+  { daysAgo: 6, hour: 9, code: 'THB', amount: '2600', outcome: 'paid' },
+  { daysAgo: 5, hour: 13, code: 'CNY', amount: '1200', outcome: 'cancelled' },
   {
     daysAgo: 5,
     hour: 14,
     code: 'THB',
     amount: '700',
-    buyer: 'Павел',
-    purpose: 'Стрижка',
     outcome: 'paid',
     refund: { amount: '700', reason: 'Передумал, услугу не оказали' },
   },
-  { daysAgo: 4, hour: 8, code: 'THB', amount: '3100', buyer: 'Елена', purpose: 'Трансфер в аэропорт', outcome: 'paid' },
-  { daysAgo: 3, hour: 12, code: 'USDT', amount: '60', buyer: 'Артём', purpose: 'Сим-карта', outcome: 'expired' },
-  { daysAgo: 2, hour: 16, code: 'THB', amount: '1800', buyer: 'Ксения', purpose: 'Маникюр и педикюр', outcome: 'paid', kyc: true },
-  { daysAgo: 1, hour: 13, code: 'CNY', amount: '850', buyer: 'Виктор', purpose: 'Ужин', outcome: 'paid' },
-  { daysAgo: 1, hour: 16, code: 'THB', amount: '1200', buyer: 'Ольга', purpose: 'Массаж', outcome: 'expired' },
-  { daysAgo: 0, hour: -1, code: 'THB', amount: '2000', buyer: 'Анна', purpose: 'Маникюр', outcome: 'issued' },
+  { daysAgo: 4, hour: 8, code: 'THB', amount: '3100', outcome: 'paid' },
+  { daysAgo: 3, hour: 12, code: 'USDT', amount: '60', outcome: 'expired' },
+  { daysAgo: 2, hour: 16, code: 'THB', amount: '1800', outcome: 'paid', kyc: true },
+  { daysAgo: 1, hour: 13, code: 'CNY', amount: '850', outcome: 'paid' },
+  { daysAgo: 1, hour: 16, code: 'THB', amount: '1200', outcome: 'expired' },
+  { daysAgo: 0, hour: -1, code: 'THB', amount: '2000', outcome: 'issued' },
 ];
 
 /**
@@ -126,8 +120,6 @@ export function demoSet(now: Date): DemoSet {
 
     let invoice = makeInvoice({
       number: nextNumber(invoices, at),
-      purpose: sample.purpose,
-      buyer: sample.buyer,
       author: DEMO_AUTHOR,
       code: sample.code,
       amount,

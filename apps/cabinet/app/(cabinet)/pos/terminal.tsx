@@ -3,10 +3,10 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Money, type Quote } from '@nemo/types';
-import { LIVE_REFRESH_MS, Moment, shouldRefresh } from '@nemo/ui';
-import { formatAmount, formatMoney, formatRate, formatRateValue } from '@nemo/ui/format';
+import { CurrencyFlag } from '@nemo/flags';
+import { currencyName, Money, type Quote } from '@nemo/types';
+import { HowTo, LIVE_REFRESH_MS, Moment, shouldRefresh } from '@nemo/ui';
+import { formatAmount, formatMoney, formatRate } from '@nemo/ui/format';
 import {
   INVOICE_STATUS_LABELS,
   INVOICE_STATUS_TONES,
@@ -14,11 +14,14 @@ import {
   type MockInvoice,
 } from '@/lib/invoice-rows';
 import { normalizeTyped, parseTyped } from '@/lib/new-request';
-import { markupRate, posRateLine, posSides, type PosSide } from '@/lib/pos';
+import { posRateLine, posSides, type PosSide } from '@/lib/pos';
 import type { QrView } from '@/lib/pos/acquirer';
 import type { PosEvent } from '@/lib/pos/bus';
+import { markupPercent } from '@/lib/pos/settings';
 import { POS_STREAM_PATH } from '@/lib/pos/stream';
+import { POS_HOW_TO } from '@/lib/pos-texts';
 import { send } from '@/app/ui/send';
+import { PosPath } from './explainer';
 
 /**
  * Котировка, как её отдаёт `/api/quote`: к цене приложена отметка
@@ -38,6 +41,17 @@ type QuoteReply = Quote & { readonly asOf: string };
  * Двух правд о цене быть не должно: покупатель у стойки и мерчант в
  * кабинете смотрят на одно число.
  *
+ * Валюта выбирается теми же кнопками, что на табло «Курсов», — флаг и
+ * код: 22 сентября 2026 владелец попросил «вместо кнопок с валютами
+ * использовать кнопки, которые есть в приложении и на странице
+ * „Курсы“». Курса на кнопке нет — он стоит под суммой, там, где
+ * считается. Полей «Назначение» и «Покупатель» нет с того же дня по
+ * его слову: у стойки их никто не заполнял.
+ *
+ * Итог — две суммы одного веса: сколько покупатель платит и сколько
+ * получает. У стойки вслух называют обе, и мельче одна другой быть не
+ * должна; курс между ними — подпись, а не третье число.
+ *
  * После «Создать счёт» на месте формы встаёт сам счёт: QR, обратный
  * отсчёт, что с ним стало. Об оплате говорит поток событий
  * (`/api/pos/stream`), и экран отвечает звуком: у стойки смотрят на
@@ -45,16 +59,13 @@ type QuoteReply = Quote & { readonly asOf: string };
  * имитация, и «Покупатель заплатил» — та кнопка, вместо которой у банка
  * будет вебхук; на экране это сказано словами.
  *
- * Вид терминала — не узкая вёрстка того же экрана, а полноэкранный режим
- * под палец на планшете у стойки: меню убрано, клавиатура крупная,
- * часы, счёт за смену и последние счета на виду.
+ * Полноэкранного «вида терминала» больше нет: владелец попросил убрать
+ * его целиком 22 сентября 2026.
  */
 
 const QUOTE_REFRESH_MS = 30_000;
 /** Быстрые суммы в валюте оплаты: столько чаще всего и просят у стойки. */
 const QUICK = ['1000', '3000', '5000', '10000'];
-/** Цель нажатия в виде терминала — не меньше сорока восьми точек. */
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 
 export interface PosDirection {
   readonly fromCode: string;
@@ -93,6 +104,7 @@ export function Terminal({
   authorName,
   minAmount,
   markupBps,
+  canPrice,
   ttlMinutes,
   provider,
   recent,
@@ -104,8 +116,10 @@ export function Terminal({
   readonly authorName: string;
   /** Минимум сервиса в долларах: по нему черта курса решает, что сказать. */
   readonly minAmount: string;
-  /** Наценка мерчанта из настроек терминала. */
+  /** Наценка мерчанта из настроек кабинета. */
   readonly markupBps: number;
+  /** Смотрящий вправе менять наценку — ему показывается дорога в настройки. */
+  readonly canPrice: boolean;
   /** Сколько минут счёт ждёт оплаты. */
   readonly ttlMinutes: number;
   readonly provider: { readonly title: string; readonly imitation: boolean };
@@ -116,13 +130,10 @@ export function Terminal({
   const [toCode, setToCode] = useState(first?.toCode ?? '');
   const [side, setSide] = useState<PosSide>('pay');
   const [typed, setTyped] = useState('');
-  const [purpose, setPurpose] = useState('');
-  const [buyer, setBuyer] = useState('');
   const [kyc, setKyc] = useState(false);
   const [busy, setBusy] = useState(false);
   const [complaint, setComplaint] = useState<string>();
   const [made, setMade] = useState(shift);
-  const [desk, setDesk] = useState(false);
   const [open, setOpen] = useState<OpenView>();
   const [asking, setAsking] = useState<'cancel' | 'imitate'>();
   const [tick, setTick] = useState(() => Date.now());
@@ -130,7 +141,7 @@ export function Terminal({
   // Счётчик смены сервер знает точнее: после перечитывания его слово главнее.
   useEffect(() => setMade(shift), [shift]);
 
-  // Владелец спрятал выбранную валюту — терминал переходит на первую видимую.
+  // Направление пропало из справочника — терминал переходит на первое.
   useEffect(() => {
     if (!directions.some((one) => one.toCode === toCode)) setToCode(first?.toCode ?? '');
   }, [directions, toCode, first]);
@@ -140,7 +151,10 @@ export function Terminal({
 
   /* Курс — на направление, не на сумму; перечитывается по кругу. */
   const pairKey = `${fromCode}/${toCode}`;
-  const [quote, setQuote] = useState<{ pair: string; view: QuoteReply | null }>();
+  const [quote, setQuote] = useState<{
+    pair: string;
+    view: QuoteReply | null;
+  }>();
   const rate = quote?.pair === pairKey ? quote.view : undefined;
 
   useEffect(() => {
@@ -172,9 +186,10 @@ export function Terminal({
     };
   }, [fromCode, toCode, pairKey]);
 
+  const amount = parseTyped(typed);
   const sides = useMemo(
-    () => posSides(parseTyped(typed), side, rate ?? null, markupBps),
-    [typed, side, rate, markupBps],
+    () => posSides(amount, side, rate ?? null, markupBps),
+    [amount, side, rate, markupBps],
   );
   const ready = sides.buy !== null && sides.pay !== null && !busy;
 
@@ -198,30 +213,39 @@ export function Terminal({
 
   const show = useCallback((view: InvoiceView, was?: OpenView) => {
     // Звук на оплату — один раз, на переходе, а не на каждом перечитывании.
-    if (was && was.invoice.id === view.invoice.id && was.invoice.status !== 'paid' && view.invoice.status === 'paid') {
+    if (
+      was &&
+      was.invoice.id === view.invoice.id &&
+      was.invoice.status !== 'paid' &&
+      view.invoice.status === 'paid'
+    ) {
       beep(true);
     }
     setOpen({ ...view, skew: new Date(view.now).getTime() - Date.now() });
   }, []);
 
-  const load = useCallback(
-    async (id: string) => {
-      try {
-        const response = await fetch(`/api/pos/invoices/${id}`, { cache: 'no-store' });
-        if (!response.ok) return;
-        const view = (await response.json()) as InvoiceView;
-        setOpen((was) => {
-          if (was && was.invoice.id === view.invoice.id && was.invoice.status !== 'paid' && view.invoice.status === 'paid') {
-            beep(true);
-          }
-          return { ...view, skew: new Date(view.now).getTime() - Date.now() };
-        });
-      } catch {
-        // Сеть; поток и таймер перечитают.
-      }
-    },
-    [],
-  );
+  const load = useCallback(async (id: string) => {
+    try {
+      const response = await fetch(`/api/pos/invoices/${id}`, {
+        cache: 'no-store',
+      });
+      if (!response.ok) return;
+      const view = (await response.json()) as InvoiceView;
+      setOpen((was) => {
+        if (
+          was &&
+          was.invoice.id === view.invoice.id &&
+          was.invoice.status !== 'paid' &&
+          view.invoice.status === 'paid'
+        ) {
+          beep(true);
+        }
+        return { ...view, skew: new Date(view.now).getTime() - Date.now() };
+      });
+    } catch {
+      // Сеть; поток и таймер перечитают.
+    }
+  }, []);
 
   /*
    * Поток событий: об оплате, истечении, отмене говорит сервер. Чужое
@@ -231,7 +255,13 @@ export function Terminal({
    */
   useEffect(() => {
     const refresh = (): void => {
-      if (shouldRefresh({ hidden: document.visibilityState === 'hidden', busy: busyRef.current, typing: false })) {
+      if (
+        shouldRefresh({
+          hidden: document.visibilityState === 'hidden',
+          busy: busyRef.current,
+          typing: false,
+        })
+      ) {
         router.refresh();
       }
     };
@@ -263,7 +293,9 @@ export function Terminal({
 
   const serverNow = tick + (open?.skew ?? 0);
   const qrLeft = open?.qr ? new Date(open.qr.expiresAt).getTime() - serverNow : null;
-  const invoiceLeft = open?.invoice.expiresAt ? new Date(open.invoice.expiresAt).getTime() - serverNow : null;
+  const invoiceLeft = open?.invoice.expiresAt
+    ? new Date(open.invoice.expiresAt).getTime() - serverNow
+    : null;
 
   // QR перевыпустился или счёт истёк — перечитать, но один раз на границу.
   const renewedFor = useRef<string>(undefined);
@@ -289,8 +321,6 @@ export function Terminal({
       to: toCode,
       side,
       amount: typed,
-      purpose,
-      buyer,
       kycRequired: kyc,
       ...(rate ? { quotedAt: rate.asOf } : {}),
     });
@@ -303,8 +333,6 @@ export function Terminal({
     beep(true);
     setMade((one) => one + 1);
     setTyped('');
-    setPurpose('');
-    setBuyer('');
     setKyc(false);
     setAsking(undefined);
     show(reply.data as InvoiceView);
@@ -336,105 +364,112 @@ export function Terminal({
 
   const form = (
     <>
-      <div className="chips">
-        {directions.map((one) => (
-          <button
-            key={one.toCode}
-            type="button"
-            className={one.toCode === toCode ? 'chip chip--on' : 'chip'}
-            onClick={() => setToCode(one.toCode)}
-            aria-pressed={one.toCode === toCode}
-          >
-            {one.toCode}
-            {/*
-              Курс на плитке — крупной стороной и до сотых, тем же
-              правилом, что у клиента и у менеджера (`readRate` из
-              `@nemo/types`), с наценкой мерчанта. Сырое число
-              «0,053964632059326866» у стойки не читается вовсе.
-            */}
-            {one.rate ? (
-              <span className="chip__rate">
-                {formatRateValue(markupRate(Money.toAmount(one.rate), markupBps))}
-              </span>
-            ) : undefined}
-          </button>
-        ))}
-      </div>
       {/*
-        На плитках курс для наименьшей суммы — тот же, что в разделе
-        «Курсы». Со ступенчатой сеткой он зависит от суммы, и на
-        набранную выходит другим; сказать об этом надо здесь, иначе два
-        разных числа на одном экране читаются как ошибка.
+        Валюта — теми же кнопками, что на табло «Курсов»: флаг и код.
+        Подпись над рядом видимая, а не в `aria-label`: кнопки без
+        подписи отвечают «что есть», а не «что выбрать».
       */}
-      <p className="hint">
-        На плитках курс для наименьшей суммы{markupBps > 0 ? ' с вашей наценкой' : ''}. Чем крупнее
-        счёт, тем он выгоднее покупателю: точный виден под суммой.
-      </p>
-
-      <div className="pos__sum">
-        <div className="pos__field">
-          <div className="chips chips--tight">
+      <div className="field">
+        <span className="label">Покупатель получает</span>
+        <div className="chips">
+          {directions.map((one) => (
             <button
+              key={one.toCode}
               type="button"
-              className={side === 'pay' ? 'chip chip--on' : 'chip'}
-              onClick={() => setSide('pay')}
-              aria-pressed={side === 'pay'}
+              className={
+                one.toCode === toCode ? 'chip chip--currency chip--on' : 'chip chip--currency'
+              }
+              onClick={() => setToCode(one.toCode)}
+              aria-pressed={one.toCode === toCode}
+              title={currencyName(one.toCode)}
             >
-              В {fromCode}
+              <CurrencyFlag code={one.toCode} size={16} />
+              {one.toCode}
             </button>
-            <button
-              type="button"
-              className={side === 'buy' ? 'chip chip--on' : 'chip'}
-              onClick={() => setSide('buy')}
-              aria-pressed={side === 'buy'}
-            >
-              В {toCode}
-            </button>
-          </div>
-          <input
-            className="input input--big"
-            inputMode="decimal"
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-            onBlur={() => setTyped(normalizeTyped(typed))}
-            placeholder="0"
-            aria-label={`Сумма в ${side === 'pay' ? fromCode : toCode}`}
-          />
-          <div className="chips chips--tight">
-            {QUICK.map((one) => (
-              <button
-                key={one}
-                type="button"
-                className="chip"
-                onClick={() => {
-                  setSide('pay');
-                  setTyped(formatAmount(one));
-                }}
-              >
-                {formatAmount(one)}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
+      </div>
 
-        <div className="pos__total">
-          <span className="pos__label">Покупатель заплатит</span>
-          <span className="pos__value">
-            {sides.pay ? formatMoney(sides.pay, fromCode) : '—'}
-          </span>
-          <span className="pos__equal">
-            {sides.buy ? `получит ${formatMoney(sides.buy, toCode)}` : 'наберите сумму'}
-          </span>
-          <span className="pos__rate" aria-live="polite">
-            {line.kind === 'rate'
-              ? formatRate(line.rate, fromCode, toCode)
-              : line.kind === 'from'
-                ? `счёт от ${formatMoney(line.giveAtLeast, fromCode)}`
-                : rate === null
-                  ? 'курса сейчас нет — счёт по нему не создать'
+      <div className="pos__field">
+        <label className="label" htmlFor="pos-amount">
+          Сумма
+        </label>
+        <div className="chips chips--tight" role="group" aria-label="В какой валюте набираете">
+          <button
+            type="button"
+            className={side === 'pay' ? 'chip chip--on' : 'chip'}
+            onClick={() => setSide('pay')}
+            aria-pressed={side === 'pay'}
+          >
+            В {fromCode}
+          </button>
+          <button
+            type="button"
+            className={side === 'buy' ? 'chip chip--on' : 'chip'}
+            onClick={() => setSide('buy')}
+            aria-pressed={side === 'buy'}
+          >
+            В {toCode}
+          </button>
+        </div>
+        <input
+          id="pos-amount"
+          className="input input--big"
+          inputMode="decimal"
+          autoComplete="off"
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+          onBlur={() => setTyped(normalizeTyped(typed))}
+          placeholder="0"
+        />
+        <div className="chips chips--tight" role="group" aria-label={`Быстрые суммы в ${fromCode}`}>
+          {QUICK.map((one) => (
+            <button
+              key={one}
+              type="button"
+              className="chip"
+              onClick={() => {
+                setSide('pay');
+                setTyped(formatAmount(one));
+              }}
+            >
+              {formatAmount(one)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/*
+        Две суммы одного размера: обе называют покупателю вслух, и
+        мельче одна другой быть не должна. Подписи стоят своей строкой
+        сетки, значения своей — иначе подпись из двух слов роняет своё
+        число ниже соседнего. Курс — строкой под ними и тусклым, а не
+        акцентом: акцентный цвет в кабинете означает «нажми» и «ждёт
+        тебя», а курс ни то ни другое.
+      */}
+      <div className="pos__deal" aria-live="polite">
+        <span className="pos__label pos__deal-paylabel">Покупатель заплатит</span>
+        <span className="pos__amount pos__deal-payvalue">
+          {sides.pay ? formatMoney(sides.pay, fromCode) : '—'}
+        </span>
+        <span className="pos__deal-arrow" aria-hidden>
+          →
+        </span>
+        <span className="pos__label pos__deal-getlabel">Получит</span>
+        <span className="pos__amount pos__deal-getvalue">
+          {sides.buy ? formatMoney(sides.buy, toCode) : '—'}
+        </span>
+        <span className="pos__deal-rate">
+          {line.kind === 'rate'
+            ? `по курсу ${formatRate(line.rate, fromCode, toCode)}${markupBps > 0 ? ` · с наценкой ${markupPercent(markupBps)} %` : ''}`
+            : line.kind === 'from'
+              ? `счёт от ${formatMoney(line.giveAtLeast, fromCode)}`
+              : rate === null
+                ? 'курса сейчас нет — счёт по нему не создать'
+                : amount === null
+                  ? 'наберите сумму'
                   : 'спрашиваем курс…'}
-          </span>
-        </div>
+        </span>
       </div>
 
       <label className="check">
@@ -468,7 +503,8 @@ export function Terminal({
                 <span className="row__main">
                   <span className="row__title">{formatMoney(one.payAmount, one.payCode)}</span>
                   <span className="row__meta">
-                    {one.number} · {formatMoney(one.amount, one.code)} · <Moment at={one.createdAt} />
+                    {one.number} · {formatMoney(one.amount, one.code)} ·{' '}
+                    <Moment at={one.createdAt} />
                     {one.demo ? ' · пример' : ''}
                   </span>
                 </span>
@@ -489,20 +525,27 @@ export function Terminal({
       {open.invoice.status === 'paid' ? (
         <>
           <span className="pay__state pay__state--paid">Оплачено!</span>
-          <span className="pos__value">{formatMoney(open.invoice.payAmount, open.invoice.payCode)}</span>
+          <span className="pos__value">
+            {formatMoney(open.invoice.payAmount, open.invoice.payCode)}
+          </span>
           <span className="pos__equal">
             за {formatMoney(open.invoice.amount, open.invoice.code)}
             {open.invoice.paidAt ? (
               <>
-                {' '}· <Moment at={open.invoice.paidAt} />
+                {' '}
+                · <Moment at={open.invoice.paidAt} />
               </>
             ) : undefined}
           </span>
         </>
       ) : open.invoice.status === 'issued' ? (
         <>
-          <span className="pos__value">{formatMoney(open.invoice.payAmount, open.invoice.payCode)}</span>
-          <span className="pos__equal">за {formatMoney(open.invoice.amount, open.invoice.code)}</span>
+          <span className="pos__value">
+            {formatMoney(open.invoice.payAmount, open.invoice.payCode)}
+          </span>
+          <span className="pos__equal">
+            за {formatMoney(open.invoice.amount, open.invoice.code)}
+          </span>
           {open.qr ? (
             <img
               className="pay__qr"
@@ -516,7 +559,9 @@ export function Terminal({
           <span className="pay__note">
             {provider.imitation ? 'QR ненастоящий: платёж принимает имитация. ' : ''}
             {qrLeft !== null ? `QR обновится через ${mmss(qrLeft)}. ` : ''}
-            {invoiceLeft !== null ? `Счёт действует ещё ${mmss(invoiceLeft)}.` : `Счёт действует ${ttlMinutes} мин.`}
+            {invoiceLeft !== null
+              ? `Счёт действует ещё ${mmss(invoiceLeft)}.`
+              : `Счёт действует ${ttlMinutes} мин.`}
           </span>
           {open.invoice.kycRequired ? (
             <span className="hint">Покупатель подтвердит личность перед оплатой</span>
@@ -527,8 +572,12 @@ export function Terminal({
           <span className="pay__state">
             {open.invoice.status === 'expired' ? 'Срок оплаты вышел' : 'Счёт отменён'}
           </span>
-          <span className="pos__value">{formatMoney(open.invoice.payAmount, open.invoice.payCode)}</span>
-          <span className="pos__equal">за {formatMoney(open.invoice.amount, open.invoice.code)}</span>
+          <span className="pos__value">
+            {formatMoney(open.invoice.payAmount, open.invoice.payCode)}
+          </span>
+          <span className="pos__equal">
+            за {formatMoney(open.invoice.amount, open.invoice.code)}
+          </span>
         </>
       )}
 
@@ -539,8 +588,8 @@ export function Terminal({
           asking === 'imitate' ? (
             <div className="actions__ask">
               <p className="muted">
-                Это имитация: денег не будет, счёт станет оплаченным. У банка это место займёт
-                его сообщение об оплате.
+                Это имитация: денег не будет, счёт станет оплаченным. У банка это место займёт его
+                сообщение об оплате.
               </p>
               <button
                 type="button"
@@ -550,7 +599,12 @@ export function Terminal({
               >
                 Да, покупатель заплатил
               </button>
-              <button type="button" className="btn btn--ghost" onClick={() => setAsking(undefined)} disabled={busy}>
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() => setAsking(undefined)}
+                disabled={busy}
+              >
                 Не сейчас
               </button>
             </div>
@@ -569,11 +623,20 @@ export function Terminal({
                 type="button"
                 className="btn btn--danger"
                 aria-busy={busy}
-                onClick={() => void act(`/api/pos/invoices/${open.invoice.id}`, { status: 'cancelled' })}
+                onClick={() =>
+                  void act(`/api/pos/invoices/${open.invoice.id}`, {
+                    status: 'cancelled',
+                  })
+                }
               >
                 Да, отменить
               </button>
-              <button type="button" className="btn btn--ghost" onClick={() => setAsking(undefined)} disabled={busy}>
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() => setAsking(undefined)}
+                disabled={busy}
+              >
                 Не надо
               </button>
             </div>
@@ -587,150 +650,73 @@ export function Terminal({
         <button type="button" className="btn btn--soft" onClick={next}>
           Следующий покупатель
         </button>
-        {!desk ? (
-          <Link className="btn btn--ghost" href={`/invoices/${open.invoice.id}`}>
-            Открыть счёт
-          </Link>
-        ) : undefined}
+        <Link className="btn btn--ghost" href={`/invoices/${open.invoice.id}`}>
+          Открыть счёт
+        </Link>
       </div>
     </div>
   ) : undefined;
 
-  if (desk) {
-    /*
-     * Порталом в `body`, а не на месте: у оболочки кабинета есть свои
-     * преобразования, и для `position: fixed` любое из них становится
-     * системой отсчёта — вид терминала разворачивался бы внутри колонки
-     * раздела, рядом с меню. Тем же приёмом и по той же причине уходит
-     * нижний лист Mini App.
-     */
-    return portal(
-      <div className="desk">
-        <div className="desk__bar">
-          <Clock />
-          <span className="desk__shift">за смену: {made}</span>
-          <div className="desk__actions">
-            <button type="button" className="btn btn--soft" onClick={() => setDesk(false)}>
-              Свернуть
-            </button>
-            <button
-              type="button"
-              className="btn btn--ghost"
-              onClick={() => {
-                setDesk(false);
-                router.push('/invoices');
-              }}
-            >
-              Выйти
-            </button>
-          </div>
-        </div>
+  return (
+    <>
+      {/*
+        Объяснение — в клиентской части, как у табло курсов: оно идёт на
+        тех числах, которые сейчас набраны в терминале, а они живут здесь.
+      */}
+      <HowTo
+        title="Как это устроено"
+        sub="Путь денег покупателя на живых числах"
+        items={POS_HOW_TO}
+      >
+        <PosPath
+          fromCode={fromCode}
+          toCode={toCode}
+          quote={rate}
+          typed={amount}
+          side={side}
+          markupBps={markupBps}
+          minAmount={Money.toAmount(minAmount)}
+        />
+      </HowTo>
 
-        <div className="desk__layout">
-          <div className="desk__body">
+      <section className="card">
+        <div className="pos__layout">
+          <div className="pos__main">
             {payment ?? (
               <>
                 {form}
-                <div className="desk__keys">
-                  {KEYS.map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className="desk__key"
-                      onClick={() =>
-                        setTyped((one) =>
-                          key === '⌫' ? one.slice(0, -1) : key === '.' && one.includes(',') ? one : one + (key === '.' ? ',' : key),
-                        )
-                      }
-                    >
-                      {key}
-                    </button>
-                  ))}
-                </div>
+
                 {complaint ? <p className="error">{complaint}</p> : undefined}
-                <button
-                  type="button"
-                  className="btn btn--gold btn--wide"
-                  disabled={!ready}
-                  aria-busy={busy}
-                  onClick={() => void issue()}
-                >
-                  {busy ? 'Создаём…' : 'Создать счёт'}
-                </button>
+
+                <div className="pos__actions">
+                  <button
+                    type="button"
+                    className="btn btn--gold"
+                    disabled={!ready}
+                    aria-busy={busy}
+                    onClick={() => void issue()}
+                  >
+                    {busy ? 'Создаём…' : 'Создать счёт'}
+                  </button>
+                  <span className="muted">
+                    создал {authorName} · за смену {made} ·{' '}
+                    {markupBps > 0 ? `наценка ${markupPercent(markupBps)} %` : 'без наценки'}
+                    {canPrice ? (
+                      <>
+                        {' · '}
+                        <Link href="/settings">изменить</Link>
+                      </>
+                    ) : undefined}
+                  </span>
+                </div>
               </>
             )}
           </div>
-          <aside className="desk__side">{recentList}</aside>
+          <aside className="pos__side">{recentList}</aside>
         </div>
-      </div>,
-    );
-  }
-
-  return (
-    <section className="card">
-      <div className="pos__layout">
-        <div className="pos__main">
-          {payment ?? (
-            <>
-              {form}
-
-              <div className="pos__about">
-                <label className="field">
-                  <span className="label">Назначение</span>
-                  <input
-                    className="input"
-                    value={purpose}
-                    onChange={(event) => setPurpose(event.target.value)}
-                    placeholder="За что платят"
-                    maxLength={200}
-                  />
-                </label>
-                <label className="field">
-                  <span className="label">Покупатель</span>
-                  <input
-                    className="input"
-                    value={buyer}
-                    onChange={(event) => setBuyer(event.target.value)}
-                    placeholder="Имя или телефон"
-                    maxLength={200}
-                  />
-                </label>
-              </div>
-
-              {complaint ? <p className="error">{complaint}</p> : undefined}
-
-              <div className="pos__actions">
-                <button
-                  type="button"
-                  className="btn btn--gold"
-                  disabled={!ready}
-                  aria-busy={busy}
-                  onClick={() => void issue()}
-                >
-                  {busy ? 'Создаём…' : 'Создать счёт'}
-                </button>
-                <button type="button" className="btn btn--soft" onClick={() => setDesk(true)}>
-                  Вид терминала
-                </button>
-                <span className="muted">
-                  создал {authorName} · за смену {made}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-        <aside className="pos__side">{recentList}</aside>
-      </div>
-    </section>
+      </section>
+    </>
   );
-}
-
-/**
- * Узел поверх всего — в `body`. На сервере рисовать нечего: режим
- * включают нажатием, и до него ничего не показано.
- */
-function portal(node: React.ReactNode): React.ReactPortal | null {
-  return typeof document === 'undefined' ? null : createPortal(node, document.body);
 }
 
 /**
@@ -746,19 +732,6 @@ function mmss(ms: number): string {
   return hours > 0 ? `${hours}:${tail}` : tail;
 }
 
-/** Часы у стойки: время печатает браузер, а не сервер — тот живёт в UTC. */
-function Clock() {
-  const [now, setNow] = useState<string>('');
-  useEffect(() => {
-    const tick = () =>
-      setNow(new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }));
-    tick();
-    const timer = setInterval(tick, 10_000);
-    return () => clearInterval(timer);
-  }, []);
-  return <span className="desk__clock">{now}</span>;
-}
-
 /**
  * Звук на исход — короткий и разный: у стойки на экран не смотрят, там
  * смотрят на покупателя. Звук синтезируется, а не везётся файлом:
@@ -766,7 +739,9 @@ function Clock() {
  */
 function beep(good: boolean): void {
   try {
-    const Ctor = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const Ctor =
+      window.AudioContext ??
+      (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
     const ctx = new Ctor();
     const osc = ctx.createOscillator();
