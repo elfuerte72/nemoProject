@@ -198,18 +198,13 @@ export function RatesBoard({
         <PathOfMoney direction={example} typed={give} minAmount={minAmount} now={now} />
       </HowTo>
 
-      {hasCash ? (
-        <Tabs
-          label="Вид сделки"
-          items={[
-            { href: '/rates', label: 'Переводом', current: kind === 'electronic' },
-            { href: '/rates?kind=cash', label: 'Наличными', current: kind === 'cash' },
-          ]}
-        />
-      ) : undefined}
-
-      <RubleBlock block={board.ruble} now={now} marks={marks} />
-
+      {/*
+        Все ручки расчёта — в одной строке и перед тем, на что они
+        влияют: что отдаёте, сколько и как получаете. Вид сделки стоял
+        отдельным рядом над блоком «USDT и рубль», а строка с валютой и
+        суммой — под ним; таб менял то, что выше него, и три настройки
+        одного расчёта жили в двух местах.
+      */}
       <div className="board__controls">
         <div className="field">
           <span className="label">Отдаёте</span>
@@ -243,7 +238,22 @@ export function RatesBoard({
             onChange={(event) => setTyped(event.target.value)}
           />
         </div>
+
+        {hasCash ? (
+          <div className="field">
+            <span className="label">Получаете</span>
+            <Tabs
+              label="Вид сделки"
+              items={[
+                { href: '/rates', label: 'Переводом', current: kind === 'electronic' },
+                { href: '/rates?kind=cash', label: 'Наличными', current: kind === 'cash' },
+              ]}
+            />
+          </div>
+        ) : undefined}
       </div>
+
+      <RubleBlock block={board.ruble} now={now} marks={marks} />
 
       {visible.length === 0 ? (
         <section className="card">
