@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CurrencyFlag } from '@nemo/flags';
 import { currencyName, Money, type Quote } from '@nemo/types';
 import { HowTo, LIVE_REFRESH_MS, Moment, shouldRefresh } from '@nemo/ui';
-import { formatAmount, formatMoney, formatRate } from '@nemo/ui/format';
+import { formatMoney, formatRate } from '@nemo/ui/format';
 import {
   INVOICE_STATUS_LABELS,
   INVOICE_STATUS_TONES,
@@ -60,12 +60,12 @@ type QuoteReply = Quote & { readonly asOf: string };
  * будет вебхук; на экране это сказано словами.
  *
  * Полноэкранного «вида терминала» больше нет: владелец попросил убрать
- * его целиком 22 сентября 2026.
+ * его целиком 22 сентября 2026. Кнопок с готовыми суммами — тоже: «на
+ * моей практике я ими особо никогда не пользовался», а сумму у стойки
+ * всё равно называет покупатель, и своя она каждый раз.
  */
 
 const QUOTE_REFRESH_MS = 30_000;
-/** Быстрые суммы в валюте оплаты: столько чаще всего и просят у стойки. */
-const QUICK = ['1000', '3000', '5000', '10000'];
 
 export interface PosDirection {
   readonly fromCode: string;
@@ -422,21 +422,6 @@ export function Terminal({
           onBlur={() => setTyped(normalizeTyped(typed))}
           placeholder="0"
         />
-        <div className="chips chips--tight" role="group" aria-label={`Быстрые суммы в ${fromCode}`}>
-          {QUICK.map((one) => (
-            <button
-              key={one}
-              type="button"
-              className="chip"
-              onClick={() => {
-                setSide('pay');
-                setTyped(formatAmount(one));
-              }}
-            >
-              {formatAmount(one)}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/*
