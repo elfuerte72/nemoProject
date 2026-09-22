@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BOT_COMMANDS } from './commands';
 
 /**
  * Кто в боте отвечает на сообщение.
@@ -23,7 +24,6 @@ vi.mock('@/lib/core', () => ({
       return Promise.resolve({ notifications: [] });
     },
     getBotText: () => 'Текст бота',
-    getExchangeTerms: () => Promise.resolve({ pairs: [] }),
     answerAsConcierge: () => Promise.resolve({ notifications: [], handedToHuman: false }),
   }),
 }));
@@ -53,8 +53,22 @@ bot.botInfo = {
   can_manage_bots: false,
   supports_join_request_queries: false,
 };
-// Ответы бота наружу не уходят: проверяется, кто взялся за сообщение.
-bot.api.config.use(() => Promise.resolve({ ok: true, result: true } as never));
+/**
+ * Ответы бота наружу не уходят, но записываются: часть проверок как раз о
+ * том, что бот ответил — или промолчал.
+ */
+const replies: string[] = [];
+const answered: string[] = [];
+
+bot.api.config.use((_prev, method, payload) => {
+  if (method === 'sendMessage') {
+    replies.push(String((payload as { text?: string }).text ?? ''));
+  }
+  if (method === 'answerCallbackQuery') {
+    answered.push(String((payload as { text?: string }).text ?? ''));
+  }
+  return Promise.resolve({ ok: true, result: true } as never);
+});
 
 const CHAT = { id: 100, type: 'private' as const, first_name: 'Иван' };
 const FROM = { id: 100, is_bot: false, first_name: 'Иван' };
@@ -76,6 +90,8 @@ const DOCUMENT = {
 
 beforeEach(() => {
   received.length = 0;
+  replies.length = 0;
+  answered.length = 0;
 });
 
 describe('файл с подписью', () => {
@@ -126,6 +142,49 @@ describe('текст', () => {
     expect(received).toHaveLength(1);
     expect(received[0]).toMatchObject({ body: 'Когда придут деньги?' });
     expect(received[0]!.attachment).toBeUndefined();
+  });
+});
+
+/**
+ * Курс из бота убран 22 сентября 2026: в чате он считался по справочнику
+ * направлений, а в обменнике — по сумме и сетке комиссий, и клиент видел
+ * два разных числа об одной сделке. Кнопка и команда сняты, но нажатия по
+ * ним приходят до сих пор — из сообщений, которые Telegram хранит вечно,
+ * и со старой постоянной клавиатуры. Проверяется, что ни одно из них не
+ * показывает курса и ни одно не теряется молча.
+ */
+describe('курс', () => {
+  it('словом со старой клавиатуры уходит обращением, а не ответом бота', async () => {
+    await bot.handleUpdate(update({ text: 'Курс' }));
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ body: 'Курс' });
+  });
+
+  it('командой не показывается: её нет и в списке команд', async () => {
+    await bot.handleUpdate(
+      update({ text: '/rates', entities: [{ type: 'bot_command', offset: 0, length: 6 }] }),
+    );
+
+    expect(replies).toEqual([]);
+    expect(BOT_COMMANDS.map((one) => one.command)).not.toContain('rates');
+  });
+
+  it('кнопкой из старого меню подтверждается, чтобы на ней не крутились часы', async () => {
+    await bot.handleUpdate({
+      update_id: 2,
+      callback_query: {
+        id: 'q1',
+        from: FROM,
+        chat_instance: 'c1',
+        data: 'rates',
+        message: { message_id: 1, date: 1_756_900_000, chat: CHAT, text: 'Меню' },
+      },
+    } as Parameters<typeof bot.handleUpdate>[0]);
+
+    expect(answered).toHaveLength(1);
+    expect(answered[0]).toContain('обменник');
+    expect(replies).toEqual([]);
   });
 });
 

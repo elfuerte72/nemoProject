@@ -12,7 +12,6 @@
  */
 export const BOT_COMMANDS = [
   { command: 'menu', description: 'Главное меню' },
-  { command: 'rates', description: 'Курс обмена и выдачи' },
   { command: 'referral', description: 'Реферальная ссылка' },
   { command: 'support', description: 'Задать вопрос менеджеру' },
 ];
