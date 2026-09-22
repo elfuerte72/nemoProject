@@ -2586,12 +2586,20 @@ a.stat--current:hover {
   min-width: 0;
 }
 
+/* Слева имя списка и отметка живого обновления, справа дорога в раздел. */
 .recent__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.recent__name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 
 .recent__live {
