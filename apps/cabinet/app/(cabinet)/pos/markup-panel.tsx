@@ -6,21 +6,21 @@ import { markupPercent } from '@/lib/pos/settings';
 import { send } from '@/app/ui/send';
 
 /**
- * Своя наценка мерчанта — прямо на экране терминала.
+ * Своя наценка мерчанта — в строке «Покупатель платит», у самого числа,
+ * на которое она влияет.
  *
- * Кнопкой с текущим значением, которая раскрывает поле на месте: 22
- * сентября 2026 владелец сначала попросил унести наценку в общие
- * настройки, а посмотрев, вернул её сюда — «добавить прям на страницу
- * pos терминал функцию, чтобы сделать свою наценку». Место одно: в
- * разделе «Настройки» её больше нет, иначе два поля для одного числа
- * разошлись бы при первой правке.
+ * 22 сентября 2026 владелец прошёл по ней трижды: сначала попросил
+ * унести в общие настройки, потом вернуть на экран терминала, а увидев
+ * её кнопкой над расчётом — «наценку сделать внутри секции „покупатель
+ * платит“, а не сверху, это неудобно и плохо видно». Сверху она и
+ * вправду стояла отдельно от суммы, которую поднимает.
+ *
+ * Кнопка с текущим значением, поле раскрывается под строкой: настройку
+ * правят редко, и поле, занятое всегда, отнимало бы место у расчёта.
  *
  * Видит её только владелец (право `pricing`), и по нему же отвечает
  * маршрут: за стойкой стоит оператор, а почём торгует кабинет, решает
  * тот, кто отвечает за деньги.
- *
- * Слово «Наценка» — с образца Love&Pay: своего владелец не называл
- * (тикет 20 трекера кабинета).
  */
 export function MarkupPanel({ markupBps }: { readonly markupBps: number }) {
   const router = useRouter();
@@ -44,10 +44,10 @@ export function MarkupPanel({ markupBps }: { readonly markupBps: number }) {
   }
 
   return (
-    <div className="markup">
+    <>
       <button
         type="button"
-        className={open ? 'chip chip--on' : 'chip'}
+        className={open ? 'markup__mark markup__mark--on' : 'markup__mark'}
         aria-expanded={open}
         onClick={() => {
           setMarkup(markupPercent(markupBps));
@@ -55,12 +55,12 @@ export function MarkupPanel({ markupBps }: { readonly markupBps: number }) {
           setOpen(!open);
         }}
       >
-        Наценка: {markupPercent(markupBps)} %
+        наценка {markupPercent(markupBps)} %
       </button>
 
       {open ? (
         <div className="markup__panel">
-          <label className="field field--narrow">
+          <label className="markup__field">
             <span className="label">Ваша наценка, %</span>
             <input
               className="input"
@@ -77,15 +77,25 @@ export function MarkupPanel({ markupBps }: { readonly markupBps: number }) {
           </p>
           {complaint ? <p className="error">{complaint}</p> : undefined}
           <div className="actions">
-            <button type="button" className="btn btn--gold" aria-busy={busy} onClick={() => void save()}>
-              {busy ? 'Сохраняем…' : 'Сохранить наценку'}
+            <button
+              type="button"
+              className="btn btn--gold btn--tiny"
+              aria-busy={busy}
+              onClick={() => void save()}
+            >
+              {busy ? 'Сохраняем…' : 'Сохранить'}
             </button>
-            <button type="button" className="btn btn--ghost" onClick={() => setOpen(false)} disabled={busy}>
+            <button
+              type="button"
+              className="btn btn--ghost btn--tiny"
+              onClick={() => setOpen(false)}
+              disabled={busy}
+            >
               Не сейчас
             </button>
           </div>
         </div>
       ) : undefined}
-    </div>
+    </>
   );
 }

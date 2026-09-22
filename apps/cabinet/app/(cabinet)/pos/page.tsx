@@ -11,7 +11,6 @@ import { POS_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
-import { MarkupPanel } from './markup-panel';
 import { Terminal, type RecentInvoice } from './terminal';
 
 export const dynamic = 'force-dynamic';
@@ -34,7 +33,7 @@ const RECENT = 8;
  * Валюты — все, которые сервис выдаёт за рубли: покупатель у стойки
  * платит рублями, а получает то, за чем пришёл. Курс тот же, что в
  * разделе «Курсы» и на экране новой заявки, с наценкой мерчанта
- * поверх; её владелец задаёт здесь же, кнопкой над терминалом.
+ * поверх; её владелец задаёт здесь же, в строке «Покупатель платит».
  */
 export default async function PosPage() {
   const access = await allowedHere('/pos');
@@ -118,26 +117,22 @@ export default async function PosPage() {
           />
         </>
       ) : (
-        <>
-          {/*
-            Наценку правит владелец — право `pricing` из той же таблицы,
-            по которой откажет маршрут. Оператору кнопка не
-            показывается: меню, ведущее в отказ, хуже отсутствующего.
-          */}
-          {merchantRoleCan(session.role, 'pricing') ? (
-            <MarkupPanel markupBps={settings.markupBps} />
-          ) : undefined}
-          <Terminal
-            directions={sellable}
-            shift={shift}
-            authorName={session.userName}
-            minAmount={terms.minAmount}
-            markupBps={settings.markupBps}
-            ttlMinutes={terms.unpaidTtlMinutes}
-            provider={{ title: provider.title, imitation: provider.name === IMITATION }}
-            recent={recent}
-          />
-        </>
+        <Terminal
+          directions={sellable}
+          shift={shift}
+          authorName={session.userName}
+          minAmount={terms.minAmount}
+          markupBps={settings.markupBps}
+          /*
+           * Наценку правит владелец — право `pricing` из той же таблицы,
+           * по которой откажет маршрут. Оператор её видит, но не меняет:
+           * знать, из чего сложилась цена, продавцу нужно.
+           */
+          canPrice={merchantRoleCan(session.role, 'pricing')}
+          ttlMinutes={terms.unpaidTtlMinutes}
+          provider={{ title: provider.title, imitation: provider.name === IMITATION }}
+          recent={recent}
+        />
       )}
     </main>
   );
