@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isCoreError } from '@nemo/http';
 import { Money, type Quote } from '@nemo/types';
-import { makeInvoice, markupRate, posRateLine, posSides } from '../pos';
+import { examplePay, makeInvoice, markupRate, posRateLine, posSides } from '../pos';
 import { addInvoice, findInvoice, forgetMock, getPosSettings, listInvoices, savePosSettings } from '../mock/store';
 import { acquirer, IMITATION, QR_TTL_MS } from './acquirer';
 import { listenersOf, publishPos, subscribePos, type PosEvent } from './bus';
@@ -9,13 +9,7 @@ import { demoAsked, demoPay, demoSet, DEMO_AUTHOR } from './demo';
 import { imitationQr, qrWindow } from './imitation';
 import { cancelledByHand, expireDue, isPayable, paidByProvider } from './lifecycle';
 import { acceptPayment } from './payments';
-import {
-  checkHiddenCodes,
-  markupPercent,
-  parseMarkupPercent,
-  POS_SETTINGS_COMPLAINTS,
-  visibleDirections,
-} from './settings';
+import { markupPercent, parseMarkupPercent, POS_SETTINGS_COMPLAINTS } from './settings';
 
 /**
  * Имитация приёма платежа: всё, чего глазом не проверить, — переходы
@@ -31,8 +25,6 @@ const quote: Quote = { rate: Money.toAmount('0.4'), payoutDecimals: 2 };
 function invoice(over: Partial<Parameters<typeof makeInvoice>[0]> = {}) {
   return makeInvoice({
     number: '2026-09-22-001',
-    purpose: 'Маникюр',
-    buyer: 'Анна',
     author: 'Оплатишка',
     code: 'THB',
     amount: Money.toAmount('2000'),
@@ -101,30 +93,19 @@ describe('наценка мерчанта', () => {
   });
 });
 
-describe('валюты для сотрудников', () => {
-  const directions = [{ toCode: 'THB' }, { toCode: 'CNY' }, { toCode: 'USDT' }];
-
-  it('скрытое не показывается, остальное остаётся в том же порядке', () => {
-    expect(visibleDirections(directions, { markupBps: 0, hiddenCodes: ['CNY'] })).toEqual([
-      { toCode: 'THB' },
-      { toCode: 'USDT' },
-    ]);
-  });
-
-  it('скрыть все или незнакомую нельзя', () => {
-    expect(checkHiddenCodes(['THB', 'CNY', 'USDT'], ['THB', 'CNY', 'USDT'])).toBe(
-      POS_SETTINGS_COMPLAINTS.allHidden,
-    );
-    expect(checkHiddenCodes(['EUR'], ['THB'])).toBe(POS_SETTINGS_COMPLAINTS.unknownCode);
-    expect(checkHiddenCodes(['THB'], ['THB', 'CNY'])).toBeNull();
-  });
-
-  it('настройки хранятся по мерчанту и без записи равны умолчаниям', () => {
+describe('настройки терминала', () => {
+  it('хранятся по мерчанту и без записи равны умолчаниям', () => {
     forgetMock('shop');
-    expect(getPosSettings('shop')).toEqual({ markupBps: 0, hiddenCodes: [] });
-    savePosSettings('shop', { markupBps: 300, hiddenCodes: ['CNY'] });
+    expect(getPosSettings('shop')).toEqual({ markupBps: 0 });
+    savePosSettings('shop', { markupBps: 300 });
     expect(getPosSettings('shop').markupBps).toBe(300);
     expect(getPosSettings('other').markupBps).toBe(0);
+  });
+
+  it('объяснение без своей суммы считает на пяти тысячах рублей', () => {
+    // Та же сумма стоит среди быстрых: пример должен узнаваться как обычная продажа.
+    expect(examplePay()).toBe('5000');
+    expect(posSides(examplePay(), 'pay', quote, 0).buy).toBe('2000');
   });
 });
 

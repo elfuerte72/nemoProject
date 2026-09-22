@@ -36,8 +36,6 @@ const bodySchema = z.object({
   to: z.string().trim().min(1).max(16),
   side: z.enum(['buy', 'pay']),
   amount: z.string().trim().min(1).max(40),
-  purpose: z.string().trim().max(200).default(''),
-  buyer: z.string().trim().max(200).default(''),
   /** Покупатель подтвердит личность у провайдера до оплаты. */
   kycRequired: z.boolean().default(false),
   /**
@@ -65,13 +63,7 @@ export async function POST(request: Request): Promise<Response> {
       throw new InvalidInputError('Сумма должна быть больше нуля');
     }
 
-    // Скрытая валюта — отказ и здесь, а не только пропавшая плитка:
-    // спрятанная кнопка обходится любым другим путём к операции.
     const settings = getPosSettings(actor.merchantId);
-    if (settings.hiddenCodes.includes(body.to)) {
-      throw new InvalidInputError('Эта валюта скрыта в терминале: её включает владелец');
-    }
-
     const core = getCore();
     const [quote, terms] = await Promise.all([
       core.getQuote({
@@ -106,8 +98,6 @@ export async function POST(request: Request): Promise<Response> {
     const expiresAt = new Date(at.getTime() + terms.unpaidTtlMinutes * 60_000);
     const invoice = makeInvoice({
       number: nextNumber(listInvoices(actor.merchantId, at), at, offset),
-      purpose: body.purpose,
-      buyer: body.buyer,
       // Кто нажал, а не чей кабинет: людей у мерчанта несколько (тикет 17).
       author: session.userName,
       code: body.to,
@@ -140,7 +130,6 @@ export async function POST(request: Request): Promise<Response> {
       number: invoice.number,
       amount: pay,
       code: body.from,
-      purpose: body.purpose,
       kycRequired: body.kycRequired,
       at,
       expiresAt,

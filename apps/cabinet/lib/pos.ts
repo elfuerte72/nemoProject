@@ -114,10 +114,19 @@ export function posRateLine(
   return line;
 }
 
+/**
+ * Сумма, на которой объяснение терминала показывает путь денег, пока
+ * своя не набрана: пять тысяч рублей — столько у стойки просят чаще
+ * всего, и такая же стоит среди быстрых сумм. Считается по ней всё
+ * по-настоящему, и подпись зовёт её примером. Набранная своя сумма
+ * выигрывает всегда.
+ */
+export function examplePay(): Amount {
+  return Money.toAmount('5000');
+}
+
 export interface NewInvoiceInput {
   readonly number: string;
-  readonly purpose: string;
-  readonly buyer: string;
   readonly author: string;
   readonly code: string;
   readonly amount: Amount;
@@ -138,8 +147,6 @@ export function makeInvoice(input: NewInvoiceInput): MockInvoice {
   return {
     id: `inv_${input.at.getTime().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
     number: input.number,
-    purpose: input.purpose,
-    buyer: input.buyer,
     author: input.author,
     code: input.code,
     amount: input.amount,

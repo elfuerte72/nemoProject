@@ -30,7 +30,6 @@ export interface PaymentToIssue {
   /** Сколько и в чём платит покупатель. */
   readonly amount: Amount;
   readonly code: string;
-  readonly purpose: string;
   /** Покупатель подтверждает личность до оплаты. */
   readonly kycRequired: boolean;
   readonly at: Date;

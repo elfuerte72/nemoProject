@@ -173,7 +173,7 @@ export default async function InvoicesPage({
             className="input"
             name="q"
             defaultValue={query}
-            placeholder="Номер, назначение, покупатель"
+            placeholder="Номер счёта"
             aria-label="Поиск по счетам"
           />
           <button type="submit" className="btn btn--ghost btn--tiny">

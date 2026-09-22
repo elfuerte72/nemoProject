@@ -8,12 +8,10 @@ import { getCore } from '@/lib/core';
 import { listDirectionRates } from '@/lib/direction-rates';
 import { countSince, getPosSettings, listInvoices } from '@/lib/mock/store';
 import { acquirer, IMITATION } from '@/lib/pos/acquirer';
-import { visibleDirections } from '@/lib/pos/settings';
 import { POS_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
-import { SettingsPanel } from './settings-panel';
 import { Terminal, type RecentInvoice } from './terminal';
 
 export const dynamic = 'force-dynamic';
@@ -33,10 +31,11 @@ const RECENT = 8;
  * (`lib/pos/acquirer.ts`), и сказано об этом сверху и прямо. Умолчать
  * значило бы обещать приём платежей, которого у сервиса не существует.
  *
- * Валюты — те, которые сервис выдаёт за рубли, без тех, что владелец
- * скрыл в настройках терминала: покупатель у стойки платит рублями, а
- * получает то, за чем пришёл. Курс тот же, что в разделе «Курсы» и на
- * экране новой заявки, с наценкой мерчанта поверх.
+ * Валюты — все, которые сервис выдаёт за рубли: покупатель у стойки
+ * платит рублями, а получает то, за чем пришёл. Курс тот же, что в
+ * разделе «Курсы» и на экране новой заявки, с наценкой мерчанта
+ * поверх; наценку владелец задаёт в разделе «Настройки», и здесь её
+ * только видно.
  */
 export default async function PosPage() {
   const access = await allowedHere('/pos');
@@ -66,7 +65,6 @@ export default async function PosPage() {
   const sellable = directions
     .filter((one) => one.fromCode === 'RUB')
     .map((one) => ({ fromCode: one.fromCode, toCode: one.toCode, rate: one.rate }));
-  const visible = visibleDirections(sellable, settings);
 
   const recent: RecentInvoice[] = listInvoices(actor.merchantId)
     .slice(0, RECENT)
@@ -81,6 +79,10 @@ export default async function PosPage() {
       createdAt: one.createdAt,
       demo: one.demo,
     }));
+
+  const howTo = (
+    <HowTo title="Как это устроено" sub="Что здесь работает, а что имитация" items={POS_HOW_TO} />
+  );
 
   return (
     <main className="page">
@@ -98,42 +100,37 @@ export default async function PosPage() {
         </div>
       </header>
 
-      <HowTo title="Как это устроено" sub="Что здесь работает, а что имитация" items={POS_HOW_TO} />
-
       {/*
-        Наценку и валюты правит владелец — право `pricing` из той же
-        таблицы, по которой откажет маршрут. Оператору панель не
-        показывается: меню, ведущее в отказ, хуже отсутствующего.
+        Подсказку с путём денег рисует сам терминал — на тех числах,
+        которые в нём набраны. Здесь она стоит только там, где терминала
+        нет: словами, без показа.
       */}
-      {merchantRoleCan(session.role, 'pricing') && sellable.length > 0 ? (
-        <SettingsPanel settings={settings} codes={[...new Set(sellable.map((one) => one.toCode))]} />
-      ) : undefined}
-
       {provider === null ? (
-        <EmptyState
-          icon="exchange"
-          title="Провайдер приёма не подключён"
-          text={providerComplaint ?? 'Проверьте переменную POS_ACQUIRER в окружении кабинета.'}
-        />
+        <>
+          {howTo}
+          <EmptyState
+            icon="exchange"
+            title="Провайдер приёма не подключён"
+            text={providerComplaint ?? 'Проверьте переменную POS_ACQUIRER в окружении кабинета.'}
+          />
+        </>
       ) : sellable.length === 0 ? (
-        <EmptyState
-          icon="exchange"
-          title="Направлений с рублями нет"
-          text="POS-терминал считает цену по направлениям, в которых сервис выдаёт валюту за рубли. Пока таких нет, создать счёт не из чего."
-        />
-      ) : visible.length === 0 ? (
-        <EmptyState
-          icon="exchange"
-          title="Все валюты скрыты"
-          text="Владелец кабинета скрыл все валюты в настройках терминала. Включите хотя бы одну, чтобы создавать счета."
-        />
+        <>
+          {howTo}
+          <EmptyState
+            icon="exchange"
+            title="Направлений с рублями нет"
+            text="POS-терминал считает цену по направлениям, в которых сервис выдаёт валюту за рубли. Пока таких нет, создать счёт не из чего."
+          />
+        </>
       ) : (
         <Terminal
-          directions={visible}
+          directions={sellable}
           shift={shift}
           authorName={session.userName}
           minAmount={terms.minAmount}
           markupBps={settings.markupBps}
+          canPrice={merchantRoleCan(session.role, 'pricing')}
           ttlMinutes={terms.unpaidTtlMinutes}
           provider={{ title: provider.title, imitation: provider.name === IMITATION }}
           recent={recent}

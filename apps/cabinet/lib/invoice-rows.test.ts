@@ -31,8 +31,6 @@ const at = new Date('2026-09-11T10:00:00Z');
 const invoice = (over: Partial<MockInvoice> = {}): MockInvoice => ({
   ...makeInvoice({
     number: '2026-09-11-001',
-    purpose: 'Маникюр',
-    buyer: 'Анна',
     author: 'Оплатишка',
     code: 'THB',
     amount: Money.toAmount('2000'),
@@ -178,10 +176,10 @@ describe('числа над списком', () => {
     expect(invoiceMoneyLines(rows)).toEqual([]);
   });
 
-  it('поиск сужает список, а не прячет строки', () => {
-    const rows = [invoice(), invoice({ buyer: 'Пётр', purpose: 'Педикюр' })];
-    expect(searchInvoices(rows, 'пётр')).toHaveLength(1);
-    expect(searchInvoices(rows, 'маникюр')).toHaveLength(1);
+  it('поиск по номеру сужает список, а не прячет строки', () => {
+    const rows = [invoice(), invoice({ number: '2026-09-11-002' })];
+    expect(searchInvoices(rows, '002')).toHaveLength(1);
+    expect(searchInvoices(rows, '2026-09-11')).toHaveLength(2);
     expect(searchInvoices(rows, '  ')).toHaveLength(2);
     expect(searchInvoices(rows, 'ничего')).toHaveLength(0);
   });
@@ -263,10 +261,10 @@ describe('память макета', () => {
     forgetMock('shop');
     forgetMock('other');
     addInvoice('shop', invoice());
-    addInvoice('other', invoice({ buyer: 'Чужой' }));
+    addInvoice('other', invoice({ author: 'Чужой' }));
 
     expect(listInvoices('shop')).toHaveLength(1);
-    expect(listInvoices('shop')[0]?.buyer).toBe('Анна');
+    expect(listInvoices('shop')[0]?.author).toBe('Оплатишка');
     expect(listInvoices('nobody')).toEqual([]);
   });
 });
