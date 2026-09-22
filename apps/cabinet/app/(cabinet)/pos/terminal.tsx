@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CurrencyFlag } from '@nemo/flags';
-import { currencyName, Money, type Quote } from '@nemo/types';
+import { Money, type Quote } from '@nemo/types';
 import { HowTo, LIVE_REFRESH_MS, Moment, shouldRefresh } from '@nemo/ui';
 import { formatAmount, formatMoney, formatRate } from '@nemo/ui/format';
 import {
@@ -21,7 +20,9 @@ import { markupPercent } from '@/lib/pos/settings';
 import { POS_STREAM_PATH } from '@/lib/pos/stream';
 import { POS_HOW_TO } from '@/lib/pos-texts';
 import { send } from '@/app/ui/send';
+import { CurrencyPick } from './currency-pick';
 import { PosPath } from './explainer';
+import { MarkupPanel } from './markup-panel';
 
 /**
  * Котировка, как её отдаёт `/api/quote`: к цене приложена отметка
@@ -41,16 +42,18 @@ type QuoteReply = Quote & { readonly asOf: string };
  * Двух правд о цене быть не должно: покупатель у стойки и мерчант в
  * кабинете смотрят на одно число.
  *
- * Валюта выбирается теми же кнопками, что на табло «Курсов», — флаг и
- * код: 22 сентября 2026 владелец попросил «вместо кнопок с валютами
- * использовать кнопки, которые есть в приложении и на странице
- * „Курсы“». Полей «Назначение» и «Покупатель» нет с того же дня по
- * его слову: у стойки их никто не заполнял.
+ * Расчёт собран калькулятором Mini App: две строки с крупными суммами
+ * одного веса, пилюля валюты у каждой, курс на черте между ними.
+ * Набирают в любой строке. У стойки вслух называют обе суммы, и мельче
+ * одна другой быть не должна.
  *
- * Сам расчёт собран калькулятором Mini App: две строки с крупными
- * суммами одного веса, пилюля валюты у каждой, курс на черте между
- * ними. Набирают в любой строке. У стойки вслух называют обе суммы, и
- * мельче одна другой быть не должна.
+ * Валюту выбирают там же, в строке её суммы (`currency-pick.tsx`), и
+ * наценка стоит в строке оплаты, у числа, которое поднимает: ряд кнопок
+ * над расчётом и кнопка наценки сверху убраны 22 сентября 2026 по
+ * словам владельца — «выбрать валюту прямо внутри, как в самом Mini
+ * App» и «наценку внутри секции „покупатель платит“, сверху неудобно и
+ * плохо видно». Полей «Назначение» и «Покупатель» нет с того же дня:
+ * у стойки их никто не заполнял.
  *
  * После «Создать счёт» на месте формы встаёт сам счёт: QR, обратный
  * отсчёт, что с ним стало. Об оплате говорит поток событий
@@ -116,6 +119,7 @@ export function Terminal({
   authorName,
   minAmount,
   markupBps,
+  canPrice,
   ttlMinutes,
   provider,
   recent,
@@ -127,8 +131,10 @@ export function Terminal({
   readonly authorName: string;
   /** Минимум сервиса в долларах: по нему черта курса решает, что сказать. */
   readonly minAmount: string;
-  /** Наценка мерчанта: задаётся кнопкой над терминалом, здесь только считается. */
+  /** Наценка мерчанта: ею считают цену, и владелец правит её тут же. */
   readonly markupBps: number;
+  /** Смотрящий вправе менять наценку: оператор её только видит. */
+  readonly canPrice: boolean;
   /** Сколько минут счёт ждёт оплаты. */
   readonly ttlMinutes: number;
   readonly provider: { readonly title: string; readonly imitation: boolean };
@@ -411,35 +417,25 @@ export function Terminal({
 
   const form = (
     <>
-      {/*
-        Валюта — теми же кнопками, что на табло «Курсов»: флаг и код.
-        Подпись над рядом видимая, а не в `aria-label`: кнопки без
-        подписи отвечают «что есть», а не «что выбрать».
-      */}
-      <div className="field">
-        <span className="label">Валюта покупателя</span>
-        <div className="chips">
-          {directions.map((one) => (
-            <button
-              key={one.toCode}
-              type="button"
-              className={
-                one.toCode === toCode ? 'chip chip--currency chip--on' : 'chip chip--currency'
-              }
-              onClick={() => setToCode(one.toCode)}
-              aria-pressed={one.toCode === toCode}
-              title={currencyName(one.toCode)}
-            >
-              <CurrencyFlag code={one.toCode} size={16} />
-              {one.toCode}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="calc">
         <div className="calc__side">
-          <span className="label">Покупатель платит</span>
+          <div className="calc__head">
+            <span className="label">Покупатель платит</span>
+            {/*
+              Наценка — здесь, у числа, которое она поднимает, а не
+              кнопкой над расчётом: 22 сентября 2026 владелец сказал про
+              верхнюю «это неудобно и плохо видно». Показана она всем,
+              кто работает за стойкой, а правит её владелец: знать, из
+              чего сложилась цена, продавцу нужно, менять её — нет.
+            */}
+            {canPrice ? (
+              <MarkupPanel markupBps={markupBps} />
+            ) : markupBps > 0 ? (
+              <span className="markup__mark markup__mark--still">
+                наценка {markupPercent(markupBps)} %
+              </span>
+            ) : undefined}
+          </div>
           <div className="calc__line">
             <input
               className={amountClass(shown('pay'))}
@@ -451,23 +447,29 @@ export function Terminal({
               placeholder="0"
               aria-label={`Сумма в ${fromCode}`}
             />
-            <span className="calc__code">
-              <CurrencyFlag code={fromCode} size={18} />
-              {fromCode}
-            </span>
+            {/*
+              Валюта оплаты у стойки одна — рубли, и пилюля неподвижна:
+              нажатие, за которым ничего не происходит, читается как
+              поломка.
+            */}
+            <CurrencyPick
+              codes={[fromCode]}
+              selected={fromCode}
+              onPick={() => undefined}
+              label="Чем платит покупатель"
+            />
           </div>
         </div>
 
         {/*
           Курс стоит на самой черте между отданным и полученным — там,
           где одно превращается в другое, и тем же приёмом, что в Mini
-          App. Наценка названа рядом: у стойки её держит в уме тот, кто
-          назначил, а смотрит на экран тот, кто продаёт.
+          App.
         */}
         <div className="calc__divider">
           <span className={line.kind === 'rate' ? 'calc__rate' : 'calc__rate calc__rate--absent'}>
             {line.kind === 'rate'
-              ? `${formatRate(line.rate, fromCode, toCode)}${markupBps > 0 ? ` · наценка ${markupPercent(markupBps)} %` : ''}`
+              ? formatRate(line.rate, fromCode, toCode)
               : line.kind === 'from'
                 ? `счёт от ${formatMoney(line.giveAtLeast, fromCode)}`
                 : rate === null
@@ -480,7 +482,9 @@ export function Terminal({
         </div>
 
         <div className="calc__side">
-          <span className="label">Покупатель получает</span>
+          <div className="calc__head">
+            <span className="label">Покупатель получает</span>
+          </div>
           <div className="calc__line">
             <input
               className={amountClass(shown('buy'))}
@@ -495,10 +499,17 @@ export function Terminal({
               placeholder="0"
               aria-label={`Сумма в ${toCode}`}
             />
-            <span className="calc__code">
-              <CurrencyFlag code={toCode} size={18} />
-              {toCode}
-            </span>
+            {/*
+              Валюту выбирают здесь же, в строке, где стоит её сумма:
+              ряд кнопок над расчётом владелец убрал 22 сентября —
+              «выбрать валюту прямо внутри, как в самом Mini App».
+            */}
+            <CurrencyPick
+              codes={directions.map((one) => one.toCode)}
+              selected={toCode}
+              onPick={setToCode}
+              label="Что получает покупатель"
+            />
           </div>
         </div>
       </div>
