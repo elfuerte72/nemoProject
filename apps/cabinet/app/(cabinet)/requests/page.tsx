@@ -1,60 +1,42 @@
-import Link from 'next/link';
-import { HowTo, QuietRefresh, Tabs } from '@nemo/ui';
+import { cookies } from 'next/headers';
+import { PeriodChips, QuietRefresh, Stat, Stats } from '@nemo/ui';
+import { TZ_COOKIE, readTzOffset } from '@nemo/ui/period';
 import { getCore } from '@/lib/core';
 import { countOf, requestCounts, viewer } from '@/lib/reads';
 import {
+  boundsOf,
+  LIST_PERIOD_KEYS,
+  pickPeriod,
+  pickSearch,
   pickTab,
-  pickWho,
   REQUESTS_PAGE,
   REQUEST_TABS,
   statusesOf,
-  submittedByFilter,
+  tabHref,
   TAB_LABELS,
+  TAB_NOTES,
+  TAB_TONES,
   toRequestRow,
-  WHO_KEYS,
-  WHO_LABELS,
 } from '@/lib/request-rows';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { RequestsSearch } from './requests-search';
 import { RequestsTable } from './requests-table';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Заявки мерчанта: всё, что он подал — из кабинета и по API.
+ * Заявки мерчанта: всё, что подала его интеграция по API.
  *
  * Таб живёт в адресе, а не в разметке: сужать выборку должен сервер,
  * иначе «таб» означал бы, что приехало всё, а часть спрятана. Первая
  * страница приходит с сервером, хвост дочитывается по курсору — паре
  * «время подачи и идентификатор»: одно время теряет или дублирует
  * заявки, поданные в одну миллисекунду, а по API их подают пачкой.
+ *
+ * Поиск живёт там же, в адресе, и по той же причине. Приходят сюда чаще
+ * всего за одной заявкой — «заказ 1013, где деньги», — поэтому поле
+ * стоит первым, над табами.
  */
-
-const HOW_TO = [
-  {
-    title: 'Что значит состояние',
-    detail:
-      '«Новая» — ждёт менеджера. «Курс подтверждён» — ждёт вас: реквизиты выданы, и на ' +
-      'оплату есть срок. «Оплата получена» — деньги у нас, отправляем получателю.',
-  },
-  {
-    title: 'Свой номер сделки',
-    detail:
-      'Ваш номер — бронь, счёт, заказ — виден менеджеру рядом с заявкой. По нему вы ' +
-      'говорите с ним об одной и той же сделке, не сверяя два номера.',
-  },
-  {
-    title: 'Отмена',
-    detail:
-      'Пока заявку не взяли в работу, отменить её можно самому. Дальше — только через ' +
-      'менеджера: с этого момента по заявке уже могли уйти деньги.',
-  },
-  {
-    title: 'Курс держится до конца срока оплаты',
-    detail:
-      'Курс называется при подаче и не меняется. Неоплаченную в срок заявку сервис ' +
-      'отменяет — подать её можно заново, уже по новому курсу.',
-  },
-];
 
 export default async function RequestsPage({
   searchParams,
@@ -64,31 +46,34 @@ export default async function RequestsPage({
   const { actor, session } = await viewer();
   const params = await searchParams;
   const tab = pickTab(single(params.tab));
-  const who = pickWho(single(params.who));
-  const mine = submittedByFilter(who, session.userId);
+  const search = pickSearch(single(params.q));
+  /*
+   * Период — по часам того, кто смотрит: «с 1 по 10 сентября» в Бангкоке
+   * начинается на семь часов раньше, чем на сервере. Смещение кладёт в
+   * куку шапка, как и для обзора.
+   */
+  const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
+  const picked = pickPeriod(
+    { period: single(params.period), from: single(params.from), to: single(params.to) },
+    new Date(),
+    offset,
+  );
+  const bounds = boundsOf(picked);
 
   const core = getCore();
-  const [rows, counts, people] = await Promise.all([
+  const [rows, counts] = await Promise.all([
     core.listExchangeRequests(actor, {
       limit: REQUESTS_PAGE,
       ...withStatuses(tab),
-      ...mine,
+      ...(search ? { search } : {}),
+      ...bounds,
     }),
-    requestCounts(),
-    // Состав кабинета читает один владелец (тикет 17): с именами
-    // приходит и колонка «Кто подал», без них её нет вовсе.
-    session.role === 'owner' ? core.listMerchantUsers(actor) : Promise.resolve(undefined),
+    // Числа на плитках считают то, что показано под ними, — найденное и
+    // за выбранные даты: иначе над двумя строками стояло бы «Исполнены 10».
+    requestCounts(search, bounds),
   ]);
 
-  /*
-   * Счётчик под фильтром считает то же, что показано: при «моих»
-   * общее число заявок кабинета означало бы, что кнопка дочитывания
-   * обещает строки, которых в этой выборке нет.
-   */
-  const total =
-    who === 'all'
-      ? countOf(counts, statusesOf(tab))
-      : await core.countExchangeRequests(actor, { ...withStatuses(tab), ...mine });
+  const total = countOf(counts, statusesOf(tab));
 
   return (
     <main className="page page--wide">
@@ -98,56 +83,84 @@ export default async function RequestsPage({
       <header className="page__head">
         <div>
           <h1 className="page__title">Заявки</h1>
-          <p className="page__sub">Всё, что подано из кабинета и по API.</p>
+          {/*
+            Заявок за мерчанта сервис не заводит: подаёт их только его
+            интеграция. До 21 сентября 2026 строка обещала ещё и
+            «заведено менеджером» — такого пути нет, и колонка «Кто
+            подал» под этой строкой отличала то, чего не бывает.
+          */}
+          <p className="page__sub">Всё, что подала ваша интеграция по API.</p>
         </div>
-        {session.status === 'active' ? (
-          <div className="page__actions">
-            <Link className="btn btn--gold" href="/requests/new">
-              Новая заявка
-            </Link>
-          </div>
-        ) : undefined}
       </header>
 
-      <HowTo title="Как это устроено" sub="Состояния, свой номер и отмена" items={HOW_TO} />
-
       <div className="filters">
-        <Tabs
-          label="Какие заявки показывать"
-          items={REQUEST_TABS.map((one) => ({
-            href: `/requests?tab=${one}${who === 'all' ? '' : `&who=${who}`}`,
-            label: TAB_LABELS[one],
-            count: countOf(counts, statusesOf(one)),
-            current: one === tab,
-          }))}
-        />
-        {/*
-          * Чьи заявки — вторым рядом, а не пятым табом: это другой
-          * вопрос к тому же списку, и слитый с состояниями он читался
-          * бы как ещё одно состояние. Счётчика у него нет: под «моими»
-          * он повторял бы число, которое стоит в подвале таблицы.
-          */}
-        <Tabs
-          label="Чьи заявки показывать"
-          items={WHO_KEYS.map((one) => ({
-            href: `/requests?tab=${tab}${one === 'all' ? '' : `&who=${one}`}`,
-            label: WHO_LABELS[one],
-            current: one === who,
-          }))}
-        />
+        <RequestsSearch query={search} period={picked?.query ?? {}} />
       </div>
+
+      {/*
+        Даты — те же чипы, что на обзоре, и те же слова на них: выборка
+        «30 дней» там и здесь одна и та же. Своё у списка — «За всё
+        время»: периода у него может не быть, и так он и открывается.
+      */}
+      <PeriodChips
+        current={picked?.period.key ?? null}
+        basePath="/requests"
+        from={picked?.days.from ?? ''}
+        to={picked?.days.to ?? ''}
+        quick={LIST_PERIOD_KEYS}
+        allTime="За всё время"
+        keep={{ tab, ...(search ? { q: search } : {}) }}
+      />
+
+      {/*
+        Плитками, как на обзоре, а не строкой табов: число за каждым
+        состоянием здесь не подпись к кнопке, а то, зачем на неё смотрят,
+        — «сколько в работе» читается раньше, чем «открыть в работе».
+        Плитка при этом остаётся ссылкой, и выборку по-прежнему сужает
+        сервер.
+      */}
+      <nav aria-label="Какие заявки показывать">
+        <Stats>
+          {REQUEST_TABS.map((one) => {
+            const count = countOf(counts, statusesOf(one));
+            return (
+              <Stat
+                key={one}
+                label={TAB_LABELS[one]}
+                value={count}
+                note={noteOf(one, Boolean(search), picked !== null)}
+                // Тон — только когда есть о чём: нулю он не нужен.
+                tone={count > 0 ? TAB_TONES[one] : 'plain'}
+                href={tabHref(one, search, picked?.query)}
+                current={one === tab}
+              />
+            );
+          })}
+        </Stats>
+      </nav>
 
       <RequestsTable
         rows={rows.map(toRequestRow)}
         total={total}
         tab={tab}
-        who={who}
-        {...(people === undefined
-          ? {}
-          : { names: Object.fromEntries(people.map((one) => [one.id, one.name])) })}
+        search={search}
+        period={picked?.query ?? {}}
       />
     </main>
   );
+}
+
+/**
+ * Строка под числом плитки. Пока список не сужен, она говорит, что
+ * посчитано; суженный — чем сужен: «Исполнены 2 · за выбранные даты»
+ * честнее, чем «2 · деньги отправлены получателю» рядом с десятью на
+ * обзоре.
+ */
+function noteOf(tab: ReturnType<typeof pickTab>, searched: boolean, dated: boolean): string {
+  if (searched && dated) return 'из найденных за выбранные даты';
+  if (searched) return 'из найденных';
+  if (dated) return 'за выбранные даты';
+  return TAB_NOTES[tab];
 }
 
 function withStatuses(tab: ReturnType<typeof pickTab>) {

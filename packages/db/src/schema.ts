@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   customType,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -615,7 +616,16 @@ export const apiKeys = pgTable(
      */
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   },
-  (table) => [index('api_keys_merchant_idx').on(table.merchantId, table.issuedAt)],
+  (table) => [
+    index('api_keys_merchant_idx').on(table.merchantId, table.issuedAt),
+    /*
+     * Пара «ключ и его мерчант» — чтобы на неё могла сослаться заявка.
+     * Сам по себе `id` и так уникален; эта пара существует ради
+     * составной ссылки, которой заявка доказывает, что ключ — её
+     * кабинета, а не чужого.
+     */
+    unique('api_keys_id_merchant_key').on(table.id, table.merchantId),
+  ],
 );
 
 /**
@@ -1231,6 +1241,19 @@ export const exchangeRequests = pgTable(
      * числом нечем, а угаданная читалась бы как записанная.
      */
     source: exchangeRequestSourceEnum('source'),
+    /**
+     * Каким ключом API подана. Пусто у заявок из Mini App и из кабинета
+     * — там ходит человек, — и у поданных до появления отметки.
+     *
+     * Пишется в момент подачи, потому что задним числом не
+     * восстанавливается: журнал вызовов с заявкой не связан, а у
+     * `POST /v1/exchange-requests` заявки в момент записи вызова ещё
+     * нет. Отвечает мерчанту «каким ключом это подано», когда ключей
+     * несколько, и — что важнее — «что прошло через ключ», когда его
+     * отзывают. Ссылка, а не копия подписи: подпись ключа мерчант
+     * меняет, и заявка обязана назвать его сегодняшним именем.
+     */
+    apiKeyId: uuid('api_key_id'),
     kind: exchangeKindEnum('kind').notNull(),
     fromCode: text('from_code').notNull(),
     toCode: text('to_code').notNull(),
@@ -1324,6 +1347,18 @@ export const exchangeRequests = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
   },
   (table) => [
+    /*
+     * Ключ — вместе со своим мерчантом: обычная ссылка проверила бы
+     * только существование ключа, и заявка могла бы сослаться на чужой.
+     * Составная проверяет пару, а когда одна из колонок пуста —
+     * пропускает: у заявки клиента нет ни мерчанта, ни ключа, у
+     * поданной человеком нет ключа.
+     */
+    foreignKey({
+      columns: [table.apiKeyId, table.merchantId],
+      foreignColumns: [apiKeys.id, apiKeys.merchantId],
+      name: 'exchange_requests_api_key_fk',
+    }),
     index('exchange_requests_client_idx').on(table.clientId),
     /*
      * Кабинет мерчанта читает свои заявки тем же курсором по паре

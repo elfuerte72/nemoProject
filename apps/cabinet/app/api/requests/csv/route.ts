@@ -7,6 +7,7 @@ import { errorResponse } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
 import { STATUS_LABELS } from '@/lib/labels';
+import { boundsOf } from '@/lib/request-rows';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,9 +45,9 @@ export async function GET(request: Request): Promise<Response> {
     let after: { createdAt: Date; id: string } | undefined;
     for (;;) {
       const page = await core.listExchangeRequests(actor, {
-        from: period.from,
-        // Верхняя граница у своего списка включительная, у периода — нет.
-        to: new Date(period.to.getTime() - 1),
+        // Верхняя граница у своего списка включительная, у периода — нет:
+        // перевод один на выгрузку, страницу заявок и её дочитывание.
+        ...boundsOf({ period }),
         limit: PAGE,
         ...(after ? { after } : {}),
       });

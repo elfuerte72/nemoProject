@@ -29,6 +29,12 @@ export async function submitFromBody(
   body: ExchangeRequestBody,
   idempotencyKey: string,
   source: ExchangeRequestSource,
+  /**
+   * Ключ, которым подписан запрос. Знает его только обёртка `/api/v1`:
+   * ядру неоткуда — оно не различает, откуда пришёл запрос. Пишется в
+   * заявку сразу, потому что задним числом не восстанавливается.
+   */
+  apiKeyId?: string,
 ): Promise<SubmitExchangeRequestResult> {
   let fromAmount = body.amount;
   let quotedAt = body.quotedAt;
@@ -52,6 +58,7 @@ export async function submitFromBody(
     fromAmount,
     idempotencyKey,
     source,
+    ...(apiKeyId === undefined ? {} : { apiKeyId }),
     ...(body.reference === undefined ? {} : { reference: body.reference }),
     ...(quotedAt === undefined ? {} : { quotedAt }),
     ...(body.requisitesId === undefined ? {} : { requisitesId: body.requisitesId }),

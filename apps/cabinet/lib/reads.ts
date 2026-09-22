@@ -47,12 +47,44 @@ export const supportUsername = cache(
  * счётчик в меню: состояний шесть, и шесть запросов «сколько там» —
  * это шесть заходов в базу за одно и то же число.
  */
-export const requestCounts = cache(
-  async (): Promise<Readonly<Record<ExchangeRequestStatus, number>>> => {
+const countsFor = cache(
+  /*
+   * Границы — числами, а не датами: `cache` сравнивает аргументы по
+   * ссылке, и две одинаковые даты он счёл бы разными ключами. Ноль —
+   * «границы нет».
+   */
+  async (
+    search: string,
+    from: number,
+    to: number,
+  ): Promise<Readonly<Record<ExchangeRequestStatus, number>>> => {
     const { actor } = await viewer();
-    return getCore().countExchangeRequestsByStatus(actor);
+    return getCore().countExchangeRequestsByStatus(actor, {
+      ...(search ? { search } : {}),
+      ...(from ? { from: new Date(from) } : {}),
+      ...(to ? { to: new Date(to) } : {}),
+    });
   },
 );
+
+/**
+ * Поиск — ключом памяти: меню спрашивает без него, список заявок с ним,
+ * и на одной странице это два разных числа. Строкой, а не объектом:
+ * `cache` сравнивает аргументы по ссылке.
+ *
+ * Обёрткой, а не самим `cache`: тот различает вызов без аргумента и
+ * вызов с пустой строкой — ключ он строит и по числу аргументов. Меню
+ * звало `requestCounts()`, список — `requestCounts('')`, и на самой
+ * частой странице счёт шёл в базу дважды за показ, при каждом тихом
+ * обновлении. Найдено ревью 21 сентября 2026 и подтверждено счётчиком
+ * вызовов. Здесь аргумент у памяти всегда один.
+ */
+export function requestCounts(
+  search = '',
+  bounds: { readonly from?: Date | undefined; readonly to?: Date | undefined } = {},
+): Promise<Readonly<Record<ExchangeRequestStatus, number>>> {
+  return countsFor(search, bounds.from?.getTime() ?? 0, bounds.to?.getTime() ?? 0);
+}
 
 /**
  * Сводка за период — один пакет запросов на страницу. Ключ памяти —
@@ -60,10 +92,15 @@ export const requestCounts = cache(
  * и датами в объекте он бы не сошёлся.
  */
 export const merchantStats = cache(
-  async (from: number, to: number, offsetMinutes: number): Promise<MerchantStats> => {
+  async (
+    from: number,
+    to: number,
+    offsetMinutes: number,
+    step: SeriesStep = 'day',
+  ): Promise<MerchantStats> => {
     const { actor } = await viewer();
     const period: AnalyticsPeriod = { from: new Date(from), to: new Date(to) };
-    return getCore().summarizeMerchant(actor, actor.merchantId, period, { offsetMinutes });
+    return getCore().summarizeMerchant(actor, actor.merchantId, period, { offsetMinutes, step });
   },
 );
 

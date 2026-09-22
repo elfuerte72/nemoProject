@@ -25,6 +25,7 @@ export function Stat({
   note,
   tone = 'plain',
   href,
+  current = false,
 }: {
   label: string;
   value: ReactNode;
@@ -32,8 +33,15 @@ export function Stat({
   tone?: StatTone;
   /** Плитка-ссылка ведёт туда, где число становится списком. */
   href?: string;
+  /**
+   * Плитка показывает то, что открыто сейчас. Так плитки служат
+   * переключателем выборки — «В работе», «Исполнены», — и текущая
+   * отмечена не только цветом: экранному диктору об этом говорит
+   * `aria-current`.
+   */
+  current?: boolean;
 }) {
-  const className = `stat stat--${tone}`;
+  const className = `stat stat--${tone}${current ? ' stat--current' : ''}`;
   const body = (
     <>
       <span className="stat__label">
@@ -46,7 +54,7 @@ export function Stat({
   );
 
   return href ? (
-    <Link href={href} className={className}>
+    <Link href={href} className={className} {...(current ? { 'aria-current': 'page' as const } : {})}>
       {body}
     </Link>
   ) : (

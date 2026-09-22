@@ -3,6 +3,8 @@ import { eq } from 'drizzle-orm';
 import { exchangeRequests, webhookDeliveries } from '@nemo/db';
 import { closeTestDatabase, resetDatabase, testDatabase } from '@nemo/db/testing';
 import { createCore, type Actor } from './index.js';
+import { stepStartOf } from './analytics.js';
+import { InvalidInputError } from './errors.js';
 import {
   asClient,
   givenCurrencyPair,
@@ -302,21 +304,22 @@ describe('сводка мерчанта за период', () => {
       now,
     });
 
-    expect(stats.byDay).toHaveLength(14);
-    expect(stats.byDay[13]?.day).toBe(now.toISOString().slice(0, 10));
+    expect(stats.step).toBe('day');
+    expect(stats.series).toHaveLength(14);
+    expect(stats.series[13]?.at).toBe(now.toISOString().slice(0, 10));
     const submittedDay = at(3).toISOString().slice(0, 10);
     const completedDay = at(2).toISOString().slice(0, 10);
-    expect(stats.byDay.find((one) => one.day === submittedDay)).toEqual({
-      day: submittedDay,
+    expect(stats.series.find((one) => one.at === submittedDay)).toEqual({
+      at: submittedDay,
       submitted: 1,
       completed: 0,
     });
-    expect(stats.byDay.find((one) => one.day === completedDay)).toEqual({
-      day: completedDay,
+    expect(stats.series.find((one) => one.at === completedDay)).toEqual({
+      at: completedDay,
       submitted: 0,
       completed: 1,
     });
-    expect(stats.byDay.filter((one) => one.submitted + one.completed === 0)).toHaveLength(12);
+    expect(stats.series.filter((one) => one.submitted + one.completed === 0)).toHaveLength(12);
     // «Сегодня» — из того же ответа: строке над плитками второй заход не нужен.
     expect(stats.today).toEqual({ submitted: 0, completed: 0, cancelled: 0 });
   });
@@ -344,9 +347,53 @@ describe('сводка мерчанта за период', () => {
     });
 
     expect(bangkok.today.submitted).toBe(1);
-    expect(bangkok.byDay[13]?.submitted).toBe(1);
+    expect(bangkok.series[13]?.submitted).toBe(1);
     expect(utc.today.submitted).toBe(0);
-    expect(utc.byDay[12]?.submitted).toBe(1);
+    expect(utc.series[12]?.submitted).toBe(1);
+  });
+
+  /*
+   * Шаг ряда задаёт и его глубину: столбик за неделю сравнивать не с
+   * чем, если ряд по-прежнему кончается две недели назад. Правило
+   * проверяется здесь, потому что на экране оно видно только тому, у
+   * кого есть заявки месячной давности, — а в первые месяцы работы
+   * мерчанта таких нет ни у кого.
+   */
+  it('по неделям ряд считает двенадцать недель, а не две', async () => {
+    const period = { from: at(7, 0), to: at(0, 0) };
+    // Заявка месячной давности: в дневной ряд она не попадает вовсе.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'open',
+      submittedAt: at(30),
+    });
+    const now = at(0, 15);
+
+    const weekly = await core.summarizeMerchant(merchant, merchant.merchantId, period, {
+      offsetMinutes: 0,
+      now,
+      step: 'week',
+    });
+
+    expect(weekly.step).toBe('week');
+    expect(weekly.series).toHaveLength(12);
+    // Последняя корзина — понедельник текущей недели.
+    const monday = stepStartOf(now.toISOString().slice(0, 10), 'week');
+    expect(weekly.series[11]?.at).toBe(monday);
+    // Заявка легла в понедельник своей недели, а не потерялась.
+    const week = stepStartOf(at(30).toISOString().slice(0, 10), 'week');
+    expect(weekly.series.find((one) => one.at === week)?.submitted).toBe(1);
+    expect(weekly.series.reduce((sum, one) => sum + one.submitted, 0)).toBe(1);
+  });
+
+  it('незнакомый шаг отвергается, а не считается по дням молча', async () => {
+    const period = { from: at(7, 0), to: at(0, 0) };
+    await expect(
+      core.summarizeMerchant(merchant, merchant.merchantId, period, { step: 'year' as never }),
+    ).rejects.toThrow(InvalidInputError);
   });
 
   it('мерчант видит только свою сводку, сотрудник — любую, клиент — никакую', async () => {

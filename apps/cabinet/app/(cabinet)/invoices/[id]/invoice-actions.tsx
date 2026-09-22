@@ -7,7 +7,8 @@ import { normalizeTyped, parseTyped } from '@/lib/new-request';
 import { send } from '@/app/ui/send';
 
 /**
- * Что делают со счётом: отмечают оплаченным, отменяют, заявляют
+ * Что делают со счётом: сообщают об оплате за покупателя (пока платежи
+ * принимает имитация), отмечают оплаченным руками, отменяют, заявляют
  * возврат.
  *
  * Необратимое спрашивает подтверждение раскрытием строки — тем же
@@ -20,11 +21,17 @@ import { send } from '@/app/ui/send';
 export function InvoiceActions({
   id,
   status,
+  payable,
+  imitation,
   code,
   left,
 }: {
   readonly id: string;
   readonly status: string;
+  /** Счёт ещё ждёт денег: не оплачен, не отменён, срок не вышел. */
+  readonly payable: boolean;
+  /** Платёж по счёту принимает имитация: об оплате сообщает кнопка. */
+  readonly imitation: boolean;
   readonly code: string;
   /**
    * Сколько по счёту ещё можно вернуть. Остаток, а не сумма счёта:
@@ -34,7 +41,7 @@ export function InvoiceActions({
   readonly left: string;
 }) {
   const router = useRouter();
-  const [asking, setAsking] = useState<'paid' | 'cancelled' | 'refund'>();
+  const [asking, setAsking] = useState<'imitate' | 'paid' | 'cancelled' | 'refund'>();
   const [busy, setBusy] = useState(false);
   const [complaint, setComplaint] = useState<string>();
   const [typed, setTyped] = useState(formatAmount(left));
@@ -60,6 +67,9 @@ export function InvoiceActions({
   if (status === 'cancelled') {
     return <p className="muted">Счёт отменён — делать с ним больше нечего.</p>;
   }
+  if (status === 'expired') {
+    return <p className="muted">Срок оплаты вышел. Нужен новый счёт — создайте его в терминале.</p>;
+  }
 
   const refundAmount = parseTyped(typed);
 
@@ -67,15 +77,47 @@ export function InvoiceActions({
     <div className="actions">
       {complaint ? <p className="error">{complaint}</p> : undefined}
 
-      {status === 'issued' ? (
-        asking === 'paid' ? (
+      {payable && imitation ? (
+        asking === 'imitate' ? (
           <div className="actions__ask">
             <p className="muted">
-              Покупатель расплатился? Сервис этих денег не видел — отметка ваша и только ваша.
+              Это имитация: денег не будет, счёт станет оплаченным. У банка это место займёт его
+              сообщение об оплате.
             </p>
             <button
               type="button"
               className="btn btn--gold"
+              aria-busy={busy}
+              onClick={() => void act(`/api/pos/invoices/${id}/imitate`, {})}
+            >
+              Да, покупатель заплатил
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => setAsking(undefined)}
+              disabled={busy}
+            >
+              Не сейчас
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="btn btn--gold" onClick={() => setAsking('imitate')}>
+            Покупатель заплатил
+          </button>
+        )
+      ) : undefined}
+
+      {payable ? (
+        asking === 'paid' ? (
+          <div className="actions__ask">
+            <p className="muted">
+              Покупатель расплатился мимо сервиса, наличными или переводом? Отметка ваша и только
+              ваша.
+            </p>
+            <button
+              type="button"
+              className="btn btn--soft"
               aria-busy={busy}
               onClick={() => void act(`/api/pos/invoices/${id}`, { status: 'paid' })}
             >
@@ -91,13 +133,13 @@ export function InvoiceActions({
             </button>
           </div>
         ) : (
-          <button type="button" className="btn btn--gold" onClick={() => setAsking('paid')}>
-            Отметить оплаченным
+          <button type="button" className="btn btn--soft" onClick={() => setAsking('paid')}>
+            Оплачен мимо сервиса
           </button>
         )
       ) : undefined}
 
-      {status === 'issued' ? (
+      {payable ? (
         asking === 'cancelled' ? (
           <div className="actions__ask">
             <p className="muted">Отменённый счёт назад не возвращается.</p>

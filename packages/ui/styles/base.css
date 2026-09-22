@@ -17,8 +17,13 @@
  * спорит: у панели это очередь, палитра и переписка, у кабинета — его
  * собственные разделы.
  *
- * Тема фиксированно тёмная: светлого варианта макета нет, а половина
- * палитры, собранная на глаз, читалась бы хуже отсутствующей.
+ * Тем две, и выбирает их приложение: панель менеджера тёмная, кабинет
+ * мерчанта светлый (`<html data-theme="light">`). Разводить их решено
+ * 20 сентября 2026 по адресату: менеджер сидит в панели всю смену и
+ * видит таблицу в тридцать строк, а мерчант заходит на пять минут
+ * посмотреть деньги — днём, и делает скриншот в переписку с
+ * директором. Набор токенов один, значений два: компоненты остаются
+ * общими, и двух правд о том, как устроена плитка, по-прежнему нет.
  */
 
 :root {
@@ -51,6 +56,55 @@
    */
   --gold: #f9a03c;
   --gold-light: #ffc46b;
+  /*
+   * Акцент состояния каналом, а не готовым цветом: подсветка выбранного
+   * набрана полупрозрачными заливками разной плотности, и без канала
+   * светлая тема не может сменить акцент, не переписав полтора десятка
+   * правил с их альфами.
+   */
+  --gold-rgb: 249, 160, 60;
+  /* Полоса и галочка выбранного: в тёмной теме это прежняя медь. */
+  --gold-mark: #f9a03c;
+  /*
+   * Ждущее внимания — своим каналом, и в обеих темах он медовый.
+   * Золотом в этом сервисе красится не «выбранное», а «ждёт человека»
+   * (правило панели), и там, где акцент интерфейса сменился, цвет
+   * ожидания остаётся прежним: иначе ждущая заявка перестала бы
+   * отличаться от выбранного раздела.
+   */
+  --wait-rgb: 249, 160, 60;
+  /* Марка ожидания — точка, полоса, заливка воронки. */
+  --wait-mark: #f9a03c;
+  /*
+   * Акцент, набранный текстом. В тёмной это тот же медовый, в светлой —
+   * его тёмный извод: на белом #f9a03c даёт около 2:1 и нормы не
+   * держит, а ссылка цветом акцента нужна в обеих темах.
+   */
+  --gold-text: #f9a03c;
+
+  /*
+   * Фон бокового меню и красный, набранный текстом. Были вписаны
+   * цифрами прямо в правила и светлую тему не пережили бы: чёрное меню
+   * и светло-розовые буквы на белом.
+   */
+  --menu-bg: #100d1c;
+  --danger-text: #f58a82;
+  /*
+   * Шапка полупрозрачна — за ней едет страница, — поэтому цвет здесь
+   * со своей альфой, а не var(--surface).
+   */
+  --topbar-bg: rgba(19, 15, 33, 0.86);
+
+  /*
+   * Ряды графика. Взяты не на глаз: пара проверена валидатором палитр
+   * (скилл `dataviz`) на своей поверхности — различимость при
+   * дальтонизме, насыщенность, контраст. Прежний «подано» был серым и
+   * проваливал насыщенность: серый читается как отсутствие данных, а
+   * не как ряд. У светлой темы своя пара, а не осветлённая эта:
+   * полоса яркости у тёмной и светлой поверхности разная.
+   */
+  --chart-sent: #7d70c8;
+  --chart-done: #c9761a;
   --gold-ink: #241a08;
   --gold-face: linear-gradient(150deg, #ffcf7d, #f9a03c 62%, #ee8a24);
 
@@ -71,6 +125,73 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
+/*
+ * Светлая тема рабочего кабинета.
+ *
+ * Объявляется не на корне страницы, а на обёртке кабинета: витрина с
+ * дверями и экраны входа остаются тёмными — это лицо сервиса, там знак
+ * в толще и свет под курсором, и на светлом фоне они рассыпаются.
+ * Тема — свойство раздела, а не сайта.
+ *
+ * Переопределяются только цвета: размеры, радиусы и ход — общие, иначе
+ * это была бы вторая вёрстка, а не второй набор значений. Фон тёплый,
+ * а не белый: чистый лист под таблицей чисел слепит, а полпроцента
+ * тепла этого не делают.
+ *
+ * Подписи тут заметно темнее своих тёмных тёзок. Нынешний --text-faint
+ * тёмной темы (#6f6890) нормы контраста не держит — это вылезло в
+ * проверке панели 18 сентября, — и повторять ту же ошибку в новой теме
+ * незачем.
+ */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f4f3f1;
+  --surface: #ffffff;
+  --surface-soft: rgba(26, 23, 38, 0.04);
+  --surface-soft-strong: rgba(26, 23, 38, 0.07);
+  --surface-soft-hover: rgba(26, 23, 38, 0.09);
+  --hairline: rgba(26, 23, 38, 0.12);
+  --hairline-soft: rgba(26, 23, 38, 0.07);
+
+  --text: #17141f;
+  --text-dim: #3a3448;
+  --text-muted: #4a4356;
+  --text-faint: #6a6376;
+
+  --gold-text: #8a4f0c;
+
+  /*
+   * Акцент состояния — выбранный раздел, выбранный чип, кольцо фокуса.
+   *
+   * Светлый мёд `#ffc46b` держится только на тёмной поверхности: на
+   * белом он даёт 1,57:1 при норме 4,5:1, и «Обзор» в меню с выбранным
+   * периодом читались выцветшими. Цвет здесь свой, а не осветлённый
+   * тёмный: полоса яркости у белой поверхности другая.
+   */
+  --gold-light: #4a3f8f;
+  --gold-rgb: 107, 95, 168;
+  --gold-mark: #4a3f8f;
+
+  --menu-bg: #ffffff;
+  --danger-text: #a92e22;
+  --topbar-bg: rgba(255, 255, 255, 0.86);
+
+  --chart-sent: #6b5fa8;
+  --chart-done: #c87a1e;
+
+  --up: #2f6f4a;
+  --down: #a92e22;
+  --wait: #8a4f0c;
+  --wait-mark: #8a4f0c;
+
+  --lift: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --drop: 0 1px 2px rgba(26, 23, 38, 0.08);
+
+  background: var(--bg);
+  color: var(--text);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -78,6 +199,26 @@
 html,
 body {
   height: 100%;
+}
+
+/*
+ * Документ под светлым кабинетом — тоже светлый.
+ *
+ * Тема — свойство оболочки, а не сайта: витрина и вход остаются
+ * тёмными. Но фон документа — то, что браузер показывает за краем
+ * страницы, когда она «пружинит» при прокрутке на макбуке, и чем
+ * красит полосу прокрутки; тёмный под светлым кабинетом он мигал
+ * чёрной кромкой сверху и снизу. Документ спрашивает у себя, есть ли
+ * в нём светлая оболочка, и красится под неё — витрину это не трогает:
+ * там оболочки нет. Цвет — тот же, что `--bg` светлой темы ниже.
+ */
+html:has([data-theme='light']) {
+  color-scheme: light;
+  background: #f4f3f1;
+}
+
+html:has([data-theme='light']) body {
+  background: #f4f3f1;
 }
 
 body {
@@ -149,7 +290,7 @@ a {
   gap: 26px;
   padding: 26px 18px;
   border-right: 1px solid var(--hairline);
-  background: #100d1c;
+  background: var(--menu-bg);
 }
 
 .sidebar__brand {
@@ -286,9 +427,9 @@ a {
  * тёмном мало — вкладки различаются на глаз, только если смотреть.
  */
 .sidebar__link[aria-current='page'] {
-  background: rgba(249, 160, 60, 0.1);
+  background: rgba(var(--gold-rgb), 0.1);
   color: var(--gold-light);
-  box-shadow: inset 2px 0 0 var(--gold);
+  box-shadow: inset 2px 0 0 var(--gold-mark);
 }
 
 .sidebar__icon {
@@ -312,7 +453,7 @@ a {
 }
 
 .sidebar__link[aria-current='page'] .sidebar__count {
-  background: rgba(249, 160, 60, 0.18);
+  background: rgba(var(--gold-rgb), 0.18);
   color: var(--gold-light);
 }
 
@@ -339,7 +480,7 @@ a {
   min-height: var(--topbar);
   padding: 10px var(--gutter);
   border-bottom: 1px solid var(--hairline);
-  background: rgba(19, 15, 33, 0.86);
+  background: var(--topbar-bg);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -361,12 +502,12 @@ a {
 }
 
 .topbar__search:focus-within {
-  border-color: rgba(249, 160, 60, 0.55);
+  border-color: rgba(var(--gold-rgb), 0.55);
   background: var(--surface-soft);
 }
 
 .topbar__search:hover {
-  border-color: rgba(249, 160, 60, 0.35);
+  border-color: rgba(var(--gold-rgb), 0.35);
 }
 
 .topbar__search {
@@ -467,7 +608,7 @@ a {
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: var(--gold);
+  accent-color: var(--gold-mark);
 }
 
 /* Плотная таблица: те же колонки, меньше воздуха. */
@@ -533,7 +674,7 @@ a {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: rgba(249, 160, 60, 0.18);
+  background: rgba(var(--gold-rgb), 0.18);
   color: var(--gold-light);
   font-size: 13px;
   font-weight: 700;
@@ -611,7 +752,7 @@ a {
 }
 
 .menu__item--danger {
-  color: #f58a82;
+  color: var(--danger-text);
 }
 
 /* ── Страница ────────────────────────────────────────────────────── */
@@ -695,7 +836,7 @@ a {
 
 .quick__link:hover {
   background: var(--surface-soft-hover);
-  border-color: rgba(249, 160, 60, 0.35);
+  border-color: rgba(var(--gold-rgb), 0.35);
   color: var(--text);
 }
 
@@ -764,7 +905,18 @@ a {
 }
 
 a.stat:hover {
-  background: #241e44;
+  background: var(--surface-soft-hover);
+}
+
+/*
+ * Текущая плитка — когда плитки служат переключателем выборки. Отмечена
+ * тем же, чем текущий раздел в меню: заливкой акцента и его же полосой,
+ * только полоса снизу — плитки стоят в ряд, а не в столбец.
+ */
+.stat--current,
+a.stat--current:hover {
+  background: rgba(var(--gold-rgb), 0.1);
+  box-shadow: inset 0 -2px 0 var(--gold-mark), var(--lift), var(--drop);
 }
 
 .stat__label {
@@ -788,7 +940,7 @@ a.stat:hover {
 }
 
 .stat--wait .stat__dot {
-  background: var(--gold);
+  background: var(--wait-mark);
 }
 
 .stat--up .stat__dot {
@@ -808,7 +960,7 @@ a.stat:hover {
 }
 
 .stat--wait .stat__value {
-  color: var(--gold-light);
+  color: var(--wait);
 }
 
 .stat__note {
@@ -1233,7 +1385,7 @@ a.row:hover {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: rgba(249, 160, 60, 0.12);
+  background: rgba(var(--gold-rgb), 0.12);
   color: var(--gold-light);
 }
 
@@ -1264,6 +1416,19 @@ a.row:hover {
 
 .howto[open] .howto__chevron {
   transform: rotate(180deg);
+}
+
+/* Показ перед словами — своей полосой, с теми же полями, что у тела. */
+.howto__show {
+  padding: 4px 16px 14px;
+}
+
+.howto__show + .howto__body {
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline-soft);
+  margin: 0 16px;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .howto__body {
@@ -1410,8 +1575,8 @@ a.row:hover {
 }
 
 .chip--on {
-  background: rgba(249, 160, 60, 0.14);
-  border-color: rgba(249, 160, 60, 0.3);
+  background: rgba(var(--gold-rgb), 0.14);
+  border-color: rgba(var(--gold-rgb), 0.3);
   color: var(--gold-light);
 }
 
@@ -1581,8 +1746,8 @@ a.table__row:hover,
  * позже.
  */
 .table__item--fresh {
-  background: rgba(249, 160, 60, 0.07);
-  box-shadow: inset 2px 0 0 var(--gold), var(--lift);
+  background: rgba(var(--wait-rgb), 0.07);
+  box-shadow: inset 2px 0 0 var(--wait-mark), var(--lift);
 }
 
 .table__item--fresh .cell__value {
@@ -1592,11 +1757,11 @@ a.table__row:hover,
 
 /* Ждёт дольше порога напоминания: то же золото, что у уведомления. */
 .cell__value--late {
-  color: var(--gold-light);
+  color: var(--wait);
 }
 
 .table__item--fresh .cell__value--late {
-  color: var(--gold-light);
+  color: var(--wait);
 }
 
 .table__item--settled .cell__value {
@@ -1610,7 +1775,7 @@ a.table__row:hover,
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: var(--gold);
+  background: var(--wait-mark);
 }
 
 .dot--off {
@@ -1619,7 +1784,7 @@ a.table__row:hover,
 
 /* Отметка золотом в строке: «постоянный». */
 .tag--gold {
-  color: var(--gold-light);
+  color: var(--wait);
 }
 
 /*
@@ -1679,8 +1844,8 @@ a.table__row:hover,
 
 /* Ждёт человека — золото: столько же внимания, сколько кнопке. */
 .pill--wait {
-  background: rgba(249, 160, 60, 0.14);
-  color: var(--gold-light);
+  background: rgba(var(--wait-rgb), 0.14);
+  color: var(--wait);
 }
 
 .pill--done {
@@ -1761,7 +1926,7 @@ a.table__row:hover,
 }
 
 .btn--ghost:hover:not(:disabled) {
-  border-color: rgba(249, 160, 60, 0.5);
+  border-color: rgba(var(--gold-rgb), 0.5);
   color: var(--text);
 }
 
@@ -1770,7 +1935,7 @@ a.table__row:hover,
 .btn--danger {
   background: none;
   border: 1px solid rgba(242, 104, 95, 0.35);
-  color: #f58a82;
+  color: var(--danger-text);
 }
 
 .btn--danger:hover:not(:disabled) {
@@ -1822,7 +1987,7 @@ a.table__row:hover,
 
 .input:focus {
   outline: none;
-  border-color: rgba(249, 160, 60, 0.55);
+  border-color: rgba(var(--gold-rgb), 0.55);
   background: var(--surface-soft);
 }
 
@@ -1889,9 +2054,9 @@ select.input {
   align-items: center;
   gap: 8px 16px;
   padding: 14px 16px;
-  border: 1px solid rgba(249, 160, 60, 0.3);
+  border: 1px solid rgba(var(--gold-rgb), 0.3);
   border-radius: var(--radius-control);
-  background: rgba(249, 160, 60, 0.08);
+  background: rgba(var(--gold-rgb), 0.08);
 }
 
 .callout__body {
@@ -2028,7 +2193,7 @@ select.input {
   padding: 12px 16px;
   border-radius: var(--radius-control);
   background: rgba(242, 104, 95, 0.1);
-  color: #f58a82;
+  color: var(--danger-text);
   font-size: 13px;
   line-height: 1.5;
   text-wrap: pretty;
@@ -2078,7 +2243,7 @@ select.input {
   width: 440px;
   height: 380px;
   border-radius: 999px;
-  background: radial-gradient(closest-side, rgba(249, 160, 60, 0.16), rgba(249, 160, 60, 0));
+  background: radial-gradient(closest-side, rgba(var(--gold-rgb), 0.16), rgba(var(--gold-rgb), 0));
   pointer-events: none;
 }
 
@@ -2286,7 +2451,7 @@ select.input {
 }
 
 .funnel__step--wait .funnel__fill {
-  background: var(--gold);
+  background: var(--wait-mark);
 }
 
 .funnel__step--up .funnel__fill {

@@ -21,7 +21,8 @@ import {
 
 const db = testDatabase();
 const keys = generateRequisiteKeyPair();
-const core = createCore({ db, requisites: { publicKey: keys.publicKey } });
+// Префикс ключей нужен подаче по API: ею заводится ключ в сцене.
+const core = createCore({ db, requisites: { publicKey: keys.publicKey }, apiKeyPrefix: 'sk_test_' });
 
 let merchant: Actor & { type: 'merchant' };
 
@@ -637,3 +638,374 @@ describe('курсор своего списка', () => {
   });
 });
 
+/**
+ * Поиск по своему номеру — главный путь в список: покупатель пишет
+ * мерчанту «заказ 1013, где деньги», и тот идёт искать заявку по
+ * номеру, который знает его система. Нашего идентификатора он не видел
+ * нигде, кроме письма и вебхука, — оттуда его копируют целиком.
+ *
+ * Проверяется тестом, потому что ломается тихо: база собрана с локалью
+ * `C`, и обычный `ilike` кириллицу по регистру не сводит — «Бронь» на
+ * запрос «бронь» не находится, а латинские номера при этом ищутся, и
+ * на глаз поиск выглядит рабочим.
+ */
+describe('поиск своей заявки', () => {
+  async function submit(actor: Actor, reference?: string): Promise<string> {
+    const { request } = await core.submitExchangeRequest(actor, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      payout: PAYOUT,
+      ...(reference === undefined ? {} : { reference }),
+    });
+    return request.id;
+  }
+
+  it('находит по куску своего номера', async () => {
+    const wanted = await submit(merchant, 'order-1013');
+    await submit(merchant, 'order-2044');
+
+    const rows = await core.listExchangeRequests(merchant, { search: '1013' });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+  });
+
+  it('кириллицу находит в любом регистре', async () => {
+    const wanted = await submit(merchant, 'Бронь №1024');
+
+    const rows = await core.listExchangeRequests(merchant, { search: 'бронь' });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+  });
+
+  it('наш идентификатор целиком тоже находит заявку', async () => {
+    const wanted = await submit(merchant, 'order-1');
+    await submit(merchant, 'order-2');
+
+    const rows = await core.listExchangeRequests(merchant, { search: wanted });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+    // И с пробелами по краям: копируют из письма вместе с ними.
+    const padded = await core.listExchangeRequests(merchant, { search: `  ${wanted} ` });
+    expect(padded.map((row) => row.id)).toEqual([wanted]);
+  });
+
+  it('чужую заявку не находит ни по номеру, ни по идентификатору', async () => {
+    const other = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    const theirs = await submit(other, 'order-1013');
+
+    expect(await core.listExchangeRequests(merchant, { search: '1013' })).toEqual([]);
+    expect(await core.listExchangeRequests(merchant, { search: theirs })).toEqual([]);
+  });
+
+  it('знаки шаблона ищет буквально, а не как «что угодно»', async () => {
+    await submit(merchant, 'order-1013');
+    const wanted = await submit(merchant, 'скидка 100%');
+
+    const rows = await core.listExchangeRequests(merchant, { search: '100%' });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+    expect(await core.listExchangeRequests(merchant, { search: '_' })).toEqual([]);
+  });
+
+  it('пустой запрос — это отсутствие поиска, а не пустой ответ', async () => {
+    await submit(merchant, 'order-1');
+    await submit(merchant);
+
+    expect(await core.listExchangeRequests(merchant, { search: '   ' })).toHaveLength(2);
+  });
+
+  it('счёт и раскладка по состояниям считают найденное, а не всё', async () => {
+    const cancelled = await submit(merchant, 'order-1013');
+    await submit(merchant, 'order-1014');
+    await submit(merchant, 'booking-7');
+    await core.cancelOwnExchangeRequest(merchant, cancelled);
+
+    expect(await core.countExchangeRequests(merchant, { search: 'order' })).toBe(2);
+    expect(await core.countExchangeRequestsByStatus(merchant, { search: 'order' })).toEqual({
+      new: 1,
+      in_progress: 0,
+      rate_confirmed: 0,
+      payment_received: 0,
+      completed: 0,
+      cancelled: 1,
+    });
+    // Без поиска раскладка прежняя — по всем заявкам.
+    expect((await core.countExchangeRequestsByStatus(merchant)).new).toBe(2);
+  });
+
+  it('курсор с поиском дочитывает без потерь и дублей', async () => {
+    for (let i = 0; i < 5; i += 1) await submit(merchant, `order-${i}`);
+    await submit(merchant, 'booking-9');
+    const at = new Date('2026-09-07T10:00:00Z');
+    await db.update(exchangeRequests).set({ createdAt: at });
+
+    const seen: string[] = [];
+    let after: { createdAt: Date; id: string } | undefined;
+    for (let page = 0; page < 4; page += 1) {
+      const rows = await core.listExchangeRequests(merchant, {
+        search: 'order',
+        limit: 2,
+        ...(after ? { after } : {}),
+      });
+      if (rows.length === 0) break;
+      seen.push(...rows.map((row) => row.id));
+      const last = rows[rows.length - 1]!;
+      after = { createdAt: last.createdAt, id: last.id };
+    }
+
+    expect(seen).toHaveLength(5);
+    expect(new Set(seen).size).toBe(5);
+  });
+});
+
+/**
+ * Источник заявки доезжает до ответа о ней. Он писался при подаче и
+ * читался только разрезами аналитики, а карточке заявки нечем было
+ * сказать, откуда заявка взялась. У поданной без отметки он пуст, и
+ * пустота так и отдаётся: угаданный источник читался бы как записанный.
+ */
+describe('источник заявки', () => {
+  const body = {
+    kind: 'electronic',
+    fromCode: 'USDT',
+    toCode: 'RUB',
+    fromAmount: '100',
+    payout: PAYOUT,
+  } as const;
+
+  it('названный при подаче — отдаётся и в ответе подачи, и в списке, и по номеру', async () => {
+    const { request } = await core.submitExchangeRequest(merchant, { ...body, source: 'api' });
+    expect(request.source).toBe('api');
+
+    const [listed] = await core.listExchangeRequests(merchant);
+    expect(listed?.source).toBe('api');
+    expect((await core.getExchangeRequest(merchant, request.id)).source).toBe('api');
+  });
+
+  it('не названный — пуст, а не угадан', async () => {
+    const { request } = await core.submitExchangeRequest(merchant, body);
+    expect(request.source).toBeNull();
+  });
+});
+
+/**
+ * Куда ушли деньги по заявке — первый вопрос при жалобе покупателя:
+ * мерчант сверяет карту из своей системы с той, на которую отправил
+ * сервис. Прочитать запись ему было нечем: поданная по API запись
+ * архивируется сразу, а список получателей отдаёт только неархивные, —
+ * то есть у заявок интеграции запись была всегда и не была видна
+ * никогда.
+ */
+describe('получатель заявки', () => {
+  const body = {
+    kind: 'electronic',
+    fromCode: 'USDT',
+    toCode: 'RUB',
+    fromAmount: '100',
+  } as const;
+
+  it('архивная запись своей заявки читается — без расшифровки', async () => {
+    const { request } = await core.submitExchangeRequest(merchant, { ...body, payout: PAYOUT });
+    // Запись из тела запроса в список получателей не попадает…
+    expect(await core.listRequisites(merchant)).toEqual([]);
+
+    // …а по заявке она видна: вид, банк и открытый хвост.
+    const recipient = await core.getExchangeRequestRecipient(merchant, request.id);
+    expect(recipient?.kind).toBe('card');
+    expect(recipient?.bankName).toBe('Сбербанк');
+    expect(recipient?.cardLast4).toBe('1111');
+    // Полного номера в ответе нет ни в каком поле.
+    expect(JSON.stringify(recipient)).not.toContain('4111111111111111');
+  });
+
+  it('чужая заявка — «не найдена», а не запись чужого получателя', async () => {
+    const other = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    const { request } = await core.submitExchangeRequest(other, { ...body, payout: PAYOUT });
+
+    await expect(core.getExchangeRequestRecipient(merchant, request.id)).rejects.toMatchObject({
+      code: 'not-found',
+    });
+  });
+
+  /*
+   * Защита в глубину, и сцена у неё намеренно недостижимая: ссылку на
+   * чужую запись операция подачи отвергает, и поставить её можно только
+   * мимо ядра. Проверяется здесь ровно поэтому — принадлежность записи
+   * операция сверяет отдельно от принадлежности заявки, и без теста эту
+   * вторую сверку можно убрать, ничего не уронив. А цена ошибки —
+   * хвост чужой карты на экране.
+   */
+  it('чужую запись не показывает, даже если на неё ссылается своя заявка', async () => {
+    const stranger = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    const theirs = await core.submitExchangeRequest(stranger, {
+      ...body,
+      payout: { kind: 'card', bankName: 'Т-Банк', cardNumber: '5555555555554444' },
+    });
+    const mine = await core.submitExchangeRequest(merchant, { ...body, payout: PAYOUT });
+    await db
+      .update(exchangeRequests)
+      .set({ requisitesId: theirs.request.requisitesId })
+      .where(eq(exchangeRequests.id, mine.request.id));
+
+    const recipient = await core.getExchangeRequestRecipient(merchant, mine.request.id);
+    expect(recipient).toBeNull();
+    expect(JSON.stringify(recipient)).not.toContain('4444');
+  });
+
+  /*
+   * Сцена — наличная заявка клиента, а не заявка мерчанта с затёртой
+   * ссылкой: у мерчанта заявок без получателя не бывает, наличную ядро
+   * у него не принимает. Операция же общая на обоих владельцев, и
+   * получателя нет именно у наличной — ей он не положен.
+   */
+  it('заявка без получателя отвечает пустотой, а не ошибкой', async () => {
+    await core.registerClient({ telegramUserId: 100n });
+    const { request } = await core.submitExchangeRequest(asClient(100n), {
+      ...body,
+      kind: 'cash',
+    });
+    expect(request.requisitesId).toBeNull();
+
+    expect(await core.getExchangeRequestRecipient(asClient(100n), request.id)).toBeNull();
+  });
+});
+
+/**
+ * Даты в списке заявок. Отбор по дате подачи у списка и счёта был и
+ * раньше — им пользуется выгрузка CSV, — а раскладка по состояниям дат
+ * не знала: на странице заявок она кормит плитки, и плитка «Исполнены
+ * 10» над списком за неделю из двух строк считала бы не то, что
+ * показано под ней.
+ */
+describe('заявки за период', () => {
+  async function submitAt(when: string, reference: string): Promise<string> {
+    const { request } = await core.submitExchangeRequest(merchant, {
+      kind: 'electronic',
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      payout: PAYOUT,
+      reference,
+    });
+    await db
+      .update(exchangeRequests)
+      .set({ createdAt: new Date(when) })
+      .where(eq(exchangeRequests.id, request.id));
+    return request.id;
+  }
+
+  const from = new Date('2026-09-14T00:00:00Z');
+  const to = new Date('2026-09-20T23:59:59.999Z');
+
+  it('список, счёт и раскладка считают одни и те же заявки', async () => {
+    await submitAt('2026-09-10T12:00:00Z', 'до периода');
+    const inside = await submitAt('2026-09-15T12:00:00Z', 'в периоде');
+    const cancelled = await submitAt('2026-09-16T12:00:00Z', 'в периоде, отменена');
+    await submitAt('2026-09-21T00:00:00Z', 'после периода');
+    await core.cancelOwnExchangeRequest(merchant, cancelled);
+
+    const rows = await core.listExchangeRequests(merchant, { from, to });
+    expect(rows.map((row) => row.id).sort()).toEqual([inside, cancelled].sort());
+    expect(await core.countExchangeRequests(merchant, { from, to })).toBe(2);
+    expect(await core.countExchangeRequestsByStatus(merchant, { from, to })).toEqual({
+      new: 1,
+      in_progress: 0,
+      rate_confirmed: 0,
+      payment_received: 0,
+      completed: 0,
+      cancelled: 1,
+    });
+  });
+
+  it('границы включительны с обеих сторон', async () => {
+    const first = await submitAt('2026-09-14T00:00:00Z', 'первая миллисекунда');
+    const last = await submitAt('2026-09-20T23:59:59.999Z', 'последняя миллисекунда');
+
+    const rows = await core.listExchangeRequests(merchant, { from, to });
+    expect(rows.map((row) => row.id).sort()).toEqual([first, last].sort());
+  });
+
+  it('период сужает и поиск: оба условия действуют разом', async () => {
+    await submitAt('2026-09-10T12:00:00Z', 'order-1');
+    const wanted = await submitAt('2026-09-15T12:00:00Z', 'order-2');
+    await submitAt('2026-09-16T12:00:00Z', 'booking-3');
+
+    const rows = await core.listExchangeRequests(merchant, { from, to, search: 'order' });
+    expect(rows.map((row) => row.id)).toEqual([wanted]);
+    expect(
+      (await core.countExchangeRequestsByStatus(merchant, { from, to, search: 'order' })).new,
+    ).toBe(1);
+  });
+});
+
+/**
+ * Каким ключом подана заявка.
+ *
+ * Пишется в момент подачи, потому что задним числом не восстанавливается:
+ * журнал вызовов с заявкой не связан, а у `POST /v1/exchange-requests`
+ * заявки в момент записи вызова ещё нет. Так уже случилось с источником
+ * (`source`, миграция 0033) — у всех заявок до него он пуст навсегда, и
+ * второй такой дырки заводить не стали.
+ *
+ * Отвечает на два вопроса. Мерчанту: «каким ключом это подано» — когда
+ * ключей несколько, у сайта и у бухгалтерии свой. И на более важный:
+ * отзывая ключ, видно, что через него прошло.
+ */
+describe('ключ подачи', () => {
+  const body = {
+    kind: 'electronic',
+    fromCode: 'USDT',
+    toCode: 'RUB',
+    fromAmount: '100',
+    payout: PAYOUT,
+  } as const;
+
+  it('названный при подаче — доезжает до ответа, списка и карточки', async () => {
+    const { key } = await core.issueApiKey(merchant, { label: 'сайт' });
+
+    const { request } = await core.submitExchangeRequest(merchant, {
+      ...body,
+      source: 'api',
+      apiKeyId: key.id,
+    });
+    expect(request.apiKeyId).toBe(key.id);
+
+    const [listed] = await core.listExchangeRequests(merchant);
+    expect(listed?.apiKeyId).toBe(key.id);
+    expect((await core.getExchangeRequest(merchant, request.id)).apiKeyId).toBe(key.id);
+  });
+
+  it('поданная из кабинета ключа не имеет', async () => {
+    const { request } = await core.submitExchangeRequest(merchant, { ...body, source: 'cabinet' });
+    expect(request.apiKeyId).toBeNull();
+  });
+
+  /*
+   * Ключ принадлежит кабинету, и заявка ссылается на свой. Чужой
+   * отвергает база — так же, как чужого получателя: ограничение надёжнее
+   * проверки, которую можно забыть повторить во втором месте подачи.
+   */
+  it('чужой ключ база не принимает', async () => {
+    const stranger = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    const { key: theirs } = await core.issueApiKey(stranger, { label: 'чужой' });
+
+    await expect(
+      core.submitExchangeRequest(merchant, { ...body, source: 'api', apiKeyId: theirs.id }),
+    ).rejects.toThrow();
+  });
+
+  /*
+   * Отозванный ключ заявок больше не подаёт, но поданные им остаются с
+   * ним: отзыв — это «больше не пускать», а не «забыть, что было».
+   */
+  it('отзыв ключа заявку с ним не трогает', async () => {
+    const { key } = await core.issueApiKey(merchant, { label: 'сайт' });
+    const { request } = await core.submitExchangeRequest(merchant, {
+      ...body,
+      source: 'api',
+      apiKeyId: key.id,
+    });
+
+    await core.revokeApiKey(merchant, key.id);
+
+    expect((await core.getExchangeRequest(merchant, request.id)).apiKeyId).toBe(key.id);
+  });
+});

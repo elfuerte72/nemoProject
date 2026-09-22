@@ -87,6 +87,7 @@ import {
   countExchangeRequests,
   countExchangeRequestsByStatus,
   getExchangeRequest,
+  getExchangeRequestRecipient,
   getExchangeTerms,
   listExchangeRequests,
   submitExchangeRequest,
@@ -452,7 +453,9 @@ export function createCore(ctx: CoreConfig) {
       removeWebhookEndpoint(ctx, actor, endpointId),
     listWebhookDeliveries: (
       actor: Actor,
-      filter?: { endpointId?: string | undefined; limit?: number | undefined },
+      // Тип отбора — у самой операции: переписанный здесь руками, он
+      // отстал от неё на первом же новом поле.
+      filter?: Parameters<typeof listWebhookDeliveries>[2],
     ) => listWebhookDeliveries(ctx, actor, filter),
     getWebhookDelivery: (actor: Actor, deliveryId: string) =>
       getWebhookDelivery(ctx, actor, deliveryId),
@@ -474,13 +477,18 @@ export function createCore(ctx: CoreConfig) {
       listExchangeRequests(ctx, actor, filter),
     countExchangeRequests: (actor: Actor, filter?: Omit<OwnExchangeFilter, 'limit' | 'after'>) =>
       countExchangeRequests(ctx, actor, filter),
-    countExchangeRequestsByStatus: (actor: Actor) => countExchangeRequestsByStatus(ctx, actor),
+    countExchangeRequestsByStatus: (
+      actor: Actor,
+      filter?: Parameters<typeof countExchangeRequestsByStatus>[2],
+    ) => countExchangeRequestsByStatus(ctx, actor, filter),
     /** Лента своей заявки — владельцу: без имён сотрудников. */
     listExchangeRequestEventsForOwner: (actor: Actor, requestId: string) =>
       listExchangeRequestEventsForOwner(ctx, actor, requestId),
     getClientHistory: (actor: Actor) => getClientHistory(ctx, actor),
     getExchangeRequest: (actor: Actor, requestId: string) =>
       getExchangeRequest(ctx, actor, requestId),
+    getExchangeRequestRecipient: (actor: Actor, requestId: string) =>
+      getExchangeRequestRecipient(ctx, actor, requestId),
 
     saveRequisites: (actor: Actor, input: SaveRequisitesInput) =>
       saveRequisites(ctx, actor, input),
@@ -855,7 +863,7 @@ export type { InquiryTopic, SubmitInquiryInput } from './inquiries.js';
 export type { RequisitesView, SaveRequisitesInput } from './requisites.js';
 export type {
   MerchantActivity,
-  MerchantDay,
+  MerchantSeriesBar,
   MerchantPeriodSummary,
   MerchantStats,
 } from './merchant-stats.js';

@@ -18,12 +18,18 @@ import type { PillTone } from './labels';
 
 /* ── Счёт ────────────────────────────────────────────────────────── */
 
-export const invoiceStatuses = ['issued', 'paid', 'cancelled'] as const;
+/*
+ * «Истёк» — своё состояние, а не отменённый счёт: у счёта есть срок, и
+ * вышедший срок — событие часов, а не решение человека. Слова — те же,
+ * что у образца и у самой заявки на обмен: «ожидает», «истёк».
+ */
+export const invoiceStatuses = ['issued', 'paid', 'expired', 'cancelled'] as const;
 export type InvoiceStatus = (typeof invoiceStatuses)[number];
 
 export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   issued: 'Ожидает',
   paid: 'Оплачен',
+  expired: 'Истёк',
   cancelled: 'Отменён',
 };
 
@@ -31,6 +37,7 @@ export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
 export const INVOICE_STATUS_TONES: Record<InvoiceStatus, PillTone> = {
   issued: 'wait',
   paid: 'done',
+  expired: 'off',
   cancelled: 'off',
 };
 
@@ -60,9 +67,24 @@ export interface MockInvoice {
    * сервиса нет, и задним числом он его не выдумывает (docs/adr/0013).
    */
   readonly rate: Amount;
+  /**
+   * Наценка мерчанта, с которой счёт посчитан, в базисных пунктах.
+   * Записана в счёт, как и курс: настройку потом поменяют, а счёт
+   * обязан объяснять своё число и через месяц.
+   */
+  readonly markupBps: number;
   readonly status: InvoiceStatus;
   readonly createdAt: string;
+  /** Когда счёт перестаёт приниматься к оплате. Пусто у счетов без срока. */
+  readonly expiresAt: string | null;
   readonly paidAt: string | null;
+  /** Покупатель подтверждает личность до оплаты — и когда подтвердил. */
+  readonly kycRequired: boolean;
+  readonly kycPassedAt: string | null;
+  /** Кто принимает платёж и как он его у себя называет. Пусто у счетов до провайдера. */
+  readonly payment: { readonly provider: string; readonly ref: string } | null;
+  /** Пример, заведённый ради показа, а не счёт покупателю. */
+  readonly demo: boolean;
   readonly events: readonly MockEvent[];
 }
 
@@ -129,7 +151,9 @@ export function invoiceCell(
         numeric: true,
       };
     case 'status':
-      return { text: INVOICE_STATUS_LABELS[one.status] };
+      // Пример подписан прямо в строке: без подписи он читается как
+      // счёт покупателю, которого не было.
+      return { text: INVOICE_STATUS_LABELS[one.status], meta: one.demo ? 'пример' : undefined };
     case 'created':
       return { text: localDayOf(one.createdAt, offsetMinutes), numeric: true };
   }
@@ -176,6 +200,12 @@ export interface MockRefund {
   readonly reason: string;
   readonly status: RefundStatus;
   readonly createdAt: string;
+  /** Когда деньги ушли покупателю. Пусто, пока возврат не исполнен. */
+  readonly doneAt: string | null;
+  /** Кто исполнял возврат. Пусто у заявок, поданных до провайдера. */
+  readonly provider: string | null;
+  /** Пример, заведённый ради показа. */
+  readonly demo: boolean;
 }
 
 export const refundColumns = [
@@ -240,7 +270,7 @@ export function refundCell(
     case 'reason':
       return { text: one.reason };
     case 'status':
-      return { text: REFUND_STATUS_LABELS[one.status] };
+      return { text: REFUND_STATUS_LABELS[one.status], meta: one.demo ? 'пример' : undefined };
     case 'created':
       return { text: localDayOf(one.createdAt, offsetMinutes), numeric: true };
   }

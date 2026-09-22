@@ -15,6 +15,7 @@
     "@nemo/concierge": "workspace:*",
     "@nemo/core": "workspace:*",
     "@nemo/email": "workspace:*",
+    "@nemo/flags": "workspace:*",
     "@nemo/http": "workspace:*",
     "@nemo/qr": "workspace:*",
     "@nemo/rates": "workspace:*",

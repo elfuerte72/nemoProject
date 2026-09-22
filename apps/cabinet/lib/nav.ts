@@ -18,10 +18,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     key: 'work',
     title: 'Работа',
     items: [
-      { href: '/dashboard', label: 'Обзор', icon: 'home' },
-      { href: '/requests/new', label: 'Новая заявка', icon: 'plus' },
+      // Аналитика своего пункта не имеет — входят в неё отсюда
+      // кнопкой «Подробнее», и меню должно говорить, где человек.
+      { href: '/dashboard', label: 'Обзор', icon: 'home', owns: ['/analytics'] },
       { href: '/requests', label: 'Заявки', icon: 'exchange', count: 'active' },
-      { href: '/recipients', label: 'Получатели', icon: 'card' },
       { href: '/rates', label: 'Курсы', icon: 'chart' },
     ],
   },

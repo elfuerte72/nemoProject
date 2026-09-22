@@ -7,6 +7,8 @@
  * а список событий формы должен быть тем же, что у операции.
  */
 
+import type { ExchangeRequestStatus } from './domain.js';
+
 /**
  * События, о которых мерчант просит сообщать вебхуком: переходы заявки
  * и пробное `ping` из кабинета. «Взята в работу» события не порождает —
@@ -24,6 +26,33 @@ export type WebhookEvent = (typeof webhookEvents)[number];
 
 export function isWebhookEvent(value: string): value is WebhookEvent {
   return (webhookEvents as readonly string[]).includes(value);
+}
+
+/**
+ * Событие перехода. «Взята в работу» — не событие: для мерчанта оно
+ * ничего не значит.
+ *
+ * Здесь, а не в ядре, с 21 сентября 2026: тем же правилом карточка
+ * заявки в кабинете кладёт доставку под свою смену состояния, а ядро с
+ * `node:crypto` на экран не собирается. Копия правила на экране
+ * разошлась бы с очередью на первом новом состоянии — доставка встала
+ * бы не под тот переход.
+ */
+export function webhookEventForStatus(status: ExchangeRequestStatus): WebhookEvent | undefined {
+  switch (status) {
+    case 'new':
+      return 'exchange_request.created';
+    case 'rate_confirmed':
+      return 'exchange_request.rate_confirmed';
+    case 'payment_received':
+      return 'exchange_request.payment_received';
+    case 'completed':
+      return 'exchange_request.completed';
+    case 'cancelled':
+      return 'exchange_request.cancelled';
+    case 'in_progress':
+      return undefined;
+  }
 }
 
 /** События словами — для чекбоксов, пилюль и карточки в панели. */

@@ -1,5 +1,6 @@
 /**
- * Память макета: счета и возвраты живут в процессе, а не в базе.
+ * Память макета: счета, возвраты и настройки терминала живут в
+ * процессе, а не в базе.
  *
  * Так решено 10 сентября 2026 (`backlog.md`, «Счета, пост-терминал и
  * возвраты — макет без денег»): за счётом у образца стоит приём денег
@@ -19,15 +20,25 @@
  * выборка идёт по нему. Правило то же, что у операций ядра, и покрыто
  * тестом — макет это или нет, чужие числа в кабинете недопустимы.
  *
- * Ничего не заводится заранее: на экране нет чисел, которых нет в
- * данных. Нарисованный пример счёта читался бы как настоящий счёт.
+ * Заранее ничего не заводится: на экране нет чисел, которых нет в
+ * данных. Примеры (`pos/demo.ts`) — исключение по прямой просьбе через
+ * окружение, и каждый подписан словом «пример».
+ *
+ * Срок счёта считается при чтении: список отдаётся с уже истёкшими
+ * счетами, и отдельный таймер по счетам не ходит (`pos/lifecycle.ts`).
  */
 
 import type { MockInvoice, MockRefund } from '../invoice-rows';
+import { demoAsked, demoSet } from '../pos/demo';
+import { expireAllDue } from '../pos/lifecycle';
+import { DEFAULT_POS_SETTINGS, type PosSettings } from '../pos/settings';
 
 interface Shelf {
   readonly invoices: Map<string, MockInvoice[]>;
   readonly refunds: Map<string, MockRefund[]>;
+  readonly settings: Map<string, PosSettings>;
+  /** Кому примеры уже предлагали: второй раз не заводятся, даже если счета удалили. */
+  readonly offered: Set<string>;
 }
 
 const KEY = Symbol.for('nemo.cabinet.mock');
@@ -36,20 +47,47 @@ type Holder = typeof globalThis & { [KEY]?: Shelf };
 
 function shelf(): Shelf {
   const holder = globalThis as Holder;
-  holder[KEY] ??= { invoices: new Map(), refunds: new Map() };
+  holder[KEY] ??= { invoices: new Map(), refunds: new Map(), settings: new Map(), offered: new Set() };
   return holder[KEY];
 }
 
-/** Счета мерчанта, новыми сверху. */
-export function listInvoices(merchantId: string): readonly MockInvoice[] {
-  return shelf().invoices.get(merchantId) ?? [];
+/**
+ * Примеры — один раз на мерчанта и только пустому: у того, кто уже
+ * создал счёт, примеров быть не должно, иначе его продажи смешались
+ * бы с выдуманными.
+ */
+function offerDemo(merchantId: string, now: Date): void {
+  const mine = shelf();
+  if (mine.offered.has(merchantId)) return;
+  mine.offered.add(merchantId);
+  if (!demoAsked()) return;
+  if ((mine.invoices.get(merchantId) ?? []).length > 0) return;
+  const set = demoSet(now);
+  mine.invoices.set(merchantId, [...set.invoices]);
+  mine.refunds.set(merchantId, [...set.refunds]);
 }
 
-export function findInvoice(merchantId: string, id: string): MockInvoice | undefined {
-  return listInvoices(merchantId).find((one) => one.id === id);
+/** Счета мерчанта, новыми сверху, с истёкшими по часам `now`. */
+export function listInvoices(merchantId: string, now: Date = new Date()): readonly MockInvoice[] {
+  offerDemo(merchantId, now);
+  const mine = shelf().invoices.get(merchantId) ?? [];
+  const settled = expireAllDue(mine, now);
+  if (settled.some((one, index) => one !== mine[index])) {
+    shelf().invoices.set(merchantId, [...settled]);
+  }
+  return settled;
+}
+
+export function findInvoice(
+  merchantId: string,
+  id: string,
+  now: Date = new Date(),
+): MockInvoice | undefined {
+  return listInvoices(merchantId, now).find((one) => one.id === id);
 }
 
 export function addInvoice(merchantId: string, invoice: MockInvoice): void {
+  offerDemo(merchantId, new Date(invoice.createdAt));
   const mine = shelf().invoices.get(merchantId) ?? [];
   shelf().invoices.set(merchantId, [invoice, ...mine]);
 }
@@ -67,6 +105,7 @@ export function replaceInvoice(merchantId: string, invoice: MockInvoice): void {
 }
 
 export function listRefunds(merchantId: string): readonly MockRefund[] {
+  offerDemo(merchantId, new Date());
   return shelf().refunds.get(merchantId) ?? [];
 }
 
@@ -75,10 +114,21 @@ export function addRefund(merchantId: string, refund: MockRefund): void {
   shelf().refunds.set(merchantId, [refund, ...mine]);
 }
 
+/** Настройки терминала: наценка и скрытые валюты. Без записи — умолчания. */
+export function getPosSettings(merchantId: string): PosSettings {
+  return shelf().settings.get(merchantId) ?? DEFAULT_POS_SETTINGS;
+}
+
+export function savePosSettings(merchantId: string, settings: PosSettings): void {
+  shelf().settings.set(merchantId, settings);
+}
+
 /** Забыть всё про мерчанта. Нужно тестам: процесс у них один на файл. */
 export function forgetMock(merchantId: string): void {
   shelf().invoices.delete(merchantId);
   shelf().refunds.delete(merchantId);
+  shelf().settings.delete(merchantId);
+  shelf().offered.delete(merchantId);
 }
 
 /**

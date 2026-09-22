@@ -179,8 +179,8 @@ export function localWeekdayOf(column: AnyPgColumn, offset: number): SQL<number>
   return sql<number>`extract(isodow from ${localMomentOf(column, offset)})`.mapWith(Number);
 }
 
-/** Шаг сетки динамики: сутки, неделя или месяц. */
-export const seriesSteps = ['day', 'week', 'month'] as const;
+/** Шаг сетки динамики: сутки, неделя, месяц или квартал. */
+export const seriesSteps = ['day', 'week', 'month', 'quarter'] as const;
 export type SeriesStep = (typeof seriesSteps)[number];
 
 /**
@@ -200,8 +200,9 @@ export function requireStep(step: SeriesStep | undefined): SeriesStep {
 /**
  * Начало шага, в который попадает момент колонки, — днём «2026-09-02»
  * по местному времени. Неделя начинается с понедельника (`date_trunc`
- * считает так же), месяц — с первого числа; ключ у всех трёх один по
- * виду, и разбирать его на экране не приходится.
+ * считает так же), месяц — с первого числа, квартал — с января, апреля,
+ * июля или октября; ключ у всех четырёх один по виду, и разбирать его на
+ * экране не приходится.
  */
 export function localStepOf(column: AnyPgColumn, offset: number, step: SeriesStep): SQL<string> {
   const local = localMomentOf(column, offset);
@@ -214,9 +215,57 @@ export function stepStartOf(day: string, step: SeriesStep): string {
   if (step === 'day') return day;
   const date = new Date(`${day}T00:00:00Z`);
   if (step === 'month') return `${day.slice(0, 7)}-01`;
+  if (step === 'quarter') {
+    // Квартал начинается в январе, апреле, июле или октябре — так же
+    // считает `date_trunc('quarter', …)`, которым ряд собирается в базе.
+    const first = Math.floor(date.getUTCMonth() / 3) * 3;
+    return dayOfUtc(Date.UTC(date.getUTCFullYear(), first, 1));
+  }
   // Понедельник той же недели: `getUTCDay` считает от воскресенья.
   const shift = (date.getUTCDay() + 6) % 7;
   return new Date(date.getTime() - shift * DAY_MS).toISOString().slice(0, 10);
+}
+
+function dayOfUtc(at: number): string {
+  return new Date(at).toISOString().slice(0, 10);
+}
+
+/**
+ * Корзина на `count` шагов назад от начала этой. Считается календарём, а
+ * не вычитанием суток: в месяцах их то тридцать, то двадцать восемь, а
+ * в квартале — то девяносто, то девяносто два, и сдвиг на «столько-то
+ * дней» уезжал бы с первого числа тем сильнее, чем длиннее ряд.
+ */
+export function stepsBack(day: string, step: SeriesStep, count: number): string {
+  const start = stepStartOf(day, step);
+  if (count === 0) return start;
+  const date = new Date(`${start}T00:00:00Z`);
+  if (step === 'day') return dayOfUtc(date.getTime() - count * DAY_MS);
+  if (step === 'week') return dayOfUtc(date.getTime() - count * 7 * DAY_MS);
+  const months = step === 'month' ? count : count * 3;
+  return dayOfUtc(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - months, 1));
+}
+
+/**
+ * Сколько корзин в ряду динамики — по шагу.
+ *
+ * Глубина принадлежит шагу, а не выбранному наверху периоду: сравнивать
+ * квартальные столбики за неделю нечего, а помесячные за год — есть. Так
+ * устроен масштаб биржевого графика: выбирая крупный шаг, человек просит
+ * заодно и более длинную историю. Числа взяты так, чтобы ряд оставался
+ * читаемым одним взглядом: две недели, двенадцать недель, год по
+ * месяцам, два года по кварталам.
+ */
+export const SERIES_BUCKETS: Record<SeriesStep, number> = {
+  day: 14,
+  week: 12,
+  month: 12,
+  quarter: 8,
+};
+
+/** Первая корзина ряда для «сегодня» — начало окна динамики. */
+export function seriesStart(today: string, step: SeriesStep): string {
+  return stepsBack(today, step, SERIES_BUCKETS[step] - 1);
 }
 
 /** Местная полночь сегодняшнего дня — моментом UTC. */

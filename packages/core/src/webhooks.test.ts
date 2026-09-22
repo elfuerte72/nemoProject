@@ -504,3 +504,75 @@ describe('здоровье доставок глазами сотрудника'
     });
   });
 });
+
+/**
+ * Доставки по одной заявке — вторая половина её истории: узнала ли о
+ * смене состояния система мерчанта. Карточку заявки чаще всего
+ * открывают именно с этим — «у нас заказ висит неоплаченным, а вы
+ * говорите, исполнено», — а искать одну заявку в общем списке доставок
+ * приходилось глазами.
+ */
+describe('доставки по заявке', () => {
+  it('отдаёт доставки этой заявки и не отдаёт соседних', async () => {
+    await core.addWebhookEndpoint(merchant, {
+      url: URL_OK,
+      events: ['exchange_request.created', 'exchange_request.rate_confirmed'],
+    });
+    const first = await submit();
+    const second = await submit(merchant, '200');
+    const manager = await givenStaff();
+    await core.claimExchangeRequest(manager, first.request.id);
+    await core.confirmExchangeRate(manager, first.request.id, {
+      finalRate: '81',
+      paymentInstructions: 'Кошелёк TRC20: TQmX…',
+    });
+
+    const mine = await core.listWebhookDeliveries(merchant, { requestId: first.request.id });
+    expect(mine.map((one) => one.event).sort()).toEqual([
+      'exchange_request.created',
+      'exchange_request.rate_confirmed',
+    ]);
+    expect(mine.every((one) => one.requestId === first.request.id)).toBe(true);
+
+    const other = await core.listWebhookDeliveries(merchant, { requestId: second.request.id });
+    expect(other.map((one) => one.event)).toEqual(['exchange_request.created']);
+  });
+
+  it('по чужой заявке — пусто: существования она не подтверждает', async () => {
+    const stranger = await givenMerchant({ email: 'other@example.com', name: 'Другой' });
+    await core.addWebhookEndpoint(stranger, {
+      url: URL_OK,
+      events: ['exchange_request.created'],
+    });
+    const theirs = await submit(stranger);
+
+    expect(await core.listWebhookDeliveries(merchant, { requestId: theirs.request.id })).toEqual([]);
+  });
+
+  /*
+   * Вебхуки — у владельца (ADR-0023): ключ и точка это доступ, выданный
+   * машине. Решает операция, а не экран: карточка заявки у оператора
+   * остаётся без второй половины истории, а не показывает её в обход.
+   */
+  it('оператору не отдаёт: интеграция у владельца', async () => {
+    const added = await core.addMerchantUser(merchant, {
+      email: 'operator@example.com',
+      name: 'Оператор',
+      password: 'правильная лошадь батарейка',
+      role: 'operator',
+    });
+    const operator = {
+      type: 'merchant',
+      merchantId: merchant.merchantId,
+      userId: added.id,
+      role: 'operator',
+    } as const;
+    const { request } = await submit();
+
+    // По коду, а не «что-нибудь бросил»: так прошла бы и опечатка в
+    // самом тесте — `TypeError` тоже исключение.
+    await expect(
+      core.listWebhookDeliveries(operator, { requestId: request.id }),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+  });
+});

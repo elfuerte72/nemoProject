@@ -11,7 +11,7 @@ import {
 } from 'react';
 import type { ClientView } from '@nemo/core';
 import { ApiError, post } from '@/lib/client-api';
-import { getWebApp } from '@/lib/telegram/webapp';
+import { getWebApp, wantsFullscreen } from '@/lib/telegram/webapp';
 import { ExchangeScreen } from './exchange-screen';
 import { HistorySection } from './history-section';
 import { MarketingConsentAsk } from './marketing-consent';
@@ -314,8 +314,13 @@ export function ClientApp() {
     webApp?.expand();
     tolerate(() => webApp?.disableVerticalSwipes?.());
     // Шапка Telegram над приложением — потерянная полоса экрана, а
-    // форма обмена и без того помещается впритык.
-    tolerate(() => webApp?.requestFullscreen?.());
+    // форма обмена и без того помещается впритык. Это про телефон: на
+    // ноутбуке Mini App открывается своим окном рядом с перепиской, и
+    // разворот во весь монитор закрывает собой Telegram, из которого
+    // клиент пришёл.
+    if (wantsFullscreen(webApp?.platform)) {
+      tolerate(() => webApp?.requestFullscreen?.());
+    }
 
     void (async () => {
       try {

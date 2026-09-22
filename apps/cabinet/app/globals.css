@@ -19,15 +19,6 @@
   --cols: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) 150px 130px;
 }
 
-/*
- * То же, но с колонкой «Кто подал»: её видит владелец, у которого есть
- * состав кабинета. Шестая колонка отбирает место у своего номера — он
- * короткий, а имя должно читаться целиком.
- */
-.table--requests-staff {
-  --cols: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.8fr) 150px 130px;
-}
-
 /* ── Анкета ──────────────────────────────────────────────────────── */
 
 /*
@@ -155,30 +146,17 @@
   overflow-wrap: anywhere;
 }
 
-/* Лента событий заявки: что и когда с ней случилось. */
-.trail {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.trail__item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-dim);
-}
-
-.trail__when {
+/*
+ * Реквизиты отменённой заявки перечёркнуты и приглушены: слов «не
+ * платите» над ними мало — номер карты копируют глазами, не читая
+ * абзац выше, и сам он должен выглядеть недействительным.
+ */
+.instructions--void {
   color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
+  text-decoration: line-through;
 }
 
+/* Лента событий заявки: что и когда с ней случилось. */
 /* ── Сотрудники ──────────────────────────────────────────────────── */
 
 /*
@@ -224,9 +202,9 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px 16px;
-  border: 1px solid rgba(var(--gold-rgb, 226, 176, 80), 0.45);
+  border: 1px solid rgba(var(--wait-rgb, 226, 176, 80), 0.45);
   border-radius: var(--radius-inner);
-  background: rgba(var(--gold-rgb, 226, 176, 80), 0.08);
+  background: rgba(var(--wait-rgb, 226, 176, 80), 0.08);
 }
 
 .secret__title {
@@ -547,7 +525,7 @@
 
 .calc__swap:hover:not(:disabled) {
   color: var(--gold-light);
-  border-color: rgba(249, 160, 60, 0.4);
+  border-color: rgba(var(--gold-rgb), 0.4);
 }
 
 .calc__swap:disabled {
@@ -643,10 +621,445 @@
   font-weight: 700;
 }
 
-/* ── Курсы ───────────────────────────────────────────────────────── */
+/* ── Курсы: табло ────────────────────────────────────────────────── */
 
-.table--rates {
-  --cols: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+/*
+ * Пара, курс, минимум направления, свежесть котировки и путь в заявку.
+ * Пара шире прочего: в ней два значка, два кода и название валюты — по
+ * ней строку и находят глазами.
+ */
+.table--board {
+  --cols: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 0.8fr);
+}
+
+/*
+ * С набранной суммой колонок столько же: место минимума занимает то,
+ * что получат. Набор колонок задаётся здесь, в одном месте, — шапка и
+ * строки берут его отсюда, иначе подпись разъезжается со своим
+ * столбцом.
+ */
+.table--board-sum {
+  --cols: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 0.7fr);
+}
+
+/* Два значка валют внахлёст — пара читается как пара, а не как две
+   валюты рядом. */
+.pair {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pair__marks {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.pair__marks > :last-child {
+  margin-left: -8px;
+  /* Кант вокруг верхнего значка: без него два флага сливаются в пятно. */
+  box-shadow: 0 0 0 2px var(--surface-soft-strong);
+  border-radius: 999px;
+}
+
+.pair__names {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* Свежесть котировки и «назовёт менеджер»: сказано, но не кричит. */
+.cell__value--quiet {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/*
+ * Строка, в которой курс только что сменился.
+ *
+ * Гаснет сама за полторы секунды: подсветка говорит «вот это изменилось
+ * с того, что вы видели», а не «эта строка особенная». Цвета — те же,
+ * которыми в панели красят рост и падение показателя.
+ *
+ * Каналов три, и это не роскошь: цвет числа, заливка строки и полоса
+ * слева — та же, которой панель метит строку, ждущую менеджера. Одной
+ * заливки мало: на светлом фоне шестнадцать сотых прозрачности почти не
+ * читаются, а цвет сам по себе не должен нести смысл в одиночку.
+ */
+@keyframes nm-rate-up {
+  from {
+    background: rgba(79, 192, 138, 0.16);
+    box-shadow:
+      inset 2px 0 0 var(--up),
+      var(--lift);
+  }
+  to {
+    background: var(--surface-soft);
+    box-shadow: var(--lift);
+  }
+}
+
+@keyframes nm-rate-down {
+  from {
+    background: rgba(242, 104, 95, 0.16);
+    box-shadow:
+      inset 2px 0 0 var(--down),
+      var(--lift);
+  }
+  to {
+    background: var(--surface-soft);
+    box-shadow: var(--lift);
+  }
+}
+
+.table__item--up {
+  animation: nm-rate-up 1.4s ease-out;
+}
+
+.table__item--down {
+  animation: nm-rate-down 1.4s ease-out;
+}
+
+.table__item--up .cell--num .cell__value {
+  color: var(--up);
+}
+
+.table__item--down .cell--num .cell__value {
+  color: var(--down);
+}
+
+/*
+ * У кого движение выключено, тот всё равно должен увидеть, что строка
+ * изменилась: подсветка — единственный сигнал «вот это пришло только
+ * что», а общее правило страницы схлопывает любую анимацию в мгновение,
+ * и от неё не осталось бы ничего. Поэтому здесь заливка свойством, а не
+ * кадрами: снимет её тот же таймер, что и в обычном режиме.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .table__item--up {
+    background: rgba(79, 192, 138, 0.16);
+    box-shadow:
+      inset 2px 0 0 var(--up),
+      var(--lift);
+  }
+
+  .table__item--down {
+    background: rgba(242, 104, 95, 0.16);
+    box-shadow:
+      inset 2px 0 0 var(--down),
+      var(--lift);
+  }
+}
+
+/* ── Курсы: объяснение путём денег ───────────────────────────────── */
+
+/*
+ * Три шага на живых числах: отдаёте → по курсу → получаете. Показ
+ * вместо рассказа; абзацы, которых показом не выразить, идут ниже
+ * отдельной полосой (`howto__body` в `@nemo/ui`).
+ */
+.money-path {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.money-path__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.money-path__pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.money-path__pair > svg + svg {
+  margin-left: -8px;
+}
+
+.money-path__steps {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.money-path__step {
+  flex: 1 1 170px;
+  /* Иначе шаг не сожмётся уже своей самой длинной подписи и на телефоне
+     вылезет за край — у flex-элемента минимум по умолчанию «по содержимому». */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+
+/* Подпись шага — с переносом: это объяснение, а не ячейка таблицы,
+   и обрывать его многоточием нельзя. */
+.money-path__note {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.money-path__value {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.money-path__value--quiet {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.money-path__arrow {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--text-faint);
+  font-size: 16px;
+}
+
+.money-path__fresh,
+.money-path__empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* На телефоне шаги идут столбцом, и стрелка между ними смотрит вниз. */
+@media (max-width: 760px) {
+  .money-path__steps {
+    flex-direction: column;
+  }
+
+  /* В колонке базис ряда стал бы высотой — и шаг растянулся бы пустотой. */
+  .money-path__step {
+    flex: 0 0 auto;
+  }
+
+  .money-path__arrow {
+    transform: rotate(90deg);
+    align-self: flex-start;
+    margin-left: 14px;
+  }
+}
+
+/* ── Курсы: подсказка у колонки ──────────────────────────────────── */
+
+/*
+ * Знак «?» у заголовка колонки и плашка под ним.
+ *
+ * Знак — значок `question` из набора `@nemo/ui`, тот же, что в заголовке
+ * «Как это устроено»: одна поверхность, один набор, один штрих. Рамки
+ * и заливки у него нет: они называли бы структуру, которой у знака
+ * нет, — а состояние говорит цвет. Класс назван `ask`, а не `hint`:
+ * `.hint` в кабинете уже занят подписью под полем.
+ */
+.ask {
+  position: relative;
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/*
+ * Цель нажатия 24×24 при значке в пятнадцать — это норма для курсора
+ * (шапка таблицы на телефоне скрыта, палец сюда не приходит).
+ * Отрицательное поле по вертикали не даёт кнопке раздвинуть строку
+ * заголовка.
+ */
+.ask__mark {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -5px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-faint);
+  cursor: help;
+  transition: color 120ms var(--ease);
+}
+
+.ask__mark:hover {
+  color: var(--text-dim);
+}
+
+.ask__mark--on,
+.ask__mark--on:hover {
+  color: var(--gold-light);
+}
+
+/*
+ * Плашка — поверхность над страницей, и глубину ей даёт тень, а не
+ * рамка: тонкое кольцо цветом линий кабинета и мягкая тень под низ.
+ * Появляется коротким сдвигом сверху; общее правило страницы глушит
+ * его тем, кто просил меньше движения.
+ */
+@keyframes nm-ask-in {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.ask__pop {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 6px);
+  left: -8px;
+  width: max-content;
+  max-width: 320px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--hairline),
+    0 1px 2px -1px rgba(26, 23, 38, 0.08),
+    0 10px 28px -14px rgba(26, 23, 38, 0.35);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: normal;
+  animation: nm-ask-in 140ms var(--ease) both;
+}
+
+/* Справа края страницы нет места — плашка прижата к правому краю знака. */
+.ask__pop--end {
+  left: auto;
+  right: -8px;
+}
+
+.ask__title {
+  display: block;
+  margin-bottom: 3px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── Курсы: строка, выбранная для объяснения ─────────────────────── */
+
+/*
+ * Кнопка во всю строку, а не обработчик на ряду: до выбора доходят с
+ * клавиатуры. Сброс — как у ссылки-строки в панели.
+ */
+.table__row--button {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.table__item--chosen {
+  background: var(--surface-soft-strong);
+  box-shadow:
+    inset 2px 0 0 var(--gold-light),
+    var(--lift);
+}
+
+/* ── Курсы: рублёвая пара ────────────────────────────────────────── */
+
+/*
+ * Единственное направление, где сервис стоит по обе стороны: его и
+ * показывают покупкой, продажей и разницей между ними. У остальных
+ * второй стороны не существует, и «спред» у них был бы выдуманным
+ * числом.
+ */
+.pairbox__sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.pairbox__side {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  transition: background 0.3s ease;
+}
+
+.pairbox__value {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pairbox__side--up .pairbox__value {
+  color: var(--up);
+}
+
+.pairbox__side--down .pairbox__value {
+  color: var(--down);
+}
+
+/* ── Курсы: что спрашивают у табло ───────────────────────────────── */
+
+/*
+ * Валюта отдачи, сумма и поиск — одной строкой над таблицей. Сумма
+ * необязательна: без неё табло называет курс для наименьшей суммы
+ * направления, с ней — цену на свою, посчитанную тем же правилом, что
+ * и в заявке.
+ */
+.board__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.board__controls .field--narrow {
+  flex: 0 0 170px;
+}
+
+/*
+ * Чипы валюты — в рост поля суммы и табов: ряд выровнен по низу, и
+ * чип на восемь пикселей ниже соседей утаскивал бы свою подпись с
+ * общей линии заголовков.
+ */
+.board__controls .chip {
+  gap: 6px;
+  height: 40px;
+}
+
+@media (max-width: 760px) {
+  .board__controls .field--narrow {
+    flex: 1 1 140px;
+  }
 }
 
 /* ── Обзор: столбики по дням ─────────────────────────────────────── */
@@ -665,11 +1078,29 @@
   display: grid;
   grid-template-columns: repeat(var(--bars, 14), minmax(0, 1fr));
   gap: var(--bars-gap, 6px);
-  height: 120px;
+  /*
+   * Кадр ниже прежнего: у шкалы мягкий потолок, и на малых числах
+   * высокий кадр оставлял бы сверху пустую половину карточки.
+   */
+  height: 96px;
   margin-top: 6px;
 }
 
+/*
+ * Колонка дня — кнопка: цель наведения должна быть заметно больше
+ * марки, а двухпиксельный столбик не поймать ни мышью, ни пальцем.
+ * Подсвеченная колонка играет роль курсора биржевого графика, только
+ * прилипает к дню, а не гуляет между ними.
+ */
 .bars__day {
+  appearance: none;
+  border: 0;
+  padding: 2px 0 0;
+  background: transparent;
+  border-radius: 7px;
+  cursor: default;
+  color: inherit;
+  transition: background 0.12s var(--ease);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -689,12 +1120,17 @@
 .bars__bar {
   flex: 1;
   min-height: 2px;
-  border-radius: 3px 3px 0 0;
-  background: var(--surface-soft-strong);
+  /* Скруглён только верх: низ сидит на базовой линии. */
+  border-radius: 4px 4px 0 0;
+  background: var(--chart-sent);
+}
+
+.bars__bar--sent {
+  background: var(--chart-sent);
 }
 
 .bars__bar--done {
-  background: var(--gold, #e2b050);
+  background: var(--chart-done);
 }
 
 /* Нулевой день — пустое место, а не точка: точка читалась бы как «одна». */
@@ -702,32 +1138,39 @@
   min-height: 0;
 }
 
+/*
+ * Место под подписью занято всегда, даже когда подписи нет: у шага с
+ * длинной подписью показан каждый второй столбик, а схлопнувшаяся
+ * пустая строка опускала соседние столбики ниже остальных — ряд терял
+ * общую базу, и разница в высоте читалась как разница в числах.
+ */
 .bars__label {
+  min-height: 13px;
+  line-height: 13px;
   font-size: 10px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
 
 .bars__legend {
-  margin: 10px 0 0;
+  /* Отступ сверху снят: фигура расставляет свои части сама. */
+  margin: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* Пара «ключ — подпись» держится вместе, пары — врозь. */
+  gap: 6px 18px;
+  flex-wrap: wrap;
   font-size: 12px;
   color: var(--text-dim);
 }
 
+/* Ключ повторяет форму марки: у столбиков это прямоугольник. */
 .bars__key {
   display: inline-block;
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  background: var(--surface-soft-strong);
-}
-
-.bars__key--done {
-  margin-left: 8px;
-  background: var(--gold, #e2b050);
+  background: var(--chart-sent);
 }
 
 /* ── Витрина ─────────────────────────────────────────────────────── */
@@ -797,7 +1240,7 @@
   border-radius: 999px;
   background: radial-gradient(
     closest-side,
-    rgba(249, 160, 60, 0.24) 0%,
+    rgba(var(--gold-rgb), 0.24) 0%,
     rgba(226, 138, 52, 0.11) 28%,
     rgba(112, 88, 180, 0.09) 48%,
     rgba(58, 50, 108, 0) 68%
@@ -1478,4 +1921,839 @@
 
 .card > .pos__equal {
   margin: 6px 0 0;
+}
+
+/* ── Характер кабинета: «Терминал» ───────────────────────────────────
+ *
+ * Выбран 20 сентября 2026 из трёх нарисованных направлений. Держится
+ * на трёх вещах, и ни одна из них не про цвет:
+ *
+ * 1. Числа моноширинные. Цифры одной ширины стоят ровной колонкой, и
+ *    два числа под двумя другими сравниваются взглядом, а не чтением.
+ *    Это же даёт кабинету профессию: приём из банковских выписок.
+ * 2. Плитки слиты в сетку волосками, а не разложены отдельными
+ *    карточками с тенями. Белая карточка с мягкой тенью на светло-сером
+ *    фоне — самый растиражированный приём в мире, и именно он делал
+ *    первый макет безликим.
+ * 3. Плотность: разделитель в пиксель вместо отступа в двенадцать.
+ *
+ * Правила дописывают `@nemo/ui`, а не спорят с ним: там остаются
+ * размеры, радиусы и поведение, здесь — характер.
+ */
+
+.stat__label,
+.stat__value,
+.money,
+.today b {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.stat__value {
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+
+.stat__label {
+  font-weight: 500;
+  letter-spacing: 0.9px;
+}
+
+/*
+ * Плитки сеткой: один общий край и волоски внутри. `overflow` прячет
+ * углы плиток под радиусом группы — иначе на скруглении видны их
+ * прямые углы.
+ *
+ * Линии рисует каждая плитка сама, тенью в свой пиксель, а фон у
+ * группы — цвет поверхности. Через фон группы было бы короче, но
+ * плиток бывает не кратное число колонкам — у наблюдателя их шесть, у
+ * владельца восемь, — и хвост последнего ряда оставался бы серой
+ * дырой. Белый хвост читается как незаполненная часть таблицы, серый —
+ * как поломка.
+ */
+.stats {
+  gap: 1px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.stat {
+  border-radius: 0;
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+
+/* Текущая плитка в сетке: волосок остаётся, полоса акцента — поверх. */
+.stat--current,
+a.stat--current:hover {
+  box-shadow: 0 0 0 1px var(--hairline), inset 0 -2px 0 var(--gold-mark);
+}
+
+.card {
+  box-shadow: none;
+  border: 1px solid var(--hairline);
+}
+
+/* ── Что требует внимания ────────────────────────────────────────────
+ *
+ * Ссылкой целиком: беда одна, действие у неё одно. Появляется, только
+ * когда есть о чём сказать (`lib/attention.ts`), поэтому у неё нет
+ * спокойного вида — тихий день выглядит как её отсутствие.
+ */
+.attention {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  font-size: 13.5px;
+  line-height: 1.45;
+  transition: background 0.15s var(--ease);
+}
+
+.attention--alarm {
+  background: rgba(242, 104, 95, 0.1);
+  border-color: rgba(242, 104, 95, 0.3);
+}
+
+.attention--warn {
+  background: var(--surface-soft);
+  border-color: var(--hairline);
+}
+
+.attention:hover {
+  background: rgba(242, 104, 95, 0.16);
+}
+
+.attention--warn:hover {
+  background: var(--surface-soft-hover);
+}
+
+.attention__label {
+  flex-shrink: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.attention--alarm .attention__label {
+  color: var(--danger-text);
+}
+
+.attention--warn .attention__label {
+  color: var(--gold-text);
+}
+
+.attention__text {
+  flex-grow: 1;
+  min-width: 0;
+  color: var(--text);
+  text-wrap: pretty;
+}
+
+.attention__go {
+  flex-shrink: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger-text);
+}
+
+.attention--warn .attention__go {
+  color: var(--gold-text);
+}
+
+/* На узком экране действие уходит под текст, а не сжимает его в столбик. */
+@media (max-width: 720px) {
+  .attention {
+    flex-wrap: wrap;
+  }
+
+  .attention__text {
+    flex-basis: 100%;
+    order: 3;
+  }
+}
+
+/* ── График по дням: наведение ───────────────────────────────────── */
+
+.bars-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bars__day--active {
+  background: var(--surface-soft-strong);
+}
+
+.bars__day:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 1px;
+}
+
+/*
+ * Числа дня живут строкой под фигурой, а не плавающим пузырём: пузырь
+ * закрывал бы соседние дни — те самые, с которыми читатель сравнивает.
+ * Место занято всегда, поэтому при наведении ничего не прыгает.
+ */
+.bars__readout {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  min-height: 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/*
+ * Имя корзины в одну строку: «III квартал 2026» переносился надвое, и
+ * карточка подрастала под курсором — ровно тот прыжок, ради
+ * отсутствия которого строка и живёт под фигурой, а не пузырём.
+ */
+.bars__readout-day {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-faint);
+}
+
+/* Число ведёт, имя ряда следует: ряд читатель уже выбрал глазами. */
+.bars__readout-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bars__readout-pair b {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.bars__readout-hint {
+  color: var(--text-faint);
+}
+
+.bars__key--sent {
+  background: var(--chart-sent);
+}
+
+.bars__key--done {
+  background: var(--chart-done);
+}
+
+/* ── Выбор шага ряда ─────────────────────────────────────────────── */
+
+/*
+ * Меню на заголовке карточки, устроенное как меню сотрудника в шапке
+ * (`.menu` в `@nemo/ui`): та же механика `details`, та же всплывающая
+ * плашка. Своё тут — что кнопкой служит сам заголовок: четыре
+ * равноправные кнопки над одним рядом обещали бы четыре показателя, а
+ * заголовок, меняющий имя ряда, называет ровно то, что показано.
+ */
+.steps {
+  position: relative;
+  /* Ширина по заголовку: раскрывать меню нажатием в пустоту незачем. */
+  align-self: flex-start;
+}
+
+.steps__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px -8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  list-style: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.steps__summary::-webkit-details-marker {
+  display: none;
+}
+
+.steps__summary:hover,
+.steps[open] .steps__summary {
+  background: var(--surface-soft);
+}
+
+.steps__summary:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 1px;
+}
+
+.steps__chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+  transition: transform 0.15s var(--ease);
+}
+
+.steps[open] .steps__chevron {
+  transform: rotate(180deg);
+}
+
+.steps__list {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 6;
+  min-width: 180px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  animation: nm-fade-up 0.18s var(--ease) both;
+}
+
+.steps__item {
+  display: block;
+  padding: 9px 10px;
+  border-radius: var(--radius-inner);
+  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.steps__item:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+/* Выбранный назван цветом акцента, а не галочкой: он же стоит в заголовке. */
+.steps__item--on {
+  color: var(--gold-text);
+}
+
+/* ── Карточка заявки ─────────────────────────────────────────────── */
+
+/*
+ * Заголовком карточки стоит свой номер мерчанта, а он бывает до двухсот
+ * знаков без единого пробела: «INV20260921000012345678…». Короткое
+ * «Заявка 1a2b3c4d» в перенос не нуждалось; длинный номер без него
+ * уводит страницу за край телефона. Найдено ревью 21 сентября 2026.
+ */
+.page__title--own {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* Наш номер под заголовком: тише своего, но целиком и с копированием. */
+.page__id {
+  margin: 8px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  /* Идентификатор неразрывен: на телефоне переносится по любому знаку. */
+  overflow-wrap: anywhere;
+}
+
+.page__id-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+}
+
+/*
+ * Строка пути. Шаги соединены линией через псевдоэлемент шага, а не
+ * отдельными узлами: линия принадлежит шагу, до которого ведёт, и
+ * красится вместе с ним — пройденный отрезок темнее непройденного.
+ */
+.path {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.path__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 12px;
+  min-width: 0;
+}
+
+.path__step::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 14px;
+  right: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--hairline);
+}
+
+.path__step:last-child::before {
+  display: none;
+}
+
+/*
+ * Путь одного цвета — акцента кабинета. До 21 сентября 2026 пройденное
+ * было тёмно-серым, а акцентом красился только текущий шаг: исполненная
+ * заявка выходила чёрной, только что поданная — фиолетовой, и владелец
+ * спросил, почему они разного цвета. Читалось это как два разных
+ * состояния пути, а не как «пройдено» и «сейчас здесь». Теперь цвет
+ * один: пройденное залито, будущее пусто, а «сейчас здесь» говорит
+ * мигание, а не смена краски.
+ */
+.path__step--done::before {
+  background: var(--gold-light);
+}
+
+.path__mark {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid var(--hairline);
+  background: var(--surface);
+}
+
+.path__step--done .path__mark {
+  border-color: var(--gold-light);
+  background: var(--gold-light);
+}
+
+.path__step--current .path__mark {
+  border-color: var(--gold-light);
+  background: var(--gold-light);
+  box-shadow: 0 0 0 4px rgba(var(--gold-rgb), 0.16);
+  /*
+   * Мигает ореол, а не сама точка: точка остаётся на месте и того же
+   * размера — по ней читают, где заявка, — а пульс говорит, что она в
+   * работе. У исполненной и отменённой текущего шага нет, и мигать
+   * нечему: путь закончен.
+   */
+  animation: path-pulse 1.8s var(--ease) infinite;
+}
+
+/*
+ * Ждёт самого мерчанта — медовым, как всё, что ждёт человека: и точка,
+ * и её пульс. Так текущий шаг согласован со строкой под путём — «Ждёт
+ * вашей оплаты» набрана тем же цветом.
+ */
+.path--wait .path__step--current .path__mark {
+  border-color: var(--wait-mark);
+  background: var(--wait-mark);
+  animation-name: path-pulse-wait;
+}
+
+@keyframes path-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(var(--gold-rgb), 0.22);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(var(--gold-rgb), 0);
+  }
+}
+
+@keyframes path-pulse-wait {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(var(--wait-rgb), 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(var(--wait-rgb), 0);
+  }
+}
+
+/* Кто просил систему не двигаться, видит ровный ореол вместо пульса. */
+@media (prefers-reduced-motion: reduce) {
+  .path__step--current .path__mark {
+    animation: none;
+  }
+}
+
+/* Оборвалась здесь: тоном отказа и пустой внутри — шаг не пройден. */
+.path__step--stopped .path__mark {
+  border-color: var(--down);
+  background: var(--surface);
+}
+
+.path__label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.path__step--done .path__label {
+  color: var(--text);
+}
+
+/* Время шага: тихо и цифрами одной ширины — их сравнивают глазами. */
+.path__when {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  /* Место занято и у шагов впереди: подписи стоят на одной высоте. */
+  min-height: 15px;
+  margin-top: -4px;
+}
+
+/* Вебхуки шага — под его временем, мельче: подробность перехода. */
+.path__hooks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.path__hook {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+
+.path__hook a {
+  color: var(--text-muted);
+}
+
+.path__hook a:hover {
+  color: var(--text);
+}
+
+.path__hook--ok a {
+  color: var(--up);
+}
+
+/* Ждёт отправки или повтора — медовым: это ждёт внимания. */
+.path__hook--wait a {
+  color: var(--wait);
+}
+
+.path__hook--bad a {
+  color: var(--danger-text);
+}
+
+/* Отмена — под путём, отдельно от шага, на котором оборвалась. */
+.path__cancelled {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--danger-text);
+}
+
+.path__step--current .path__label {
+  color: var(--text);
+}
+
+.path__step--stopped .path__label {
+  color: var(--danger-text);
+}
+
+.path__note {
+  margin: 16px 0 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* Ждёт самого мерчанта — медовым, как всё, что ждёт человека. */
+.path__note--wait {
+  color: var(--wait);
+  font-weight: 600;
+}
+
+/* Срок оплаты: момент, остаток и одна строка о том, зачем он. */
+.deadline {
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.deadline__left {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.deadline--soon .deadline__left {
+  color: var(--wait);
+}
+
+.deadline__why {
+  flex-basis: 100%;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.deadline--over {
+  color: var(--danger-text);
+}
+
+/*
+ * На телефоне путь идёт столбиком: точка слева, справа подпись, время и
+ * вебхук. В ряд четыре шага не помещаются — колонке достаётся семьдесят
+ * пикселей, «Курс подтверждён» рвётся посреди слова, строка вебхука
+ * складывается в шесть, а время под подписями разной высоты стоит
+ * вразнобой. Уменьшать шрифт — не выход: это рабочий экран, а не
+ * запасной.
+ */
+@media (max-width: 560px) {
+  .path {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .path__step {
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 2px;
+    padding: 0 0 16px;
+  }
+
+  .path__step:last-child {
+    padding-bottom: 0;
+  }
+
+  /* Линия — вниз от точки к следующему шагу, а не вправо. */
+  .path__step::before {
+    top: 16px;
+    bottom: 0;
+    left: 6px;
+    right: auto;
+    width: 2px;
+    height: auto;
+  }
+
+  .path__mark {
+    grid-column: 1;
+    grid-row: 1;
+    margin-top: 2px;
+  }
+
+  .path__label,
+  .path__when,
+  .path__hooks {
+    grid-column: 2;
+  }
+
+  .path__label {
+    font-size: 13.5px;
+    overflow-wrap: normal;
+  }
+
+  .path__when {
+    min-height: 0;
+    margin-top: 0;
+  }
+
+  /* В столбик выравнивать высоту нечем и незачем: пустое время уходит. */
+  .path__step--ahead .path__when {
+    display: none;
+  }
+}
+
+/* Получатель: строка, по которой сверяют, — крупнее пояснений вокруг. */
+.recipient {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ── POS-терминал: счёт рядом с формой, QR, последние счета ──────── */
+
+/*
+ * Слева форма или открытый счёт, справа последние счета. Список стоит
+ * рядом, а не под формой: у стойки спрашивают «прошла ли оплата» о
+ * счёте, который только что создали, и искать его в разделе «Счета»
+ * значит уйти с кассы.
+ */
+.pos__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(220px, 2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.pos__main,
+.pos__side {
+  min-width: 0;
+}
+
+.recent__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.recent__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Точка живого обновления: мигает, пока вкладка слушает поток. */
+.recent__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: recent-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes recent-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Строка последних счетов — кнопка на всю ширину: нажатие открывает счёт на месте формы. */
+.recent__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recent__row:hover,
+.recent__row[aria-current='true'] {
+  background: var(--surface-soft);
+}
+
+/* Открытый счёт: то, что показывают покупателю через плечо. */
+.pay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px;
+  border-radius: var(--radius-control);
+  background: var(--surface-soft);
+  box-shadow: var(--lift);
+  text-align: center;
+}
+
+/* QR на белом: сканеры читают тёмный код на светлом, а фон кабинета тёмный. */
+.pay__qr,
+.invoice__qr img {
+  display: block;
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.pay__note {
+  font-size: 13px;
+  color: var(--text-dim);
+  max-width: 34ch;
+}
+
+.pay__state {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.pay__state--paid {
+  color: var(--gold-light);
+}
+
+.pay .actions {
+  justify-content: center;
+}
+
+/* Карточка счёта: суммы слева, QR справа, пока счёт ждёт денег. */
+.invoice__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.invoice__qr {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 220px;
+}
+
+/* Настройки терминала: две кнопки в ряд, поле раскрывается под ними. */
+.pos-settings__panel {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Вид терминала: форма или счёт слева, последние счета справа. */
+.desk__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(240px, 2fr);
+  gap: 24px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.desk__side {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .pos__layout,
+  .desk__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

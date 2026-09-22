@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RequisitesView } from '@nemo/core';
+import { CurrencyFlag } from '@nemo/flags';
 import {
   currencyName,
   currencyPlace,
@@ -22,7 +23,6 @@ import {
 } from '@nemo/types';
 import { ApiError, del, post } from '@/lib/client-api';
 import { BankField } from './ui/bank-chips';
-import { CurrencyFlag } from './ui/flags';
 import { TrashIcon } from './ui/icons';
 import { addressLabel, NetworkPicker } from './ui/network-picker';
 import { ConfirmSheet } from './ui/sheet';

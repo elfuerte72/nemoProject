@@ -28,6 +28,7 @@ import {
   type ExchangeRequestSource,
   type ExchangeRequestStatus,
   type PayoutMethod,
+  isUuid,
   minimumMeasure,
 } from '@nemo/types';
 import { requireOwner, requireOwnerAbility, type Actor, type Owner } from './actor.js';
@@ -36,6 +37,7 @@ import { CLIENT_HISTORY_LIMIT } from './client-history.js';
 import type { CoreConfig, Executor } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
 import { publishLiveEvent } from './live-events.js';
+import { cyrillicLike, likePattern } from './search.js';
 import { enqueueWebhookDeliveries } from './webhooks.js';
 import type { Notification } from './notifications.js';
 import { quoteForSubmission } from './rates.js';
@@ -45,8 +47,10 @@ import {
   payoutMethodOfInput,
   requireSuitableRequisites,
   requisitesOf,
+  type RequisitesView,
   saveRequisitesIn,
   type SaveRequisitesInput,
+  toView,
 } from './requisites.js';
 import { MIN_EXCHANGE_CODE, readServiceSettings } from './settings.js';
 
@@ -120,6 +124,19 @@ export interface ExchangeRequestView {
    * ключом API — ключ ничей — и у поданных до появления отметки.
    */
   readonly submittedByUserId: string | null;
+  /**
+   * Откуда заявка пришла — со слов того, кто принял запрос: операция
+   * подачи у Mini App и API одна, и различить их изнутри нечем. Пусто у
+   * поданных до появления отметки, и пустота так и отдаётся: угаданный
+   * источник читался бы как записанный.
+   */
+  readonly source: ExchangeRequestSource | null;
+  /**
+   * Ключ API, которым заявка подана. Пусто у поданных человеком и до
+   * появления отметки. Имя ключа читается отдельно: подпись мерчант
+   * меняет, и хранить её копией в заявке значило бы показывать старую.
+   */
+  readonly apiKeyId: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly completedAt: Date | null;
@@ -167,6 +184,11 @@ export interface SubmitExchangeRequestInput {
    * угаданный источник читался бы как записанный.
    */
   readonly source?: ExchangeRequestSource | undefined;
+  /**
+   * Ключ API, которым подана. Называет его адаптер v1: ядро не знает,
+   * откуда пришёл запрос, и узнать ключ ему неоткуда.
+   */
+  readonly apiKeyId?: string | undefined;
 }
 
 export interface SubmitExchangeRequestResult {
@@ -252,6 +274,8 @@ export function toExchangeRequestView(row: ExchangeRequestRow): ExchangeRequestV
     cancelReason: row.cancelReason,
     reference: row.reference,
     submittedByUserId: row.submittedByUserId,
+    source: row.source,
+    apiKeyId: row.apiKeyId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     completedAt: row.completedAt,
@@ -529,6 +553,7 @@ export async function submitExchangeRequest(
       ...(reference === undefined ? {} : { reference }),
       ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
       ...(input.source === undefined ? {} : { source: input.source }),
+      ...(input.apiKeyId === undefined ? {} : { apiKeyId: input.apiKeyId }),
       kind: input.kind,
       fromCode: input.fromCode,
       toCode: input.toCode,
@@ -692,8 +717,57 @@ export interface OwnExchangeFilter {
    * не то, что видно.
    */
   readonly submittedByUserId?: string | undefined;
+  /**
+   * Поиск по своему номеру — куском, без учёта регистра, — или по
+   * нашему идентификатору целиком. Это главный путь в список: мерчанту
+   * пишут «заказ 1013, где деньги», и ищет он по номеру, который знает
+   * его система. Пустая строка — отсутствие поиска, а не пустой ответ:
+   * она приезжает из адреса вместе с очищенным полем.
+   */
+  readonly search?: string | undefined;
   readonly limit?: number | undefined;
   readonly after?: { readonly createdAt: Date; readonly id: string } | undefined;
+}
+
+/**
+ * Условие поиска. Свой номер ищется с коллацией ICU: база собрана с
+ * локалью `C`, и обычный `ilike` «Бронь» на запрос «бронь» не находит —
+ * при том что латинские номера ищутся, и на глаз поиск выглядит рабочим.
+ *
+ * Наш идентификатор сравнивается только целиком и только когда запрос
+ * на него похож: по куску `uuid` база не ищет, а непохожую строку в
+ * сравнении с ним отвергает ошибкой, а не пустотой.
+ */
+function searchedFor(raw: string | undefined): SQL | undefined {
+  const asked = raw?.trim() ?? '';
+  if (!asked) return undefined;
+  const byReference = cyrillicLike(exchangeRequests.reference, likePattern(asked));
+  return isUuid(asked) ? or(byReference, eq(exchangeRequests.id, asked)) : byReference;
+}
+
+/**
+ * Условия отбора своих заявок — одни на список, счёт и раскладку по
+ * состояниям. До поиска они были записаны дважды, слово в слово; третья
+ * копия разошлась бы с первыми на первой же правке, и счётчик таба
+ * считал бы не то, что показано под ним.
+ */
+function ownConditions(
+  owner: Owner,
+  filter: Omit<OwnExchangeFilter, 'limit' | 'after'>,
+): SQL[] {
+  const conditions: SQL[] = [ownedBy(owner)];
+  if (filter.status) conditions.push(eq(exchangeRequests.status, filter.status));
+  if (filter.statuses?.length) {
+    conditions.push(inArray(exchangeRequests.status, [...filter.statuses]));
+  }
+  if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
+  if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
+  if (filter.submittedByUserId) {
+    conditions.push(eq(exchangeRequests.submittedByUserId, filter.submittedByUserId));
+  }
+  const searched = searchedFor(filter.search);
+  if (searched) conditions.push(searched);
+  return conditions;
 }
 
 /** Столько заявок отдаётся за раз, когда предел не назван. */
@@ -707,16 +781,7 @@ export async function listExchangeRequests(
   filter: OwnExchangeFilter = {},
 ): Promise<readonly ExchangeRequestView[]> {
   const owner = requireOwner(actor);
-  const conditions: SQL[] = [ownedBy(owner)];
-  if (filter.status) conditions.push(eq(exchangeRequests.status, filter.status));
-  if (filter.statuses?.length) {
-    conditions.push(inArray(exchangeRequests.status, [...filter.statuses]));
-  }
-  if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
-  if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
-  if (filter.submittedByUserId) {
-    conditions.push(eq(exchangeRequests.submittedByUserId, filter.submittedByUserId));
-  }
+  const conditions = ownConditions(owner, filter);
   if (filter.after) {
     /*
      * Пара «время и идентификатор» — двумя условиями, а не кортежем в
@@ -764,16 +829,7 @@ export async function countExchangeRequests(
   filter: Omit<OwnExchangeFilter, 'limit' | 'after'> = {},
 ): Promise<number> {
   const owner = requireOwner(actor);
-  const conditions: SQL[] = [ownedBy(owner)];
-  if (filter.status) conditions.push(eq(exchangeRequests.status, filter.status));
-  if (filter.statuses?.length) {
-    conditions.push(inArray(exchangeRequests.status, [...filter.statuses]));
-  }
-  if (filter.from) conditions.push(gte(exchangeRequests.createdAt, filter.from));
-  if (filter.to) conditions.push(lte(exchangeRequests.createdAt, filter.to));
-  if (filter.submittedByUserId) {
-    conditions.push(eq(exchangeRequests.submittedByUserId, filter.submittedByUserId));
-  }
+  const conditions = ownConditions(owner, filter);
 
   const [row] = await ctx.db
     .select({ total: count() })
@@ -794,12 +850,19 @@ export async function countExchangeRequests(
 export async function countExchangeRequestsByStatus(
   ctx: CoreConfig,
   actor: Actor,
+  /**
+   * Поиск и даты сужают и раскладку: числа на плитках обязаны считать
+   * то, что показано под ними, иначе над двумя строками за неделю стояло
+   * бы «Исполнены 10». Состояния сюда не передаются намеренно: раскладка
+   * по состояниям и есть ответ.
+   */
+  filter: Pick<OwnExchangeFilter, 'search' | 'from' | 'to'> = {},
 ): Promise<Readonly<Record<ExchangeRequestStatus, number>>> {
   const owner = requireOwner(actor);
   const rows = await ctx.db
     .select({ status: exchangeRequests.status, total: count() })
     .from(exchangeRequests)
-    .where(ownedBy(owner))
+    .where(and(...ownConditions(owner, filter)))
     .groupBy(exchangeRequests.status);
 
   // Состояние, которого у владельца нет, — это ноль, а не отсутствие
@@ -823,6 +886,45 @@ export function ownedBy(owner: Owner): SQL {
   return owner.kind === 'client'
     ? eq(exchangeRequests.clientId, owner.clientId)
     : eq(exchangeRequests.merchantId, owner.merchantId);
+}
+
+/**
+ * Куда ушли деньги по заявке — запись получателя для владельца заявки.
+ *
+ * Отдельная операция, а не список получателей: поданная по API запись
+ * архивируется сразу при подаче, чтобы список не рос на каждую заявку,
+ * и `listRequisites` её не отдаёт. У заявок интеграции запись была
+ * всегда и не была видна никогда — а «туда ли вы перевели» мерчант
+ * спрашивает первым делом, когда жалуется покупатель.
+ *
+ * Отдаётся то, что видно без расшифровки: вид, банк или сеть, открытый
+ * хвост. Полного номера здесь нет и быть не может — приватного ключа в
+ * клиентском контуре нет (ADR-0002), да он и не нужен: сверяют хвост.
+ * Чужая заявка — «не найдена», как везде. Заявка без получателя
+ * отвечает пустотой, а не ошибкой: наличной он и не положен.
+ */
+export async function getExchangeRequestRecipient(
+  ctx: CoreConfig,
+  actor: Actor,
+  requestId: string,
+): Promise<RequisitesView | null> {
+  const owner = requireOwner(actor);
+  const [request] = await ctx.db
+    .select({ requisitesId: exchangeRequests.requisitesId })
+    .from(exchangeRequests)
+    .where(and(eq(exchangeRequests.id, requestId), ownedBy(owner)))
+    .limit(1);
+  if (!request) throw new NotFoundError('Заявка не найдена');
+  if (!request.requisitesId) return null;
+
+  // Принадлежность записи сверяется отдельно от заявки: ссылка на
+  // чужую запись в своей заявке — не повод её показать.
+  const [row] = await ctx.db
+    .select()
+    .from(clientRequisites)
+    .where(and(eq(clientRequisites.id, request.requisitesId), requisitesOf(owner)))
+    .limit(1);
+  return row ? toView(row) : null;
 }
 
 /**

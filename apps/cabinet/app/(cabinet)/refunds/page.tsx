@@ -19,6 +19,7 @@ import { PREVIEW_NOTE, REFUNDS_HOW_TO } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
+import { PosLive } from '@/app/ui/pos-live';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,9 +30,10 @@ export const dynamic = 'force-dynamic';
  * то, что делают с конкретным платежом, и раздел, в котором его
  * начинают, требовал бы сначала найти счёт по номеру.
  *
- * Решение принимает менеджер, и этой части пока нет — заявка остаётся в
- * состоянии «Ожидает». Остальные табы стоят пустыми: путь заявки виден
- * целиком, а рисовать переход, которого никто не делает, нельзя.
+ * Исполняет возврат тот, кто принимал платёж, — провайдер приёма. У
+ * банка между заявкой и деньгами стоят часы и решение, и заявка ждёт в
+ * «Ожидает»; у имитации ждать некого, и возврат исполнен сразу. Счёт,
+ * оплаченный руками мимо сервиса, возвращать некому — его заявка ждёт.
  */
 export default async function RefundsPage({
   searchParams,
@@ -66,6 +68,7 @@ export default async function RefundsPage({
 
   return (
     <main className="page page--wide">
+      <PosLive />
       <DisabledBanner status={session.status} />
 
       <header className="page__head">
@@ -87,7 +90,7 @@ export default async function RefundsPage({
         <Stat
           label="Ждут решения"
           value={countByStatus(all, 'pending')}
-          note="менеджер их пока не видит"
+          note="по счетам, оплаченным мимо сервиса: возвращать некому"
           tone={countByStatus(all, 'pending') > 0 ? 'wait' : 'plain'}
         />
         <Stat
@@ -117,7 +120,7 @@ export default async function RefundsPage({
           text={
             all.length === 0
               ? 'Возврат заводится в карточке оплаченного счёта — целиком или частью, с причиной.'
-              : 'Заявки ждут решения менеджера; этой части пока нет.'
+              : 'Возьмите другое состояние.'
           }
         />
       ) : (

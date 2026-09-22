@@ -20,7 +20,7 @@ describe('меню по роли', () => {
     expect(mine).toContain('/keys');
     expect(mine).toContain('/webhooks');
     expect(mine).toContain('/staff');
-    expect(mine).toContain('/requests/new');
+    expect(mine).toContain('/pos');
   });
 
   /**
@@ -30,24 +30,36 @@ describe('меню по роли', () => {
    */
   it('оператор работает, но интеграции и людей не видит', () => {
     const mine = hrefs('operator');
-    expect(mine).toContain('/requests/new');
-    expect(mine).toContain('/recipients');
     expect(mine).toContain('/pos');
+    expect(mine).toContain('/refunds');
     expect(mine).not.toContain('/keys');
     expect(mine).not.toContain('/webhooks');
     expect(mine).not.toContain('/docs');
     expect(mine).not.toContain('/staff');
   });
 
-  it('наблюдатель смотрит заявки и курсы, но не подаёт', () => {
+  it('наблюдатель смотрит заявки и курсы, но не работает с кассой', () => {
     const mine = hrefs('viewer');
     expect(mine).toContain('/requests');
     expect(mine).toContain('/rates');
     expect(mine).toContain('/invoices');
-    expect(mine).not.toContain('/requests/new');
-    expect(mine).not.toContain('/recipients');
     expect(mine).not.toContain('/pos');
     expect(mine).not.toContain('/keys');
+  });
+
+  /**
+   * Подача заявки руками и раздел получателей убраны 19 сентября 2026:
+   * мерчант не менеджер, он не заводит заявки по одной — их заводит его
+   * интеграция. Оба пришли из панели и повторяли чужую работу.
+   *
+   * Проверяется тестом, а не глазами: вернуть строку в `NAV_GROUPS`
+   * дешевле всего по невнимательности, а заметит это владелец.
+   */
+  it('подачи заявки и получателей в меню нет ни у кого', () => {
+    for (const role of ['owner', 'operator', 'viewer'] as const) {
+      expect(hrefs(role)).not.toContain('/requests/new');
+      expect(hrefs(role)).not.toContain('/recipients');
+    }
   });
 
   /** Настройки и поддержка — всем: свой пароль меняет каждый. */

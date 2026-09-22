@@ -1,12 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EmptyState, Moment } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
 import { cursorOf, cursorToParams, mergePages } from '@nemo/ui/paging';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
-import type { RequestRow, RequestTab, WhoKey } from '@/lib/request-rows';
+import type { RequestRow, RequestTab } from '@/lib/request-rows';
 
 /**
  * Список заявок с дочитыванием по курсору — тем же правилом, что у
@@ -17,24 +17,23 @@ export function RequestsTable({
   rows,
   total,
   tab,
-  who,
-  names,
+  search,
+  period,
 }: {
   readonly rows: readonly RequestRow[];
   readonly total: number;
   readonly tab: RequestTab;
   /**
-   * Чьи заявки показаны. Едет в запрос дочитывания: без него вторая
-   * страница приехала бы по всему кабинету, и в «моих» появились бы
-   * чужие строки.
+   * Что ищут. Едет в запрос дочитывания: без него вторая страница
+   * приехала бы по всему кабинету, и под найденным появились бы строки,
+   * которых не искали.
    */
-  readonly who: WhoKey;
+  readonly search: string;
   /**
-   * Имена людей кабинета по идентификатору. Пусто у всех, кроме
-   * владельца: состав кабинета читает он один (тикет 17), и колонка
-   * «Кто подал» появляется вместе с именами, а не пустая.
+   * Период параметрами адреса — едет в дочитывание по той же причине,
+   * что и поиск: вторая страница обязана отбираться так же, как первая.
    */
-  readonly names?: Readonly<Record<string, string>> | undefined;
+  readonly period: Readonly<Record<string, string>>;
 }) {
   const [extra, setExtra] = useState<readonly RequestRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -51,39 +50,62 @@ export function RequestsTable({
     setExtra((current) => current.filter((row) => !rows.some((one) => one.id === row.id)));
   }, [rows]);
 
-  /* Сменился таб или выборка — хвост от прежней чужой ей целиком. */
+  /*
+   * Какая выборка на экране сейчас. Дочитывание сверяется с ней, когда
+   * ответ пришёл: сменили таб или запрос, пока он шёл, — ответ прежней
+   * выборки к новой не дописывается. С поиском это стало вероятнее:
+   * запрос меняется с каждой набранной буквой.
+   */
+  const periodKey = new URLSearchParams(period).toString();
+  const shownKey = `${tab}\n${search}\n${periodKey}`;
+  const liveKey = useRef(shownKey);
+  liveKey.current = shownKey;
+
+  /* Сменился таб или запрос — хвост от прежней выборки чужой ей целиком. */
   useEffect(() => {
     setExtra([]);
-  }, [tab, who]);
+  }, [tab, search, periodKey]);
 
   if (shown.length === 0) {
     return (
       <EmptyState
         icon="exchange"
-        title="Пока пусто"
+        title={search ? 'Ничего не нашлось' : periodKey ? 'За эти даты пусто' : 'Пока пусто'}
         text={
-          tab === 'open'
-            ? 'Незакрытых заявок нет. Поданные встанут сюда — и из кабинета, и по API.'
-            : 'В этом состоянии заявок нет.'
+          search
+            ? tab === 'all'
+              ? 'Заявки с таким номером нет. Проверьте номер: он тот, который ваша система передала при подаче.'
+              : 'В этом состоянии такой заявки нет. Посмотрите во «Всех»: ищущий номер обычно не знает, исполнена она или отменена.'
+            : periodKey
+              ? 'За выбранные даты таких заявок нет. Расширьте период или откройте «За всё время».'
+              : tab === 'open'
+              ? 'Незакрытых заявок нет. Поданные вашей интеграцией встанут сюда.'
+              : 'В этом состоянии заявок нет.'
         }
       />
     );
   }
 
   const remaining = Math.max(total - shown.length, 0);
-  const withNames = names !== undefined;
 
   const more = async () => {
     const cursor = cursorOf(shown);
     if (!cursor) return;
 
+    const askedFor = shownKey;
     setLoading(true);
     setFailed(false);
     try {
-      const params = new URLSearchParams({ tab, who, ...cursorToParams(cursor) });
+      const params = new URLSearchParams({
+        tab,
+        ...(search ? { q: search } : {}),
+        ...period,
+        ...cursorToParams(cursor),
+      });
       const response = await fetch(`/api/requests?${params.toString()}`);
       if (!response.ok) throw new Error(String(response.status));
       const body = (await response.json()) as { rows: RequestRow[] };
+      if (liveKey.current !== askedFor) return;
       setExtra((current) => mergePages(current, body.rows));
     } catch {
       // Дочитать не удалось — показанное остаётся на месте, а о неудаче
@@ -97,12 +119,11 @@ export function RequestsTable({
 
   return (
     <>
-      <ul className={`table ${withNames ? 'table--requests-staff' : 'table--requests'}`}>
+      <ul className="table table--requests">
         <li className="table__head" aria-hidden>
           <span>Отдаю</span>
           <span>Получаю</span>
           <span>Свой номер</span>
-          {withNames ? <span>Кто подал</span> : undefined}
           <span>Состояние</span>
           <span>Подана</span>
         </li>
@@ -127,20 +148,6 @@ export function RequestsTable({
                 <span className="cell__label">Свой номер</span>
                 <span className="cell__value">{request.reference ?? '—'}</span>
               </span>
-              {withNames ? (
-                <span className="cell">
-                  <span className="cell__label">Кто подал</span>
-                  <span className="cell__value">
-                    {request.submittedByUserId === null ? (
-                      // Заявка по ключу API ничья: ключ принадлежит
-                      // кабинету, а не человеку.
-                      <span className="muted">по ключу API</span>
-                    ) : (
-                      (names?.[request.submittedByUserId] ?? <span className="muted">—</span>)
-                    )}
-                  </span>
-                </span>
-              ) : undefined}
               <span className="cell">
                 <span className="cell__label">Состояние</span>
                 <span className={`pill pill--${STATUS_TONES[request.status]}`}>

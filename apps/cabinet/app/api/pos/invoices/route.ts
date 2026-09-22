@@ -6,8 +6,10 @@ import { TZ_COOKIE, readTzOffset } from '@nemo/ui/period';
 import { errorResponse, json } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
-import { addInvoice, listInvoices } from '@/lib/mock/store';
+import { addInvoice, getPosSettings, listInvoices, replaceInvoice } from '@/lib/mock/store';
 import { makeInvoice, nextNumber, posSides } from '@/lib/pos';
+import { acquirer } from '@/lib/pos/acquirer';
+import { publishPos } from '@/lib/pos/bus';
 import { requireTill } from '@/lib/mock/guard';
 import { viewer } from '@/lib/reads';
 
@@ -16,14 +18,18 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Счёт из POS-терминала — запись макета в памяти процесса, а не строка в базе
- * (`backlog.md`, решение от 10 сентября 2026). Денег за ним нет: ни
- * покупателю, ни сервису ничего не уходит.
+ * (`backlog.md`, решение от 10 сентября 2026). Денег за ним нет: платёж
+ * принимает имитация провайдера (`lib/pos/acquirer.ts`), и оплатить его
+ * может только кнопка на экране мерчанта.
  *
  * Суммы всё равно считаются здесь, а не принимаются со слов экрана:
  * цена — это обещание, и подставить её запросом снаружи не должно
  * получаться даже у макета. Экран присылает направление и одну
  * сторону, курс спрашивается тут же, у того же источника, что и форма
- * заявки.
+ * заявки; наценка мерчанта берётся из его настроек, а не из запроса.
+ *
+ * Срок счёта — тот же, что у неоплаченной заявки на обмен: одно
+ * число сервиса на оба ожидания денег, и задаёт его администратор.
  */
 const bodySchema = z.object({
   from: z.string().trim().min(1).max(16),
@@ -32,6 +38,8 @@ const bodySchema = z.object({
   amount: z.string().trim().min(1).max(40),
   purpose: z.string().trim().max(200).default(''),
   buyer: z.string().trim().max(200).default(''),
+  /** Покупатель подтвердит личность у провайдера до оплаты. */
+  kycRequired: z.boolean().default(false),
   /**
    * Отметка времени курса, который экран показал покупателю. По нему
    * счёт и считается: снимок котировки обновляется раз в минуту, и
@@ -57,24 +65,35 @@ export async function POST(request: Request): Promise<Response> {
       throw new InvalidInputError('Сумма должна быть больше нуля');
     }
 
-    const quote = await getCore().getQuote({
-      fromCode: body.from,
-      toCode: body.to,
-      fromAmount: '1',
-      ...(body.quotedAt === undefined ? {} : { asOf: body.quotedAt }),
-    });
+    // Скрытая валюта — отказ и здесь, а не только пропавшая плитка:
+    // спрятанная кнопка обходится любым другим путём к операции.
+    const settings = getPosSettings(actor.merchantId);
+    if (settings.hiddenCodes.includes(body.to)) {
+      throw new InvalidInputError('Эта валюта скрыта в терминале: её включает владелец');
+    }
+
+    const core = getCore();
+    const [quote, terms] = await Promise.all([
+      core.getQuote({
+        fromCode: body.from,
+        toCode: body.to,
+        fromAmount: '1',
+        ...(body.quotedAt === undefined ? {} : { asOf: body.quotedAt }),
+      }),
+      core.getExchangeTerms(),
+    ]);
     if (!quote) {
       throw new InvalidInputError('Курса сейчас нет: счёт по нему создать не получится');
     }
 
     /*
-     * Обе стороны — тем же `posSides`, каким их считает экран: у
-     * направления со ступенчатой сеткой цена выводится из тиров, а
-     * `quote.rate` в котировке пуст, и умножение на него дало бы счёт
-     * на ноль. Двух правд о цене быть не должно ни между экраном и
-     * сервером, ни между сервером и ядром.
+     * Обе стороны — тем же `posSides`, каким их считает экран, с той же
+     * наценкой: у направления со ступенчатой сеткой цена выводится из
+     * тиров, а `quote.rate` в котировке пуст, и умножение на него дало
+     * бы счёт на ноль. Двух правд о цене быть не должно ни между экраном
+     * и сервером, ни между сервером и ядром.
      */
-    const { buy, pay } = posSides(value.data, body.side, quote);
+    const { buy, pay } = posSides(value.data, body.side, quote, settings.markupBps);
     if (buy === null || pay === null) {
       throw new InvalidInputError(
         'На эту сумму счёт не создать: после комиссии покупателю ничего не остаётся',
@@ -84,8 +103,9 @@ export async function POST(request: Request): Promise<Response> {
     // День номера — местный, тот же, по которому считается смена.
     const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
     const at = new Date();
+    const expiresAt = new Date(at.getTime() + terms.unpaidTtlMinutes * 60_000);
     const invoice = makeInvoice({
-      number: nextNumber(listInvoices(actor.merchantId), at, offset),
+      number: nextNumber(listInvoices(actor.merchantId, at), at, offset),
       purpose: body.purpose,
       buyer: body.buyer,
       // Кто нажал, а не чей кабинет: людей у мерчанта несколько (тикет 17).
@@ -101,11 +121,45 @@ export async function POST(request: Request): Promise<Response> {
        * записать `quote.rate` значило бы положить в счёт ноль.
        */
       rate: Money.divide(buy, pay),
+      markupBps: settings.markupBps,
+      kycRequired: body.kycRequired,
       at,
+      expiresAt,
     });
     addInvoice(actor.merchantId, invoice);
 
-    return json({ invoice }, { status: 201 });
+    /*
+     * Провайдеру платёж заявляется после записи счёта: у него появляется
+     * ссылка, по которой потом просят QR, отмену и возврат. Отказ
+     * провайдера — отказ и мерчанту: счёт без платежа никому не нужен.
+     */
+    const provider = acquirer();
+    const issued = await provider.issue({
+      merchantId: actor.merchantId,
+      invoiceId: invoice.id,
+      number: invoice.number,
+      amount: pay,
+      code: body.from,
+      purpose: body.purpose,
+      kycRequired: body.kycRequired,
+      at,
+      expiresAt,
+    });
+    const withPayment = {
+      ...invoice,
+      payment: { provider: provider.name, ref: issued.ref },
+      events: [
+        ...invoice.events,
+        { at: at.toISOString(), what: `Платёж заявлен провайдеру «${provider.title}»` },
+      ],
+    };
+    replaceInvoice(actor.merchantId, withPayment);
+    publishPos(actor.merchantId, { kind: 'invoice', id: invoice.id });
+
+    return json(
+      { invoice: withPayment, qr: await provider.qr(issued.ref, at), now: at.toISOString() },
+      { status: 201 },
+    );
   } catch (error) {
     return errorResponse(error);
   }

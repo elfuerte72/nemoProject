@@ -39,7 +39,7 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
   const counts = await requestCounts();
 
   return (
-    <div className="shell">
+    <div className="shell" data-theme="light">
       <Sidebar
         groups={navGroupsFor(session.role)}
         counts={{ active: openCount(counts) }}

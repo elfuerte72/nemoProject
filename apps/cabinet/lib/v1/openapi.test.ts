@@ -110,6 +110,8 @@ describe('договор API', () => {
         cancelReason: null,
         reference: null,
         submittedByUserId: null,
+        source: 'api',
+        apiKeyId: null,
         createdAt: now,
         updatedAt: now,
         completedAt: null,

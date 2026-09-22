@@ -18,8 +18,6 @@ import { NAV_GROUPS } from './nav';
 
 /** Какое право открывает раздел. Не названные здесь видны всем. */
 const NEEDS: Readonly<Record<string, MerchantAbility>> = {
-  '/requests/new': 'submit',
-  '/recipients': 'recipients',
   '/pos': 'till',
   '/refunds': 'till',
   '/keys': 'integration',

@@ -42,6 +42,7 @@ import {
 } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
 import { requirePositiveAmount } from './amounts.js';
+import { readPayoutDecimals, roundPayout } from './rates.js';
 import {
   ConflictError,
   ForbiddenError,
@@ -965,7 +966,26 @@ export async function confirmExchangeRate(
         'Сумма к выдаче посчитана по курсу заявки и не меняется',
       );
     }
-    const toAmount = row.requestRate === null ? named : undefined;
+    /*
+     * Курса подачи нет — котировки не дал никто, и цену назвал сам
+     * менеджер. Сумму к выдаче он назвать может, но обязан не был, и
+     * заявка оставалась без неё навсегда: у мерчанта в ленте стояло
+     * «58 000 RUB → USDT», в карточке прочерк, и сколько клиент
+     * получил, не знал никто.
+     *
+     * Теперь ядро считает её само — тем же умножением и тем же
+     * округлением, какими считает котировка (`rates.ts`): двух правд о
+     * выданной сумме быть не должно. Названное менеджером число
+     * побеждает: наличные округляют до купюры, и выдаёт их он.
+     */
+    const toAmount =
+      row.requestRate === null
+        ? (named ??
+          roundPayout(
+            Money.multiply(Money.toAmount(row.fromAmount), finalRate),
+            await readPayoutDecimals(tx, row.toCode),
+          ))
+        : undefined;
     const { unpaidExchangeRequestTtlMinutes } = await readServiceSettings(tx);
 
     return staffTransition(tx, row, {

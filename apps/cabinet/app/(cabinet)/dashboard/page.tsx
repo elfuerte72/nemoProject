@@ -6,7 +6,6 @@ import {
   firstParam,
   formatShare,
   Greeting,
-  HowTo,
   IntegrationTiles,
   Moment,
   MoneyCompare,
@@ -20,10 +19,14 @@ import { formatMoney } from '@nemo/ui/format';
 import { averageByCurrency, formatByCurrency } from '@nemo/ui/money-list';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 import { merchantRoleCan, WEBHOOK_ENDPOINT_STATE_LABELS } from '@nemo/types';
+import { attentionOf } from '@/lib/attention';
 import { getCore } from '@/lib/core';
-import { OVERVIEW_HOW_TO } from '@/lib/exchange-texts';
+import { SERIES_STEP_KEYS, resolveStep } from '@/lib/analytics-texts';
 import { STATUS_LABELS, STATUS_TONES } from '@/lib/labels';
+import { SERIES_SPAN } from '@/lib/series-labels';
 import { merchantStats, openCount, requestCounts, viewer } from '@/lib/reads';
+import { AttentionLine } from '@/app/ui/attention-line';
+import { SeriesBars } from '@/app/ui/series-bars';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 
 export const dynamic = 'force-dynamic';
@@ -38,6 +41,15 @@ export const dynamic = 'force-dynamic';
  * приходит тем же ответом, что плитки. Последние заявки остаются на
  * первом экране: обзор открывают, чтобы взглянуть на заявку, а не
  * только на плитки.
+ *
+ * Подсказки «как это устроено» здесь нет с 20 сентября 2026. Она
+ * занимала полосу между приветствием и числами — то самое место, куда
+ * смотрят первым, — и объясняла то, что уже подписано под каждой
+ * плиткой: «по дате исполнения», «из поданных в период». Обзор
+ * открывают каждый день, а объяснение нужно один раз; постоянный блок,
+ * ни разу не понадобившийся, глаз начинает перепрыгивать. В разделах,
+ * где правила неочевидны — вебхуки, счета, возвраты, песочница, — она
+ * осталась.
  */
 export default async function OverviewPage({
   searchParams,
@@ -64,8 +76,13 @@ export default async function OverviewPage({
    * то место, где человек узнаёт об этом пятисотым ответом.
    */
   const ownsIntegration = merchantRoleCan(session.role, 'integration');
+  /*
+   * Шаг ряда — свой параметр адреса, рядом с периодом: он спрашивает
+   * не «за сколько», а «как крупно», и глубину ряду задаёт сам.
+   */
+  const step = resolveStep(firstParam(params.step), SERIES_STEP_KEYS);
   const [stats, recent, counts, keys, hooks] = await Promise.all([
-    merchantStats(period.from.getTime(), period.to.getTime(), offset),
+    merchantStats(period.from.getTime(), period.to.getTime(), offset, step),
     core.listExchangeRequests(actor, { limit: 5 }),
     requestCounts(),
     ownsIntegration ? core.listApiKeys(actor) : Promise.resolve([]),
@@ -79,15 +96,42 @@ export default async function OverviewPage({
     from: dayOf(period.from, offset),
     to: dayOf(lastDay, offset),
   }).toString();
-  const maxDay = Math.max(1, ...stats.byDay.map((one) => Math.max(one.submitted, one.completed)));
+  /*
+   * Адреса шагов собираются здесь: период живёт в адресе, и ссылка,
+   * потерявшая его, увела бы мерчанта с выбранных им дат.
+   */
+  const stepQuery = new URLSearchParams(csvQuery);
+  const stepHrefs = Object.fromEntries(
+    SERIES_STEP_KEYS.map((key) => {
+      const query = new URLSearchParams(stepQuery);
+      query.set('step', key);
+      return [key, `/dashboard?${query.toString()}`];
+    }),
+  ) as Record<(typeof SERIES_STEP_KEYS)[number], string>;
   const liveKeys = keys.filter((one) => one.revokedAt === null).length;
   const failingHooks = hooks.filter((one) => one.state === 'failing');
   const clock = offset === 0 ? 'по UTC' : 'по вашим часам';
+  /*
+   * Точки спрошены только у того, кому видна интеграция, и тревоги по
+   * ним у оператора не будет: вести его туда некуда — операция ему
+   * откажет.
+   */
+  const attention = attentionOf({
+    endpoints: hooks,
+    deliveries: current.webhookDeliveries,
+    apiCalls: current.apiCalls,
+  });
 
   return (
     <main className="page">
       <QuietRefresh />
       <DisabledBanner status={session.status} />
+      {/*
+        Первым на экране — то, что требует действия сегодня, и только
+        потом числа за период: мерчант со сломанной интеграцией теряет
+        оплаты, пока смотрит на средний чек. Тихо — строки нет вовсе.
+      */}
+      <AttentionLine one={attention} />
 
       <header className="page__head">
         <div>
@@ -98,16 +142,7 @@ export default async function OverviewPage({
               : 'Незакрытых заявок нет.'}
           </p>
         </div>
-        {session.status === 'active' ? (
-          <div className="page__actions">
-            <Link className="btn btn--gold" href="/requests/new">
-              Новая заявка
-            </Link>
-          </div>
-        ) : undefined}
       </header>
-
-      <HowTo title="Как это устроено" sub="Что происходит с заявкой и откуда числа" items={OVERVIEW_HOW_TO} />
 
       <p className="today">
         <span className="today__label">Сегодня</span>
@@ -136,7 +171,7 @@ export default async function OverviewPage({
             спрашивают тогда же, когда смотрят на плитки.
           */}
           <Link className="btn btn--soft btn--tiny" href={`/analytics?${csvQuery}`}>
-            Подробнее
+            Аналитика
           </Link>
           <a className="btn btn--ghost btn--tiny" href={`/api/requests/csv?${csvQuery}`}>
             CSV заявок
@@ -190,37 +225,18 @@ export default async function OverviewPage({
           </section>
 
           <section className="card">
-            <h2 className="card__title">По дням</h2>
-            <p className="card__note">Подано и исполнено за две недели, {clock}</p>
             {/*
-              Столбики, а не таблица: две недели по два числа читаются
-              одним взглядом, а таблица на четырнадцать строк — нет.
-              Высоты — от самого высокого дня; день без заявок остаётся
-              на своём месте пустым, а не пропадает.
+              Столбики, а не таблица: ряд по два числа читается одним
+              взглядом, а таблица на четырнадцать строк — нет. Заголовок
+              карточки здесь же и переключает шаг; наведение, подсветка
+              и ключи — в самой фигуре.
             */}
-            <div className="bars" role="img" aria-label="Подано и исполнено по дням за две недели">
-              {stats.byDay.map((day) => (
-                <div key={day.day} className="bars__day" title={dayTitle(day)}>
-                  <div className="bars__pair">
-                    <span
-                      className={day.submitted ? 'bars__bar' : 'bars__bar bars__bar--none'}
-                      style={{ height: `${Math.round((day.submitted / maxDay) * 100)}%` }}
-                    />
-                    <span
-                      className={
-                        day.completed ? 'bars__bar bars__bar--done' : 'bars__bar bars__bar--none'
-                      }
-                      style={{ height: `${Math.round((day.completed / maxDay) * 100)}%` }}
-                    />
-                  </div>
-                  <span className="bars__label">{day.day.slice(8, 10)}</span>
-                </div>
-              ))}
-            </div>
-            <p className="bars__legend">
-              <span className="bars__key" /> подано <span className="bars__key bars__key--done" />{' '}
-              исполнено
-            </p>
+            <SeriesBars
+              bars={stats.series}
+              step={step}
+              hrefs={stepHrefs}
+              note={`Подано и исполнено ${SERIES_SPAN[step]}, ${clock}`}
+            />
           </section>
         </div>
       </section>
@@ -308,6 +324,3 @@ export default async function OverviewPage({
   );
 }
 
-function dayTitle(day: { day: string; submitted: number; completed: number }): string {
-  return `${day.day}: подано ${day.submitted}, исполнено ${day.completed}`;
-}
