@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Money, sortCurrencies, type Quote } from '@nemo/types';
-import { HowTo, LIVE_REFRESH_MS, Moment, shouldRefresh } from '@nemo/ui';
+import { HowTo, Icon, LIVE_REFRESH_MS, Moment, shouldRefresh } from '@nemo/ui';
 import { formatAmount, formatMoney, formatRate } from '@nemo/ui/format';
 import {
   INVOICE_STATUS_LABELS,
@@ -16,7 +16,7 @@ import { normalizeTyped, parseTyped } from '@/lib/new-request';
 import { posRateLine, posSides, type PosSide } from '@/lib/pos';
 import type { QrView } from '@/lib/pos/acquirer';
 import type { PosEvent } from '@/lib/pos/bus';
-import { markupPercent } from '@/lib/pos/settings';
+import { markupPercent, parseMarkupPercent } from '@/lib/pos/settings';
 import { POS_STREAM_PATH } from '@/lib/pos/stream';
 import { POS_HOW_TO } from '@/lib/pos-texts';
 import { send } from '@/app/ui/send';
@@ -69,6 +69,13 @@ type QuoteReply = Quote & { readonly asOf: string };
  */
 
 const QUOTE_REFRESH_MS = 30_000;
+
+/**
+ * Через сколько тишины наценка уходит на сервер. Полсекунды: меньше —
+ * и запись срабатывает посреди набора «12,5», больше — и владелец,
+ * сменивший её и сразу выставивший счёт, успел бы уйти раньше записи.
+ */
+const MARKUP_SAVE_MS = 600;
 
 /**
  * Ступени набора для длинных сумм — то же правило, что в Mini App:
@@ -154,6 +161,13 @@ export function Terminal({
   const [side, setSide] = useState<PosSide>('pay');
   const [typed, setTyped] = useState('');
   const [kyc, setKyc] = useState(false);
+  /*
+   * Наценка живёт здесь, а не в своём поле: по ней считается цена, и
+   * владелец просил, чтобы цифра менялась при наборе, а не по уходу из
+   * поля. Пустая строка — без наценки.
+   */
+  const [markup, setMarkup] = useState(markupBps === 0 ? '' : markupPercent(markupBps));
+  const [markupComplaint, setMarkupComplaint] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [complaint, setComplaint] = useState<string>();
   const [made, setMade] = useState(shift);
@@ -226,10 +240,18 @@ export function Terminal({
     };
   }, [fromCode, toCode, pairKey]);
 
+  /*
+   * Набранная наценка в базисных пунктах. Непонятное число не роняет
+   * расчёт: цена считается по последнему сохранённому, а о наборе
+   * говорит жалоба под полем.
+   */
+  const typedMarkup = parseMarkupPercent(markup.trim() === '' ? '0' : markup.trim());
+  const liveMarkupBps = typedMarkup.ok ? typedMarkup.bps : markupBps;
+
   const amount = parseTyped(typed);
   const sides = useMemo(
-    () => posSides(amount, side, rate ?? null, markupBps, payDecimals),
-    [amount, side, rate, markupBps, payDecimals],
+    () => posSides(amount, side, rate ?? null, liveMarkupBps, payDecimals),
+    [amount, side, rate, liveMarkupBps, payDecimals],
   );
   const ready = sides.buy !== null && sides.pay !== null && !busy;
 
@@ -241,7 +263,7 @@ export function Terminal({
    * котировке он пуст.
    */
   const line = rate
-    ? posRateLine(rate, sides.pay, Money.toAmount(minAmount), markupBps, payDecimals)
+    ? posRateLine(rate, sides.pay, Money.toAmount(minAmount), liveMarkupBps, payDecimals)
     : ({ kind: 'none' } as const);
 
   /* ── Открытый счёт: QR, отсчёт, исход ─────────────────────────── */
@@ -352,6 +374,51 @@ export function Terminal({
     void load(open.invoice.id);
   }, [open, waiting, qrLeft, invoiceLeft, load]);
 
+  /*
+   * Запись наценки догоняет набор.
+   *
+   * Цена на экране меняется с каждой цифрой, а на сервер уходит через
+   * паузу: запрос на каждое нажатие — это десяток записей за одно
+   * «двенадцать с половиной». Уход из поля и Enter не ждут паузы.
+   */
+  const savedMarkup = useRef(markupBps);
+  savedMarkup.current = markupBps;
+  const markupTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const saveMarkup = useCallback(async (text: string): Promise<void> => {
+    const parsed = parseMarkupPercent(text.trim() === '' ? '0' : text.trim());
+    if (!parsed.ok) {
+      setMarkupComplaint(parsed.complaint);
+      return;
+    }
+    setMarkupComplaint(undefined);
+    if (parsed.bps === savedMarkup.current) return;
+    const reply = await send('/api/pos/settings', {
+      markupPercent: text.trim() === '' ? '0' : text.trim(),
+    });
+    if (!reply.ok) {
+      setMarkupComplaint(reply.complaint);
+      return;
+    }
+    savedMarkup.current = parsed.bps;
+    router.refresh();
+  }, [router]);
+
+  function typeMarkup(next: string): void {
+    setMarkup(next);
+    setMarkupComplaint(undefined);
+    clearTimeout(markupTimer.current);
+    markupTimer.current = setTimeout(() => void saveMarkup(next), MARKUP_SAVE_MS);
+  }
+
+  function settleMarkup(): void {
+    clearTimeout(markupTimer.current);
+    void saveMarkup(markup);
+  }
+
+  // Уходя с экрана, дописывать наценку некуда: таймер снимается.
+  useEffect(() => () => clearTimeout(markupTimer.current), []);
+
   async function issue(): Promise<void> {
     if (!ready) return;
     setComplaint(undefined);
@@ -435,6 +502,23 @@ export function Terminal({
     setTyped(value);
   }
 
+  /*
+   * Развернуть направление можно, только если обратное сервис тоже
+   * знает: он принимает рубль и монету, а бат только выдаёт.
+   */
+  const canSwap = directions.some((one) => one.fromCode === toCode && one.toCode === fromCode);
+
+  /**
+   * Разворот меняет обе стороны разом. Набранное остаётся на своём
+   * месте — оно и есть то, что назвал покупатель, — а встречное
+   * пересчитывается по новому направлению.
+   */
+  function swap(): void {
+    if (!canSwap) return;
+    setFromCode(toCode);
+    setToCode(fromCode);
+  }
+
   /** Разряды по окончании набора — только там, где набирали. */
   function settle(which: PosSide): void {
     if (side === which) setTyped(normalizeTyped(typed));
@@ -472,9 +556,22 @@ export function Terminal({
         {/*
           Курс стоит на самой черте между отданным и полученным — там,
           где одно превращается в другое, и тем же приёмом, что в Mini
-          App.
+          App. Рядом разворот направления: у стойки просят то «дай
+          монету за рубли», то обратное, и разворот короче двух выборов.
+          Кнопка гаснет, когда обратного направления нет вовсе: батов
+          сервис не принимает, и менять RUB → THB местами не на что.
         */}
         <div className="calc__divider">
+          <button
+            type="button"
+            className="calc__swap"
+            onClick={swap}
+            disabled={!canSwap}
+            aria-label={canSwap ? 'Поменять местами' : 'Обратного направления нет'}
+            title={canSwap ? 'Поменять местами' : 'Обратного направления нет'}
+          >
+            <Icon name="swap" size={18} />
+          </button>
           <span className={line.kind === 'rate' ? 'calc__rate' : 'calc__rate calc__rate--absent'}>
             {line.kind === 'rate'
               ? formatRate(line.rate, fromCode, toCode)
@@ -527,7 +624,12 @@ export function Terminal({
         чего сложилась цена, продавцу нужно, менять её — нет.
       */}
       {canPrice ? (
-        <MarkupPanel markupBps={markupBps} />
+        <MarkupPanel
+          value={markup}
+          onChange={typeMarkup}
+          onSettle={settleMarkup}
+          complaint={markupComplaint}
+        />
       ) : markupBps > 0 ? (
         <p className="muted">Наценка кабинета: {markupPercent(markupBps)} %</p>
       ) : undefined}
@@ -745,7 +847,7 @@ export function Terminal({
           quote={rate}
           typed={amount}
           side={side}
-          markupBps={markupBps}
+          markupBps={liveMarkupBps}
           minAmount={Money.toAmount(minAmount)}
           payDecimals={payDecimals}
         />

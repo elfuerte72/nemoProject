@@ -12,6 +12,7 @@
 
 export type IconName =
   | 'exchange'
+  | 'swap'
   | 'withdrawal'
   | 'card'
   | 'chat'
@@ -50,6 +51,18 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
       return (
         <svg {...common}>
           <path d="M4 8h15l-3.5-3.5M20 16H5l3.5 3.5" />
+        </svg>
+      );
+    /*
+     * Разворот направления: две стрелки навстречу друг другу по
+     * вертикали — строки калькулятора стоят одна над другой, и
+     * горизонтальный знак обмена показывал бы не тот жест. Тот же
+     * контур, что у `SwapIcon` в Mini App: знак один на оба экрана.
+     */
+    case 'swap':
+      return (
+        <svg {...common}>
+          <path d="M8 4.5v15M8 19.5 4.5 16M16 19.5v-15M16 4.5 19.5 8" />
         </svg>
       );
     case 'withdrawal':
