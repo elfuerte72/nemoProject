@@ -863,60 +863,84 @@
 
 /* ── Курсы: подсказка у колонки ──────────────────────────────────── */
 
-.hint {
+/*
+ * Знак «?» у заголовка колонки и плашка под ним.
+ *
+ * Знак — значок `question` из набора `@nemo/ui`, тот же, что в заголовке
+ * «Как это устроено»: одна поверхность, один набор, один штрих. Рамки
+ * и заливки у него нет: они называли бы структуру, которой у знака
+ * нет, — а состояние говорит цвет. Класс назван `ask`, а не `hint`:
+ * `.hint` в кабинете уже занят подписью под полем.
+ */
+.ask {
   position: relative;
-  display: inline-block;
-  margin-left: 6px;
+  display: inline-flex;
+  margin-left: 4px;
   vertical-align: middle;
 }
 
 /*
- * Знак мал, а цель нажатия — нет: поле вокруг добирает её до того,
- * во что попадают, не целясь. Шапка таблицы на телефоне скрыта, так
- * что палец сюда не приходит вовсе, но и курсору лучше не целиться.
+ * Цель нажатия 24×24 при значке в пятнадцать — это норма для курсора
+ * (шапка таблицы на телефоне скрыта, палец сюда не приходит).
+ * Отрицательное поле по вертикали не даёт кнопке раздвинуть строку
+ * заголовка.
  */
-.hint__ask {
+.ask__mark {
   appearance: none;
   display: inline-grid;
   place-items: center;
-  width: 15px;
-  height: 15px;
+  width: 24px;
+  height: 24px;
+  margin: -5px 0;
   padding: 0;
-  margin: -6px;
-  box-sizing: content-box;
-  border: 6px solid transparent;
-  background: var(--surface);
-  background-clip: padding-box;
+  border: 0;
   border-radius: 999px;
-  box-shadow: 0 0 0 1px var(--hairline);
+  background: none;
   color: var(--text-faint);
-  font: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-  line-height: 1;
   cursor: help;
+  transition: color 120ms var(--ease);
 }
 
-.hint__ask:hover,
-.hint__ask--on {
+.ask__mark:hover {
+  color: var(--text-dim);
+}
+
+.ask__mark--on,
+.ask__mark--on:hover {
   color: var(--gold-light);
-  box-shadow: 0 0 0 1px var(--gold-light);
 }
 
-.hint__pop {
+/*
+ * Плашка — поверхность над страницей, и глубину ей даёт тень, а не
+ * рамка: тонкое кольцо цветом линий кабинета и мягкая тень под низ.
+ * Появляется коротким сдвигом сверху; общее правило страницы глушит
+ * его тем, кто просил меньше движения.
+ */
+@keyframes nm-ask-in {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.ask__pop {
   position: absolute;
   z-index: 2;
-  top: calc(100% + 10px);
-  left: -12px;
+  top: calc(100% + 6px);
+  left: -8px;
   width: max-content;
-  max-width: 340px;
+  max-width: 320px;
   padding: 12px 14px;
   border-radius: var(--radius-control);
-  border: 1px solid var(--hairline);
   background: var(--surface);
-  box-shadow: 0 14px 32px -22px rgba(26, 23, 38, 0.9);
+  box-shadow:
+    0 0 0 1px var(--hairline),
+    0 1px 2px -1px rgba(26, 23, 38, 0.08),
+    0 10px 28px -14px rgba(26, 23, 38, 0.35);
   font-size: 12.5px;
   font-weight: 400;
   letter-spacing: 0;
@@ -924,15 +948,16 @@
   line-height: 1.5;
   color: var(--text-dim);
   white-space: normal;
+  animation: nm-ask-in 140ms var(--ease) both;
 }
 
 /* Справа края страницы нет места — плашка прижата к правому краю знака. */
-.hint__pop--end {
+.ask__pop--end {
   left: auto;
-  right: -12px;
+  right: -8px;
 }
 
-.hint__title {
+.ask__title {
   display: block;
   margin-bottom: 3px;
   font-weight: 600;

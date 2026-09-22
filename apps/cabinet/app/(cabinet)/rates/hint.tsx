@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Icon } from '@nemo/ui';
 
 /**
  * Знак «?» у заголовка колонки: объяснение там, где возник вопрос.
@@ -13,6 +14,12 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
  * Слова — те же, что стоят в блоке «как устроено» ниже
  * (`COLUMN_HINTS`): один источник на оба места, иначе подсказка у
  * колонки и абзац под ней разошлись бы первой же правкой.
+ *
+ * Знак — тот же `question` из набора `@nemo/ui`, что стоит в заголовке
+ * «Как это устроено»: одна поверхность, один набор, один штрих. Ни
+ * рамки, ни заливки — у него нет структуры, которую они бы называли;
+ * состояние говорит цвет: тусклый в покое, темнее под курсором,
+ * акцентом — пока плашка открыта.
  */
 export function ColumnHint({
   title,
@@ -62,25 +69,20 @@ export function ColumnHint({
   }, [open]);
 
   return (
-    <span ref={root} className="hint">
+    <span ref={root} className="ask">
       <button
         type="button"
-        className={open ? 'hint__ask hint__ask--on' : 'hint__ask'}
+        className={open ? 'ask__mark ask__mark--on' : 'ask__mark'}
         aria-expanded={open}
         aria-controls={id}
         aria-label={`Что такое «${title}»`}
         onClick={() => setOpen((current) => !current)}
       >
-        ?
+        <Icon name="question" size={15} />
       </button>
       {open ? (
-        <span
-          id={id}
-          ref={pop}
-          role="note"
-          className={toEnd ? 'hint__pop hint__pop--end' : 'hint__pop'}
-        >
-          <span className="hint__title">{title}</span>
+        <span id={id} ref={pop} role="note" className={toEnd ? 'ask__pop ask__pop--end' : 'ask__pop'}>
+          <span className="ask__title">{title}</span>
           {detail}
         </span>
       ) : undefined}
