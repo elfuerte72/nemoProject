@@ -1,5 +1,4 @@
 import { Bot, InlineKeyboard, type Context } from 'grammy';
-import { Money } from '@nemo/types';
 import {
   CONCIERGE_QUIET_MS,
   renderNotification,
@@ -9,21 +8,16 @@ import {
 import { getCore } from '@/lib/core';
 import { referralLink } from '@/lib/referral';
 import { nudgeStaffAlerts } from '@/lib/staff-alert';
-import {
-  RATES_UNAVAILABLE,
-  renderRatesMessage,
-  type QuotedPair,
-} from './rates-message';
 import { attachmentOf } from './attachments';
 
 /**
  * Бот — точка входа, главное меню и канал уведомлений.
  *
- * Продуктовые экраны живут в Mini App (docs/adr/0001), и данные бот
- * показывает ровно в одном месте — курсом по кнопке. Граница сдвинута
- * сознательно: ради того, чтобы посмотреть курс, приложение никто
- * открывать не станет. Само сообщение с курсом собирает
- * `rates-message.ts` — здесь только сбор данных для него.
+ * Продуктовые экраны живут в Mini App (docs/adr/0001), и данных бот не
+ * показывает вовсе. Курс по кнопке здесь был и убран 22 сентября 2026:
+ * в чате он считался по справочнику направлений, а в обменнике — по
+ * набранной сумме и сетке комиссий, и два числа об одной сделке
+ * расходились. Клиент сверял их между собой и шёл с этим к менеджеру.
  *
  * Главное меню — кнопки в самом сообщении, а не постоянная клавиатура
  * под полем ввода. Причина не в оформлении: кнопке постоянной
@@ -53,7 +47,6 @@ import { attachmentOf } from './attachments';
  */
 const MENU = {
   app: '💱 Открыть обменник',
-  rates: '📈 Курс',
   referral: '🎁 Реферальная ссылка',
   support: '🛟 Поддержка',
 } as const;
@@ -66,7 +59,6 @@ const MENU = {
  * со значком значит не узнать ни одного из них.
  */
 const LEGACY_LABELS = {
-  rates: 'Курс',
   referral: 'Реферальная ссылка',
   support: 'Поддержка',
 } as const;
@@ -77,10 +69,16 @@ const LEGACY_LABELS = {
  * кнопки во всей прошлой переписке.
  */
 const ACTION = {
-  rates: 'rates',
   referral: 'referral',
   support: 'support',
 } as const;
+
+/**
+ * Чем помечено нажатие кнопки «Курс» — той, что стояла в меню до
+ * 22 сентября 2026. Сама кнопка убрана, а сообщения с ней остались в
+ * переписке, и нажатия по ним приходят до сих пор.
+ */
+const RETIRED_RATES_ACTION = 'rates';
 
 /**
  * Ответ по существу заодно снимает постоянную клавиатуру: у клиента,
@@ -118,14 +116,12 @@ export function getBot(): Bot {
    *
    * Столбцом, а не сеткой: Telegram делит ряд между кнопками поровну и
    * режет то, что не поместилось, — «Реферальная ссылка» в паре с
-   * «Курсом» превращалась в «Реферальная ссы…». Столбец отдаёт каждой
+   * соседкой превращалась в «Реферальная ссы…». Столбец отдаёт каждой
    * кнопке всю ширину, и подписи читаются целиком, какими бы длинными
    * они ни стали дальше.
    */
   const menu = new InlineKeyboard()
     .webApp(MENU.app, appUrl)
-    .row()
-    .text(MENU.rates, ACTION.rates)
     .row()
     .text(MENU.referral, ACTION.referral)
     .row()
@@ -173,19 +169,13 @@ export function getBot(): Bot {
   // от `/start`.
   bot.command('menu', greet);
 
-  bot.command('rates', showRates);
   bot.command('referral', sendReferralLink);
   bot.command('support', support);
 
   /*
    * Нажатие кнопки меню. Telegram ждёт подтверждения приёма, иначе у
-   * клиента на кнопке крутятся часы: отвечаем сразу, до похода за
-   * курсом или в базу.
+   * клиента на кнопке крутятся часы: отвечаем сразу, до похода в базу.
    */
-  bot.callbackQuery(ACTION.rates, async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await showRates(ctx);
-  });
   bot.callbackQuery(ACTION.referral, async (ctx) => {
     await ctx.answerCallbackQuery();
     await sendReferralLink(ctx);
@@ -197,11 +187,28 @@ export function getBot(): Bot {
 
   /*
    * Нажатия старой постоянной клавиатуры: до первого ответа бота они
-   * приходят обычным текстом — иначе вопрос про курс ушёл бы менеджеру.
+   * приходят обычным текстом, и узнаются по старому написанию — без
+   * значка. Слова «Курс» среди них больше нет: кнопки такой нет, и
+   * набранное слово — обычный вопрос, на который отвечает менеджер.
    */
-  bot.hears(LEGACY_LABELS.rates, showRates);
   bot.hears(LEGACY_LABELS.referral, sendReferralLink);
   bot.hears(LEGACY_LABELS.support, support);
+
+  /*
+   * Кнопка «Курс» ушла из меню, но осталась в уже отправленных
+   * сообщениях: их Telegram хранит вечно, и нажатие по ней приходит тем
+   * же `rates`. Без обработчика клиент видел бы на кнопке часы, пока
+   * Telegram не погасит их сам, — поэтому нажатие подтверждается и
+   * отвечает всплывающим окном, а не молчанием. Новым сообщением тут
+   * отвечать нечем: обменник стоит кнопкой в том же меню, прямо над
+   * нажатой.
+   */
+  bot.callbackQuery(RETIRED_RATES_ACTION, async (ctx) => {
+    await ctx.answerCallbackQuery({
+      text: 'Курс теперь виден в самом обменнике — кнопка выше.',
+      show_alert: true,
+    });
+  });
 
   /*
    * Всё остальное — обращение к менеджеру. Шаблонного автоответа здесь
@@ -372,53 +379,6 @@ async function deliverConciergeReply(
   }
 
   await ctx.reply(rendered.text, { ...WITHOUT_OLD_KEYBOARD, ...markup });
-}
-
-/**
- * Курс в чате — единственное место, где бот показывает данные.
- *
- * Собирает направления с котировками и отдаёт их вёрстке
- * (`rates-message.ts`): чем сервис торгует, знает справочник, а по какому
- * курсу — ядро. Здесь только сведение одного с другим.
- */
-async function showRates(ctx: Context): Promise<void> {
-  const core = getCore();
-  const { pairs } = await core.getExchangeTerms();
-
-  // Наличные через котировки не проходят вовсе: курс по ним называет
-  // менеджер, и биржевого у них нет.
-  const electronic = pairs.filter((pair) => pair.kind === 'electronic');
-
-  /*
-   * Все направления разом, а не по одному на нажатие: котировки лежат
-   * снимками в кэше и наружу за ними никто не идёт, а клиент в этот
-   * момент ждёт ответа в чате.
-   */
-  const quoted = (
-    await Promise.all(
-      electronic.map(async ({ fromCode, toCode }) => {
-        const quote = await core.getQuote({ fromCode, toCode });
-        // Нулевой курс — не курс: по нему нечего считать, и в столбце он
-        // читался бы как «не дадут ничего».
-        return quote && !Money.isZero(quote.rate)
-          ? ({ fromCode, toCode, rate: quote.rate } satisfies QuotedPair)
-          : undefined;
-      }),
-    )
-  ).filter((one): one is QuotedPair => one !== undefined);
-
-  if (quoted.length === 0) {
-    // Ни одной котировки: для клиента это то же, что молчание источника.
-    await ctx.reply(RATES_UNAVAILABLE, WITHOUT_OLD_KEYBOARD);
-    return;
-  }
-
-  // Кнопки под ответом не дублируются: клиент пришёл сюда из меню, оно
-  // осталось на экране выше, и его кнопка обменника по-прежнему рабочая.
-  await ctx.reply(
-    renderRatesMessage({ quoted, hasCash: electronic.length < pairs.length }),
-    { parse_mode: 'HTML', ...WITHOUT_OLD_KEYBOARD },
-  );
 }
 
 /**
