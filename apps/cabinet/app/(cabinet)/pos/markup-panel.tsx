@@ -1,55 +1,34 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState, type KeyboardEvent } from 'react';
-import { markupPercent } from '@/lib/pos/settings';
-import { send } from '@/app/ui/send';
+import type { KeyboardEvent } from 'react';
 
 /**
- * Своя наценка мерчанта — полем под расчётом, рядом с верификацией.
+ * Поле своей наценки под расчётом.
  *
- * 22 сентября 2026 владелец прошёл по ней четырежды: в общие настройки,
- * обратно на экран, из шапки страницы в строку оплаты и, наконец, сюда
- * — «пусть она будет снизу, над проверкой KYC, и сразу форма для
- * написания цифры в процентах; если пусто, то без наценки». Поле,
- * которое видно всегда, а не кнопка с раскрытием: наценку задают перед
- * сменой, а не ищут.
+ * Только разметка: само число живёт в терминале, потому что по нему
+ * считается цена. 22 сентября 2026 владелец попросил, чтобы «когда
+ * клиент вводит процент, сразу обновлялась цифра, а не когда нажмёшь на
+ * пустое пространство», — а для этого набранное должно попадать в
+ * расчёт, не дожидаясь ухода из поля.
  *
  * Пустое поле — без наценки, и это правило поля, а не догадка: стереть
  * число проще, чем вспомнить, что «ноль» пишется нулём.
  *
- * Сохраняется по уходу из поля и по Enter: отдельная кнопка рядом с
- * одним полем ничего не добавляет, а цена на экране пересчитывается
- * сразу и служит ответом. Пока сохранение идёт, поле не блокируется —
- * блокировка на полсекунды сбивает набор.
- *
- * Видит поле только владелец (право `pricing`), и по нему же отвечает
- * маршрут: за стойкой стоит оператор, а почём торгует кабинет, решает
- * тот, кто отвечает за деньги.
+ * Знак процента стоит в самом поле, справа: подпись «%» рядом с ним
+ * читалась бы как отдельное слово.
  */
-export function MarkupPanel({ markupBps }: { readonly markupBps: number }) {
-  const router = useRouter();
-  const saved = markupBps === 0 ? '' : markupPercent(markupBps);
-  const [typed, setTyped] = useState(saved);
-  const [busy, setBusy] = useState(false);
-  const [complaint, setComplaint] = useState<string>();
-
-  async function save(): Promise<void> {
-    const next = typed.trim();
-    // Ничего не изменилось — и сохранять нечего: уход из поля случается
-    // на каждом нажатии мимо.
-    if (busy || next === saved) return;
-    setComplaint(undefined);
-    setBusy(true);
-    const reply = await send('/api/pos/settings', { markupPercent: next === '' ? '0' : next });
-    setBusy(false);
-    if (!reply.ok) {
-      setComplaint(reply.complaint);
-      return;
-    }
-    router.refresh();
-  }
-
+export function MarkupPanel({
+  value,
+  onChange,
+  onSettle,
+  complaint,
+}: {
+  readonly value: string;
+  readonly onChange: (next: string) => void;
+  /** Уход из поля и Enter: записать набранное, не дожидаясь паузы. */
+  readonly onSettle: () => void;
+  readonly complaint: string | undefined;
+}) {
   function onKey(event: KeyboardEvent<HTMLInputElement>): void {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -63,13 +42,13 @@ export function MarkupPanel({ markupBps }: { readonly markupBps: number }) {
         <span className="label">Ваша наценка</span>
         <span className="markup__input">
           <input
-            className="input"
+            className={complaint ? 'input input--wrong' : 'input'}
             inputMode="decimal"
             autoComplete="off"
             placeholder="0"
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-            onBlur={() => void save()}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onBlur={onSettle}
             onKeyDown={onKey}
             aria-label="Наценка в процентах"
           />

@@ -1733,6 +1733,45 @@ button.calc__code:hover,
 }
 
 /*
+ * Разворот направления — на черте, где одно превращается в другое.
+ * Круглый и в цвет акцента: это единственная кнопка внутри расчёта, и
+ * спорить ей не с чем, кроме самих сумм. Гаснет, когда обратного
+ * направления нет: нажатие, за которым ничего не происходит, читается
+ * как поломка.
+ */
+.calc__swap {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.calc__swap:hover:not(:disabled) {
+  color: var(--gold-light);
+  border-color: rgba(var(--gold-rgb), 0.4);
+}
+
+.calc__swap:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.calc__swap:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/*
  * Курс на черте между строками — там, где он и действует. Отдельной
  * строкой под карточкой он читался бы примечанием, а курс это то, ради
  * чего к стойке и подходят. Пустая строка убирается совсем: схлопнутая
