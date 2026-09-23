@@ -3,6 +3,7 @@ import { Money } from '@nemo/types';
 import {
   INVOICE_EXPORT_COLUMNS,
   INVOICE_STATUS_LABELS,
+  currencyBreakdown,
   dailySeries,
   invoiceCell,
   invoiceColumns,
@@ -16,9 +17,22 @@ import {
   type MockRefund,
 } from './invoice-rows';
 import { makeInvoice } from './pos';
-import { addInvoice, addRefund, forgetMock, listInvoices, replaceRefund } from './mock/store';
+import {
+  addInvoice,
+  addRefund,
+  forgetMock,
+  listInvoices,
+  removeInvoices,
+  replaceRefund,
+} from './mock/store';
 import { demoSet } from './pos/demo';
-import { paidByHand, paidByProvider, providerState, settleRefunds } from './pos/lifecycle';
+import {
+  bulkTargets,
+  paidByHand,
+  paidByProvider,
+  providerState,
+  settleRefunds,
+} from './pos/lifecycle';
 import { INVOICE_OPEN_LABEL, INVOICE_TILE_LABELS } from './pos-texts';
 import { applyInvoiceFilter, invoiceFilterParams, readInvoiceFilter } from './invoice-filter';
 
@@ -304,6 +318,64 @@ describe('отбор из адреса — один на страницу и в�
     expect(found).toHaveLength(2);
     expect(shown).toHaveLength(1);
     expect(applyInvoiceFilter(rows, read({ mine: '1' }), 'u1').found).toHaveLength(2);
+  });
+});
+
+describe('действия с отмеченными счетами', () => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  const rows = [
+    { ...invoice({ status: 'issued', expiresAt: '2026-09-11T13:00:00.000Z' }), id: 'wait' },
+    { ...invoice({ status: 'issued', expiresAt: '2026-09-11T11:00:00.000Z' }), id: 'late' },
+    { ...invoice({ status: 'expired' }), id: 'gone' },
+    { ...invoice({ status: 'cancelled' }), id: 'off' },
+    { ...invoice({ status: 'paid' }), id: 'paid' },
+    { ...invoice({ status: 'refunded' }), id: 'back' },
+  ];
+  const all = rows.map((one) => one.id);
+
+  it('оплаченным отмечается только ждущий денег счёт', () => {
+    // Истёкший по часам тоже не ждёт, даже если прочитан до истечения.
+    expect(bulkTargets(rows, all, 'paid', now)).toEqual(['wait']);
+  });
+
+  it('удаляется только счёт, по которому денег не было', () => {
+    // Оплаченный и возвращённый — история денег, и на них ссылаются
+    // возвраты: удалённый такой счёт оставил бы возврат ни к чему.
+    expect(bulkTargets(rows, all, 'delete', now)).toEqual(['wait', 'late', 'gone', 'off']);
+  });
+
+  it('чужие и незнакомые идентификаторы мимо', () => {
+    expect(bulkTargets(rows, ['wait', 'нет-такого'], 'delete', now)).toEqual(['wait']);
+  });
+
+  it('удалённое пропадает из списка только у своего мерчанта', () => {
+    forgetMock('bulk');
+    forgetMock('other');
+    const one = { ...invoice(), id: 'same' };
+    addInvoice('bulk', one);
+    addInvoice('other', one);
+    removeInvoices('bulk', ['same']);
+    expect(listInvoices('bulk')).toEqual([]);
+    expect(listInvoices('other')).toHaveLength(1);
+    forgetMock('bulk');
+    forgetMock('other');
+  });
+});
+
+describe('оплаченное по всем валютам — для списка у плитки', () => {
+  it('называет каждую валюту сервиса, и пустую тоже', () => {
+    const rows = [
+      invoice({ status: 'paid' }),
+      invoice({ status: 'paid', amount: Money.toAmount('500') }),
+      invoice({ status: 'issued', code: 'CNY', amount: Money.toAmount('900') }),
+    ];
+    expect(currencyBreakdown(rows, ['RUB', 'THB', 'CNY'])).toEqual([
+      // Рубль — валюта оплаты, а список про то, что получил покупатель.
+      { code: 'RUB', amount: null, count: 0 },
+      { code: 'THB', amount: '2500', count: 2 },
+      // Ожидающий счёт — не деньги.
+      { code: 'CNY', amount: null, count: 0 },
+    ]);
   });
 });
 

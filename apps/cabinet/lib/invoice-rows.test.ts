@@ -104,16 +104,23 @@ describe('колонки списка счетов', () => {
     expect(row.every((cell) => cell.text.length > 0)).toBe(true);
   });
 
-  it('сумма показывается с эквивалентом по курсу, записанному в счёт', () => {
-    const cell = invoiceCell(invoice(), 'amount');
+  it('сделка — двумя колонками: сколько покупатель платит и сколько получает', () => {
+    const pays = invoiceCell(invoice(), 'pays');
+    const cell = invoiceCell(invoice(), 'gets');
     // Литералом, а не через `formatMoney`: утверждение, повторяющее
     // вычисление из кода, не заметит, если разряды начнут разделять
     // иначе. Пробел здесь узкий неразрывный — тот самый, что ставит
     // `formatAmount` (U+202F), и написан он последовательностью: в
     // исходнике его не отличить от обычного.
     expect(cell.text).toBe('2\u202f000 THB');
-    expect(cell.meta).toContain('5\u202f600 RUB');
+    expect(cell.flag).toBe('THB');
+    expect(pays.text).toBe('5\u202f600 RUB');
+    expect(pays.flag).toBe('RUB');
+    // \u041a\u0443\u0440\u0441 \u2014 \u043f\u043e \u0437\u0430\u043f\u0438\u0441\u0430\u043d\u043d\u043e\u043c\u0443 \u0432 \u0441\u0447\u0451\u0442, \u043c\u0435\u043b\u043a\u043e \u043f\u043e\u0434 \u043f\u043e\u043b\u0443\u0447\u0430\u0435\u043c\u044b\u043c: \u043e\u043d \u043e\u0431\u044a\u044f\u0441\u043d\u044f\u0435\u0442
+    // \u0432\u0442\u043e\u0440\u0443\u044e \u0441\u0443\u043c\u043c\u0443 \u0447\u0435\u0440\u0435\u0437 \u043f\u0435\u0440\u0432\u0443\u044e.
     expect(cell.meta).toContain('2,8');
+    expect(INVOICE_COLUMN_LABELS.pays).toBe('\u041f\u043e\u043a\u0443\u043f\u0430\u0442\u0435\u043b\u044c \u043f\u043b\u0430\u0442\u0438\u0442');
+    expect(INVOICE_COLUMN_LABELS.gets).toBe('\u041f\u043e\u043a\u0443\u043f\u0430\u0442\u0435\u043b\u044c \u043f\u043e\u043b\u0443\u0447\u0430\u0435\u0442');
   });
 
   it('у возврата целиком удержанного нет, а не ноль', () => {

@@ -16,6 +16,7 @@ import { isPayable, providerState } from '@/lib/pos/lifecycle';
 import { markupPercent } from '@/lib/pos/settings';
 import { PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
+import { CopyLink } from '@/app/ui/copy-link';
 import { PosLive } from '@/app/ui/pos-live';
 import { InvoiceActions } from './invoice-actions';
 
@@ -102,9 +103,10 @@ export default async function InvoicePage({
                 width={180}
                 height={180}
               />
+              <CopyLink link={qr.link} />
               <figcaption className="hint">
-                {provider?.name === IMITATION ? 'QR ненастоящий: платёж принимает имитация. ' : ''}
-                Код обновляется каждые {Math.round(QR_TTL_MS / 60_000)} минут
+                {provider?.name === IMITATION ? 'QR и ссылка ненастоящие: платёж принимает имитация. ' : ''}
+                Код и ссылка обновляются каждые {Math.round(QR_TTL_MS / 60_000)} минут
                 {invoice.expiresAt ? (
                   <>
                     , счёт действует до <Moment at={invoice.expiresAt} />

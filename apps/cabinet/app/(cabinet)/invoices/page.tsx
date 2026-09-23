@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { CurrencyFlag } from '@nemo/flags';
 import { merchantRoleCan, Money, sortCurrencies } from '@nemo/types';
 import { EmptyState, firstParam, HowTo, Icon, PeriodChips, Stat, Stats, Tabs } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
@@ -22,7 +21,7 @@ import {
   invoiceCell,
   invoiceCurrencies,
   invoiceMarks,
-  invoiceMoneyLines,
+  currencyBreakdown,
   invoiceStatuses,
   invoiceSummary,
   pageOf,
@@ -30,6 +29,7 @@ import {
 } from '@/lib/invoice-rows';
 import { listInvoices, listRefunds } from '@/lib/mock/store';
 import { payRounding } from '@/lib/pos';
+import { isDeletable, isPayable } from '@/lib/pos/lifecycle';
 import {
   INVOICE_TILE_LABELS,
   INVOICES_HOW_TO,
@@ -41,6 +41,7 @@ import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
 import { PosLive } from '@/app/ui/pos-live';
 import { Spark } from '@/app/ui/spark';
+import { CurrencyBreakdown } from './currency-breakdown';
 import { CurrencySwitch } from './currency-switch';
 import { InvoicesTable, type InvoiceRowView } from './invoices-table';
 
@@ -98,7 +99,6 @@ export default async function InvoicesPage({
   const code = codes.includes(firstParam(params.code) ?? '') ? firstParam(params.code)! : 'RUB';
   const currency = terms.currencies.find((one) => one.code === code);
   const summary = invoiceSummary(found, refunds, code, currency ? payRounding(currency) : 2);
-  const moneyLines = invoiceMoneyLines(found);
   const returned = countByStatus(found, 'refunded');
 
   // Ход на плитках — не длиннее двух месяцев: без периода — с дня первого
@@ -148,6 +148,8 @@ export default async function InvoicesPage({
       tone: INVOICE_STATUS_TONES[one.status],
       createdAt: one.createdAt,
       paidAt: one.paidAt,
+      payable: isPayable(one, now),
+      deletable: isDeletable(one),
       cells: Object.fromEntries(
         prefs.columns.map((column) => [column, invoiceCell(one, column, offset, marks)]),
       ),
@@ -263,23 +265,20 @@ export default async function InvoicesPage({
           Суммы по валютам — столбиком и со значком: строкой через точку
           «850 CNY · 13 900 THB · 150 USDT» крупным кеглем переносилась
           посреди суммы, и глаз искал, где кончается одна и начинается
-          другая. Значок отвечает «какая валюта» раньше, чем код.
+          другая. Нажатие раскрывает все валюты сервиса.
         */}
         <Stat
           label="По валютам"
           value={
-            moneyLines.length === 0 ? (
-              '—'
-            ) : (
-              <ul className="money-flags">
-                {moneyLines.map((line) => (
-                  <li key={line.code} className="money-flags__row">
-                    <CurrencyFlag code={line.code} size={18} />
-                    <span className="money-flags__amount">{formatMoney(line.amount, line.code)}</span>
-                  </li>
-                ))}
-              </ul>
-            )
+            <CurrencyBreakdown
+              selected={code}
+              lines={currencyBreakdown(found, codes).map((line) => ({
+                code: line.code,
+                amount: line.amount === null ? null : formatMoney(line.amount, line.code),
+                count: line.count,
+                href: href({ code: line.code === 'RUB' ? undefined : line.code, page: undefined }),
+              }))}
+            />
           }
           note="оплаченные, без сложения между собой"
         />
@@ -368,6 +367,7 @@ export default async function InvoicesPage({
             prefs={prefs}
             merchantId={actor.merchantId}
             exportHref={csvHref}
+            canAct={merchantRoleCan(session.role, 'till')}
           />
           <div className="table__foot">
             <span>

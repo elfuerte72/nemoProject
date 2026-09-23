@@ -204,6 +204,14 @@ describe('имитация провайдера', () => {
     expect(imitationQr('imit_1', new Date(first.expiresAt)).payload).not.toBe(first.payload);
   });
 
+  it('ссылка на оплату — то же, что в QR, текстом', () => {
+    // У СБП в QR зашита ссылка на оплату, и отправить её покупателю,
+    // который не у стойки, — то же, что показать ему код. У имитации
+    // ссылка такая же ненастоящая, как QR, и ничего не откроет.
+    const qr = imitationQr('imit_1', at);
+    expect(qr.link).toBe(qr.payload);
+  });
+
   it('содержимое QR не похоже на ссылку банка', () => {
     const { payload } = imitationQr('imit_1', at);
     expect(payload).toMatch(/IMITATION/u);

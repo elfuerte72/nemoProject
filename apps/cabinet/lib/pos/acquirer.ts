@@ -49,6 +49,13 @@ export interface IssuedPayment {
  */
 export interface QrView {
   readonly payload: string;
+  /**
+   * Ссылка на оплату — то же, что в QR, текстом: её отправляют
+   * покупателю, который не у стойки. У СБП в QR и зашита ссылка на
+   * оплату, и живёт она столько же, сколько код. У имитации ссылка такая
+   * же ненастоящая, как QR, и ничего не откроет.
+   */
+  readonly link: string;
   readonly issuedAt: string;
   readonly expiresAt: string;
 }

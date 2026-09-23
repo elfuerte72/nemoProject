@@ -36,8 +36,10 @@ export function qrWindow(at: Date): number {
  */
 export function imitationQr(ref: string, at: Date): QrView {
   const window = qrWindow(at);
+  const payload = `TOBEE-POS-IMITATION|${ref}|${window}`;
   return {
-    payload: `TOBEE-POS-IMITATION|${ref}|${window}`,
+    payload,
+    link: payload,
     issuedAt: new Date(window * QR_TTL_MS).toISOString(),
     expiresAt: new Date((window + 1) * QR_TTL_MS).toISOString(),
   };

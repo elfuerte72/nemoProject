@@ -18,6 +18,35 @@ export function isPayable(invoice: MockInvoice, now: Date): boolean {
   return invoice.status === 'issued' && !isDue(invoice, now);
 }
 
+/**
+ * Счёт можно удалить, только если денег по нему не было: ждёт, истёк
+ * или отменён. Оплаченный и возвращённый — история денег, на них
+ * ссылаются возвраты, и удалённый такой счёт оставил бы возврат ни к
+ * чему, а мерчанта — без ответа покупателю «я же платил».
+ */
+export function isDeletable(invoice: MockInvoice): boolean {
+  return invoice.status === 'issued' || invoice.status === 'expired' || invoice.status === 'cancelled';
+}
+
+/**
+ * Какие из отмеченных счетов действие затронет. Остальные — мимо, а не
+ * отказ всему: отмечают строки списка вперемешку, и «отметить оплаченным»
+ * по двум ждущим и одному истёкшему должно отметить два. Незнакомые
+ * идентификаторы — мимо: выборка идёт по счетам самого мерчанта.
+ */
+export function bulkTargets(
+  invoices: readonly MockInvoice[],
+  ids: readonly string[],
+  action: 'paid' | 'delete',
+  now: Date,
+): readonly string[] {
+  const asked = new Set(ids);
+  return invoices
+    .filter((one) => asked.has(one.id))
+    .filter((one) => (action === 'paid' ? isPayable(one, now) : isDeletable(one)))
+    .map((one) => one.id);
+}
+
 /** Срок счёта вышел. Без срока счёт живёт, пока его не закроют руками. */
 export function isDue(invoice: MockInvoice, now: Date): boolean {
   return invoice.expiresAt !== null && new Date(invoice.expiresAt).getTime() <= now.getTime();

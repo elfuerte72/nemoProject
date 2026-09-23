@@ -103,10 +103,17 @@ export interface MockInvoice {
   readonly events: readonly MockEvent[];
 }
 
+/*
+ * Сделка — двумя колонками, а не одной «Суммой» с эквивалентом мелко
+ * под ней: у стойки спрашивают и «сколько заплатили», и «сколько
+ * выдали», и второе число, набранное мелким шрифтом, приходилось
+ * выискивать. Подписи — те же, что у строк расчёта в POS-терминале.
+ */
 export const invoiceColumns = [
   'number',
   'author',
-  'amount',
+  'pays',
+  'gets',
   'status',
   'created',
   'open',
@@ -116,7 +123,8 @@ export type InvoiceColumn = (typeof invoiceColumns)[number];
 export const INVOICE_COLUMN_LABELS: Record<InvoiceColumn, string> = {
   number: 'Счёт',
   author: 'Создатель',
-  amount: 'Сумма',
+  pays: 'Покупатель платит',
+  gets: 'Покупатель получает',
   status: 'Состояние',
   created: 'Даты',
   open: 'Действия',
@@ -128,18 +136,20 @@ export const INVOICE_EXPORT_COLUMNS: readonly InvoiceColumn[] = invoiceColumns.f
 );
 
 /**
- * Колонки, которые не выключаются: без номера, суммы и состояния
+ * Колонки, которые не выключаются: без номера, обеих сумм и состояния
  * строка не отвечает на вопрос, ради которого открывают список.
  */
-export const REQUIRED_INVOICE_COLUMNS: readonly InvoiceColumn[] = ['number', 'amount', 'status'];
+export const REQUIRED_INVOICE_COLUMNS: readonly InvoiceColumn[] = ['number', 'pays', 'gets', 'status'];
 
 export interface Cell {
   /** Главное в ячейке. */
   readonly text: string;
-  /** Вторая строка под ним: эквивалент, время. */
+  /** Вторая строка под ним: курс, время. */
   readonly meta?: string | undefined;
   /** Числовая — прижимается вправо. */
   readonly numeric?: boolean | undefined;
+  /** Валюта суммы в ячейке: экран ставит перед числом её значок. */
+  readonly flag?: string | undefined;
 }
 
 /**
@@ -162,13 +172,16 @@ export function invoiceCell(
       return { text: one.number };
     case 'author':
       return { text: one.author };
-    case 'amount':
+    case 'pays':
+      return { text: formatMoney(one.payAmount, one.payCode), numeric: true, flag: one.payCode };
+    case 'gets':
       return {
         text: formatMoney(one.amount, one.code),
-        // Эквивалент — по курсу, записанному в счёт: другого у сервиса
-        // нет, а сегодняшним курсом вчерашний счёт пересчитывать нельзя.
-        meta: `${formatMoney(one.payAmount, one.payCode)} по курсу ${formatRate(one.rate, one.payCode, one.code)}`,
+        // Курс — записанный в счёт: другого у сервиса нет, а сегодняшним
+        // курсом вчерашний счёт пересчитывать нельзя.
+        meta: `по курсу ${formatRate(one.rate, one.payCode, one.code)}`,
         numeric: true,
+        flag: one.code,
       };
     case 'status': {
       // Пример подписан прямо в строке: без подписи он читается как
@@ -495,6 +508,32 @@ export function invoiceMoneyLines(invoices: readonly MockInvoice[]): readonly Mo
   return [...byCode.entries()]
     .map(([code, line]) => ({ code, amount: line.amount, count: line.count }))
     .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+export interface CurrencyShare {
+  readonly code: string;
+  /** Оплаченное в этой валюте. Пусто — оплат в ней не было. */
+  readonly amount: Amount | null;
+  readonly count: number;
+}
+
+/**
+ * Оплаченное по каждой валюте из списка — для раскрытой плитки «По
+ * валютам». Валюты те же, что в выборе оборота, и пустые названы тоже:
+ * «юаней не продавали» — такой же ответ, как «продали на 850», и
+ * пропавшая из списка валюта читалась бы как ошибка списка.
+ */
+export function currencyBreakdown(
+  invoices: readonly MockInvoice[],
+  codes: readonly string[],
+): readonly CurrencyShare[] {
+  const lines = new Map(invoiceMoneyLines(invoices).map((line) => [line.code, line]));
+  return codes.map((code) => {
+    const line = lines.get(code);
+    return line
+      ? { code, amount: line.amount, count: line.count ?? 0 }
+      : { code, amount: null, count: 0 };
+  });
 }
 
 export function countByStatus<T extends { status: string }>(

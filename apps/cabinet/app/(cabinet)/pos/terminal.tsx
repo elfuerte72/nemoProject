@@ -19,6 +19,7 @@ import type { PosEvent } from '@/lib/pos/bus';
 import { markupPercent, parseMarkupPercent } from '@/lib/pos/settings';
 import { POS_STREAM_PATH } from '@/lib/pos/stream';
 import { POS_HOW_TO } from '@/lib/pos-texts';
+import { CopyLink } from '@/app/ui/copy-link';
 import { send } from '@/app/ui/send';
 import { CurrencyPick } from './currency-pick';
 import { PosPath } from './explainer';
@@ -729,8 +730,13 @@ export function Terminal({
               height={220}
             />
           ) : undefined}
+          {/*
+            Ссылка на оплату — для покупателя не у стойки: её отправляют
+            в переписку. Та же, что в QR, и обновляется вместе с ним.
+          */}
+          {open.qr ? <CopyLink link={open.qr.link} /> : undefined}
           <span className="pay__note">
-            {provider.imitation ? 'QR ненастоящий: платёж принимает имитация. ' : ''}
+            {provider.imitation ? 'QR и ссылка ненастоящие: платёж принимает имитация. ' : ''}
             {qrLeft !== null ? `QR обновится через ${mmss(qrLeft)}. ` : ''}
             {invoiceLeft !== null
               ? `Счёт действует ещё ${mmss(invoiceLeft)}.`

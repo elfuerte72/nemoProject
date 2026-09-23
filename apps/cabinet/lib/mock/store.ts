@@ -109,6 +109,20 @@ export function replaceInvoice(merchantId: string, invoice: MockInvoice): void {
   );
 }
 
+/**
+ * Удалить счета мерчанта. Какие можно, решает `bulkTargets` — сюда
+ * приходят уже отобранные; чужой счёт с тем же идентификатором не
+ * задет, потому что выборка — по полке своего мерчанта.
+ */
+export function removeInvoices(merchantId: string, ids: readonly string[]): void {
+  const gone = new Set(ids);
+  const mine = shelf().invoices.get(merchantId) ?? [];
+  shelf().invoices.set(
+    merchantId,
+    mine.filter((one) => !gone.has(one.id)),
+  );
+}
+
 export function listRefunds(merchantId: string): readonly MockRefund[] {
   offerDemo(merchantId, new Date());
   return shelf().refunds.get(merchantId) ?? [];
