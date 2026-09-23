@@ -1,9 +1,9 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { merchantRoleCan, Money } from '@nemo/types';
-import { EmptyState, firstParam, HowTo, PeriodChips, Stat, Stats, Tabs } from '@nemo/ui';
+import { CurrencyFlag } from '@nemo/flags';
+import { merchantRoleCan, Money, sortCurrencies } from '@nemo/types';
+import { EmptyState, firstParam, HowTo, Icon, PeriodChips, Stat, Stats, Tabs } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
-import { formatByCurrency } from '@nemo/ui/money-list';
 import { TZ_COOKIE, localMidnight, readTzOffset } from '@nemo/ui/period';
 import { allowedHere } from '@/lib/access';
 import { getCore } from '@/lib/core';
@@ -41,7 +41,7 @@ import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
 import { PosLive } from '@/app/ui/pos-live';
 import { Spark } from '@/app/ui/spark';
-import { Columns } from './columns';
+import { CurrencySwitch } from './currency-switch';
 import { InvoicesTable, type InvoiceRowView } from './invoices-table';
 
 export const dynamic = 'force-dynamic';
@@ -88,13 +88,17 @@ export default async function InvoicesPage({
   const page = pageOf(rows, Number(firstParam(params.page) ?? '1'), prefs.perPage);
 
   // Валюта сумм — из адреса: складывать баты с юанями нечем, и валюту
-  // выбирает тот, кто смотрит. Доля возврата в ней ровняется тем же
-  // знаком, что сумма к оплате, — из справочника валют сервиса.
-  const codes = invoiceCurrencies(all);
-  const code = codes.includes(firstParam(params.code) ?? '') ? firstParam(params.code)! : 'RUB';
+  // выбирает тот, кто смотрит. Выбирают из всех валют сервиса, а не
+  // только встреченных в счетах: «оборот в юанях — ноль» тоже ответ.
+  // Доля возврата в ней ровняется тем же знаком, что сумма к оплате.
   const terms = await getCore().getExchangeTerms();
+  const codes = sortCurrencies([
+    ...new Set([...terms.currencies.map((one) => one.code), ...invoiceCurrencies(all)]),
+  ]);
+  const code = codes.includes(firstParam(params.code) ?? '') ? firstParam(params.code)! : 'RUB';
   const currency = terms.currencies.find((one) => one.code === code);
   const summary = invoiceSummary(found, refunds, code, currency ? payRounding(currency) : 2);
+  const moneyLines = invoiceMoneyLines(found);
   const returned = countByStatus(found, 'refunded');
 
   // Ход на плитках — не длиннее двух месяцев: без периода — с дня первого
@@ -157,17 +161,23 @@ export default async function InvoicesPage({
       <PosLive />
       <DisabledBanner status={session.status} />
 
-      <header className="page__head">
-        <div>
+      {/*
+        Шапка держит одно главное действие — «Создать счёт» — справа от
+        заголовка, крупно и с плюсом: за ним сюда и приходят. Подпись под
+        заголовком сужена, иначе длинное предупреждение о макете сталкивало
+        кнопку под себя. Выгрузка — рядом, тише; настройка таблицы живёт у
+        самой таблицы.
+      */}
+      <header className="page__head invoices__head">
+        <div className="invoices__intro">
           <h1 className="page__title">Счета</h1>
           <p className="page__sub">
             {INVOICES_NOTE} {PREVIEW_NOTE}
           </p>
         </div>
         <div className="page__actions">
-          <Columns prefs={prefs} merchantId={actor.merchantId} />
           {/* «CSV», как у остальных выгрузок кабинета и панели. */}
-          <a className="btn btn--ghost btn--tiny" href={csvHref}>
+          <a className="btn btn--ghost" href={csvHref}>
             CSV
           </a>
           {/*
@@ -176,7 +186,10 @@ export default async function InvoicesPage({
             («создать счёт»), а не образца.
           */}
           {merchantRoleCan(session.role, 'till') ? (
-            <Link className="btn btn--gold btn--tiny" href="/pos">
+            <Link className="btn btn--gold invoices__create" href="/pos">
+              <span className="invoices__plus" aria-hidden>
+                <Icon name="plus" size={14} />
+              </span>
               Создать счёт
             </Link>
           ) : undefined}
@@ -184,6 +197,21 @@ export default async function InvoicesPage({
       </header>
 
       <HowTo title="Как устроены счета" sub="Состояния, числа и выгрузка" items={INVOICES_HOW_TO} />
+
+      {/*
+        В какой валюте плитки считают суммы — одна пилюля над ними, а не
+        ряд кнопок под ними: выбор стоит до чисел, которые от него зависят.
+      */}
+      <div className="invoices__sums">
+        <span className="invoices__sums-label">Оборот в</span>
+        <CurrencySwitch
+          codes={codes}
+          selected={code}
+          hrefs={Object.fromEntries(
+            codes.map((one) => [one, href({ code: one === 'RUB' ? undefined : one, page: undefined })]),
+          )}
+        />
+      </div>
 
       <Stats>
         <Stat
@@ -231,27 +259,31 @@ export default async function InvoicesPage({
               : `оплачено минус возвраты · конверсия ${summary.conversion} %`
           }
         />
+        {/*
+          Суммы по валютам — столбиком и со значком: строкой через точку
+          «850 CNY · 13 900 THB · 150 USDT» крупным кеглем переносилась
+          посреди суммы, и глаз искал, где кончается одна и начинается
+          другая. Значок отвечает «какая валюта» раньше, чем код.
+        */}
         <Stat
           label="По валютам"
-          value={formatByCurrency(invoiceMoneyLines(found))}
+          value={
+            moneyLines.length === 0 ? (
+              '—'
+            ) : (
+              <ul className="money-flags">
+                {moneyLines.map((line) => (
+                  <li key={line.code} className="money-flags__row">
+                    <CurrencyFlag code={line.code} size={18} />
+                    <span className="money-flags__amount">{formatMoney(line.amount, line.code)}</span>
+                  </li>
+                ))}
+              </ul>
+            )
+          }
           note="оплаченные, без сложения между собой"
         />
       </Stats>
-
-      {codes.length > 1 ? (
-        <div className="chips">
-          {codes.map((one) => (
-            <Link
-              key={one}
-              href={href({ code: one === 'RUB' ? undefined : one, page: undefined })}
-              className={one === code ? 'chip chip--on' : 'chip'}
-              scroll={false}
-            >
-              {INVOICE_TILE_LABELS.turnover(one)}
-            </Link>
-          ))}
-        </div>
-      ) : undefined}
 
       <div className="listbar">
         <Tabs
@@ -331,7 +363,12 @@ export default async function InvoicesPage({
         />
       ) : (
         <>
-          <InvoicesTable rows={view} columns={prefs.columns} dense={prefs.dense} exportHref={csvHref} />
+          <InvoicesTable
+            rows={view}
+            prefs={prefs}
+            merchantId={actor.merchantId}
+            exportHref={csvHref}
+          />
           <div className="table__foot">
             <span>
               {page.first}–{page.last} из {page.total}

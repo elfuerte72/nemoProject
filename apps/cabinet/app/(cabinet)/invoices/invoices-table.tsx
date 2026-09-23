@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Moment } from '@nemo/ui';
 import type { PillTone } from '@/lib/labels';
+import type { InvoicePrefs } from '@/lib/invoice-prefs';
 import { INVOICE_COLUMN_LABELS, type Cell, type InvoiceColumn } from '@/lib/invoice-rows';
+import { Columns } from './columns';
 
 /** Строка списка, уже разложенная сервером по ячейкам. */
 export interface InvoiceRowView {
@@ -28,16 +30,17 @@ export interface InvoiceRowView {
  */
 export function InvoicesTable({
   rows,
-  columns,
-  dense,
+  prefs,
+  merchantId,
   exportHref,
 }: {
   readonly rows: readonly InvoiceRowView[];
-  readonly columns: readonly InvoiceColumn[];
-  readonly dense: boolean;
+  readonly prefs: InvoicePrefs;
+  readonly merchantId: string;
   /** Адрес выгрузки без выбора: к нему добавляются отмеченные. */
   readonly exportHref: string;
 }) {
+  const { columns, dense } = prefs;
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const ids = rows.map((one) => one.id).join(',');
 
@@ -68,23 +71,32 @@ export function InvoicesTable({
         она сталкивала бы таблицу вниз, и второй щелчок по строке
         попадал бы в соседнюю.
       */}
-      <div className="picked" role="status">
-        {picked.size > 0 ? (
-          <>
-            <span>Выбрано: {picked.size}</span>
-            <a
-              className="btn btn--soft btn--tiny"
-              href={`${exportHref}${joiner}ids=${encodeURIComponent([...picked].join(','))}`}
-            >
-              CSV выбранных ({picked.size})
-            </a>
-            <button type="button" className="btn btn--ghost btn--tiny" onClick={() => setPicked(new Set())}>
-              Снять выбор
-            </button>
-          </>
-        ) : (
-          <span>Отметьте строки, чтобы выгрузить только их.</span>
-        )}
+      {/*
+        Строка над таблицей — её инструменты: слева что делать с
+        отмеченным, справа вид самой таблицы. «Поля» стояли в шапке
+        страницы рядом с «Создать счёт» и читались как действие со
+        счётом; это настройка таблицы, и место ей у таблицы.
+      */}
+      <div className="picked">
+        <div className="picked__main" role="status">
+          {picked.size > 0 ? (
+            <>
+              <span>Выбрано: {picked.size}</span>
+              <a
+                className="btn btn--soft btn--tiny"
+                href={`${exportHref}${joiner}ids=${encodeURIComponent([...picked].join(','))}`}
+              >
+                CSV выбранных ({picked.size})
+              </a>
+              <button type="button" className="btn btn--ghost btn--tiny" onClick={() => setPicked(new Set())}>
+                Снять выбор
+              </button>
+            </>
+          ) : (
+            <span>Отметьте строки, чтобы выгрузить только их.</span>
+          )}
+        </div>
+        <Columns prefs={prefs} merchantId={merchantId} />
       </div>
 
       <div className="scroll-x">

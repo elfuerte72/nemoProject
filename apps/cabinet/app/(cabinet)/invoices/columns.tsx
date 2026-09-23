@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Icon } from '@nemo/ui';
 import {
   INVOICE_COLUMN_LABELS,
   invoiceColumns,
@@ -72,13 +73,20 @@ export function Columns({
 
   return (
     <div className="fields" ref={box}>
+      {/*
+        «Вид таблицы», а не «Поля»: кнопка стоит у таблицы и говорит,
+        что меняет, — колонки, плотность, число строк. Слово «Поля»
+        понятно тому, кто уже открывал её в панели, а мерчант спрашивал,
+        зачем она.
+      */}
       <button
         type="button"
         className="btn btn--ghost btn--tiny"
         onClick={() => setOpen((one) => !one)}
         aria-expanded={open}
       >
-        Поля
+        <Icon name="settings" size={14} />
+        Вид таблицы
       </button>
       {open ? (
         <div className="fields__list" role="group" aria-label="Что показывать в таблице">

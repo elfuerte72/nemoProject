@@ -1928,12 +1928,12 @@ button.calc__code:hover,
 }
 
 /*
- * К левому краю кнопки: «Поля» стоят первыми в шапке, и список,
- * привязанный справа, уезжал под боковое меню.
+ * К правому краю кнопки: «Вид таблицы» стоит в конце строки над
+ * таблицей, и список, привязанный слева, уезжал бы за край экрана.
  */
 .fields__list {
   position: absolute;
-  left: 0;
+  right: 0;
   top: calc(100% + 6px);
   z-index: 10;
   display: flex;
@@ -2026,16 +2026,125 @@ button.calc__code:hover,
   transform: translateX(14px);
 }
 
-/* Выбранные строки: сколько отмечено и что с ними сделать. */
+/*
+ * Строка инструментов таблицы: слева отмеченное и что с ним сделать,
+ * справа вид таблицы.
+ */
 .picked {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   min-height: 32px;
   margin: 0 0 10px;
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.picked__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/*
+ * «Вид таблицы» прижат вправо и на своей строке: на телефоне строка
+ * переносится, и кнопка у левого края раскрывала бы список, привязанный
+ * к её правому краю, за левую границу экрана.
+ */
+.picked .fields {
+  margin-left: auto;
+}
+
+/* ── Шапка и сводка счетов ───────────────────────────────────────── */
+
+/*
+ * Подпись под заголовком уже, чем строка: длинное предупреждение о
+ * макете иначе занимало всю ширину, и «Создать счёт» проваливалось под
+ * него, в левый край, где главное действие не ищут.
+ */
+.invoices__intro {
+  flex: 1 1 420px;
+  max-width: 720px;
+}
+
+.invoices__head {
+  align-items: center;
+}
+
+/*
+ * Главное действие страницы: полный размер и плюс в своём кружке —
+ * знак «создать» читается раньше слова. Кружок — тень цвета надписи,
+ * а не второй цвет: кнопка остаётся одной поверхностью.
+ */
+.invoices__create {
+  min-height: 44px;
+  padding-inline: 16px 20px;
+  font-size: 14px;
+  transition-property: scale, filter;
+  transition-duration: 120ms;
+  transition-timing-function: ease-out;
+}
+
+.invoices__create:active {
+  scale: 0.96;
+}
+
+/* Выгрузка рядом — той же высоты: пара разного роста читается неряшливо. */
+.invoices__head .btn--ghost {
+  min-height: 44px;
+}
+
+.invoices__plus {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+/* Валюта сумм — пилюлей над плитками, по правому краю, как подпись к ним. */
+.invoices__sums {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 18px 0 10px;
+}
+
+.invoices__sums-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/*
+ * Суммы по валютам столбиком: значок, сумма, код. Кегль меньше, чем у
+ * одиночного числа плитки, — три строки по двадцать шесть пикселей
+ * вытягивали плитку втрое выше соседей.
+ */
+.money-flags {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.money-flags__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+}
+
+.money-flags__amount {
+  white-space: nowrap;
 }
 
 .datatable__pick {
