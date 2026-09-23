@@ -1927,9 +1927,13 @@ button.calc__code:hover,
   position: relative;
 }
 
+/*
+ * К левому краю кнопки: «Поля» стоят первыми в шапке, и список,
+ * привязанный справа, уезжал под боковое меню.
+ */
 .fields__list {
   position: absolute;
-  right: 0;
+  left: 0;
   top: calc(100% + 6px);
   z-index: 10;
   display: flex;
@@ -1949,6 +1953,152 @@ button.calc__code:hover,
   gap: 8px;
   font-size: 13px;
   cursor: pointer;
+}
+
+.fields__title {
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.fields__note {
+  max-width: 260px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: normal;
+}
+
+.fields__select {
+  width: auto;
+  padding-block: 4px;
+}
+
+/*
+ * «Счета всей команды» — переключатель ссылкой: отбор живёт в адресе,
+ * как поиск и период, и ссылку на «только мои» можно открыть снова.
+ */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.switch__track {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  transition: background-color 160ms ease;
+}
+
+.switch__track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 160ms ease;
+}
+
+.switch--on {
+  color: var(--text);
+}
+
+.switch--on .switch__track {
+  background: var(--gold);
+}
+
+.switch--on .switch__track::after {
+  transform: translateX(14px);
+}
+
+/* Выбранные строки: сколько отмечено и что с ними сделать. */
+.picked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.datatable__pick {
+  width: 32px;
+}
+
+.datatable__row--picked,
+.datatable tbody tr.datatable__row--picked:hover {
+  background: rgba(var(--gold-rgb), 0.08);
+}
+
+/*
+ * Вторая строка ячейки держит одну строку, как и первая: `text-wrap`
+ * у `.row__meta` перебивал `nowrap` таблицы, и на телефоне «5 406 RUB
+ * по курсу…» ломалось в четыре строки — таблица и так прокручивается.
+ */
+.datatable .row__meta {
+  display: block;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* Плотная таблица из «Полей»: строки ниже, на экран входит больше. */
+.datatable--dense th,
+.datatable--dense td {
+  padding-block: 5px;
+}
+
+.page__title--with-pill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/*
+ * Ход по дням под числом плитки. Линия цвета плитки и заливка под ней
+ * вдесятеро слабее: украшение, а не второе число.
+ */
+.spark {
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin-top: 8px;
+  overflow: visible;
+  color: var(--text-faint);
+}
+
+.spark--up {
+  color: var(--up);
+}
+
+.spark__line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark__fill {
+  fill: currentColor;
+  opacity: 0.1;
 }
 
 /* ── Действия со счётом ──────────────────────────────────────────── */

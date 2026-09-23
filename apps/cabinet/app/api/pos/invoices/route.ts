@@ -114,6 +114,7 @@ export async function POST(request: Request): Promise<Response> {
       number: nextNumber(listInvoices(actor.merchantId, at), at, offset),
       // Кто нажал, а не чей кабинет: людей у мерчанта несколько (тикет 17).
       author: session.userName,
+      authorId: actor.userId,
       code: body.to,
       amount: buy,
       payCode: body.from,

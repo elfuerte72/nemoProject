@@ -2,7 +2,7 @@ import { Money, type Amount } from '@nemo/types';
 import type { MockInvoice, MockRefund } from '../invoice-rows';
 import { buyerPays, makeInvoice, nextNumber } from '../pos';
 import { IMITATION } from './imitation';
-import { cancelledByHand, expireDue, paidByProvider, withNote } from './lifecycle';
+import { cancelledByHand, expireDue, paidByProvider, settleRefunds, withNote } from './lifecycle';
 
 /**
  * Примеры счетов и возвратов — чтобы экраны терминала можно было
@@ -165,6 +165,7 @@ export function demoSet(now: Date): DemoSet {
       });
       invoice = withNote(invoice, asked, `Заявлен возврат: ${sample.refund.reason}`);
       invoice = withNote(invoice, asked, 'Возврат исполнен: провайдер «Имитация»');
+      invoice = settleRefunds(invoice, refunds, asked);
     }
 
     invoices.push(invoice);

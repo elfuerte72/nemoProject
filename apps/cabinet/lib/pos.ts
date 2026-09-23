@@ -149,6 +149,8 @@ export function examplePay(): Amount {
 export interface NewInvoiceInput {
   readonly number: string;
   readonly author: string;
+  /** Идентификатор того же человека. Пусто — у примеров: их никто не создавал. */
+  readonly authorId?: string | null | undefined;
   readonly code: string;
   readonly amount: Amount;
   readonly payCode: string;
@@ -169,6 +171,7 @@ export function makeInvoice(input: NewInvoiceInput): MockInvoice {
     id: `inv_${input.at.getTime().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
     number: input.number,
     author: input.author,
+    authorId: input.authorId ?? null,
     code: input.code,
     amount: input.amount,
     payCode: input.payCode,

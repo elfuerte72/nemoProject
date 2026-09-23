@@ -743,7 +743,11 @@ export function Terminal({
       ) : (
         <>
           <span className="pay__state">
-            {open.invoice.status === 'expired' ? 'Срок оплаты вышел' : 'Счёт отменён'}
+            {open.invoice.status === 'expired'
+              ? 'Срок оплаты вышел'
+              : open.invoice.status === 'refunded'
+                ? 'Деньги вернули покупателю'
+                : 'Счёт отменён'}
           </span>
           <span className="pos__value">
             {formatMoney(open.invoice.payAmount, open.invoice.payCode)}

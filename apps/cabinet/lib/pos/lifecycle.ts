@@ -1,4 +1,5 @@
-import type { MockInvoice } from '../invoice-rows';
+import { Money } from '@nemo/types';
+import { owedRefunds, refundLeft, type MockInvoice, type MockRefund } from '../invoice-rows';
 
 /**
  * Жизнь счёта: чем он становится и от чего.
@@ -64,6 +65,9 @@ export function paidByProvider(
   };
 }
 
+/** Строка ленты об оплате мимо сервиса — по ней же узнаётся такой счёт. */
+export const PAID_BY_HAND = 'Отмечен оплаченным: деньги получены мимо сервиса';
+
 /** Мерчант сам отметил оплату: деньги пришли мимо сервиса, наличными или переводом. */
 export function paidByHand(invoice: MockInvoice, at: Date): MockInvoice {
   const when = at.toISOString();
@@ -71,8 +75,30 @@ export function paidByHand(invoice: MockInvoice, at: Date): MockInvoice {
     ...invoice,
     status: 'paid',
     paidAt: when,
-    events: [...invoice.events, { at: when, what: 'Отмечен оплаченным: деньги получены мимо сервиса' }],
+    events: [...invoice.events, { at: when, what: PAID_BY_HAND }],
   };
+}
+
+/**
+ * Что с платежом у провайдера — строка таблицы «Платёж у провайдера» в
+ * карточке, как у образца. Это не состояние счёта: счёт, оплаченный
+ * мимо сервиса, у провайдера так и остался неоплаченным, и карточка
+ * не должна приписывать банку деньги, которых он не видел.
+ */
+export function providerState(invoice: MockInvoice): string {
+  switch (invoice.status) {
+    case 'issued':
+      return 'QR создан';
+    case 'expired':
+      return 'Истёк';
+    case 'cancelled':
+      return 'Отменён';
+    case 'paid':
+    case 'refunded':
+      return invoice.events.some((one) => one.what === PAID_BY_HAND)
+        ? 'Не оплачен: деньги пришли мимо'
+        : 'Завершён';
+  }
 }
 
 export function cancelledByHand(invoice: MockInvoice, at: Date): MockInvoice {
@@ -80,6 +106,34 @@ export function cancelledByHand(invoice: MockInvoice, at: Date): MockInvoice {
     ...invoice,
     status: 'cancelled',
     events: [...invoice.events, { at: at.toISOString(), what: 'Счёт отменён' }],
+  };
+}
+
+/**
+ * Деньги вернули покупателю целиком — счёт становится возвращённым.
+ *
+ * Целиком — это когда обещанные возвраты покрыли сумму счёта и каждый
+ * из них исполнен: принятый к исполнению возврат ещё не деньги, и счёт,
+ * названный возвращённым до того, как банк их отдал, обещал бы
+ * покупателю то, чего у него на руках нет. Частичный возврат счёт не
+ * меняет — отметка о нём живёт в строке списка (`invoiceMarks`).
+ */
+export function settleRefunds(
+  invoice: MockInvoice,
+  refunds: readonly MockRefund[],
+  at: Date,
+): MockInvoice {
+  if (invoice.status !== 'paid') return invoice;
+  if (!Money.isZero(refundLeft(invoice, refunds))) return invoice;
+  const mine = owedRefunds(refunds).filter((one) => one.invoiceId === invoice.id);
+  if (mine.length === 0 || mine.some((one) => one.status !== 'done')) return invoice;
+  return {
+    ...invoice,
+    status: 'refunded',
+    events: [
+      ...invoice.events,
+      { at: at.toISOString(), what: 'Деньги возвращены покупателю целиком' },
+    ],
   };
 }
 
