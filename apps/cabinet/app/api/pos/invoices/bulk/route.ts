@@ -45,17 +45,25 @@ export async function POST(request: Request): Promise<Response> {
     const targets = new Set(bulkTargets(invoices, ids, action, at));
     const chosen = invoices.filter((one) => targets.has(one.id));
 
+    let done = 0;
     if (action === 'paid') {
       for (const one of chosen) replaceInvoice(actor.merchantId, paidByHand(one, at));
+      done = chosen.length;
     } else {
+      /*
+       * По одному: отмена у провайдера, затем удаление этого счёта. Упади
+       * отмена на третьем — первые два уже согласованы с банком и сняты,
+       * а не отменены у банка и оставлены ждать с живым QR. Удаление
+       * перепроверяет, что денег по счёту не было (`removeInvoices`).
+       */
       for (const one of chosen) {
         if (one.status === 'issued' && one.payment) await acquirer().cancel(one.payment.ref, at);
+        done += removeInvoices(actor.merchantId, [one.id]).length;
       }
-      removeInvoices(actor.merchantId, [...targets]);
     }
     for (const one of chosen) publishPos(actor.merchantId, { kind: 'invoice', id: one.id });
 
-    return json({ done: chosen.length, skipped: ids.length - chosen.length });
+    return json({ done, skipped: ids.length - done });
   } catch (error) {
     return errorResponse(error);
   }

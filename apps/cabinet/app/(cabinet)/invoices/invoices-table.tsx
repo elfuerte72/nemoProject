@@ -74,6 +74,7 @@ export function InvoicesTable({
   const [asking, setAsking] = useState<Bulk>();
   const [busy, setBusy] = useState(false);
   const [complaint, setComplaint] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const ids = rows.map((one) => one.id).join(',');
 
   useEffect(() => {
@@ -90,12 +91,22 @@ export function InvoicesTable({
   const payable = chosen.filter((one) => one.payable).map((one) => one.id);
   const deletable = chosen.filter((one) => one.deletable).map((one) => one.id);
 
+  /*
+   * Пока идёт запрос, раскрытое подтверждение не закрывается ничем —
+   * ни сменой отметок, ни «Снять выбор»: закрытое на полпути, оно
+   * оставило бы без ответа, чем всё кончилось.
+   */
+  function closeAsk(): void {
+    if (!busy) setAsking(undefined);
+  }
+
   function flip(id: string): void {
+    if (busy) return;
     const next = new Set(picked);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setPicked(next);
-    setAsking(undefined);
+    closeAsk();
   }
 
   async function act(action: Bulk, targets: readonly string[]): Promise<void> {
@@ -103,12 +114,26 @@ export function InvoicesTable({
     // нажатие во время запроса отбрасывается здесь.
     if (busy) return;
     setComplaint(undefined);
+    setNotice(undefined);
     setBusy(true);
     const reply = await send('/api/pos/invoices/bulk', { action, ids: targets });
     setBusy(false);
     if (!reply.ok) {
       setComplaint(reply.complaint);
       return;
+    }
+    /*
+     * Сервер задевает только то, что можно в момент запроса: счёт мог
+     * истечь или оплатиться, пока было открыто подтверждение. Молча снять
+     * выбор значило бы дать мерчанту думать, что отмечено всё.
+     */
+    const done = (reply.data as { done?: number }).done ?? targets.length;
+    if (done < targets.length) {
+      setNotice(
+        done === 0
+          ? 'Ни один из отмеченных счетов уже нельзя было изменить: пока шло подтверждение, они истекли или оплатились.'
+          : `Изменено ${invoicesWord(done)} из ${targets.length}: остальные за это время истекли или оплатились.`,
+      );
     }
     setAsking(undefined);
     setPicked(new Set());
@@ -126,16 +151,22 @@ export function InvoicesTable({
         вниз, и второй щелчок по строке попадал бы в соседнюю.
       */}
       <div className="picked">
-        <div className="picked__main" role="status">
+        <div className="picked__main">
           {picked.size > 0 ? (
             <>
-              <span>Выбрано: {picked.size}</span>
+              {/*
+                Живая область — только число: на всей строке каждая
+                галочка зачитывала бы диктором и все кнопки подряд.
+              */}
+              <span role="status">Выбрано: {picked.size}</span>
               {canAct && payable.length > 0 ? (
                 <button
                   type="button"
                   className={asking === 'paid' ? 'btn btn--soft btn--tiny' : 'btn btn--ghost btn--tiny'}
                   aria-expanded={asking === 'paid'}
-                  onClick={() => setAsking(asking === 'paid' ? undefined : 'paid')}
+                  onClick={() => {
+                    if (!busy) setAsking(asking === 'paid' ? undefined : 'paid');
+                  }}
                 >
                   Отметить оплаченным ({payable.length})
                 </button>
@@ -151,7 +182,9 @@ export function InvoicesTable({
                   type="button"
                   className={asking === 'delete' ? 'btn btn--soft btn--tiny' : 'btn btn--ghost btn--tiny'}
                   aria-expanded={asking === 'delete'}
-                  onClick={() => setAsking(asking === 'delete' ? undefined : 'delete')}
+                  onClick={() => {
+                    if (!busy) setAsking(asking === 'delete' ? undefined : 'delete');
+                  }}
                 >
                   Удалить ({deletable.length})
                 </button>
@@ -160,8 +193,9 @@ export function InvoicesTable({
                 type="button"
                 className="btn btn--ghost btn--tiny"
                 onClick={() => {
+                  if (busy) return;
                   setPicked(new Set());
-                  setAsking(undefined);
+                  closeAsk();
                 }}
               >
                 Снять выбор
@@ -225,6 +259,11 @@ export function InvoicesTable({
         </div>
       ) : undefined}
       {complaint ? <p className="error">{complaint}</p> : undefined}
+      {notice ? (
+        <p className="muted picked__notice" role="status">
+          {notice}
+        </p>
+      ) : undefined}
 
       <div className="scroll-x">
         <table className={dense ? 'datatable datatable--dense' : 'datatable'}>
@@ -239,8 +278,9 @@ export function InvoicesTable({
                     if (node) node.indeterminate = some;
                   }}
                   onChange={() => {
+                    if (busy) return;
                     setPicked(all ? new Set() : new Set(rows.map((one) => one.id)));
-                    setAsking(undefined);
+                    closeAsk();
                   }}
                 />
               </th>

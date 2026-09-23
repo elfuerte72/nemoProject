@@ -292,6 +292,16 @@ export function Terminal({
       const response = await fetch(`/api/pos/invoices/${id}`, {
         cache: 'no-store',
       });
+      /*
+       * Счёта больше нет — его удалили из списка счетов. Экран не должен
+       * держать у стойки QR и «Покупатель заплатил» по платежу, который
+       * уже отменён у провайдера: счёт снимается, и кассиру сказано почему.
+       */
+      if (response.status === 404) {
+        setOpen((was) => (was && was.invoice.id === id ? undefined : was));
+        setComplaint('Счёт удалили из списка счетов: оплатить его больше нельзя. Создайте новый.');
+        return;
+      }
       if (!response.ok) return;
       const view = (await response.json()) as InvoiceView;
       setOpen((was) => {
@@ -339,7 +349,13 @@ export function Terminal({
       if (event.kind === 'invoice' && openId.current === event.id) void load(event.id);
       refresh();
     });
-    const timer = setInterval(refresh, LIVE_REFRESH_MS);
+    // Таймер — страховка на обрыв потока, и перечитывает он то же, что
+    // событие: список и открытый счёт. Иначе оплата или удаление счёта
+    // при оборванном потоке так и не дошли бы до экрана у стойки.
+    const timer = setInterval(() => {
+      if (openId.current && document.visibilityState !== 'hidden') void load(openId.current);
+      refresh();
+    }, LIVE_REFRESH_MS);
     return () => {
       source.close();
       clearInterval(timer);

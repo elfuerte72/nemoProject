@@ -2275,6 +2275,10 @@ button.calc__code:hover,
   margin: -2px 0 12px;
 }
 
+.picked__notice {
+  margin: -2px 0 12px;
+}
+
 /* Ссылка на оплату — под QR, во всю его ширину. */
 .copy-link {
   width: 100%;

@@ -23,6 +23,7 @@ import {
   forgetMock,
   listInvoices,
   removeInvoices,
+  replaceInvoice as replaceInvoiceForTest,
   replaceRefund,
 } from './mock/store';
 import { demoSet } from './pos/demo';
@@ -346,6 +347,18 @@ describe('действия с отмеченными счетами', () => {
 
   it('чужие и незнакомые идентификаторы мимо', () => {
     expect(bulkTargets(rows, ['wait', 'нет-такого'], 'delete', now)).toEqual(['wait']);
+  });
+
+  it('удаление перепроверяет счёт в момент удаления: оплаченный за это время не удаляется', () => {
+    // Между отбором и удалением идёт отмена у провайдера, и банк успевает
+    // сообщить об оплате. Удалять такой счёт — стереть деньги из истории.
+    forgetMock('race');
+    const one = { ...invoice({ status: 'issued' }), id: 'raced' };
+    addInvoice('race', one);
+    replaceInvoiceForTest('race', paidByHand(one, now));
+    expect(removeInvoices('race', ['raced'])).toEqual([]);
+    expect(listInvoices('race')).toHaveLength(1);
+    forgetMock('race');
   });
 
   it('удалённое пропадает из списка только у своего мерчанта', () => {

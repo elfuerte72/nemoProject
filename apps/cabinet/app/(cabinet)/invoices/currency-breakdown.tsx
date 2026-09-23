@@ -94,19 +94,42 @@ export function CurrencyBreakdown({
       const target = event.target as Node;
       if (!root.current?.contains(target) && !list.current?.contains(target)) close();
     };
+    // Клавиша выхода возвращает фокус на кнопку: работающий с клавиатуры
+    // остаётся там, откуда открыл, а не в начале страницы.
     const escape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') close();
+      if (event.key !== 'Escape') return;
+      close();
+      face.current?.focus();
+    };
+    // Прокрутка самого списка его не закрывает — иначе до последних
+    // валют на невысоком экране было бы не долистать.
+    const scrolled = (event: Event): void => {
+      if (!list.current?.contains(event.target as Node)) close();
     };
     document.addEventListener('pointerdown', away);
     document.addEventListener('keydown', escape);
-    window.addEventListener('scroll', close, { capture: true, passive: true });
+    window.addEventListener('scroll', scrolled, { capture: true, passive: true });
     window.addEventListener('resize', close);
     return () => {
       document.removeEventListener('pointerdown', away);
       document.removeEventListener('keydown', escape);
-      window.removeEventListener('scroll', close, { capture: true });
+      window.removeEventListener('scroll', scrolled, { capture: true });
       window.removeEventListener('resize', close);
     };
+  }, [open]);
+
+  /*
+   * С клавиатуры: при раскрытии фокус встаёт на выбранную валюту — список
+   * порталом в конце обёртки, и Tab с кнопки ушёл бы по всей странице.
+   * Уход фокуса из списка его закрывает. Фокус без прокрутки: прокрутка
+   * к нему закрыла бы список раньше, чем его увидят.
+   */
+  useEffect(() => {
+    if (!open || !list.current) return;
+    const target =
+      list.current.querySelector<HTMLElement>('.breakdown__item--on') ??
+      list.current.querySelector<HTMLElement>('.breakdown__item');
+    target?.focus({ preventScroll: true });
   }, [open]);
 
   const paid = lines.filter((line) => line.amount !== null);
@@ -156,6 +179,12 @@ export function CurrencyBreakdown({
           className="breakdown__list"
           role="dialog"
           aria-label="Оплаченное по всем валютам"
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (next && !list.current?.contains(next) && !root.current?.contains(next)) {
+              setPlace(null);
+            }
+          }}
           style={{
             top: place.top,
             bottom: place.bottom,
@@ -170,7 +199,7 @@ export function CurrencyBreakdown({
               href={line.href}
               scroll={false}
               className={line.code === selected ? 'breakdown__item breakdown__item--on' : 'breakdown__item'}
-              aria-label={`${currencyName(line.code)}: ${line.amount ?? 'оплат нет'}. Считать оборот в ${line.code}`}
+              aria-label={`${currencyName(line.code)}: ${line.amount ?? 'покупателям не выдавали'}. Считать оборот в ${line.code}`}
               onClick={() => setPlace(null)}
             >
               <CurrencyFlag code={line.code} size={18} />

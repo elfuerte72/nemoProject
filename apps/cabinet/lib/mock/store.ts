@@ -30,7 +30,7 @@
 
 import type { MockInvoice, MockRefund } from '../invoice-rows';
 import { demoAsked, demoSet } from '../pos/demo';
-import { expireAllDue, settleAllRefunds } from '../pos/lifecycle';
+import { expireAllDue, isDeletable, settleAllRefunds } from '../pos/lifecycle';
 import { DEFAULT_POS_SETTINGS, type PosSettings } from '../pos/settings';
 
 interface Shelf {
@@ -110,17 +110,22 @@ export function replaceInvoice(merchantId: string, invoice: MockInvoice): void {
 }
 
 /**
- * Удалить счета мерчанта. Какие можно, решает `bulkTargets` — сюда
- * приходят уже отобранные; чужой счёт с тем же идентификатором не
- * задет, потому что выборка — по полке своего мерчанта.
+ * Удалить счета мерчанта и вернуть, какие удалены. Отбирает их
+ * `bulkTargets`, но правило «денег по нему не было» проверяется ещё раз
+ * здесь, в момент удаления: между отбором и удалением идёт отмена у
+ * провайдера, и банк успевает сообщить об оплате — оплаченный за это
+ * время счёт остаётся. Чужой счёт с тем же идентификатором не задет:
+ * выборка — по полке своего мерчанта.
  */
-export function removeInvoices(merchantId: string, ids: readonly string[]): void {
-  const gone = new Set(ids);
+export function removeInvoices(merchantId: string, ids: readonly string[]): readonly string[] {
+  const asked = new Set(ids);
   const mine = shelf().invoices.get(merchantId) ?? [];
+  const gone = mine.filter((one) => asked.has(one.id) && isDeletable(one)).map((one) => one.id);
   shelf().invoices.set(
     merchantId,
-    mine.filter((one) => !gone.has(one.id)),
+    mine.filter((one) => !gone.includes(one.id)),
   );
+  return gone;
 }
 
 export function listRefunds(merchantId: string): readonly MockRefund[] {
