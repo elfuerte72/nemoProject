@@ -18,7 +18,7 @@ import {
 } from './invoice-rows';
 import { buyerPays, makeInvoice, nextNumber, posSides } from './pos';
 import { addInvoice, forgetMock, listInvoices } from './mock/store';
-import { INVOICES_HOW_TO, POS_HOW_TO, PREVIEW_NOTE, REFUNDS_HOW_TO } from './pos-texts';
+import { INVOICES_HOW_TO, INVOICES_NOTE, POS_HOW_TO, PREVIEW_NOTE, REFUNDS_HOW_TO } from './pos-texts';
 
 /**
  * Счета и возвраты — макет, но правила у него те же: колонки в одном
@@ -253,6 +253,12 @@ describe('тексты терминала, счетов и возвратов н
   it('предупреждение о макете говорит про деньги прямо', () => {
     expect(slopComplaints(PREVIEW_NOTE)).toEqual([]);
     expect(PREVIEW_NOTE).toMatch(/денег/u);
+  });
+
+  it('список счетов называет, кто кому платит', () => {
+    expect(slopComplaints(INVOICES_NOTE)).toEqual([]);
+    expect(INVOICES_NOTE).toMatch(/покупател/u);
+    expect(INVOICES_NOTE).toMatch(/платят вам/u);
   });
 });
 

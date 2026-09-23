@@ -29,7 +29,7 @@ import {
   type InvoiceStatus,
 } from '@/lib/invoice-rows';
 import { listInvoices } from '@/lib/mock/store';
-import { INVOICES_HOW_TO, PREVIEW_NOTE } from '@/lib/pos-texts';
+import { INVOICES_HOW_TO, INVOICES_NOTE, PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
@@ -98,7 +98,9 @@ export default async function InvoicesPage({
       <header className="page__head">
         <div>
           <h1 className="page__title">Счета</h1>
-          <p className="page__sub">{PREVIEW_NOTE}</p>
+          <p className="page__sub">
+            {INVOICES_NOTE} {PREVIEW_NOTE}
+          </p>
         </div>
         <div className="page__actions">
           {merchantRoleCan(session.role, 'till') ? (
