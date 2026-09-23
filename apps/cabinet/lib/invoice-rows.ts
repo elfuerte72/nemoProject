@@ -279,6 +279,12 @@ export interface MockRefund {
   readonly demo: boolean;
 }
 
+/*
+ * Колонки — тем же набором, что у списка счетов: сумма со значком
+ * валюты, даты одной колонкой, «Подробнее» в конце строки. Два списка
+ * одного терминала, устроенные по-разному, заставляли бы читать каждый
+ * заново.
+ */
 export const refundColumns = [
   'invoice',
   'amount',
@@ -286,6 +292,7 @@ export const refundColumns = [
   'reason',
   'status',
   'created',
+  'open',
 ] as const;
 export type RefundColumn = (typeof refundColumns)[number];
 
@@ -295,7 +302,8 @@ export const REFUND_COLUMN_LABELS: Record<RefundColumn, string> = {
   retained: 'Остаётся у вас',
   reason: 'Причина',
   status: 'Состояние',
-  created: 'Заявлен',
+  created: 'Даты',
+  open: 'Действия',
 };
 
 /**
@@ -338,7 +346,7 @@ export function refundCell(
     case 'invoice':
       return { text: one.invoiceNumber };
     case 'amount':
-      return { text: formatMoney(one.amount, one.code), numeric: true };
+      return { text: formatMoney(one.amount, one.code), numeric: true, flag: one.code };
     case 'retained':
       return {
         text: one.retained === null ? '—' : formatMoney(one.retained, one.code),
@@ -347,11 +355,71 @@ export function refundCell(
       };
     case 'reason':
       return { text: one.reason };
-    case 'status':
-      return { text: REFUND_STATUS_LABELS[one.status], meta: one.demo ? 'пример' : undefined };
+    case 'status': {
+      // Ждёт без провайдера — значит, счёт оплатили мимо сервиса и
+      // исполнять заявку некому: без слов строка «Ожидает» обещала бы,
+      // что деньги уйдут сами.
+      const marks = [
+        ...(one.demo ? ['пример'] : []),
+        ...(one.status === 'pending' && one.provider === null ? ['возвращать некому'] : []),
+      ];
+      return {
+        text: REFUND_STATUS_LABELS[one.status],
+        meta: marks.length > 0 ? marks.join(' · ') : undefined,
+      };
+    }
     case 'created':
-      return { text: localDayOf(one.createdAt, offsetMinutes), numeric: true };
+      // Под заявкой — когда деньги ушли: «заявил вчера, исполнили
+      // сегодня» отвечает покупателю, который спрашивает, где его деньги.
+      return {
+        text: localDayOf(one.createdAt, offsetMinutes),
+        meta: one.doneAt ? `исполнен ${localDayOf(one.doneAt, offsetMinutes)}` : undefined,
+        numeric: true,
+      };
+    case 'open':
+      return { text: INVOICE_OPEN_LABEL };
   }
+}
+
+export interface RefundSummary {
+  readonly total: number;
+  readonly pending: number;
+  readonly approved: number;
+  /** Ждущие и одобренные: деньги по ним ещё не ушли. */
+  readonly inWork: number;
+  readonly done: number;
+  readonly rejected: number;
+}
+
+/**
+ * Счётчики плиток над списком возвратов. «В работе» — всё, по чему
+ * деньги покупателю ещё не ушли: заявка, которую банк принял, но не
+ * исполнил, для мерчанта так же не закрыта, как ждущая.
+ */
+export function refundSummary(refunds: readonly MockRefund[]): RefundSummary {
+  const pending = countByStatus(refunds, 'pending');
+  const approved = countByStatus(refunds, 'approved');
+  return {
+    total: refunds.length,
+    pending,
+    approved,
+    inWork: pending + approved,
+    done: countByStatus(refunds, 'done'),
+    rejected: countByStatus(refunds, 'rejected'),
+  };
+}
+
+/**
+ * Обещанное покупателям по каждой валюте из списка — для плитки «К
+ * возврату». Правило суммы то же, что у остатка по счёту
+ * (`owedRefunds`): отклонённые не в счёт. Пустые валюты названы, как в
+ * разборе оплат (`currencyBreakdown`), и валюты не складываются.
+ */
+export function refundBreakdown(
+  refunds: readonly MockRefund[],
+  codes: readonly string[],
+): readonly CurrencyShare[] {
+  return spreadOver(moneyLines(owedRefunds(refunds)), codes);
 }
 
 /* ── Числа над списками ──────────────────────────────────────────── */
@@ -498,16 +566,41 @@ export function invoiceCurrencies(invoices: readonly MockInvoice[]): readonly st
   return [...codes].sort((a, b) => a.localeCompare(b));
 }
 
-/** Суммы оплаченных счетов по валютам покупателя — без сложения между собой. */
-export function invoiceMoneyLines(invoices: readonly MockInvoice[]): readonly MoneyLine[] {
+/**
+ * Суммы по валютам — без сложения между собой (docs/adr/0013), с числом
+ * записей в каждой. Одно правило на оплаты и на возвраты.
+ */
+function moneyLines(
+  items: readonly { readonly code: string; readonly amount: Amount }[],
+): readonly MoneyLine[] {
   const byCode = new Map<string, { amount: Amount; count: number }>();
-  for (const one of paidOnly(invoices)) {
+  for (const one of items) {
     const line = byCode.get(one.code) ?? { amount: Money.ZERO, count: 0 };
     byCode.set(one.code, { amount: Money.add(line.amount, one.amount), count: line.count + 1 });
   }
   return [...byCode.entries()]
     .map(([code, line]) => ({ code, amount: line.amount, count: line.count }))
     .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+/**
+ * Строки по каждой валюте из списка, пустые тоже: «юаней не продавали»
+ * — такой же ответ, как «продали на 850», и пропавшая из списка валюта
+ * читалась бы как ошибка списка.
+ */
+function spreadOver(lines: readonly MoneyLine[], codes: readonly string[]): readonly CurrencyShare[] {
+  const byCode = new Map(lines.map((line) => [line.code, line]));
+  return codes.map((code) => {
+    const line = byCode.get(code);
+    return line
+      ? { code, amount: line.amount, count: line.count ?? 0 }
+      : { code, amount: null, count: 0 };
+  });
+}
+
+/** Суммы оплаченных счетов по валютам покупателя — без сложения между собой. */
+export function invoiceMoneyLines(invoices: readonly MockInvoice[]): readonly MoneyLine[] {
+  return moneyLines(paidOnly(invoices));
 }
 
 export interface CurrencyShare {
@@ -519,21 +612,13 @@ export interface CurrencyShare {
 
 /**
  * Оплаченное по каждой валюте из списка — для раскрытой плитки «По
- * валютам». Валюты те же, что в выборе оборота, и пустые названы тоже:
- * «юаней не продавали» — такой же ответ, как «продали на 850», и
- * пропавшая из списка валюта читалась бы как ошибка списка.
+ * валютам». Валюты те же, что в выборе оборота, и пустые названы тоже.
  */
 export function currencyBreakdown(
   invoices: readonly MockInvoice[],
   codes: readonly string[],
 ): readonly CurrencyShare[] {
-  const lines = new Map(invoiceMoneyLines(invoices).map((line) => [line.code, line]));
-  return codes.map((code) => {
-    const line = lines.get(code);
-    return line
-      ? { code, amount: line.amount, count: line.count ?? 0 }
-      : { code, amount: null, count: 0 };
-  });
+  return spreadOver(invoiceMoneyLines(invoices), codes);
 }
 
 export function countByStatus<T extends { status: string }>(

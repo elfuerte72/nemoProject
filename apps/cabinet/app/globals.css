@@ -2061,16 +2061,17 @@ button.calc__code:hover,
 /* ── Шапка и сводка счетов ───────────────────────────────────────── */
 
 /*
- * Подпись под заголовком уже, чем строка: длинное предупреждение о
- * макете иначе занимало всю ширину, и «Создать счёт» проваливалось под
- * него, в левый край, где главное действие не ищут.
+ * Шапка экранов терминала — счетов и возвратов — одна. Подпись под
+ * заголовком уже, чем строка: длинное предупреждение о макете иначе
+ * занимало всю ширину, и действие проваливалось под него, в левый край,
+ * где его не ищут.
  */
-.invoices__intro {
+.pos-head__intro {
   flex: 1 1 420px;
   max-width: 720px;
 }
 
-.invoices__head {
+.pos-head {
   align-items: center;
 }
 
@@ -2093,7 +2094,7 @@ button.calc__code:hover,
 }
 
 /* Выгрузка рядом — той же высоты: пара разного роста читается неряшливо. */
-.invoices__head .btn--ghost {
+.pos-head .btn--ghost {
   min-height: 44px;
 }
 
@@ -2194,19 +2195,54 @@ button.calc__code:hover,
   color: var(--gold-light);
 }
 
-/* Место задаёт компонент от кнопки: ряд плиток обрезает выходящее за края. */
+/* Шеврон смотрит туда, куда раскрывается список, и разворачивается у раскрытого. */
+.breakdown__more svg {
+  transition: rotate 160ms ease-out;
+}
+
+.breakdown__face[aria-expanded='true'] .breakdown__more svg {
+  rotate: 180deg;
+}
+
+/*
+ * Список под плиткой — в координатах страницы: место и ширину слою
+ * задаёт компонент, а ряд плиток обрезает выходящее за его края. Слоем
+ * ниже липкой шапки (`.topbar`, 5): при прокрутке список уходит под неё
+ * вместе со страницей, а не наезжает сверху. Слой только стоит на
+ * месте, появляется список внутри него — перемер места не начинает
+ * появление заново.
+ */
+.breakdown__layer {
+  position: absolute;
+  z-index: 4;
+}
+
+/*
+ * Все валюты — целиком, без своей прокрутки: вложенная прокрутка на
+ * телефоне ловит палец, который листал страницу. Появляется сдвигом
+ * сверху — со стороны плитки.
+ */
 .breakdown__list {
-  position: fixed;
-  z-index: 30;
   font-family: var(--font-ui), system-ui, sans-serif;
   display: flex;
   flex-direction: column;
-  /* Высоту задаёт компонент: девять валют целиком, но не за край экрана. */
-  overflow-y: auto;
   padding: 6px;
-  border-radius: var(--radius-control);
+  /* Углы концентричны строкам внутри: радиус строки плюс отступ. */
+  border-radius: calc(var(--radius-control) + 6px);
   background: var(--surface);
   box-shadow: var(--lift), var(--drop);
+  animation: nm-ask-in 140ms ease-out;
+  /* Докрученный в поле зрения — не вплотную к краю и не под липкой шапкой. */
+  scroll-margin: calc(var(--topbar) + 12px) 0 20px;
+}
+
+.breakdown__list:focus {
+  outline: none;
+}
+
+.breakdown__list:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
 }
 
 .breakdown__item {
@@ -2225,6 +2261,11 @@ button.calc__code:hover,
 
 .breakdown__item:hover {
   background: var(--surface-soft);
+}
+
+/* Строка без ссылки только называет сумму: подсветка под курсором обещала бы нажатие. */
+.breakdown__item--still:hover {
+  background: none;
 }
 
 .breakdown__item--on {
@@ -2268,6 +2309,21 @@ button.calc__code:hover,
   gap: 7px;
   font-size: 14px;
   font-weight: 600;
+}
+
+/*
+ * Причина возврата — слова мерчанта, и длина у них любая. Таблица
+ * держит ячейки в одну строку, а причина переносится по словам в
+ * столбце разумной ширины: в одну строку «Одно блюдо не принесли, гость
+ * ушёл до десерта» растягивала бы таблицу за край экрана. Ширина — у
+ * обёртки внутри ячейки: `max-width` самой ячейки таблица не слушает.
+ */
+.refunds__reason {
+  display: block;
+  min-width: 180px;
+  max-width: 320px;
+  white-space: normal;
+  text-wrap: pretty;
 }
 
 /* Подтверждение действия с отмеченными — под строкой инструментов. */

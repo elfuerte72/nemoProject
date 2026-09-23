@@ -40,8 +40,8 @@ import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
 import { PosLive } from '@/app/ui/pos-live';
+import { CurrencyBreakdown } from '@/app/ui/currency-breakdown';
 import { Spark } from '@/app/ui/spark';
-import { CurrencyBreakdown } from './currency-breakdown';
 import { CurrencySwitch } from './currency-switch';
 import { InvoicesTable, type InvoiceRowView } from './invoices-table';
 
@@ -170,8 +170,8 @@ export default async function InvoicesPage({
         кнопку под себя. Выгрузка — рядом, тише; настройка таблицы живёт у
         самой таблицы.
       */}
-      <header className="page__head invoices__head">
-        <div className="invoices__intro">
+      <header className="page__head pos-head">
+        <div className="pos-head__intro">
           <h1 className="page__title">Счета</h1>
           <p className="page__sub">
             {INVOICES_NOTE} {PREVIEW_NOTE}
@@ -272,6 +272,10 @@ export default async function InvoicesPage({
           value={
             <CurrencyBreakdown
               selected={code}
+              title="Оплаченное по всем валютам"
+              empty="оплат пока нет"
+              none="покупателям не выдавали"
+              action="Считать оборот в"
               lines={currencyBreakdown(found, codes).map((line) => ({
                 code: line.code,
                 amount: line.amount === null ? null : formatMoney(line.amount, line.code),
