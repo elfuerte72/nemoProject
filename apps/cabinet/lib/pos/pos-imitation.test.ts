@@ -204,6 +204,14 @@ describe('имитация провайдера', () => {
     expect(imitationQr('imit_1', new Date(first.expiresAt)).payload).not.toBe(first.payload);
   });
 
+  it('ссылка на оплату — то же, что в QR, текстом', () => {
+    // У СБП в QR зашита ссылка на оплату, и отправить её покупателю,
+    // который не у стойки, — то же, что показать ему код. У имитации
+    // ссылка такая же ненастоящая, как QR, и ничего не откроет.
+    const qr = imitationQr('imit_1', at);
+    expect(qr.link).toBe(qr.payload);
+  });
+
   it('содержимое QR не похоже на ссылку банка', () => {
     const { payload } = imitationQr('imit_1', at);
     expect(payload).toMatch(/IMITATION/u);
@@ -283,12 +291,13 @@ describe('примеры', () => {
     expect(first.refunds.every((one) => one.demo && one.status === 'done')).toBe(true);
 
     const statuses = new Set(first.invoices.map((one) => one.status));
-    expect([...statuses].sort()).toEqual(['cancelled', 'expired', 'issued', 'paid']);
+    expect([...statuses].sort()).toEqual(['cancelled', 'expired', 'issued', 'paid', 'refunded']);
     expect(first.refunds.length).toBeGreaterThanOrEqual(2);
-    // Возврат — только по оплаченному и не больше его суммы.
+    // Возврат — только по оплаченному и не больше его суммы; возвращённый
+    // целиком счёт был оплачен и стал возвращённым.
     for (const refund of first.refunds) {
       const owner = first.invoices.find((one) => one.id === refund.invoiceId)!;
-      expect(owner.status).toBe('paid');
+      expect(['paid', 'refunded']).toContain(owner.status);
       expect(Money.compare(refund.amount, owner.amount)).toBeLessThanOrEqual(0);
     }
   });

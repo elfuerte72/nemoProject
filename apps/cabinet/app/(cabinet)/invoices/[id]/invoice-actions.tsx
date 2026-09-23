@@ -67,6 +67,9 @@ export function InvoiceActions({
   if (status === 'cancelled') {
     return <p className="muted">Счёт отменён — делать с ним больше нечего.</p>;
   }
+  if (status === 'refunded') {
+    return <p className="muted">Деньги вернули покупателю целиком — делать со счётом больше нечего.</p>;
+  }
   if (status === 'expired') {
     return <p className="muted">Срок оплаты вышел. Нужен новый счёт — создайте его в терминале.</p>;
   }

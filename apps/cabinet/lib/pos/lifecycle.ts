@@ -1,4 +1,5 @@
-import type { MockInvoice } from '../invoice-rows';
+import { Money } from '@nemo/types';
+import { owedRefunds, refundLeft, type MockInvoice, type MockRefund } from '../invoice-rows';
 
 /**
  * Жизнь счёта: чем он становится и от чего.
@@ -15,6 +16,35 @@ import type { MockInvoice } from '../invoice-rows';
 /** Ещё ждёт денег: не оплачен, не отменён и срок не вышел. */
 export function isPayable(invoice: MockInvoice, now: Date): boolean {
   return invoice.status === 'issued' && !isDue(invoice, now);
+}
+
+/**
+ * Счёт можно удалить, только если денег по нему не было: ждёт, истёк
+ * или отменён. Оплаченный и возвращённый — история денег, на них
+ * ссылаются возвраты, и удалённый такой счёт оставил бы возврат ни к
+ * чему, а мерчанта — без ответа покупателю «я же платил».
+ */
+export function isDeletable(invoice: MockInvoice): boolean {
+  return invoice.status === 'issued' || invoice.status === 'expired' || invoice.status === 'cancelled';
+}
+
+/**
+ * Какие из отмеченных счетов действие затронет. Остальные — мимо, а не
+ * отказ всему: отмечают строки списка вперемешку, и «отметить оплаченным»
+ * по двум ждущим и одному истёкшему должно отметить два. Незнакомые
+ * идентификаторы — мимо: выборка идёт по счетам самого мерчанта.
+ */
+export function bulkTargets(
+  invoices: readonly MockInvoice[],
+  ids: readonly string[],
+  action: 'paid' | 'delete',
+  now: Date,
+): readonly string[] {
+  const asked = new Set(ids);
+  return invoices
+    .filter((one) => asked.has(one.id))
+    .filter((one) => (action === 'paid' ? isPayable(one, now) : isDeletable(one)))
+    .map((one) => one.id);
 }
 
 /** Срок счёта вышел. Без срока счёт живёт, пока его не закроют руками. */
@@ -64,6 +94,9 @@ export function paidByProvider(
   };
 }
 
+/** Строка ленты об оплате мимо сервиса — по ней же узнаётся такой счёт. */
+export const PAID_BY_HAND = 'Отмечен оплаченным: деньги получены мимо сервиса';
+
 /** Мерчант сам отметил оплату: деньги пришли мимо сервиса, наличными или переводом. */
 export function paidByHand(invoice: MockInvoice, at: Date): MockInvoice {
   const when = at.toISOString();
@@ -71,8 +104,30 @@ export function paidByHand(invoice: MockInvoice, at: Date): MockInvoice {
     ...invoice,
     status: 'paid',
     paidAt: when,
-    events: [...invoice.events, { at: when, what: 'Отмечен оплаченным: деньги получены мимо сервиса' }],
+    events: [...invoice.events, { at: when, what: PAID_BY_HAND }],
   };
+}
+
+/**
+ * Что с платежом у провайдера — строка таблицы «Платёж у провайдера» в
+ * карточке, как у образца. Это не состояние счёта: счёт, оплаченный
+ * мимо сервиса, у провайдера так и остался неоплаченным, и карточка
+ * не должна приписывать банку деньги, которых он не видел.
+ */
+export function providerState(invoice: MockInvoice): string {
+  switch (invoice.status) {
+    case 'issued':
+      return 'QR создан';
+    case 'expired':
+      return 'Истёк';
+    case 'cancelled':
+      return 'Отменён';
+    case 'paid':
+    case 'refunded':
+      return invoice.events.some((one) => one.what === PAID_BY_HAND)
+        ? 'Не оплачен: деньги пришли мимо'
+        : 'Завершён';
+  }
 }
 
 export function cancelledByHand(invoice: MockInvoice, at: Date): MockInvoice {
@@ -81,6 +136,43 @@ export function cancelledByHand(invoice: MockInvoice, at: Date): MockInvoice {
     status: 'cancelled',
     events: [...invoice.events, { at: at.toISOString(), what: 'Счёт отменён' }],
   };
+}
+
+/**
+ * Деньги вернули покупателю целиком — счёт становится возвращённым.
+ *
+ * Целиком — это когда обещанные возвраты покрыли сумму счёта и каждый
+ * из них исполнен: принятый к исполнению возврат ещё не деньги, и счёт,
+ * названный возвращённым до того, как банк их отдал, обещал бы
+ * покупателю то, чего у него на руках нет. Частичный возврат счёт не
+ * меняет — отметка о нём живёт в строке списка (`invoiceMarks`).
+ *
+ * Считается при чтении, как и истечение (`settleAllRefunds` в памяти
+ * макета), а не в маршруте заявки: возврат, принятый банком к
+ * исполнению, исполняется потом, и счёт должен стать возвращённым тогда,
+ * а не застрять оплаченным. Время в ленте — час исполнения последнего
+ * возврата, а не час, когда счёт прочитали.
+ */
+export function settleRefunds(invoice: MockInvoice, refunds: readonly MockRefund[]): MockInvoice {
+  if (invoice.status !== 'paid') return invoice;
+  if (!Money.isZero(refundLeft(invoice, refunds))) return invoice;
+  const mine = owedRefunds(refunds).filter((one) => one.invoiceId === invoice.id);
+  if (mine.length === 0 || mine.some((one) => one.status !== 'done' || one.doneAt === null)) {
+    return invoice;
+  }
+  const at = mine.map((one) => one.doneAt!).sort().at(-1)!;
+  return {
+    ...invoice,
+    status: 'refunded',
+    events: [...invoice.events, { at, what: 'Деньги возвращены покупателю целиком' }],
+  };
+}
+
+export function settleAllRefunds(
+  invoices: readonly MockInvoice[],
+  refunds: readonly MockRefund[],
+): readonly MockInvoice[] {
+  return invoices.map((one) => settleRefunds(one, refunds));
 }
 
 export function withNote(invoice: MockInvoice, at: Date, what: string): MockInvoice {

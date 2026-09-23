@@ -187,9 +187,11 @@ export function pickPeriod(
   },
   now: Date,
   offsetMinutes: number,
+  /** Чипы экрана: у счетов есть «Сегодня» — их смотрят за смену. */
+  keys: readonly PeriodKey[] = LIST_PERIOD_KEYS,
 ): ListPeriod | null {
   const asked = params.period;
-  const known = asked === 'custom' || LIST_PERIOD_KEYS.includes(asked as PeriodKey);
+  const known = asked === 'custom' || keys.includes(asked as PeriodKey);
   if (!asked || !known) return null;
 
   const period = resolvePeriod(params, now, offsetMinutes);

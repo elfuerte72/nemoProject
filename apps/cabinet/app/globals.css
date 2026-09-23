@@ -1927,6 +1927,10 @@ button.calc__code:hover,
   position: relative;
 }
 
+/*
+ * К правому краю кнопки: «Вид таблицы» стоит в конце строки над
+ * таблицей, и список, привязанный слева, уезжал бы за край экрана.
+ */
 .fields__list {
   position: absolute;
   right: 0;
@@ -1949,6 +1953,455 @@ button.calc__code:hover,
   gap: 8px;
   font-size: 13px;
   cursor: pointer;
+}
+
+.fields__title {
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.fields__note {
+  max-width: 260px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: normal;
+}
+
+.fields__select {
+  width: auto;
+  padding-block: 4px;
+}
+
+/*
+ * «Счета всей команды» — переключатель ссылкой: отбор живёт в адресе,
+ * как поиск и период, и ссылку на «только мои» можно открыть снова.
+ */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.switch__track {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  transition: background-color 160ms ease;
+}
+
+.switch__track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 160ms ease;
+}
+
+.switch--on {
+  color: var(--text);
+}
+
+.switch--on .switch__track {
+  background: var(--gold);
+}
+
+.switch--on .switch__track::after {
+  transform: translateX(14px);
+}
+
+/*
+ * Строка инструментов таблицы: слева отмеченное и что с ним сделать,
+ * справа вид таблицы.
+ */
+.picked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.picked__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/*
+ * «Вид таблицы» прижат вправо и на своей строке: на телефоне строка
+ * переносится, и кнопка у левого края раскрывала бы список, привязанный
+ * к её правому краю, за левую границу экрана.
+ */
+.picked .fields {
+  margin-left: auto;
+}
+
+/* ── Шапка и сводка счетов ───────────────────────────────────────── */
+
+/*
+ * Шапка экранов терминала — счетов и возвратов — одна. Подпись под
+ * заголовком уже, чем строка: длинное предупреждение о макете иначе
+ * занимало всю ширину, и действие проваливалось под него, в левый край,
+ * где его не ищут.
+ */
+.pos-head__intro {
+  flex: 1 1 420px;
+  max-width: 720px;
+}
+
+.pos-head {
+  align-items: center;
+}
+
+/*
+ * Главное действие страницы: полный размер и плюс в своём кружке —
+ * знак «создать» читается раньше слова. Кружок — тень цвета надписи,
+ * а не второй цвет: кнопка остаётся одной поверхностью.
+ */
+.invoices__create {
+  min-height: 44px;
+  padding-inline: 16px 20px;
+  font-size: 14px;
+  transition-property: scale, filter;
+  transition-duration: 120ms;
+  transition-timing-function: ease-out;
+}
+
+.invoices__create:active {
+  scale: 0.96;
+}
+
+/* Выгрузка рядом — той же высоты: пара разного роста читается неряшливо. */
+.pos-head .btn--ghost {
+  min-height: 44px;
+}
+
+.invoices__plus {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+/* Валюта сумм — пилюлей над плитками, по правому краю, как подпись к ним. */
+.invoices__sums {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 18px 0 10px;
+}
+
+.invoices__sums-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/*
+ * Суммы по валютам столбиком: значок, сумма, код. Кегль меньше, чем у
+ * одиночного числа плитки, — три строки по двадцать шесть пикселей
+ * вытягивали плитку втрое выше соседей.
+ */
+.money-flags {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.money-flags__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+}
+
+.money-flags__amount {
+  white-space: nowrap;
+}
+
+/*
+ * «По валютам» — кнопкой: свёрнутой держит до трёх валют с оплатами,
+ * нажатием раскрывает все валюты сервиса списком поверх плиток.
+ */
+.breakdown {
+  position: relative;
+}
+
+.breakdown__face {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  margin: -6px;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+
+.breakdown__face:hover,
+.breakdown__face[aria-expanded='true'] {
+  background: var(--surface-soft);
+}
+
+.breakdown__empty {
+  font-size: 17px;
+  color: var(--text-muted);
+}
+
+.breakdown__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui), system-ui, sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--gold-light);
+}
+
+/* Шеврон смотрит туда, куда раскрывается список, и разворачивается у раскрытого. */
+.breakdown__more svg {
+  transition: rotate 160ms ease-out;
+}
+
+.breakdown__face[aria-expanded='true'] .breakdown__more svg {
+  rotate: 180deg;
+}
+
+/*
+ * Список под плиткой — в координатах страницы: место и ширину слою
+ * задаёт компонент, а ряд плиток обрезает выходящее за его края. Слоем
+ * ниже липкой шапки (`.topbar`, 5): при прокрутке список уходит под неё
+ * вместе со страницей, а не наезжает сверху. Слой только стоит на
+ * месте, появляется список внутри него — перемер места не начинает
+ * появление заново.
+ */
+.breakdown__layer {
+  position: absolute;
+  z-index: 4;
+}
+
+/*
+ * Все валюты — целиком, без своей прокрутки: вложенная прокрутка на
+ * телефоне ловит палец, который листал страницу. Появляется сдвигом
+ * сверху — со стороны плитки.
+ */
+.breakdown__list {
+  font-family: var(--font-ui), system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  /* Углы концентричны строкам внутри: радиус строки плюс отступ. */
+  border-radius: calc(var(--radius-control) + 6px);
+  background: var(--surface);
+  box-shadow: var(--lift), var(--drop);
+  animation: nm-ask-in 140ms ease-out;
+  /* Докрученный в поле зрения — не вплотную к краю и не под липкой шапкой. */
+  scroll-margin: calc(var(--topbar) + 12px) 0 20px;
+}
+
+.breakdown__list:focus {
+  outline: none;
+}
+
+.breakdown__list:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+}
+
+.breakdown__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-decoration: none;
+}
+
+.breakdown__item:hover {
+  background: var(--surface-soft);
+}
+
+/* Строка без ссылки только называет сумму: подсветка под курсором обещала бы нажатие. */
+.breakdown__item--still:hover {
+  background: none;
+}
+
+.breakdown__item--on {
+  background: rgba(var(--gold-rgb), 0.14);
+}
+
+.breakdown__code {
+  font-weight: 700;
+}
+
+.breakdown__place {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.breakdown__sum {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.breakdown__sum--none {
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.breakdown__count {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/*
+ * Сумма сделки в строке — значком валюты и жирнее прочего: за ней в
+ * список и приходят, и «сколько заплатил» и «сколько получил» должны
+ * читаться, не вчитываясь.
+ */
+.money-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/*
+ * Причина возврата — слова мерчанта, и длина у них любая. Таблица
+ * держит ячейки в одну строку, а причина переносится по словам в
+ * столбце разумной ширины: в одну строку «Одно блюдо не принесли, гость
+ * ушёл до десерта» растягивала бы таблицу за край экрана. Ширина — у
+ * обёртки внутри ячейки: `max-width` самой ячейки таблица не слушает.
+ */
+.refunds__reason {
+  display: block;
+  min-width: 180px;
+  max-width: 320px;
+  white-space: normal;
+  text-wrap: pretty;
+}
+
+/* Подтверждение действия с отмеченными — под строкой инструментов. */
+.picked__ask {
+  margin: -2px 0 12px;
+}
+
+.picked__notice {
+  margin: -2px 0 12px;
+}
+
+/* Ссылка на оплату — под QR, во всю его ширину. */
+.copy-link {
+  width: 100%;
+  max-width: 240px;
+}
+
+.datatable__pick {
+  width: 32px;
+}
+
+.datatable__row--picked,
+.datatable tbody tr.datatable__row--picked:hover {
+  background: rgba(var(--gold-rgb), 0.08);
+}
+
+/*
+ * Вторая строка ячейки держит одну строку, как и первая: `text-wrap`
+ * у `.row__meta` перебивал `nowrap` таблицы, и на телефоне «5 406 RUB
+ * по курсу…» ломалось в четыре строки — таблица и так прокручивается.
+ */
+.datatable .row__meta {
+  display: block;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* Плотная таблица из «Полей»: строки ниже, на экран входит больше. */
+.datatable--dense th,
+.datatable--dense td {
+  padding-block: 5px;
+}
+
+.page__title--with-pill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/*
+ * Ход по дням под числом плитки. Линия цвета плитки и заливка под ней
+ * вдесятеро слабее: украшение, а не второе число.
+ */
+.spark {
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin-top: 8px;
+  overflow: visible;
+  color: var(--text-faint);
+}
+
+.spark--up {
+  color: var(--up);
+}
+
+.spark__line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark__fill {
+  fill: currentColor;
+  opacity: 0.1;
 }
 
 /* ── Действия со счётом ──────────────────────────────────────────── */

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { merchantRoleCan } from '@nemo/types';
-import { Moment } from '@nemo/ui';
+import { CopyValue, Moment } from '@nemo/ui';
 import { formatMoney, formatRate } from '@nemo/ui/format';
 import {
   INVOICE_STATUS_LABELS,
@@ -12,10 +12,11 @@ import {
 } from '@/lib/invoice-rows';
 import { findInvoice, listRefunds } from '@/lib/mock/store';
 import { acquirer, IMITATION, QR_TTL_MS } from '@/lib/pos/acquirer';
-import { isPayable } from '@/lib/pos/lifecycle';
+import { isPayable, providerState } from '@/lib/pos/lifecycle';
 import { markupPercent } from '@/lib/pos/settings';
 import { PREVIEW_NOTE } from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
+import { CopyLink } from '@/app/ui/copy-link';
 import { PosLive } from '@/app/ui/pos-live';
 import { InvoiceActions } from './invoice-actions';
 
@@ -62,13 +63,22 @@ export default async function InvoicePage({
       <PosLive />
       <header className="page__head">
         <div>
-          <h1 className="page__title">Счёт {invoice.number}</h1>
-          <p className="page__sub">{PREVIEW_NOTE}</p>
-        </div>
-        <div className="page__actions">
-          <Link className="btn btn--soft btn--tiny" href="/invoices">
-            Все счета
+          <Link className="page__back" href="/invoices">
+            ← К счетам
           </Link>
+          {/*
+            Состояние — рядом с номером, как у образца: за ним карточку и
+            открывают, и искать его ниже по экрану не должно быть нужно.
+          */}
+          <h1 className="page__title page__title--with-pill">
+            Счёт {invoice.number}
+            <span className={`pill pill--${INVOICE_STATUS_TONES[invoice.status]}`}>
+              {INVOICE_STATUS_LABELS[invoice.status]}
+            </span>
+          </h1>
+          <p className="page__sub">
+            Создан <Moment at={invoice.createdAt} /> · {PREVIEW_NOTE}
+          </p>
         </div>
       </header>
 
@@ -93,9 +103,10 @@ export default async function InvoicePage({
                 width={180}
                 height={180}
               />
+              <CopyLink link={qr.link} />
               <figcaption className="hint">
-                {provider?.name === IMITATION ? 'QR ненастоящий: платёж принимает имитация. ' : ''}
-                Код обновляется каждые {Math.round(QR_TTL_MS / 60_000)} минут
+                {provider?.name === IMITATION ? 'QR и ссылка ненастоящие: платёж принимает имитация. ' : ''}
+                Код и ссылка обновляются каждые {Math.round(QR_TTL_MS / 60_000)} минут
                 {invoice.expiresAt ? (
                   <>
                     , счёт действует до <Moment at={invoice.expiresAt} />
@@ -111,28 +122,40 @@ export default async function InvoicePage({
           <li className="row">
             <div className="row__main">
               <span className="row__title">
-                <span className={`pill pill--${INVOICE_STATUS_TONES[invoice.status]}`}>
-                  {INVOICE_STATUS_LABELS[invoice.status]}
+                Создал {invoice.author}
+                {invoice.demo ? <> <span className="pill">пример</span></> : undefined}
+              </span>
+              {/*
+                Когда создан, сказано в заголовке; здесь — что было
+                после: оплата или срок, до которого счёт ждёт денег.
+              */}
+              {invoice.paidAt ? (
+                <span className="row__meta">
+                  оплачен <Moment at={invoice.paidAt} />
                 </span>
-                {invoice.demo ? <span className="pill">пример</span> : undefined}
-              </span>
-              <span className="row__meta">
-                создал {invoice.author} · <Moment at={invoice.createdAt} />
-                {invoice.status === 'issued' && invoice.expiresAt ? (
-                  <>
-                    {' '}· действует до <Moment at={invoice.expiresAt} />
-                  </>
-                ) : undefined}
-              </span>
+              ) : invoice.status === 'issued' && invoice.expiresAt ? (
+                <span className="row__meta">
+                  действует до <Moment at={invoice.expiresAt} />
+                </span>
+              ) : undefined}
+            </div>
+          </li>
+          {/*
+            Идентификаторы — с копированием: их спрашивает поддержка
+            провайдера, и переписывать тридцать знаков руками — верный
+            способ ошибиться в одном.
+          */}
+          <li className="row">
+            <div className="row__main">
+              <span className="row__meta">Идентификатор счёта</span>
+              <CopyValue value={invoice.id} />
             </div>
           </li>
           {invoice.payment ? (
             <li className="row">
               <div className="row__main">
-                <span className="row__title">
-                  {invoice.payment.provider === IMITATION ? 'Имитация' : invoice.payment.provider}
-                </span>
-                <span className="row__meta">принимает платёж · {invoice.payment.ref}</span>
+                <span className="row__meta">Заказ у провайдера</span>
+                <CopyValue value={invoice.payment.ref} />
               </div>
             </li>
           ) : undefined}
@@ -165,6 +188,35 @@ export default async function InvoicePage({
           />
         ) : undefined}
       </section>
+
+      {/*
+        Платёж у провайдера — отдельно от счёта, как у образца: счёт —
+        бумага мерчанта, а платёж — запись банка, и расходятся они
+        законно, когда деньги пришли мимо сервиса.
+      */}
+      {invoice.payment ? (
+        <section className="card">
+          <h2 className="card__title">Платёж у провайдера</h2>
+          <div className="scroll-x">
+            <table className="datatable">
+              <thead>
+                <tr>
+                  <th>Провайдер</th>
+                  <th>Состояние</th>
+                  <th>Номер заказа</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{invoice.payment.provider === IMITATION ? 'Имитация' : invoice.payment.provider}</td>
+                  <td>{providerState(invoice)}</td>
+                  <td>{invoice.number}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : undefined}
 
       <section className="card">
         <h2 className="card__title">Что происходило</h2>

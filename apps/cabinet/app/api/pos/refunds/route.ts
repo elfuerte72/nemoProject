@@ -112,6 +112,8 @@ export async function POST(request: Request): Promise<Response> {
     } else if (status === 'approved' && provider) {
       noted = withNote(noted, at, `Возврат принят к исполнению: провайдер «${provider.title}»`);
     }
+    // Возвращённым счёт станет при чтении, если деньги ушли целиком
+    // (`settleAllRefunds` в памяти макета), — здесь только лента.
     replaceInvoice(actor.merchantId, noted);
     publishPos(actor.merchantId, { kind: 'refund', id: refund.id });
     publishPos(actor.merchantId, { kind: 'invoice', id: invoice.id });

@@ -19,6 +19,7 @@ import type { PosEvent } from '@/lib/pos/bus';
 import { markupPercent, parseMarkupPercent } from '@/lib/pos/settings';
 import { POS_STREAM_PATH } from '@/lib/pos/stream';
 import { POS_HOW_TO } from '@/lib/pos-texts';
+import { CopyLink } from '@/app/ui/copy-link';
 import { send } from '@/app/ui/send';
 import { CurrencyPick } from './currency-pick';
 import { PosPath } from './explainer';
@@ -291,6 +292,16 @@ export function Terminal({
       const response = await fetch(`/api/pos/invoices/${id}`, {
         cache: 'no-store',
       });
+      /*
+       * Счёта больше нет — его удалили из списка счетов. Экран не должен
+       * держать у стойки QR и «Покупатель заплатил» по платежу, который
+       * уже отменён у провайдера: счёт снимается, и кассиру сказано почему.
+       */
+      if (response.status === 404) {
+        setOpen((was) => (was && was.invoice.id === id ? undefined : was));
+        setComplaint('Счёт удалили из списка счетов: оплатить его больше нельзя. Создайте новый.');
+        return;
+      }
       if (!response.ok) return;
       const view = (await response.json()) as InvoiceView;
       setOpen((was) => {
@@ -338,7 +349,13 @@ export function Terminal({
       if (event.kind === 'invoice' && openId.current === event.id) void load(event.id);
       refresh();
     });
-    const timer = setInterval(refresh, LIVE_REFRESH_MS);
+    // Таймер — страховка на обрыв потока, и перечитывает он то же, что
+    // событие: список и открытый счёт. Иначе оплата или удаление счёта
+    // при оборванном потоке так и не дошли бы до экрана у стойки.
+    const timer = setInterval(() => {
+      if (openId.current && document.visibilityState !== 'hidden') void load(openId.current);
+      refresh();
+    }, LIVE_REFRESH_MS);
     return () => {
       source.close();
       clearInterval(timer);
@@ -729,8 +746,13 @@ export function Terminal({
               height={220}
             />
           ) : undefined}
+          {/*
+            Ссылка на оплату — для покупателя не у стойки: её отправляют
+            в переписку. Та же, что в QR, и обновляется вместе с ним.
+          */}
+          {open.qr ? <CopyLink link={open.qr.link} /> : undefined}
           <span className="pay__note">
-            {provider.imitation ? 'QR ненастоящий: платёж принимает имитация. ' : ''}
+            {provider.imitation ? 'QR и ссылка ненастоящие: платёж принимает имитация. ' : ''}
             {qrLeft !== null ? `QR обновится через ${mmss(qrLeft)}. ` : ''}
             {invoiceLeft !== null
               ? `Счёт действует ещё ${mmss(invoiceLeft)}.`
@@ -743,7 +765,11 @@ export function Terminal({
       ) : (
         <>
           <span className="pay__state">
-            {open.invoice.status === 'expired' ? 'Срок оплаты вышел' : 'Счёт отменён'}
+            {open.invoice.status === 'expired'
+              ? 'Срок оплаты вышел'
+              : open.invoice.status === 'refunded'
+                ? 'Деньги вернули покупателю'
+                : 'Счёт отменён'}
           </span>
           <span className="pos__value">
             {formatMoney(open.invoice.payAmount, open.invoice.payCode)}
