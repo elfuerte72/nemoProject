@@ -2,6 +2,7 @@ import { Money, type Amount } from '@nemo/types';
 import { formatMoney, formatRate } from '@nemo/ui/format';
 import type { MoneyLine } from '@nemo/ui/money-list';
 import type { PillTone } from './labels';
+import { INVOICE_OPEN_LABEL } from './pos-texts';
 
 /**
  * Счёт и возврат POS-терминала — макет без денег.
@@ -38,15 +39,6 @@ export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   expired: 'Истёк',
   cancelled: 'Отменён',
   refunded: 'Возвращён',
-};
-
-/** Табы называют множество, а не один счёт: «Оплачены 8», а не «Оплачен 8». */
-export const INVOICE_TAB_LABELS: Record<InvoiceStatus, string> = {
-  issued: 'Ожидают',
-  paid: 'Оплачены',
-  expired: 'Истекли',
-  cancelled: 'Отменены',
-  refunded: 'Возвращены',
 };
 
 /** Тон — по тому же правилу, что у заявок: золото ждёт человека. */
@@ -196,7 +188,7 @@ export function invoiceCell(
         numeric: true,
       };
     case 'open':
-      return { text: 'Открыть' };
+      return { text: INVOICE_OPEN_LABEL };
   }
 }
 
@@ -380,17 +372,22 @@ function amountIn(invoice: MockInvoice, code: string): Amount | null {
  * Переводится всё возвращённое по счёту разом, а не каждый возврат
  * порознь: три трети, округлённые по отдельности, давали 2499,99 из
  * 2500, и возвращённый целиком счёт оставлял копейку в обороте. Доля
- * округляется до сотых, к ближайшему: деление даёт дробь без конца, а в
- * деньгах мельче сотой не бывает. Возврат целиком — сама сумма оплаты,
- * без деления.
+ * ровняется к ближайшему до знака валюты оплаты — того же, до которого
+ * ровняется сама сумма к оплате (`payRounding`): у рубля до целого, у
+ * монеты до её знака. Возврат целиком — сама сумма оплаты, без деления.
  */
-function refundedIn(invoice: MockInvoice, back: Amount, code: string): Amount | null {
+function refundedIn(
+  invoice: MockInvoice,
+  back: Amount,
+  code: string,
+  decimals: number,
+): Amount | null {
   if (invoice.code === code) return back;
   if (invoice.payCode !== code) return null;
   if (Money.compare(back, invoice.amount) >= 0) return invoice.payAmount;
   return Money.roundTo(
     Money.divide(Money.multiply(back, invoice.payAmount), invoice.amount),
-    2,
+    decimals,
   );
 }
 
@@ -422,6 +419,8 @@ export function invoiceSummary(
   invoices: readonly MockInvoice[],
   refunds: readonly MockRefund[],
   code: string,
+  /** Знак выбранной валюты для доли возврата — `payRounding` справочника. */
+  decimals: number,
 ): InvoiceSummary {
   let sum = Money.ZERO;
   let pendingSum = Money.ZERO;
@@ -443,7 +442,7 @@ export function invoiceSummary(
     if (value !== null) paidSum = Money.add(paidSum, value);
     const back = refundedSoFar(one, refunds);
     if (Money.isZero(back)) continue;
-    const part = refundedIn(one, back, code);
+    const part = refundedIn(one, back, code, decimals);
     if (part !== null) refunded = Money.add(refunded, part);
   }
 
@@ -474,36 +473,6 @@ export function dailySeries(ats: readonly string[], from: Date, to: Date): numbe
     if (index >= 0 && index < days) series[index] = (series[index] ?? 0) + 1;
   }
   return series;
-}
-
-/**
- * Оборот счетов в выбранной валюте.
- *
- * Считается по оплаченным: ожидающий и тем более отменённый счёт —
- * это бумага, а не деньги, и «оборот 50 000» рядом с «оплачено 0»
- * читался бы как ошибка в счётчике, а не в подписи.
- *
- * Валюта оплаты (рубль) складывается по всем таким счетам: у каждого
- * записан свой курс, и сумма в ней точная. Валюта покупателя — только
- * по счетам в ней: сводить баты с юанями нечем, курса между ними у
- * сервиса нет и задним числом он его не выдумывает.
- */
-export function invoiceTotal(
-  invoices: readonly MockInvoice[],
-  code: string,
-): { readonly amount: Amount; readonly count: number } {
-  let amount = Money.ZERO;
-  let count = 0;
-  for (const one of paidOnly(invoices)) {
-    if (one.payCode === code) {
-      amount = Money.add(amount, one.payAmount);
-      count += 1;
-    } else if (one.code === code) {
-      amount = Money.add(amount, one.amount);
-      count += 1;
-    }
-  }
-  return { amount, count };
 }
 
 /** Все валюты, встретившиеся в счетах: из них и выбирают, в чём считать. */

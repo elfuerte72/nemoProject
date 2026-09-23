@@ -7,7 +7,7 @@ import {
   invoiceColumns,
   invoiceCurrencies,
   invoiceMoneyLines,
-  invoiceTotal,
+  invoiceSummary,
   owedRefunds,
   refundCell,
   refundColumns,
@@ -158,9 +158,9 @@ describe('числа над списком', () => {
     ];
 
     // Рубли — точная сумма: у каждого счёта записан свой курс.
-    expect(invoiceTotal(rows, 'RUB')).toEqual({ amount: '12200', count: 2 });
+    expect(invoiceSummary(rows, [], 'RUB', 0).paidSum).toBe('12200');
     // Баты — только по батовым счетам: свести их с юанями нечем.
-    expect(invoiceTotal(rows, 'THB')).toEqual({ amount: '2000', count: 1 });
+    expect(invoiceSummary(rows, [], 'THB', 2).paidSum).toBe('2000');
     // Валюты для выбора берутся из всех счетов: ожидающий тоже в
     // какой-то валюте, и пропавший из списка выбор сбивал бы с толку.
     expect(invoiceCurrencies(rows)).toEqual(['CNY', 'RUB', 'THB']);
@@ -172,7 +172,7 @@ describe('числа над списком', () => {
 
   it('без оплаченных оборота нет', () => {
     const rows = [invoice({ status: 'issued' }), invoice({ status: 'cancelled' })];
-    expect(invoiceTotal(rows, 'RUB')).toEqual({ amount: '0', count: 0 });
+    expect(invoiceSummary(rows, [], 'RUB', 0)).toMatchObject({ paidSum: '0', paid: 0 });
     expect(invoiceMoneyLines(rows)).toEqual([]);
   });
 

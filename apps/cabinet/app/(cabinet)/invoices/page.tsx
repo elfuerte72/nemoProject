@@ -4,12 +4,19 @@ import { merchantRoleCan, Money } from '@nemo/types';
 import { EmptyState, firstParam, HowTo, PeriodChips, Stat, Stats, Tabs } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
 import { formatByCurrency } from '@nemo/ui/money-list';
-import { TZ_COOKIE, localMidnight, readTzOffset, type PeriodKey } from '@nemo/ui/period';
+import { TZ_COOKIE, localMidnight, readTzOffset } from '@nemo/ui/period';
 import { allowedHere } from '@/lib/access';
+import { getCore } from '@/lib/core';
+import {
+  INVOICE_PERIOD_KEYS,
+  applyInvoiceFilter,
+  invoiceFilterParams,
+  readInvoiceFilter,
+} from '@/lib/invoice-filter';
 import { INVOICE_PREFS_COOKIE, readInvoicePrefs } from '@/lib/invoice-prefs';
 import {
+  INVOICE_STATUS_LABELS,
   INVOICE_STATUS_TONES,
-  INVOICE_TAB_LABELS,
   countByStatus,
   dailySeries,
   invoiceCell,
@@ -18,14 +25,17 @@ import {
   invoiceMoneyLines,
   invoiceStatuses,
   invoiceSummary,
-  narrowInvoices,
   pageOf,
   paidOnly,
-  type InvoiceStatus,
 } from '@/lib/invoice-rows';
 import { listInvoices, listRefunds } from '@/lib/mock/store';
-import { INVOICES_HOW_TO, INVOICES_NOTE, PREVIEW_NOTE } from '@/lib/pos-texts';
-import { pickPeriod } from '@/lib/request-rows';
+import { payRounding } from '@/lib/pos';
+import {
+  INVOICE_TILE_LABELS,
+  INVOICES_HOW_TO,
+  INVOICES_NOTE,
+  PREVIEW_NOTE,
+} from '@/lib/pos-texts';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
@@ -36,16 +46,13 @@ import { InvoicesTable, type InvoiceRowView } from './invoices-table';
 
 export const dynamic = 'force-dynamic';
 
-/** Чипы периода: смена, неделя, месяц — и «за всё время» первым. */
-const INVOICE_PERIOD_KEYS: readonly PeriodKey[] = ['today', '7d', '30d'];
-
-/** Сколько суток ход на плитке показывает без выбранного периода. */
+/** Сколько суток ход на плитке показывает самое большее. */
 const SPARK_DAYS = 60;
 const DAY = 24 * 60 * 60_000;
 
 /**
  * Счета POS-терминала: список с числами над ним — устройство взято у
- * образца Love&Pay (раздел «Счета»), слова — владельца.
+ * образца Love&Pay (раздел «Счета»), слова — владельца (`pos-texts.ts`).
  *
  * Макет без денег — записи живут в памяти процесса и до перезапуска
  * (`backlog.md`), платёж принимает имитация провайдера. Сказано об
@@ -54,7 +61,8 @@ const DAY = 24 * 60 * 60_000;
  * терминала: оплата видна без перезагрузки.
  *
  * Отбор — поиск, период, «только мои» и таб — живёт в адресе и сужает
- * сам список на сервере. Плитки и счётчики табов считают тот же отбор,
+ * сам список на сервере; разбор адреса один с выгрузкой
+ * (`invoice-filter.ts`). Плитки и счётчики табов считают тот же отбор,
  * но без таба: таб выбирает строки, а не меняет итоги. Страницу режет
  * сервер по числу строк из «Полей».
  */
@@ -75,49 +83,32 @@ export default async function InvoicesPage({
 
   const all = listInvoices(actor.merchantId, now);
   const refunds = listRefunds(actor.merchantId);
-  const query = firstParam(params.q)?.trim() ?? '';
-  const tab = firstParam(params.tab);
-  const status = (invoiceStatuses as readonly string[]).includes(tab ?? '')
-    ? (tab as InvoiceStatus)
-    : undefined;
-  const mine = firstParam(params.mine) === '1';
-  const picked = pickPeriod(
-    { period: firstParam(params.period), from: firstParam(params.from), to: firstParam(params.to) },
-    now,
-    offset,
-    INVOICE_PERIOD_KEYS,
-  );
-
-  const found = narrowInvoices(all, {
-    query,
-    from: picked?.period.from,
-    to: picked?.period.to,
-    authorId: mine ? (actor.userId ?? undefined) : undefined,
-  });
-  const rows = status === undefined ? found : found.filter((one) => one.status === status);
+  const filter = readInvoiceFilter((key) => firstParam(params[key]), now, offset);
+  const { found, rows } = applyInvoiceFilter(all, filter, actor.userId ?? null);
   const page = pageOf(rows, Number(firstParam(params.page) ?? '1'), prefs.perPage);
 
   // Валюта сумм — из адреса: складывать баты с юанями нечем, и валюту
-  // выбирает тот, кто смотрит.
+  // выбирает тот, кто смотрит. Доля возврата в ней ровняется тем же
+  // знаком, что сумма к оплате, — из справочника валют сервиса.
   const codes = invoiceCurrencies(all);
   const code = codes.includes(firstParam(params.code) ?? '') ? firstParam(params.code)! : 'RUB';
-  const summary = invoiceSummary(found, refunds, code);
+  const terms = await getCore().getExchangeTerms();
+  const currency = terms.currencies.find((one) => one.code === code);
+  const summary = invoiceSummary(found, refunds, code, currency ? payRounding(currency) : 2);
   const returned = countByStatus(found, 'refunded');
 
-  // Ход на плитках — по дням выбранного периода, а без него — с дня
-  // первого счёта, но не дальше двух месяцев: «всё время» линией в
-  // тысячу точек не читается, а полтора месяца нулей до первого счёта
-  // сжимают в угол всё, ради чего линию и рисуют.
+  // Ход на плитках — не длиннее двух месяцев: без периода — с дня первого
+  // счёта (полтора месяца нулей до него сжимали бы в угол всё, ради чего
+  // линию рисуют), со своим периодом — последние два месяца в нём (адрес
+  // «с 2000 по 2100 год» рисовал бы линию в сорок тысяч точек).
   const today = localMidnight(now, offset);
-  // Свой период тоже не длиннее двух месяцев — последних в нём: адрес
-  // «с 2000 по 2100 год» иначе рисовал бы линию в сорок тысяч точек.
-  const sparkTo = picked?.period.to ?? new Date(today.getTime() + DAY);
+  const sparkTo = filter.picked?.period.to ?? new Date(today.getTime() + DAY);
   const oldest = found.at(-1);
   const sparkFrom = new Date(
     Math.max(
       sparkTo.getTime() - SPARK_DAYS * DAY,
-      picked
-        ? picked.period.from.getTime()
+      filter.picked
+        ? filter.picked.period.from.getTime()
         : oldest
           ? localMidnight(new Date(oldest.createdAt), offset).getTime()
           : 0,
@@ -130,32 +121,21 @@ export default async function InvoicesPage({
     sparkTo,
   );
 
-  const filters: Record<string, string | undefined> = {
-    q: query || undefined,
-    tab: status,
-    code: code === 'RUB' ? undefined : code,
-    mine: mine ? '1' : undefined,
-    ...(picked?.query ?? {}),
+  const filterParams = invoiceFilterParams(filter);
+  const withCode: Record<string, string> = {
+    ...filterParams,
+    ...(code === 'RUB' ? {} : { code }),
   };
   const href = (over: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
-    for (const [key, value] of Object.entries({ ...filters, ...over })) if (value) next.set(key, value);
+    for (const [key, value] of Object.entries({ ...withCode, ...over })) if (value) next.set(key, value);
     const text = next.toString();
     return text ? `/invoices?${text}` : '/invoices';
   };
-  const csvHref = (() => {
-    const next = new URLSearchParams();
-    for (const [key, value] of Object.entries(filters)) {
-      if (value && key !== 'code') next.set(key, value);
-    }
-    const text = next.toString();
-    return text ? `/api/pos/invoices/csv?${text}` : '/api/pos/invoices/csv';
-  })();
-  // Период и таб чипы кладут сами; остальное они переносят как есть.
-  const keep: Record<string, string> = {};
-  for (const [key, value] of Object.entries({ q: filters.q, tab: filters.tab, code: filters.code, mine: filters.mine })) {
-    if (value) keep[key] = value;
-  }
+  const csvQuery = new URLSearchParams(filterParams).toString();
+  const csvHref = csvQuery ? `/api/pos/invoices/csv?${csvQuery}` : '/api/pos/invoices/csv';
+  // Период чипы кладут сами; остальное они переносят как есть.
+  const { period: _period, from: _from, to: _to, ...keep } = withCode;
 
   const view: InvoiceRowView[] = page.rows.map((one) => {
     const marks = invoiceMarks(one, refunds);
@@ -170,7 +150,7 @@ export default async function InvoicesPage({
     };
   });
 
-  const narrowed = Boolean(query) || picked !== null || mine;
+  const narrowed = Boolean(filter.query) || filter.picked !== null || filter.mine;
 
   return (
     <main className="page page--wide">
@@ -186,8 +166,9 @@ export default async function InvoicesPage({
         </div>
         <div className="page__actions">
           <Columns prefs={prefs} merchantId={actor.merchantId} />
+          {/* «CSV», как у остальных выгрузок кабинета и панели. */}
           <a className="btn btn--ghost btn--tiny" href={csvHref}>
-            Выгрузить
+            CSV
           </a>
           {/*
             Счёт создаётся в POS-терминале: там считается цена, и второй
@@ -206,7 +187,7 @@ export default async function InvoicesPage({
 
       <Stats>
         <Stat
-          label="Всего счетов"
+          label={INVOICE_TILE_LABELS.total}
           value={summary.count}
           note={
             <>
@@ -223,7 +204,7 @@ export default async function InvoicesPage({
           tone={summary.pending > 0 ? 'wait' : 'plain'}
         />
         <Stat
-          label="Оплачено"
+          label={INVOICE_TILE_LABELS.paid}
           value={summary.paid}
           note={
             <>
@@ -232,7 +213,7 @@ export default async function InvoicesPage({
               {/*
                 Плитка считает все счета, за которые деньги приходили, и
                 возвращённые тоже — иначе их возврат вычитался бы из
-                оплаченного, которого на плитке нет. Таб «Оплачены» —
+                оплаченного, которого на плитке нет. Таб «Оплачен» —
                 только те, что оплачены сейчас, и разницу плитка называет.
               */}
               {returned > 0 ? ` · из них возвращены целиком: ${returned}` : ''}
@@ -242,7 +223,7 @@ export default async function InvoicesPage({
           tone={summary.paid > 0 ? 'up' : 'plain'}
         />
         <Stat
-          label="Чистый оборот"
+          label={INVOICE_TILE_LABELS.turnover(code)}
           value={formatMoney(summary.net, code)}
           note={
             summary.conversion === null
@@ -266,7 +247,7 @@ export default async function InvoicesPage({
               className={one === code ? 'chip chip--on' : 'chip'}
               scroll={false}
             >
-              Суммы в {one}
+              {INVOICE_TILE_LABELS.turnover(one)}
             </Link>
           ))}
         </div>
@@ -276,23 +257,28 @@ export default async function InvoicesPage({
         <Tabs
           label="Состояния счетов"
           items={[
-            { href: href({ tab: undefined, page: undefined }), label: 'Все', count: found.length, current: status === undefined },
+            {
+              href: href({ tab: undefined, page: undefined }),
+              label: 'Все',
+              count: found.length,
+              current: filter.status === undefined,
+            },
             ...invoiceStatuses.map((one) => ({
               href: href({ tab: one, page: undefined }),
-              label: INVOICE_TAB_LABELS[one],
+              label: INVOICE_STATUS_LABELS[one],
               count: countByStatus(found, one),
-              current: status === one,
+              current: filter.status === one,
             })),
           ]}
         />
         <form className="listbar__search" action="/invoices">
-          {Object.entries({ ...filters, q: undefined }).map(([key, value]) =>
-            value ? <input key={key} type="hidden" name={key} value={value} /> : undefined,
+          {Object.entries(withCode).map(([key, value]) =>
+            key === 'q' ? undefined : <input key={key} type="hidden" name={key} value={value} />,
           )}
           <input
             className="input"
             name="q"
-            defaultValue={query}
+            defaultValue={filter.query}
             placeholder="Номер счёта"
             aria-label="Поиск по счетам"
           />
@@ -301,27 +287,33 @@ export default async function InvoicesPage({
           </button>
         </form>
         {/*
-          «Счета всей команды» — как у образца: включено по умолчанию,
-          выключенное оставляет счета того, кто смотрит. Отбор по тому,
-          кто нажал «Создать счёт», а не по имени.
+          Счета всех сотрудников или только свои — по тому, кто нажал
+          «Создать счёт», а не по имени. Похоже на переключатель, но это
+          ссылка: отбор живёт в адресе, как поиск и период. Поэтому и роли
+          `switch` у неё нет — переключатель обязан откликаться на пробел,
+          а ссылка откликается только на Enter; что будет по нажатию,
+          экранному диктору говорит подпись.
         */}
         <Link
-          className={mine ? 'switch' : 'switch switch--on'}
-          href={href({ mine: mine ? undefined : '1', page: undefined })}
-          role="switch"
-          aria-checked={!mine}
+          className={filter.mine ? 'switch' : 'switch switch--on'}
+          href={href({ mine: filter.mine ? undefined : '1', page: undefined })}
+          aria-label={
+            filter.mine
+              ? 'Показаны только ваши счета. Показать счета всех сотрудников'
+              : 'Показаны счета всех сотрудников. Показать только ваши'
+          }
           scroll={false}
         >
           <span className="switch__track" aria-hidden />
-          Счета всей команды
+          Счета всех сотрудников
         </Link>
       </div>
 
       <PeriodChips
-        current={picked?.period.key ?? null}
+        current={filter.picked?.period.key ?? null}
         basePath="/invoices"
-        from={picked?.days.from ?? ''}
-        to={picked?.days.to ?? ''}
+        from={filter.picked?.days.from ?? ''}
+        to={filter.picked?.days.to ?? ''}
         quick={INVOICE_PERIOD_KEYS}
         allTime="За всё время"
         keep={keep}
@@ -334,7 +326,7 @@ export default async function InvoicesPage({
           text={
             all.length === 0
               ? 'Счёт создаётся в POS-терминале: покупатель называет валюту и сумму, вы нажимаете «Создать счёт».'
-              : 'Снимите поиск, период или «только мои» — или возьмите другое состояние.'
+              : 'Снимите поиск, период или «только ваши» — или возьмите другое состояние.'
           }
         />
       ) : (

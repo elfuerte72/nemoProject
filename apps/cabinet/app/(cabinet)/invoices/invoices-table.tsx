@@ -17,7 +17,7 @@ export interface InvoiceRowView {
 
 /**
  * Таблица счетов с выбором строк — по образцу: отмеченные уходят в файл
- * отдельной выгрузкой, а общая «Выгрузить» в шапке берёт весь отбор.
+ * отдельной выгрузкой, а общий «CSV» в шапке берёт весь отбор.
  *
  * Выбор живёт в странице, а не в адресе: это не отбор, а «вот эти три
  * покажу бухгалтеру», и пересылать его ссылкой незачем. Строка, ушедшая
@@ -76,7 +76,7 @@ export function InvoicesTable({
               className="btn btn--soft btn--tiny"
               href={`${exportHref}${joiner}ids=${encodeURIComponent([...picked].join(','))}`}
             >
-              Выгрузить выбранные ({picked.size})
+              CSV выбранных ({picked.size})
             </a>
             <button type="button" className="btn btn--ghost btn--tiny" onClick={() => setPicked(new Set())}>
               Снять выбор

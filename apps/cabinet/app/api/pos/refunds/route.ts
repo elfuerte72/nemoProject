@@ -9,7 +9,7 @@ import { requireTill } from '@/lib/mock/guard';
 import { addRefund, findInvoice, listRefunds, replaceInvoice } from '@/lib/mock/store';
 import { acquirer } from '@/lib/pos/acquirer';
 import { publishPos } from '@/lib/pos/bus';
-import { settleRefunds, withNote } from '@/lib/pos/lifecycle';
+import { withNote } from '@/lib/pos/lifecycle';
 import { viewer } from '@/lib/reads';
 
 export const runtime = 'nodejs';
@@ -112,8 +112,8 @@ export async function POST(request: Request): Promise<Response> {
     } else if (status === 'approved' && provider) {
       noted = withNote(noted, at, `Возврат принят к исполнению: провайдер «${provider.title}»`);
     }
-    // Вернули целиком и деньги ушли — счёт становится возвращённым.
-    noted = settleRefunds(noted, listRefunds(actor.merchantId), at);
+    // Возвращённым счёт станет при чтении, если деньги ушли целиком
+    // (`settleAllRefunds` в памяти макета), — здесь только лента.
     replaceInvoice(actor.merchantId, noted);
     publishPos(actor.merchantId, { kind: 'refund', id: refund.id });
     publishPos(actor.merchantId, { kind: 'invoice', id: invoice.id });

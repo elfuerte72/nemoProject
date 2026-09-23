@@ -165,7 +165,7 @@ export function demoSet(now: Date): DemoSet {
       });
       invoice = withNote(invoice, asked, `Заявлен возврат: ${sample.refund.reason}`);
       invoice = withNote(invoice, asked, 'Возврат исполнен: провайдер «Имитация»');
-      invoice = settleRefunds(invoice, refunds, asked);
+      invoice = settleRefunds(invoice, refunds);
     }
 
     invoices.push(invoice);

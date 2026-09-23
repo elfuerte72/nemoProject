@@ -30,7 +30,7 @@
 
 import type { MockInvoice, MockRefund } from '../invoice-rows';
 import { demoAsked, demoSet } from '../pos/demo';
-import { expireAllDue } from '../pos/lifecycle';
+import { expireAllDue, settleAllRefunds } from '../pos/lifecycle';
 import { DEFAULT_POS_SETTINGS, type PosSettings } from '../pos/settings';
 
 interface Shelf {
@@ -67,11 +67,16 @@ function offerDemo(merchantId: string, now: Date): void {
   mine.refunds.set(merchantId, [...set.refunds]);
 }
 
-/** Счета мерчанта, новыми сверху, с истёкшими по часам `now`. */
+/**
+ * Счета мерчанта, новыми сверху, с истёкшими по часам `now` и
+ * возвращёнными по исполненным возвратам: оба перехода считаются при
+ * чтении, и отдельного таймера или второго пути записи у них нет.
+ */
 export function listInvoices(merchantId: string, now: Date = new Date()): readonly MockInvoice[] {
   offerDemo(merchantId, now);
   const mine = shelf().invoices.get(merchantId) ?? [];
-  const settled = expireAllDue(mine, now);
+  const refunds = shelf().refunds.get(merchantId) ?? [];
+  const settled = settleAllRefunds(expireAllDue(mine, now), refunds);
   if (settled.some((one, index) => one !== mine[index])) {
     shelf().invoices.set(merchantId, [...settled]);
   }
@@ -112,6 +117,19 @@ export function listRefunds(merchantId: string): readonly MockRefund[] {
 export function addRefund(merchantId: string, refund: MockRefund): void {
   const mine = shelf().refunds.get(merchantId) ?? [];
   shelf().refunds.set(merchantId, [refund, ...mine]);
+}
+
+/**
+ * Замена возврата на месте — тем же приёмом, что у счёта. Сюда придёт
+ * сообщение банка «возврат исполнен»; счёт от этого станет возвращённым
+ * при ближайшем чтении (`settleAllRefunds`).
+ */
+export function replaceRefund(merchantId: string, refund: MockRefund): void {
+  const mine = shelf().refunds.get(merchantId) ?? [];
+  shelf().refunds.set(
+    merchantId,
+    mine.map((one) => (one.id === refund.id ? refund : one)),
+  );
 }
 
 /** Настройки терминала: наценка и скрытые валюты. Без записи — умолчания. */

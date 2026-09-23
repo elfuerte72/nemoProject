@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Money } from '@nemo/types';
 import {
   INVOICE_EXPORT_COLUMNS,
-  INVOICE_TAB_LABELS,
+  INVOICE_STATUS_LABELS,
   dailySeries,
   invoiceCell,
   invoiceColumns,
@@ -16,8 +16,11 @@ import {
   type MockRefund,
 } from './invoice-rows';
 import { makeInvoice } from './pos';
+import { addInvoice, addRefund, forgetMock, listInvoices, replaceRefund } from './mock/store';
 import { demoSet } from './pos/demo';
 import { paidByHand, paidByProvider, providerState, settleRefunds } from './pos/lifecycle';
+import { INVOICE_OPEN_LABEL, INVOICE_TILE_LABELS } from './pos-texts';
+import { applyInvoiceFilter, invoiceFilterParams, readInvoiceFilter } from './invoice-filter';
 
 /**
  * Список счетов по образцу Love&Pay: «Возвращён» как состояние, плитки
@@ -63,34 +66,54 @@ const refund = (over: Partial<MockRefund> = {}): MockRefund => ({
 });
 
 describe('состояние «Возвращён»', () => {
-  it('стоит в ряду состояний и в табах словом образца', () => {
+  it('стоит в ряду состояний', () => {
     expect(invoiceStatuses).toContain('refunded');
-    expect(INVOICE_TAB_LABELS.refunded).toBe('Возвращены');
-    expect(INVOICE_TAB_LABELS.issued).toBe('Ожидают');
+    expect(INVOICE_STATUS_LABELS.refunded).toBe('Возвращён');
   });
 
-  it('счёт, возвращённый целиком и исполненный, становится возвращённым', () => {
+  it('счёт, возвращённый целиком и исполненный, становится возвращённым в час исполнения', () => {
     const one = { ...invoice({ status: 'paid' }), id: 'i' };
-    const back = settleRefunds(one, [refund({ amount: Money.toAmount('2000') })], at);
+    const done = '2026-09-12T08:00:00.000Z';
+    const back = settleRefunds(one, [refund({ amount: Money.toAmount('2000'), doneAt: done })]);
     expect(back.status).toBe('refunded');
-    expect(back.events.at(-1)?.what).toMatch(/возвращены/u);
+    expect(back.events.at(-1)).toEqual({ at: done, what: 'Деньги возвращены покупателю целиком' });
   });
 
   it('частичный возврат оставляет счёт оплаченным', () => {
     const one = { ...invoice({ status: 'paid' }), id: 'i' };
-    expect(settleRefunds(one, [refund({})], at)).toBe(one);
+    expect(settleRefunds(one, [refund({})])).toBe(one);
   });
 
   it('пока возврат не исполнен, деньги не считаются вернувшимися', () => {
     const one = { ...invoice({ status: 'paid' }), id: 'i' };
     const pending = refund({ amount: Money.toAmount('2000'), status: 'approved', doneAt: null });
-    expect(settleRefunds(one, [pending], at)).toBe(one);
+    expect(settleRefunds(one, [pending])).toBe(one);
     // Две части, обе исполнены, — вернули целиком.
     const halves = [
       refund({ id: 'a', amount: Money.toAmount('1500') }),
       refund({ id: 'b', amount: Money.toAmount('500') }),
     ];
-    expect(settleRefunds(one, halves, at).status).toBe('refunded');
+    expect(settleRefunds(one, halves).status).toBe('refunded');
+  });
+
+  it('считается при чтении: исполненный позже возврат переводит счёт сам', () => {
+    // Возврат, принятый банком к исполнению, исполняется потом — и
+    // счёт обязан стать возвращённым тогда, а не застрять оплаченным
+    // из-за того, что в момент заявки деньги ещё не ушли.
+    forgetMock('settle');
+    const one = { ...invoice({ status: 'paid' }), id: 'i' };
+    addInvoice('settle', one);
+    addRefund('settle', refund({ amount: Money.toAmount('2000'), status: 'approved', doneAt: null }));
+    expect(listInvoices('settle')[0]?.status).toBe('paid');
+    const done = '2026-09-12T08:00:00.000Z';
+    replaceRefund(
+      'settle',
+      refund({ amount: Money.toAmount('2000'), status: 'done', doneAt: done }),
+    );
+    const settled = listInvoices('settle')[0];
+    expect(settled?.status).toBe('refunded');
+    expect(settled?.events.at(-1)?.at).toBe(done);
+    forgetMock('settle');
   });
 
   it('частичный возврат виден отметкой в строке', () => {
@@ -140,7 +163,7 @@ describe('плитки над списком', () => {
   ];
 
   it('считает всё, ждущее, оплаченное, возвраты и чистый оборот в выбранной валюте', () => {
-    const summary = invoiceSummary(rows, [refund({})], 'RUB');
+    const summary = invoiceSummary(rows, [refund({})], 'RUB', 0);
     expect(summary.count).toBe(4);
     expect(summary.sum).toBe('7600');
     expect(summary.pending).toBe(1);
@@ -156,7 +179,7 @@ describe('плитки над списком', () => {
 
   it('возвращённый целиком счёт остаётся в оплаченных и весь уходит в возвраты', () => {
     const back = [{ ...invoice({ status: 'refunded' }), id: 'i' }];
-    const summary = invoiceSummary(back, [refund({ amount: Money.toAmount('2000') })], 'RUB');
+    const summary = invoiceSummary(back, [refund({ amount: Money.toAmount('2000') })], 'RUB', 0);
     expect(summary.paid).toBe(1);
     expect(summary.refunded).toBe('5600');
     expect(Money.isZero(summary.net)).toBe(true);
@@ -167,20 +190,29 @@ describe('плитки над списком', () => {
       invoice({ status: 'paid' }),
       invoice({ status: 'paid', code: 'CNY', payCode: 'USDT', payAmount: Money.toAmount('70') }),
     ];
-    expect(invoiceSummary(mixed, [], 'RUB').paidSum).toBe('5600');
-    expect(invoiceSummary(mixed, [], 'THB').paidSum).toBe('2000');
-    expect(invoiceSummary(mixed, [], 'RUB').paid).toBe(2);
+    expect(invoiceSummary(mixed, [], 'RUB', 0).paidSum).toBe('5600');
+    expect(invoiceSummary(mixed, [], 'THB', 2).paidSum).toBe('2000');
+    expect(invoiceSummary(mixed, [], 'RUB', 0).paid).toBe(2);
   });
 
-  it('возврат, пересчитанный долей счёта, округлён до сотых', () => {
+  it('возврат, пересчитанный долей счёта, ровняется знаком валюты оплаты', () => {
     // 1400 из 4201 THB при 11 352 RUB — это 3783,0992… рубля: дробь
-    // без конца, и на плитке она читалась как «−3783,099262080457… RUB».
+    // без конца. Рубль в счетах целый (`payRounding`), и возврат рядом
+    // с ним ровняется так же — к ближайшему: «−3 783,1» среди целых
+    // рублей читалось бы вторым правилом округления на одном экране.
     const odd = [
       { ...invoice({ status: 'paid', amount: Money.toAmount('4201'), payAmount: Money.toAmount('11352') }), id: 'i' },
     ];
-    const summary = invoiceSummary(odd, [refund({ amount: Money.toAmount('1400') })], 'RUB');
-    expect(summary.refunded).toBe('3783.1');
-    expect(summary.net).toBe('7568.9');
+    const back = [refund({ amount: Money.toAmount('1400') })];
+    const rubles = invoiceSummary(odd, back, 'RUB', 0);
+    expect(rubles.refunded).toBe('3783');
+    expect(rubles.net).toBe('7569');
+    // У монеты знаков больше, и доля ровняется до них.
+    const coins = [
+      { ...invoice({ status: 'paid', amount: Money.toAmount('4201'), payCode: 'USDT', payAmount: Money.toAmount('130') }), id: 'i' },
+    ];
+    // 1400 × 130 / 4201 = 43,3230183…
+    expect(invoiceSummary(coins, back, 'USDT', 6).refunded).toBe('43.323018');
   });
 
   it('счёт, возвращённый частями целиком, не оставляет копейки в обороте', () => {
@@ -190,13 +222,13 @@ describe('плитки над списком', () => {
       { ...invoice({ status: 'refunded', amount: Money.toAmount('900'), payAmount: Money.toAmount('2500') }), id: 'i' },
     ];
     const thirds = ['a', 'b', 'c'].map((id) => refund({ id, amount: Money.toAmount('300') }));
-    const summary = invoiceSummary(whole, thirds, 'RUB');
+    const summary = invoiceSummary(whole, thirds, 'RUB', 0);
     expect(summary.refunded).toBe('2500');
     expect(Money.isZero(summary.net)).toBe(true);
   });
 
   it('без счетов конверсии нет, а не ноль процентов', () => {
-    expect(invoiceSummary([], [], 'RUB').conversion).toBeNull();
+    expect(invoiceSummary([], [], 'RUB', 0).conversion).toBeNull();
   });
 });
 
@@ -225,6 +257,65 @@ describe('отбор списка', () => {
 
   it('поиск складывается с остальным отбором', () => {
     expect(narrowInvoices(rows, { query: '09-1', authorId: 'u2' })).toHaveLength(1);
+  });
+});
+
+describe('отбор из адреса — один на страницу и выгрузку', () => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  const read = (params: Record<string, string>) =>
+    readInvoiceFilter((key) => params[key], now, 0);
+
+  it('понимает таб, поиск, «только мои» и период', () => {
+    const filter = read({ tab: 'refunded', q: ' 001 ', mine: '1', period: 'today' });
+    expect(filter.status).toBe('refunded');
+    expect(filter.query).toBe('001');
+    expect(filter.mine).toBe(true);
+    expect(filter.picked?.period.key).toBe('today');
+    // Тот же отбор — теми же параметрами адреса: ссылка «Выгрузить» и
+    // чипы собирают его отсюда, а не каждый своим способом.
+    expect(invoiceFilterParams(filter)).toEqual({
+      q: '001',
+      tab: 'refunded',
+      mine: '1',
+      period: 'today',
+    });
+  });
+
+  it('незнакомое — как отсутствующее, а не отказ', () => {
+    const filter = read({ tab: 'выдумка', period: '999d', mine: 'да' });
+    expect(filter.status).toBeUndefined();
+    expect(filter.picked).toBeNull();
+    expect(filter.mine).toBe(false);
+    expect(invoiceFilterParams(filter)).toEqual({});
+  });
+
+  it('сужает список и строки одним правилом', () => {
+    const rows = [
+      invoice({ status: 'paid', createdAt: '2026-09-11T10:00:00.000Z' }),
+      invoice({ status: 'issued', createdAt: '2026-09-11T10:00:00.000Z', authorId: 'u2' }),
+      invoice({ status: 'paid', createdAt: '2026-09-01T10:00:00.000Z' }),
+    ];
+    const { found, rows: shown } = applyInvoiceFilter(
+      rows,
+      read({ tab: 'paid', period: 'today' }),
+      'u1',
+    );
+    // Плитки считают найденное без таба, строки — с табом.
+    expect(found).toHaveLength(2);
+    expect(shown).toHaveLength(1);
+    expect(applyInvoiceFilter(rows, read({ mine: '1' }), 'u1').found).toHaveLength(2);
+  });
+});
+
+describe('слова на экране — владельца, а не образца', () => {
+  it('плитки и кнопка строки названы так, как их просил владелец 8 сентября', () => {
+    // CLAUDE.md: «всего счетов», «оплаченные счета», «оборот в USDT»,
+    // «подробнее». Образец даёт устройство, но не слова: 11 сентября
+    // «касса» вместо «посттерминала» стоила владельцу найденного раздела.
+    expect(INVOICE_TILE_LABELS.total).toBe('Всего счетов');
+    expect(INVOICE_TILE_LABELS.paid).toBe('Оплаченные счета');
+    expect(INVOICE_TILE_LABELS.turnover('USDT')).toBe('Оборот в USDT');
+    expect(INVOICE_OPEN_LABEL).toBe('Подробнее');
   });
 });
 

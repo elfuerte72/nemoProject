@@ -117,24 +117,33 @@ export function cancelledByHand(invoice: MockInvoice, at: Date): MockInvoice {
  * названный возвращённым до того, как банк их отдал, обещал бы
  * покупателю то, чего у него на руках нет. Частичный возврат счёт не
  * меняет — отметка о нём живёт в строке списка (`invoiceMarks`).
+ *
+ * Считается при чтении, как и истечение (`settleAllRefunds` в памяти
+ * макета), а не в маршруте заявки: возврат, принятый банком к
+ * исполнению, исполняется потом, и счёт должен стать возвращённым тогда,
+ * а не застрять оплаченным. Время в ленте — час исполнения последнего
+ * возврата, а не час, когда счёт прочитали.
  */
-export function settleRefunds(
-  invoice: MockInvoice,
-  refunds: readonly MockRefund[],
-  at: Date,
-): MockInvoice {
+export function settleRefunds(invoice: MockInvoice, refunds: readonly MockRefund[]): MockInvoice {
   if (invoice.status !== 'paid') return invoice;
   if (!Money.isZero(refundLeft(invoice, refunds))) return invoice;
   const mine = owedRefunds(refunds).filter((one) => one.invoiceId === invoice.id);
-  if (mine.length === 0 || mine.some((one) => one.status !== 'done')) return invoice;
+  if (mine.length === 0 || mine.some((one) => one.status !== 'done' || one.doneAt === null)) {
+    return invoice;
+  }
+  const at = mine.map((one) => one.doneAt!).sort().at(-1)!;
   return {
     ...invoice,
     status: 'refunded',
-    events: [
-      ...invoice.events,
-      { at: at.toISOString(), what: 'Деньги возвращены покупателю целиком' },
-    ],
+    events: [...invoice.events, { at, what: 'Деньги возвращены покупателю целиком' }],
   };
+}
+
+export function settleAllRefunds(
+  invoices: readonly MockInvoice[],
+  refunds: readonly MockRefund[],
+): readonly MockInvoice[] {
+  return invoices.map((one) => settleRefunds(one, refunds));
 }
 
 export function withNote(invoice: MockInvoice, at: Date, what: string): MockInvoice {

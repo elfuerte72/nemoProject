@@ -123,19 +123,19 @@ export default async function InvoicePage({
                 Создал {invoice.author}
                 {invoice.demo ? <> <span className="pill">пример</span></> : undefined}
               </span>
-              <span className="row__meta">
-                <Moment at={invoice.createdAt} />
-                {invoice.paidAt ? (
-                  <>
-                    {' '}· оплачен <Moment at={invoice.paidAt} />
-                  </>
-                ) : undefined}
-                {invoice.status === 'issued' && invoice.expiresAt ? (
-                  <>
-                    {' '}· действует до <Moment at={invoice.expiresAt} />
-                  </>
-                ) : undefined}
-              </span>
+              {/*
+                Когда создан, сказано в заголовке; здесь — что было
+                после: оплата или срок, до которого счёт ждёт денег.
+              */}
+              {invoice.paidAt ? (
+                <span className="row__meta">
+                  оплачен <Moment at={invoice.paidAt} />
+                </span>
+              ) : invoice.status === 'issued' && invoice.expiresAt ? (
+                <span className="row__meta">
+                  действует до <Moment at={invoice.expiresAt} />
+                </span>
+              ) : undefined}
             </div>
           </li>
           {/*
