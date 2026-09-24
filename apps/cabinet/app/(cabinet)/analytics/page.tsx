@@ -221,6 +221,18 @@ export default async function AnalyticsPage({
           value={<MoneyFlags lines={current.turnover} before={previous.turnover} />}
           note="отдано по исполненным в период, каждая валюта отдельно"
         />
+        {/*
+          Вторая сторона оборота — что получили получатели, в валюте
+          выдачи. Отдать мерчант может только рубли и USDT, а выдаётся
+          любая из девяти валют: без этой плитки бат или юань были бы
+          видны только в разрезах. Сравнение — с собой: баты с батами.
+        */}
+        <Stat
+          wide
+          label="Выдано"
+          value={<MoneyFlags lines={current.payout} before={previous.payout} />}
+          note="получили получатели по исполненным, в валюте выдачи"
+        />
         <Stat
           wide
           label="Средний чек"
@@ -391,7 +403,7 @@ export default async function AnalyticsPage({
           />
 
           <div className="trio">
-            <Block title="Валюты" note="Отдано вами и получено получателями, по исполненным" csv={csvOf('currency')}>
+            <Block title="Валюты" note="Отдано вами и выдано получателям, по исполненным" csv={csvOf('currency')}>
               <TableOrEmpty table={tableOf('currency')} empty="Исполненных заявок за период нет" />
             </Block>
             <Block

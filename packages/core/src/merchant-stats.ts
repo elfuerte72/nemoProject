@@ -70,6 +70,13 @@ export interface MerchantPeriodSummary {
   readonly conversion: number | null;
   /** Отдано мерчантом по исполненным в период — по валюте отдачи. */
   readonly turnover: readonly MoneyByCurrency[];
+  /**
+   * Выдано получателям по исполненным в период — по валюте выдачи.
+   * Вторая сторона оборота: отдать мерчант может только рубли и USDT, а
+   * выдаётся любая из валют сервиса, и без этого числа бат или юань
+   * видны только в разрезах.
+   */
+  readonly payout: readonly MoneyByCurrency[];
   /** От подачи до исполнения, минуты, по исполненным в период. */
   readonly averageMinutesToComplete: number | null;
   /** Вызовов API за период и сколько из них отвергнуто. */
@@ -230,7 +237,7 @@ export async function summarizeMerchant(
   const submittedStep = localStepOf(exchangeRequests.createdAt, offset, step);
   const completedStep = localStepOf(exchangeRequests.completedAt, offset, step);
 
-  const [counts, turnover, calls, deliveries, submittedByStep, completedByStep] = await Promise.all([
+  const [counts, turnover, payout, calls, deliveries, submittedByStep, completedByStep] = await Promise.all([
     ctx.db
       .select({
         current: sql<Counted>`json_build_object('submitted', ${countColumns(current).submitted}, 'converted', ${countColumns(current).converted}, 'open', ${countColumns(current).open}, 'completed', ${countColumns(current).completed}, 'cancelled', ${countColumns(current).cancelled}, 'minutes', ${countColumns(current).minutes})`,
@@ -255,6 +262,26 @@ export async function summarizeMerchant(
       .from(exchangeRequests)
       .where(and(mine, or(completedWithin(current), completedWithin(previous))))
       .groupBy(exchangeRequests.fromCode),
+    // Выдано — тем же приёмом по валюте выдачи. Сумма без курса бывает
+    // пустой, пока его не назвали; у исполненной она есть всегда, но
+    // пустая сложилась бы в ноль и прибавила заявку к счёту.
+    ctx.db
+      .select({
+        code: exchangeRequests.toCode,
+        amount: sql<string | null>`sum(${exchangeRequests.toAmount}) filter (where ${completedWithin(current)})`,
+        count: sql`count(*) filter (where ${completedWithin(current)})`.mapWith(Number),
+        previousAmount: sql<string | null>`sum(${exchangeRequests.toAmount}) filter (where ${completedWithin(previous)})`,
+        previousCount: sql`count(*) filter (where ${completedWithin(previous)})`.mapWith(Number),
+      })
+      .from(exchangeRequests)
+      .where(
+        and(
+          mine,
+          isNotNull(exchangeRequests.toAmount),
+          or(completedWithin(current), completedWithin(previous)),
+        ),
+      )
+      .groupBy(exchangeRequests.toCode),
     ctx.db
       .select({
         total: sql`count(*) filter (where ${periodOf(apiRequestLog.at, current)})`.mapWith(Number),
@@ -290,6 +317,7 @@ export async function summarizeMerchant(
   const summary = (
     which: 'current' | 'previous',
     lines: readonly { code: string; amount: string | null; count: number }[],
+    paid: readonly { code: string; amount: string | null; count: number }[],
     apiCalls: { total: number; failed: number },
     hooks: { total: number; failed: number },
   ): MerchantPeriodSummary => {
@@ -301,6 +329,7 @@ export async function summarizeMerchant(
       open: c?.open ?? 0,
       conversion: c === undefined || c.submitted === 0 ? null : c.converted / c.submitted,
       turnover: toMoneyLines(lines.filter((row) => row.count > 0)),
+      payout: toMoneyLines(paid.filter((row) => row.count > 0)),
       averageMinutesToComplete:
         c?.minutes === null || c?.minutes === undefined ? null : Number(c.minutes),
       apiCalls,
@@ -329,12 +358,14 @@ export async function summarizeMerchant(
     current: summary(
       'current',
       turnover.map((row) => ({ code: row.code, amount: row.amount, count: row.count })),
+      payout.map((row) => ({ code: row.code, amount: row.amount, count: row.count })),
       { total: call?.total ?? 0, failed: call?.failed ?? 0 },
       { total: hook?.total ?? 0, failed: hook?.failed ?? 0 },
     ),
     previous: summary(
       'previous',
       turnover.map((row) => ({ code: row.code, amount: row.previousAmount, count: row.previousCount })),
+      payout.map((row) => ({ code: row.code, amount: row.previousAmount, count: row.previousCount })),
       { total: call?.previousTotal ?? 0, failed: call?.previousFailed ?? 0 },
       { total: hook?.previousTotal ?? 0, failed: hook?.previousFailed ?? 0 },
     ),

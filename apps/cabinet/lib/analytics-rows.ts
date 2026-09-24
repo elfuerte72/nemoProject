@@ -253,8 +253,8 @@ export function analyticsTables(
     tables.push({
       key: 'currency',
       title: 'Валюты',
-      note: 'Отдано вами и получено получателями — по исполненным в период',
-      columns: ['Валюта', 'Отдано', 'Получено', 'Заявок'],
+      note: 'Отдано вами и выдано получателям — по исполненным в период',
+      columns: ['Валюта', 'Отдано', 'Выдано', 'Заявок'],
       rows: cut.byCurrency.map((one) => [
         one.code,
         one.given ? `${formatAmount(one.given.amount)} ${one.code}` : '—',
@@ -340,6 +340,7 @@ export function summaryTable(
   const { days, paceDays } = options;
   const rows: Cell[][] = [
     ['Оборот', formatByCurrency(current.turnover), formatByCurrency(previous.turnover)],
+    ['Выдано', formatByCurrency(current.payout), formatByCurrency(previous.payout)],
     [
       'Средний чек',
       formatByCurrency(averageByCurrency(current.turnover)),
