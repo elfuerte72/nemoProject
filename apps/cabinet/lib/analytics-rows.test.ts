@@ -228,6 +228,7 @@ describe('показатели одной таблицей', () => {
     open: 0,
     conversion: null,
     turnover: [],
+    payout: [],
     averageMinutesToComplete: null,
     apiCalls: { total: 0, failed: 0 },
     webhookDeliveries: { total: 0, failed: 0 },
@@ -246,6 +247,7 @@ describe('показатели одной таблицей', () => {
           submitted: 14,
           completed: 10,
           turnover: [{ code: 'USDT', amount: Money.toAmount('6200'), count: 4 }],
+          payout: [{ code: 'THB', amount: Money.toAmount('13900'), count: 1 }],
           apiCalls: { total: 66, failed: 22 },
         }),
         previous: summary({ submitted: 3 }),
@@ -256,6 +258,10 @@ describe('показатели одной таблицей', () => {
     expect(table.key).toBe('summary');
     for (const row of table.rows) expect(row).toHaveLength(table.columns.length);
     expect(table.rows).toContainEqual(['Подано', 14, 3]);
+    // Выдано — отдельной строкой, в валюте выдачи: бат виден и в отчёте.
+    const payout = table.rows.find((row) => row[0] === 'Выдано');
+    expect(payout?.[1]).toMatch(/^13\s900 THB$/u);
+    expect(payout?.[2]).toBe('—');
     expect(table.rows).toContainEqual(['Оборот', '6 200 USDT', '—']);
     expect(table.rows).toContainEqual(['Средний чек', '1 550 USDT', '—']);
     expect(table.rows).toContainEqual(['Получателей', '4 (впервые 3, вернулись 1)', '—']);

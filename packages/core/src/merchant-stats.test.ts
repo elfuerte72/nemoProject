@@ -247,6 +247,57 @@ describe('сводка мерчанта за период', () => {
   });
 
   /**
+   * Выдано — вторая сторона оборота: что получили получатели, в валюте
+   * выдачи. Отдать мерчант может только рубли и USDT, а выдаётся любая
+   * из девяти, и без этого числа бат или юань в аналитике не видны
+   * нигде, кроме разрезов. По дате исполнения, как оборот, и так же
+   * сравнивается с прошлым периодом.
+   */
+  it('считает выданное получателям по валютам выдачи — за период и за прошлый', async () => {
+    const period = { from: at(7, 0), to: at(0, 0) };
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      submittedAt: at(3),
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '50',
+      fate: 'completed',
+      submittedAt: at(2),
+    });
+    // Прошлый период: выдано в USDT.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'RUB',
+      toCode: 'USDT',
+      fromAmount: '8000',
+      fate: 'completed',
+      submittedAt: at(10),
+    });
+    // Незавершённая в выданное не идёт.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '70',
+      fate: 'open',
+      submittedAt: at(1),
+    });
+
+    const stats = await core.summarizeMerchant(merchant, merchant.merchantId, period);
+
+    // Курс сцены «80» умножается на отданное: 150 USDT дают 12 000 RUB.
+    expect(stats.current.payout).toEqual([{ code: 'RUB', amount: '12000', count: 2 }]);
+    expect(stats.previous.payout).toEqual([{ code: 'USDT', amount: '640000', count: 1 }]);
+  });
+
+  /**
    * «Только я» в аналитике: числа того, кто подал, а не всей команды.
    * Заявка по ключу API в них не попадает — она ничья, — и заявка
    * коллеги тоже, сколько бы она ни стоила.
