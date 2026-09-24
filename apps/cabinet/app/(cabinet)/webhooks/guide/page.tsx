@@ -13,7 +13,7 @@ import { allowedHere } from '@/lib/access';
 import { viewer } from '@/lib/reads';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
-import { SignatureExamples } from './signature-examples';
+import { CodeExamples } from '@/app/ui/code-examples';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +105,7 @@ export default async function WebhookGuidePage() {
             времени. Тело, пересобранное из разобранного объекта, даёт другую подпись при верном
             секрете: порядок ключей и пробелы в нём уже не те. На этом спотыкаются чаще всего.
           </p>
-          <SignatureExamples examples={SIGNATURE_EXAMPLES} />
+          <CodeExamples examples={SIGNATURE_EXAMPLES} id="webhook-signature" />
         </div>
       </section>
 

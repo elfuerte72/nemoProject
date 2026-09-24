@@ -4,16 +4,15 @@ import { isCoreError } from '@nemo/http';
 /**
  * Сессия кабинета мерчанта.
  *
- * Устроена как сессия панели: подписанная строка со сроком годности, а
- * не запись в базе — чем заводить таблицу сессий, дешевле подписать
- * идентификатор и время, до которого он действителен.
- *
- * Отличие одно и важное: в подпись входит поколение
- * (`merchant_users.session_epoch`). Смена пароля и закрытие доступа
- * увеличивают его в базе, и все выданные раньше куки перестают
- * подходить разом — не перебирая их. Ради этого поколение и заведено:
- * угнанный аккаунт мерчанта — это кража у мерчанта, взломщик меняет
- * реквизиты получателя, а платит мерчант.
+ * Подписанная строка со сроком годности и номером записи о входе
+ * (`merchant_sessions`). До 24 сентября 2026 записи не было, и вместо
+ * номера в куке ехало поколение человека: оборвать сессию можно было
+ * только все разом, сменой пароля. Теперь человек видит свои входы в
+ * разделе «Сессии» и отключает незнакомое устройство по одному — а
+ * поколение переехало в запись и по-прежнему обрывает все сессии разом
+ * при смене пароля и закрытии доступа. Угнанный аккаунт мерчанта — это
+ * кража у мерчанта: взломщик меняет реквизиты получателя, а платит
+ * мерчант.
  *
  * Право доступа эта строка не подтверждает. Она говорит лишь «вход
  * состоялся тогда-то, при таком поколении»; одобрен ли мерчант и не
@@ -67,15 +66,23 @@ export interface SessionPayload {
    * строке, и подделать его в куке нечем.
    */
   readonly userId: string;
-  /** Поколение из `merchant_users.session_epoch` на момент входа. */
-  readonly sessionEpoch: number;
+  /** Номер записи о входе: по нему сессию отключают и отмечают «это устройство». */
+  readonly sessionId: string;
 }
 
 export interface SessionOptions {
   readonly secret: string;
   readonly now?: Date;
   readonly ttlSeconds?: number;
+  /**
+   * Срок из записи о входе. Задан — кука живёт ровно столько же, сколько
+   * запись: разойдись они, кука пускала бы в истёкшую сессию до отказа
+   * базы или выбрасывала бы из живой.
+   */
+  readonly expiresAt?: Date;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Тридцать суток. Дольше, чем у панели: там рабочий день сотрудника за
@@ -94,10 +101,11 @@ function sign(value: string, secret: string): string {
 
 export function issueToken(payload: SessionPayload, options: SessionOptions): string {
   const now = options.now ?? new Date();
-  const ttl = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
-  const expiresAt = Math.floor(now.getTime() / 1000) + ttl;
+  const expiresAt = options.expiresAt
+    ? Math.floor(options.expiresAt.getTime() / 1000)
+    : Math.floor(now.getTime() / 1000) + (options.ttlSeconds ?? DEFAULT_TTL_SECONDS);
 
-  const body = `${payload.userId}.${payload.sessionEpoch}.${expiresAt}`;
+  const body = `${payload.userId}.${payload.sessionId}.${expiresAt}`;
   return `${body}.${sign(body, options.secret)}`;
 }
 
@@ -113,9 +121,9 @@ export function readToken(
   if (parts.length !== 4) {
     throw new SessionError('Сессия непонятного вида');
   }
-  const [userId, epoch, expiresAt, signature] = parts as [string, string, string, string];
+  const [userId, sessionId, expiresAt, signature] = parts as [string, string, string, string];
 
-  const expected = Buffer.from(sign(`${userId}.${epoch}.${expiresAt}`, options.secret));
+  const expected = Buffer.from(sign(`${userId}.${sessionId}.${expiresAt}`, options.secret));
   const actual = Buffer.from(signature);
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
     throw new SessionError('Подпись сессии не совпала');
@@ -126,12 +134,13 @@ export function readToken(
     throw new SessionError('Сессия истекла');
   }
 
-  const sessionEpoch = Number(epoch);
-  if (!Number.isInteger(sessionEpoch) || sessionEpoch < 0) {
-    throw new SessionError('Сессия непонятного вида');
+  // Кука до 24 сентября 2026 несла здесь поколение числом: подписана
+  // она верно, но номера сессии в ней нет, и в базу с ней не ходят.
+  if (!UUID.test(userId) || !UUID.test(sessionId)) {
+    throw new SessionError('Сессия прежнего вида: войдите заново');
   }
 
-  return { userId, sessionEpoch };
+  return { userId, sessionId };
 }
 
 export function sessionSecret(): string {

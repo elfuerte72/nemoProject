@@ -27,7 +27,23 @@ interface Windows {
   hourCount: number;
 }
 
-export type RateSlot = { readonly ok: true } | { readonly ok: false; readonly retryAfterSeconds: number };
+/**
+ * Окно глазами вызывающего: пределы, сколько осталось и когда откроется
+ * то окно, что держит, — часовое, если час выбран, иначе минутное.
+ * Уходит заголовками на каждом ответе с узнанным ключом.
+ */
+export interface RateWindow {
+  readonly limitMinute: number;
+  readonly remainingMinute: number;
+  readonly limitHour: number;
+  readonly remainingHour: number;
+  /** Момент в миллисекундах. */
+  readonly resetAt: number;
+}
+
+export type RateSlot =
+  | { readonly ok: true; readonly window: RateWindow }
+  | { readonly ok: false; readonly retryAfterSeconds: number; readonly window: RateWindow };
 
 /**
  * На `globalThis`, как счётчик попыток и ядро: Next пересобирает модули
@@ -66,15 +82,49 @@ export function takeRateSlot(keyId: string, now: number = Date.now()): RateSlot 
   // Часовой предел проверяется первым: он даёт большее «подождите», и
   // назвать меньшее значило бы звать обратно через минуту впустую.
   if (current.hourCount >= RATE_LIMITS.perHour) {
-    return { ok: false, retryAfterSeconds: secondsUntil(hourStart + HOUR_MS, now) };
+    return {
+      ok: false,
+      retryAfterSeconds: secondsUntil(hourStart + HOUR_MS, now),
+      window: windowOf(current),
+    };
   }
   if (current.minuteCount >= RATE_LIMITS.perMinute) {
-    return { ok: false, retryAfterSeconds: secondsUntil(minuteStart + MINUTE_MS, now) };
+    return {
+      ok: false,
+      retryAfterSeconds: secondsUntil(minuteStart + MINUTE_MS, now),
+      window: windowOf(current),
+    };
   }
 
   current.minuteCount += 1;
   current.hourCount += 1;
-  return { ok: true };
+  return { ok: true, window: windowOf(current) };
+}
+
+function windowOf(current: Windows): RateWindow {
+  const remainingHour = Math.max(RATE_LIMITS.perHour - current.hourCount, 0);
+  return {
+    limitMinute: RATE_LIMITS.perMinute,
+    remainingMinute: Math.max(RATE_LIMITS.perMinute - current.minuteCount, 0),
+    limitHour: RATE_LIMITS.perHour,
+    remainingHour,
+    resetAt: remainingHour === 0 ? current.hourStart + HOUR_MS : current.minuteStart + MINUTE_MS,
+  };
+}
+
+/**
+ * Заголовки остатка — те же имена, что у Love&Pay v2: мерчант, который
+ * ходит к обоим, читает их одним кодом. Время открытия — ISO, как и
+ * всё время в договоре.
+ */
+export function rateLimitHeaders(window: RateWindow): Record<string, string> {
+  return {
+    'x-ratelimit-limit-minute': String(window.limitMinute),
+    'x-ratelimit-remaining-minute': String(window.remainingMinute),
+    'x-ratelimit-limit-hour': String(window.limitHour),
+    'x-ratelimit-remaining-hour': String(window.remainingHour),
+    'x-ratelimit-reset': new Date(window.resetAt).toISOString(),
+  };
 }
 
 function secondsUntil(at: number, now: number): number {

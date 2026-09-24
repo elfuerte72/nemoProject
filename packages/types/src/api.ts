@@ -95,3 +95,11 @@ export const WEBHOOK_ENDPOINT_STATE_LABELS: Record<WebhookEndpointState, string>
 export function isFailedApiStatus(status: number): boolean {
   return status >= 400;
 }
+
+/**
+ * Методы, которые принимает API мерчанта, — ими же сужается журнал
+ * вызовов. Здесь, а не в ядре: список читает и фильтр на экране, а
+ * клиентскому коду ядро с драйвером базы не везут.
+ */
+export const API_LOG_METHODS = ['GET', 'POST', 'DELETE'] as const;
+export type ApiLogMethod = (typeof API_LOG_METHODS)[number];

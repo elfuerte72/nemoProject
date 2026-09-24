@@ -8,6 +8,7 @@ import {
   attemptSpent,
   attemptSucceeded,
   isFailedLogin,
+  UNKNOWN_ADDRESS,
 } from '@/lib/attempts';
 import { getCore } from '@/lib/core';
 import {
@@ -50,7 +51,14 @@ export async function POST(request: Request): Promise<Response> {
 
     let session;
     try {
-      session = await getCore().beginMerchantLogin({ email, password: parsed.data.password });
+      session = await getCore().beginMerchantLogin({
+        email,
+        password: parsed.data.password,
+        // Устройство и адрес — для раздела «Сессии»: по ним человек
+        // узнаёт свои входы и находит чужой.
+        userAgent: request.headers.get('user-agent'),
+        address: address === UNKNOWN_ADDRESS ? null : address,
+      });
     } catch (error) {
       // Считается неподошедший пароль, а не всякая неудача, и узнаётся
       // он по коду — почему, сказано у `isFailedLogin`.
@@ -68,14 +76,19 @@ export async function POST(request: Request): Promise<Response> {
     store.set(
       SESSION_COOKIE,
       issueToken(
-        { userId: session.userId, sessionEpoch: session.sessionEpoch },
-        { secret: sessionSecret() },
+        { userId: session.userId, sessionId: session.sessionId },
+        { secret: sessionSecret(), expiresAt: session.expiresAt },
       ),
-      SESSION_COOKIE_OPTIONS,
+      { ...SESSION_COOKIE_OPTIONS, maxAge: secondsUntil(session.expiresAt) },
     );
 
     return json({ status: session.status });
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+/** Кука живёт ровно столько, сколько запись о входе. */
+function secondsUntil(at: Date): number {
+  return Math.max(0, Math.floor((at.getTime() - Date.now()) / 1000));
 }

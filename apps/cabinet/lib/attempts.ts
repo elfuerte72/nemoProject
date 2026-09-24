@@ -90,9 +90,20 @@ export function attemptCount(): number {
  * он от клиента, остальные дописали посредники. Заголовка нет — считаем
  * все такие запросы одним источником: это не хуже, чем не считать их
  * вовсе.
+ *
+ * Подделать первый адрес снаружи нельзя: Traefik у недоверенных
+ * клиентов вычищает `X-Forwarded-For` и `X-Real-Ip` и пишет адрес
+ * соединения сам (`forwardedHeaders` у точек входа не настроен —
+ * проверено 24 сентября 2026). На этом держатся и счётчик попыток, и
+ * разрешённые адреса API.
  */
-export function addressOf(request: Request): string {
+export function addressOf(request: {
+  readonly headers: { get(name: string): string | null };
+}): string {
   const forwarded = request.headers.get('x-forwarded-for');
   const first = forwarded?.split(',')[0]?.trim();
-  return first || request.headers.get('x-real-ip') || 'неизвестный адрес';
+  return first || request.headers.get('x-real-ip') || UNKNOWN_ADDRESS;
 }
+
+/** Адрес, когда посредник его не назвал: считается одним источником. */
+export const UNKNOWN_ADDRESS = 'неизвестный адрес';

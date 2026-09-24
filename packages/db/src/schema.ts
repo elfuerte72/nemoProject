@@ -579,6 +579,45 @@ export const merchantEmailTokens = pgTable(
 );
 
 /**
+ * Вход в кабинет с одного устройства — сессия человека.
+ *
+ * До 24 сентября 2026 сессия была одной подписанной кукой без записи в
+ * базе, и оборвать её можно было только вместе со всеми — сменой
+ * пароля. Запись нужна, чтобы человек видел, где он вошёл, и отключал
+ * незнакомое устройство по одному, не выходя со своего.
+ *
+ * Поколение (`merchant_users.session_epoch`) при этом осталось: смена
+ * пароля и закрытие доступа обрывают все сессии разом, не перебирая
+ * строки. Сессия действует, пока её поколение равно поколению человека.
+ */
+export const merchantSessions = pgTable(
+  'merchant_sessions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantUserId: uuid('merchant_user_id')
+      .notNull()
+      .references(() => merchantUsers.id, { onDelete: 'cascade' }),
+    /** Поколение человека на момент входа. */
+    sessionEpoch: integer('session_epoch').notNull(),
+    /** Строка браузера при входе — по ней устройство называется словами. */
+    userAgent: text('user_agent'),
+    /** Адрес последнего обращения: при входе — адрес входа. */
+    address: text('address'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /**
+     * Когда сессией пользовались в последний раз — с точностью до пяти
+     * минут: запись на каждый запрос удваивала бы обращения к базе ради
+     * слов «была активность».
+     */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** Когда её отключили. Отключённая остаётся строкой до чистки. */
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [index('merchant_sessions_user_idx').on(table.merchantUserId, table.lastSeenAt)],
+);
+
+/**
  * Ключ API мерчанта (docs/adr/0017).
  *
  * Секрет хранится хешем и показывается один раз при выпуске: база,
@@ -629,6 +668,30 @@ export const apiKeys = pgTable(
 );
 
 /**
+ * Разрешённый адрес для вызовов API мерчанта: IP или подсеть.
+ *
+ * Пустой список — вызовы с любого адреса, как было до 24 сентября
+ * 2026. Непустой — только с перечисленных: ключ, ушедший с сервера
+ * мерчанта, без его адреса бесполезен. Адрес пишется приведённым —
+ * «203.0.113.0/24», одиночный без маски, — чтобы один и тот же не
+ * заводился дважды разным написанием.
+ */
+export const merchantApiAddresses = pgTable(
+  'merchant_api_addresses',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    merchantId: uuid('merchant_id')
+      .notNull()
+      .references(() => merchants.id, { onDelete: 'cascade' }),
+    address: text('address').notNull(),
+    /** Для чего адрес — «сервер сайта», «бухгалтерия». Необязательна. */
+    note: text('note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [unique('merchant_api_addresses_merchant_address_key').on(table.merchantId, table.address)],
+);
+
+/**
  * Журнал вызовов API: что мерчант спрашивал и что ему ответили.
  *
  * Пишется на каждый вызов, включая отвергнутые, — если ключ узнан:
@@ -658,6 +721,14 @@ export const apiRequestLog = pgTable(
     address: text('address'),
     /** Слова отказа, если он был. Успешному вызову сказать нечего. */
     error: text('error'),
+    /** Машинный код отказа — тот, что ушёл в теле ответа: `invalid_signature`. */
+    errorCode: text('error_code'),
+    /**
+     * Идентификатор запроса из заголовка ответа `x-request-id`: мерчант
+     * называет его поддержке, и строка находится без догадок о времени.
+     * У строк до 24 сентября 2026 пуст.
+     */
+    requestId: uuid('request_id'),
     at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

@@ -25,7 +25,7 @@ describe('меню по роли', () => {
 
   /**
    * Раздел, рассказывающий, как встроить то, к чему у человека нет
-   * ключа, обещает больше, чем есть: группа «Интеграция» уходит
+   * ключа, обещает больше, чем есть: группа «Разработчикам» уходит
    * целиком.
    */
   it('оператор работает, но интеграции и людей не видит', () => {
@@ -35,7 +35,32 @@ describe('меню по роли', () => {
     expect(mine).not.toContain('/keys');
     expect(mine).not.toContain('/webhooks');
     expect(mine).not.toContain('/docs');
+    expect(mine).not.toContain('/changelog');
     expect(mine).not.toContain('/staff');
+    expect(navGroupsFor('operator').map((group) => group.key)).not.toContain('developers');
+  });
+
+  /**
+   * Сессии — свои входы, а не права на чужое: смотреть, где ты вошёл, и
+   * отключать незнакомое нужно каждому, наблюдателю тоже (24 сентября
+   * 2026).
+   */
+  it('«Сессии» в «Безопасности» видны каждой роли', () => {
+    for (const role of ['owner', 'operator', 'viewer'] as const) {
+      expect(hrefs(role)).toContain('/sessions');
+      expect(navGroupsFor(role).map((group) => group.key)).toContain('security');
+    }
+  });
+
+  /**
+   * «Как встроить» — кнопкой в «Вебхуках», как у Love&Pay, а не пунктом
+   * меню: пункт ради страницы при разделе — лишний. «Изменения API» —
+   * своим пунктом у владельца.
+   */
+  it('разработчику — изменения API пунктом, «Как встроить» — не пунктом', () => {
+    const mine = hrefs('owner');
+    expect(mine).toContain('/changelog');
+    expect(mine).not.toContain('/webhooks/guide');
   });
 
   /**
