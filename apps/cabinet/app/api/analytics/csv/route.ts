@@ -1,21 +1,22 @@
 import { cookies } from 'next/headers';
 import { toCsv } from '@nemo/ui/csv';
-import { TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
+import { TZ_COOKIE, readTzOffset } from '@nemo/ui/period';
 import { errorResponse } from '@/lib/api';
 import { requireActor } from '@/lib/auth';
 import { getCore } from '@/lib/core';
-import { analyticsTables } from '@/lib/analytics-rows';
-import { resolveStep } from '@/lib/analytics-texts';
+import { analyticsTables, reportRows, summaryTable } from '@/lib/analytics-rows';
+import { readAnalyticsQuery } from '@/lib/analytics-query';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Выгрузка одного разреза за период.
+ * Выгрузка разреза за период — или всего отчёта (`kind=report`).
  *
- * Шапка и строки — те же, что на экране (`analyticsTables`): файл,
- * разошедшийся с экраном в колонках, обнаруживается уже после того,
- * как числу поверили.
+ * Шапка и строки — те же, что на экране (`analyticsTables`), и адрес
+ * разбирается тем же `readAnalyticsQuery`: файл, разошедшийся с экраном
+ * в колонках, шаге или отборе «только мои», обнаруживается уже после
+ * того, как числу поверили.
  *
  * Незнакомый разрез — «не найден», а не пустой файл: пустой читается
  * как «за период ничего не было».
@@ -25,37 +26,58 @@ export async function GET(request: Request): Promise<Response> {
     const actor = await requireActor();
     const params = new URL(request.url).searchParams;
     const offset = readTzOffset((await cookies()).get(TZ_COOKIE)?.value);
-    const period = resolvePeriod(
-      {
-        period: params.get('period') ?? undefined,
-        from: params.get('from') ?? undefined,
-        to: params.get('to') ?? undefined,
-      },
+    const query = readAnalyticsQuery(
+      (name) => params.get(name) ?? undefined,
+      actor,
       new Date(),
       offset,
     );
-    const step = resolveStep(params.get('step') ?? undefined);
 
-    const cut = await getCore().breakdownMerchant(actor, actor.merchantId, period, {
-      offsetMinutes: offset,
-      step,
-    });
+    const narrowed = query.submittedBy ? { submittedBy: query.submittedBy } : {};
+    const [stats, cut] = await Promise.all([
+      getCore().summarizeMerchant(actor, actor.merchantId, query.period, {
+        offsetMinutes: offset,
+        ...narrowed,
+      }),
+      getCore().breakdownMerchant(actor, actor.merchantId, query.period, {
+        offsetMinutes: offset,
+        step: query.step,
+        ...narrowed,
+      }),
+    ]);
+    // Показатели — первым разделом: плитки, сроки и рекорды; за ними
+    // разрезы в порядке страницы.
+    const tables = [
+      summaryTable(stats, cut, { days: query.days, paceDays: query.paceDays, mine: query.mine }),
+      ...analyticsTables(cut, { offsetMinutes: offset }),
+    ];
     const wanted = params.get('kind');
-    const table = analyticsTables(cut).find((one) => one.key === wanted);
+    const { from, to } = query.base;
+
+    if (wanted === 'report') {
+      const heading = [
+        query.mine ? 'Аналитика — только мои заявки' : 'Аналитика',
+        `${from} — ${to}`,
+      ];
+      return csvResponse(toCsv(reportRows(tables, heading)), `report-${from}-${to}.csv`);
+    }
+
+    const table = tables.find((one) => one.key === wanted);
     if (!table) {
       return new Response('Такого разреза нет', { status: 404, headers: { 'cache-control': 'no-store' } });
     }
-
-    const from = dayOf(period.from, offset);
-    const to = dayOf(new Date(period.to.getTime() - 1), offset);
-    return new Response(toCsv([table.columns, ...table.rows]), {
-      headers: {
-        'content-type': 'text/csv; charset=utf-8',
-        'content-disposition': `attachment; filename="${table.key}-${from}-${to}.csv"`,
-        'cache-control': 'no-store',
-      },
-    });
+    return csvResponse(toCsv([table.columns, ...table.rows]), `${table.key}-${from}-${to}.csv`);
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+function csvResponse(body: string, filename: string): Response {
+  return new Response(body, {
+    headers: {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="${filename}"`,
+      'cache-control': 'no-store',
+    },
+  });
 }

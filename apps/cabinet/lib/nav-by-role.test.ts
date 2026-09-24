@@ -38,6 +38,17 @@ describe('меню по роли', () => {
     expect(mine).not.toContain('/staff');
   });
 
+  /**
+   * Аналитика — пунктом меню у каждой роли (с 24 сентября 2026): это
+   * чтение, а числа кабинета своим людям не прячутся. Наблюдатель ради
+   * неё и заведён.
+   */
+  it('аналитика видна каждой роли своим пунктом', () => {
+    for (const role of ['owner', 'operator', 'viewer'] as const) {
+      expect(hrefs(role)).toContain('/analytics');
+    }
+  });
+
   it('наблюдатель смотрит заявки и курсы, но не работает с кассой', () => {
     const mine = hrefs('viewer');
     expect(mine).toContain('/requests');

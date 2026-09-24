@@ -126,6 +126,19 @@ export function periodOf(column: AnyPgColumn, period: AnalyticsPeriod): SQL {
   return and(gte(column, period.from), lt(column, period.to))!;
 }
 
+/**
+ * Заявки мерчанта — все или поданные одним его человеком («только мои»
+ * в аналитике). Одним условием на сводку и разрезы: отбор, записанный в
+ * двух местах, однажды разошёлся бы, и плитка со строкой разреза
+ * посчитали бы разные заявки.
+ */
+export function merchantRequests(merchantId: string, submittedBy?: string | undefined): SQL {
+  return and(
+    eq(exchangeRequests.merchantId, merchantId),
+    submittedBy === undefined ? undefined : eq(exchangeRequests.submittedByUserId, submittedBy),
+  )!;
+}
+
 /** Ещё в работе: не исполнена и не отменена. */
 export const stillOpen: SQL = sql`${exchangeRequests.status} not in ('completed', 'cancelled')`;
 

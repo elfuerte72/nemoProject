@@ -25,11 +25,23 @@ export function ExchangeCountTiles({
   current,
   previous,
   openHref,
+  open = true,
+  duration = true,
 }: {
   readonly current: PeriodCounts;
   readonly previous: PeriodCounts;
   /** Куда ведёт «В работе» — оно про сейчас, а не про период. */
   readonly openHref?: string | undefined;
+  /**
+   * Рисовать ли «В работе». Аналитика кабинета без неё: плитка про
+   * «сейчас», а не про период, и то же число там стоит в воронке.
+   */
+  readonly open?: boolean;
+  /**
+   * Рисовать ли «До исполнения». Обзор кабинета без неё: срок — число
+   * для разбора, а не для ежедневного взгляда, и живёт в аналитике.
+   */
+  readonly duration?: boolean;
 }) {
   return (
     <>
@@ -52,22 +64,26 @@ export function ExchangeCountTiles({
         // Рост отмен — плохо: тон не по общему правилу.
         tone={current.cancelled > previous.cancelled ? 'down' : 'plain'}
       />
-      <Stat
-        label="В работе"
-        value={current.open}
-        note="из поданных в период"
-        tone={current.open ? 'wait' : 'plain'}
-        {...(openHref ? { href: openHref } : {})}
-      />
-      <Stat
-        label="До исполнения"
-        value={formatMinutes(current.averageMinutesToComplete)}
-        note={
-          previous.averageMinutesToComplete === null
-            ? 'в среднем от подачи до исполнения'
-            : `в среднем · было ${formatMinutes(previous.averageMinutesToComplete)}`
-        }
-      />
+      {open ? (
+        <Stat
+          label="В работе"
+          value={current.open}
+          note="из поданных в период"
+          tone={current.open ? 'wait' : 'plain'}
+          {...(openHref ? { href: openHref } : {})}
+        />
+      ) : undefined}
+      {duration ? (
+        <Stat
+          label="До исполнения"
+          value={formatMinutes(current.averageMinutesToComplete)}
+          note={
+            previous.averageMinutesToComplete === null
+              ? 'в среднем от подачи до исполнения'
+              : `в среднем · было ${formatMinutes(previous.averageMinutesToComplete)}`
+          }
+        />
+      ) : undefined}
     </>
   );
 }

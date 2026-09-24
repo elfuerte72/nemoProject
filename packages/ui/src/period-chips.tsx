@@ -23,6 +23,7 @@ export function PeriodChips({
   quick = PANEL_QUICK,
   keep,
   allTime,
+  customChip = false,
 }: {
   /** Выбранный период. Пусто — периода нет: так бывает только с `allTime`. */
   current: PeriodKey | null;
@@ -49,10 +50,19 @@ export function PeriodChips({
    * стоит первым и выбран по умолчанию.
    */
   allTime?: string | undefined;
+  /**
+   * Свой период чипом в ряду, а поля дат — только после нажатия на
+   * него. Так устроен выбор в аналитике кабинета (по образцу Love&Pay):
+   * фильтров там три ряда, и поля, стоящие всегда, отодвигали бы шаг и
+   * отбор на вторую строку ради того, чем пользуются реже всего.
+   */
+  customChip?: boolean;
 }) {
   const router = useRouter();
   const [draftFrom, setDraftFrom] = useState(from);
   const [draftTo, setDraftTo] = useState(to);
+  const [customOpen, setCustomOpen] = useState(current === 'custom');
+  const showCustom = !customChip || customOpen || current === 'custom';
 
   /*
    * Поля идут за периодом. Чип меняет адрес, а не страницу: компонент
@@ -65,6 +75,15 @@ export function PeriodChips({
     setDraftFrom(from);
     setDraftTo(to);
   }, [from, to]);
+
+  /*
+   * Раскрытые поля своего периода закрываются, когда выбран другой
+   * период: компонент переживает смену адреса, и поля от прошлого выбора
+   * висели бы под «7 днями».
+   */
+  useEffect(() => {
+    setCustomOpen(current === 'custom');
+  }, [current]);
 
   /** Адрес раздела с периодом — поверх сохраняемых параметров. */
   const hrefWith = (period: Readonly<Record<string, string>>): string => {
@@ -95,7 +114,21 @@ export function PeriodChips({
             {PERIOD_LABELS[key]}
           </Link>
         ))}
+        {customChip ? (
+          <button
+            type="button"
+            // Отмечен только применённый период: раскрытые, но не
+            // показанные поля — ещё не выбор, и два отмеченных чипа
+            // спорили бы, какой период на экране.
+            className={current === 'custom' ? 'chip chip--on' : 'chip'}
+            aria-expanded={showCustom}
+            onClick={() => setCustomOpen((open) => !open || current === 'custom')}
+          >
+            {PERIOD_LABELS.custom}
+          </button>
+        ) : undefined}
       </div>
+      {showCustom ? (
       <form
         className="period__custom"
         onSubmit={(event) => {
@@ -129,6 +162,7 @@ export function PeriodChips({
           Показать
         </button>
       </form>
+      ) : undefined}
     </div>
   );
 }

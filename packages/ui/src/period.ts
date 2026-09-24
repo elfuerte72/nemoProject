@@ -27,6 +27,7 @@ export const periodKeys = [
   '45d',
   '90d',
   '180d',
+  '365d',
   'custom',
 ] as const;
 export type PeriodKey = (typeof periodKeys)[number];
@@ -39,6 +40,9 @@ export const PERIOD_LABELS: Record<PeriodKey, string> = {
   '45d': '45 дней',
   '90d': '90 дней',
   '180d': '180 дней',
+  // «Год» — последние 365 дней, а не календарный год: как и прочие
+  // чипы, он сравнивается с таким же отрезком прямо перед собой.
+  '365d': 'Год',
   custom: 'Свой период',
 };
 
@@ -115,6 +119,7 @@ const DAYS_BY_KEY: Partial<Record<PeriodKey, number>> = {
   '45d': 45,
   '90d': 90,
   '180d': 180,
+  '365d': 365,
 };
 
 /**
