@@ -11,7 +11,6 @@ import {
   IntegrationTiles,
   Moment,
   PeriodChips,
-  QuietRefresh,
   Stat,
   Stats,
   trendTone,
@@ -33,8 +32,9 @@ import {
   axisLabel,
   monthEstimate,
   outcomeRows,
+  formatPerDay,
+  hourRange,
   perDay,
-  requestsPerDay,
   shareOf,
   type OutcomeKey,
 } from '@/lib/analytics-view';
@@ -119,7 +119,13 @@ export default async function AnalyticsPage({
 
   return (
     <main className="page page--wide">
-      <QuietRefresh />
+      {/*
+        Тихого обновления здесь нет, в отличие от обзора и заявок: разрез
+        считается двумя десятками запросов, и каждые полминуты заново он
+        грузил бы базу, пока вкладка открыта, ради чисел, которые за
+        полминуты не меняются. Страница пересчитывается по «Обновить», а
+        строка под фильтрами говорит, когда посчитано, — как у образца.
+      */}
       <DisabledBanner status={session.status} />
 
       <header className="page__head">
@@ -329,7 +335,7 @@ export default async function AnalyticsPage({
                   key: String(one.hour),
                   axis: one.hour % 3 === 0 ? String(one.hour) : '',
                   minor: one.hour % 6 !== 0,
-                  title: `${String(one.hour).padStart(2, '0')}:00–${String(one.hour + 1).padStart(2, '0')}:00`,
+                  title: hourRange(one.hour),
                   value: one.submitted,
                   said: String(one.submitted),
                 }))}
@@ -365,7 +371,7 @@ export default async function AnalyticsPage({
               table={tableOf('recipient')}
               empty="Поданных получателям заявок за период нет"
               render={(column, cell) =>
-                column === 1 && cell === 'да' ? <span className="pill">впервые</span> : cell
+                column === 1 && cell === 'да' ? <span className="pill">впервые</span> : undefined
               }
             />
           </Block>
@@ -452,7 +458,7 @@ export default async function AnalyticsPage({
                 <Pair name="В среднем в день" value={<MoneyLines lines={perDay(current.turnover, query.paceDays)} />} />
                 <Pair
                   name="Заявок в день"
-                  value={String(requestsPerDay(current.submitted, query.paceDays)).replace('.', ',')}
+                  value={formatPerDay(current.submitted, query.paceDays)}
                 />
                 <Pair
                   name="Оценка на месяц"
@@ -524,7 +530,7 @@ function TableOrEmpty({
 }: {
   readonly table: ReturnType<typeof analyticsTables>[number] | null;
   readonly empty: string;
-  readonly render?: (column: number, cell: string | number) => React.ReactNode;
+  readonly render?: (column: number, cell: string | number) => React.ReactNode | undefined;
 }) {
   if (!table) return <p className="muted">{empty}</p>;
   return <DataTable table={table} {...(render ? { render } : {})} />;

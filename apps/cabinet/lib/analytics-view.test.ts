@@ -7,7 +7,9 @@ import {
   axisLabel,
   axisMarks,
   countWord,
+  formatPerDay,
   heatLevel,
+  hourRange,
   monthEstimate,
   niceTicks,
   outcomeRows,
@@ -90,6 +92,7 @@ describe('в среднем в день и оценка на месяц', () => 
   });
 
   it('заявок в день — с одним знаком после запятой', () => {
+    expect(formatPerDay(14, 90)).toBe('0,2');
     expect(requestsPerDay(14, 90)).toBe(0.2);
     expect(requestsPerDay(45, 30)).toBe(1.5);
     expect(requestsPerDay(0, 30)).toBe(0);
@@ -147,6 +150,13 @@ describe('слова и подписи графиков', () => {
     // На узком экране остаются главные — каждая вторая из подписанных.
     const major = marks.filter((one) => one === 'major').length;
     expect(major).toBe(Math.ceil(marks.filter(Boolean).length / 2));
+  });
+});
+
+describe('час отрезком', () => {
+  it('называет час суток началом и концом, двумя знаками', () => {
+    expect(hourRange(9)).toBe('09:00–10:00');
+    expect(hourRange(23)).toBe('23:00–24:00');
   });
 });
 

@@ -177,15 +177,10 @@ export const STEP_LABELS = {
 export type StepKey = keyof typeof STEP_LABELS;
 
 /*
- * Какие шаги предложить, решает экран — как и с периодами.
- *
- * В аналитике ряд идёт по выбранному наверху периоду, а он не длиннее
- * ста восьмидесяти дней: квартальных столбиков там вышло бы два, и
- * сравнивать в них нечего. На обзоре глубину ряду задаёт сам шаг — два
- * года по кварталам, — и квартал там осмыслен.
+ * Шаги ряда на обзоре. Глубину ряду там задаёт сам шаг — два года по
+ * кварталам, — и квартал осмыслен. У аналитики свой список,
+ * `ANALYTICS_STEP_KEYS`: ряд там идёт по выбранному периоду.
  */
-export const STEP_KEYS: readonly StepKey[] = ['day', 'week', 'month'];
-
 export const SERIES_STEP_KEYS: readonly StepKey[] = ['day', 'week', 'month', 'quarter'];
 
 /**
@@ -193,9 +188,6 @@ export const SERIES_STEP_KEYS: readonly StepKey[] = ['day', 'week', 'month', 'qu
  * Незнакомое слово — сутки: параметр приходит из адресной строки, и
  * отказом на опечатку отвечать незачем.
  */
-export function resolveStep(
-  raw: string | undefined,
-  allowed: readonly StepKey[] = STEP_KEYS,
-): StepKey {
+export function resolveStep(raw: string | undefined, allowed: readonly StepKey[]): StepKey {
   return allowed.includes(raw as StepKey) ? (raw as StepKey) : 'day';
 }

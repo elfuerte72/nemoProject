@@ -49,6 +49,16 @@ describe('адрес аналитики', () => {
     expect(new URLSearchParams(analyticsSearch(query)).get('step')).toBe('day');
   });
 
+  it('«Авто» на таком периоде тоже крупнеет, но «крупнее выбранного» не называется', () => {
+    const query = readAnalyticsQuery(
+      from({ period: 'custom', from: '2000-01-01', to: '2099-12-31' }),
+      { userId: 'u1', role: 'owner' },
+      now,
+      0,
+    );
+    expect(query).toMatchObject({ step: 'quarter', stepKey: 'auto', coarsened: false });
+  });
+
   it('ссылка держит период и отбор, а «Авто» в адрес не пишет', () => {
     const query = readAnalyticsQuery(
       from({ period: '90d', mine: '1' }),

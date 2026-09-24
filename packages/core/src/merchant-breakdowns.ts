@@ -630,9 +630,19 @@ export async function breakdownMerchant(
 
   /* ── Пять разрезов из одной группировки ────────────────────────── */
 
-  const firstSubmittedAt = new Map(
-    firstSubmitted.map((row) => [recipientKey(row), row.first.getTime()]),
-  );
+  /*
+   * Если два ряда группировки сошлись в один ключ — а `recipientKey`
+   * склеивает пустое значение с пустой строкой, которые база различает, —
+   * первой считается самая ранняя дата. Операции пустых строк в
+   * реквизиты не пишут, но «новый» при таком совпадении не должен
+   * зависеть от того, какой ряд база отдала последним.
+   */
+  const firstSubmittedAt = new Map<string, number>();
+  for (const row of firstSubmitted) {
+    const key = recipientKey(row);
+    const first = row.first.getTime();
+    firstSubmittedAt.set(key, Math.min(first, firstSubmittedAt.get(key) ?? first));
+  }
   const isFresh = (row: RecipientFields): boolean => {
     const first = firstSubmittedAt.get(recipientKey(row));
     return first !== undefined && first >= window.from.getTime();

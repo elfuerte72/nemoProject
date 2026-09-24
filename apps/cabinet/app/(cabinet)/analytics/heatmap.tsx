@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type KeyboardEvent } from 'react';
-import { heatLevel } from '@/lib/analytics-view';
+import { heatLevel, hourRange } from '@/lib/analytics-view';
 
 /**
  * Карта нагрузки: поданные по дню недели и часу — по образцу Love&Pay.
@@ -92,8 +92,7 @@ export function Heatmap({
           {active && shown !== undefined ? (
             <>
               <span className="bars__readout-day">
-                {days[active.day]}, {String(active.hour).padStart(2, '0')}:00–
-                {String(active.hour + 1).padStart(2, '0')}:00
+                {days[active.day]}, {hourRange(active.hour)}
               </span>
               <span className="bars__readout-pair">
                 <b>{shown}</b> подано

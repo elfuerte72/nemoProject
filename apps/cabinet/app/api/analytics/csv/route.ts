@@ -34,11 +34,17 @@ export async function GET(request: Request): Promise<Response> {
     );
 
     const narrowed = query.submittedBy ? { submittedBy: query.submittedBy } : {};
+    const wanted = params.get('kind');
+    // Сводка нужна только показателям и отчёту целиком: файл одного
+    // разреза ради неё ходил бы в базу шесть раз впустую.
+    const needsSummary = wanted === 'summary' || wanted === 'report';
     const [stats, cut] = await Promise.all([
-      getCore().summarizeMerchant(actor, actor.merchantId, query.period, {
-        offsetMinutes: offset,
-        ...narrowed,
-      }),
+      needsSummary
+        ? getCore().summarizeMerchant(actor, actor.merchantId, query.period, {
+            offsetMinutes: offset,
+            ...narrowed,
+          })
+        : null,
       getCore().breakdownMerchant(actor, actor.merchantId, query.period, {
         offsetMinutes: offset,
         step: query.step,
@@ -48,10 +54,11 @@ export async function GET(request: Request): Promise<Response> {
     // Показатели — первым разделом: плитки, сроки и рекорды; за ними
     // разрезы в порядке страницы.
     const tables = [
-      summaryTable(stats, cut, { days: query.days, paceDays: query.paceDays, mine: query.mine }),
+      ...(stats
+        ? [summaryTable(stats, cut, { days: query.days, paceDays: query.paceDays, mine: query.mine })]
+        : []),
       ...analyticsTables(cut, { offsetMinutes: offset }),
     ];
-    const wanted = params.get('kind');
     const { from, to } = query.base;
 
     if (wanted === 'report') {

@@ -122,6 +122,17 @@ export function requestsPerDay(submitted: number, days: number): number {
   return Math.round((submitted / Math.max(1, days)) * 10) / 10;
 }
 
+/** То же словами для экрана и файла — запятой, как пишут по-русски: «0,2». */
+export function formatPerDay(submitted: number, days: number): string {
+  return String(requestsPerDay(submitted, days)).replace('.', ',');
+}
+
+/** Час суток отрезком — «18:00–19:00»: одна запись на график, карту и файл. */
+export function hourRange(hour: number): string {
+  const at = (value: number) => `${String(value).padStart(2, '0')}:00`;
+  return `${at(hour)}–${at(hour + 1)}`;
+}
+
 export type OutcomeKey = 'submitted' | 'completed' | 'open' | 'expired' | 'cancelled';
 
 /**

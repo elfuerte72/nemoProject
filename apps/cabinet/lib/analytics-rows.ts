@@ -18,7 +18,7 @@ import {
   UNKNOWN_SOURCE,
   WEEKDAY_LABELS,
 } from './analytics-texts';
-import { monthEstimate, outcomeRows, perDay, requestsPerDay, shareOf } from './analytics-view';
+import { formatPerDay, monthEstimate, outcomeRows, perDay, shareOf } from './analytics-view';
 import { STATUS_LABELS } from './labels';
 
 /**
@@ -219,13 +219,24 @@ export function analyticsTables(
   }
 
   if (cut.byRecipient.length > 0) {
+    /*
+     * Счётчик над таблицей считает получателей с поданными в период, а
+     * в таблице стоят и те, чью давнюю заявку в период исполнили или
+     * отменили: у них «Подано 0». Без пояснения два числа одной карточки
+     * читались бы как два разных ответа.
+     */
+    const closedOnly = cut.byRecipient.filter((one) => one.kind !== null && one.submitted === 0).length;
+    const base =
+      cut.recipientsHidden > 0
+        ? `Строка — человек, а не запись. Показаны самые частые; ещё ${cut.recipientsHidden} не поместились`
+        : 'Строка — человек, а не запись: по API она заводится на каждую заявку заново';
     tables.push({
       key: 'recipient',
       title: 'Получатели',
       note:
-        cut.recipientsHidden > 0
-          ? `Строка — человек, а не запись. Показаны самые частые; ещё ${cut.recipientsHidden} не поместились`
-          : 'Строка — человек, а не запись: по API она заводится на каждую заявку заново',
+        closedOnly > 0
+          ? `${base}. С «Подано 0» — те, чью заявку подали раньше, а закрыли в этот период`
+          : base,
       columns: ['Получатель', 'Впервые', 'Последняя заявка', ...SLICE_COLUMNS],
       rows: cut.byRecipient.map((one) => [
         recipientLabel(one),
@@ -305,11 +316,6 @@ function withFailures(counts: { total: number; failed: number }, what: string): 
   return counts.failed === 0 ? String(counts.total) : `${counts.total} (${what} ${counts.failed})`;
 }
 
-/** Заявок в день запятой, как пишут по-русски: «0,2». */
-function perDayText(submitted: number, days: number): string {
-  return String(requestsPerDay(submitted, days)).replace('.', ',');
-}
-
 /**
  * Показатели одной таблицей: плитки, сроки, рекорды и прогноз — «сейчас»
  * и «было». Первым разделом отчёта: «отчёт целиком», в котором нет
@@ -379,7 +385,7 @@ export function summaryTable(
       formatByCurrency(perDay(current.turnover, paceDays)),
       formatByCurrency(perDay(previous.turnover, days)),
     ],
-    ['Заявок в день', perDayText(current.submitted, paceDays), perDayText(previous.submitted, days)],
+    ['Заявок в день', formatPerDay(current.submitted, paceDays), formatPerDay(previous.submitted, days)],
     ['Оценка на месяц', formatByCurrency(monthEstimate(current.turnover, paceDays)), '—'],
   );
   return {

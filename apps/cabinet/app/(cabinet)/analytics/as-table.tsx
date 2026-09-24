@@ -23,8 +23,11 @@ export function DataTable({
   render,
 }: {
   readonly table: TableView;
-  /** Своя ячейка там, где текста мало: «да» у нового получателя — пилюлей. */
-  readonly render?: (column: number, cell: Cell) => React.ReactNode;
+  /**
+   * Своя ячейка там, где текста мало: «да» у нового получателя — пилюлей.
+   * Пусто — ячейка как у всех, с переносом денег только между валютами.
+   */
+  readonly render?: (column: number, cell: Cell) => React.ReactNode | undefined;
 }) {
   return (
     <div className="scroll-x">
@@ -75,10 +78,8 @@ export function DataTable({
                         )}
                         {cell}
                       </span>
-                    ) : render ? (
-                      render(index, cell)
                     ) : (
-                      <Wrapped cell={cell} />
+                      (render?.(index, cell) ?? <Wrapped cell={cell} />)
                     )}
                   </td>
                 ))}

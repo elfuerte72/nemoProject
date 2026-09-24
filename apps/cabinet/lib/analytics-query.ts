@@ -64,7 +64,8 @@ export function readAnalyticsQuery(
     paceDays: elapsedDays(period.from, period.to, now),
     stepKey: chosen.key,
     step,
-    coarsened: step !== chosen.step,
+    // «Авто» шаг выбирает сам, и «крупнее выбранного» ему не говорится.
+    coarsened: chosen.key !== 'auto' && step !== chosen.step,
     mine,
     submittedBy: mine && who.userId !== null ? who.userId : undefined,
     canNarrow,
