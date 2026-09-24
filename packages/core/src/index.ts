@@ -871,15 +871,18 @@ export type {
   MerchantBiggest,
   MerchantBreakdownOptions,
   MerchantBreakdowns,
+  MerchantCurrencySlice,
   MerchantDirectionSlice,
   MerchantFastest,
   MerchantFunnel,
   MerchantMethodSlice,
+  MerchantRecipientCounts,
   MerchantRecipientSlice,
   MerchantRecords,
   MerchantSeriesPoint,
   MerchantSlice,
   MerchantSourceSlice,
+  MerchantStaffSlice,
 } from './merchant-breakdowns.js';
 export type {
   SaveServiceAccountInput,

@@ -1,5 +1,7 @@
+import type { SeriesStep } from '@nemo/core';
 import type { HowToItem } from '@nemo/ui';
 import type { ExchangeRequestSource, PayoutMethod } from '@nemo/types';
+import { autoStep, type OutcomeKey } from './analytics-view';
 
 /**
  * Подсказка и подписи раздела «Аналитика».
@@ -58,7 +60,72 @@ export const ANALYTICS_HOW_TO: readonly HowToItem[] = [
       'кладёт в куку при первом показе; без неё дни и часы считаются по UTC, и об этом ' +
       'написано под заголовком.',
   },
+  {
+    title: 'Оценка на месяц',
+    detail:
+      'Оборот периода, делённый на его дни и умноженный на тридцать. Это темп, а не ' +
+      'обещание: неделя с одной крупной заявкой даст оценку, до которой месяц не дотянет.',
+  },
+  {
+    title: 'Выгрузка',
+    detail:
+      'Каждый блок скачивается своим файлом CSV, а «Выгрузить отчёт» собирает показатели и все ' +
+      'разрезы в один. Файл открывается в Excel и Numbers как есть: разделитель — точка с ' +
+      'запятой, какую ждёт русский Excel, и кириллица не превращается в кракозябры.',
+  },
 ];
+
+/**
+ * Шаг динамики в аналитике: «Авто» и три явных. Квартала здесь нет —
+ * ряд идёт по выбранному периоду, а быстрые чипы не длиннее года:
+ * квартальных столбиков вышло бы четыре, и сравнивать в них нечего.
+ * Свой период бывает длиннее — тогда шаг крупнеет сам (`limitStep`).
+ */
+export const ANALYTICS_STEP_KEYS = ['auto', 'day', 'week', 'month'] as const;
+export type AnalyticsStepKey = (typeof ANALYTICS_STEP_KEYS)[number];
+
+export const ANALYTICS_STEP_LABELS: Record<AnalyticsStepKey, string> = {
+  auto: 'Авто',
+  day: 'Дни',
+  week: 'Недели',
+  month: 'Месяцы',
+};
+
+/**
+ * Шаг из адреса и то, чем он оказался. Незнакомое слово — «Авто», а
+ * «Авто» решает по длине периода (`autoStep`): подпись над графиком
+ * называет выбранное, чтобы «Авто» не оставалось загадкой.
+ */
+export function resolveAnalyticsStep(
+  raw: string | undefined,
+  days: number,
+): { readonly key: AnalyticsStepKey; readonly step: SeriesStep } {
+  const key = (ANALYTICS_STEP_KEYS as readonly string[]).includes(raw ?? '')
+    ? (raw as AnalyticsStepKey)
+    : 'auto';
+  return { key, step: key === 'auto' ? autoStep(days) : key };
+}
+
+/** Шаг одним словом — «шаг — день, всего 30 точек». */
+export const STEP_NAMES: Record<SeriesStep, string> = {
+  day: 'день',
+  week: 'неделя',
+  month: 'месяц',
+  quarter: 'квартал',
+};
+
+/**
+ * Исходы поданных — строки воронки. «Истёк срок оплаты» — словами
+ * причины, которой ядро отменяет заявку (`EXPIRED_REASON`), а не
+ * «Истекло» с образца: у заявки срок истекает у оплаты, а не у неё.
+ */
+export const OUTCOME_LABELS: Record<OutcomeKey, string> = {
+  submitted: 'Подано',
+  completed: 'Исполнено',
+  open: 'В работе',
+  expired: 'Истёк срок оплаты',
+  cancelled: 'Отменено',
+};
 
 /** Источник заявки словами. Пустой — не строка разреза, а признание. */
 export const SOURCE_LABELS: Record<ExchangeRequestSource, string> = {
@@ -110,15 +177,10 @@ export const STEP_LABELS = {
 export type StepKey = keyof typeof STEP_LABELS;
 
 /*
- * Какие шаги предложить, решает экран — как и с периодами.
- *
- * В аналитике ряд идёт по выбранному наверху периоду, а он не длиннее
- * ста восьмидесяти дней: квартальных столбиков там вышло бы два, и
- * сравнивать в них нечего. На обзоре глубину ряду задаёт сам шаг — два
- * года по кварталам, — и квартал там осмыслен.
+ * Шаги ряда на обзоре. Глубину ряду там задаёт сам шаг — два года по
+ * кварталам, — и квартал осмыслен. У аналитики свой список,
+ * `ANALYTICS_STEP_KEYS`: ряд там идёт по выбранному периоду.
  */
-export const STEP_KEYS: readonly StepKey[] = ['day', 'week', 'month'];
-
 export const SERIES_STEP_KEYS: readonly StepKey[] = ['day', 'week', 'month', 'quarter'];
 
 /**
@@ -126,9 +188,6 @@ export const SERIES_STEP_KEYS: readonly StepKey[] = ['day', 'week', 'month', 'qu
  * Незнакомое слово — сутки: параметр приходит из адресной строки, и
  * отказом на опечатку отвечать незачем.
  */
-export function resolveStep(
-  raw: string | undefined,
-  allowed: readonly StepKey[] = STEP_KEYS,
-): StepKey {
+export function resolveStep(raw: string | undefined, allowed: readonly StepKey[]): StepKey {
   return allowed.includes(raw as StepKey) ? (raw as StepKey) : 'day';
 }

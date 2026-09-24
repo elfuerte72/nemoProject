@@ -19,6 +19,7 @@ import {
   dayKey,
   localMidnight,
   localStepOf,
+  merchantRequests,
   minutesToComplete,
   periodOf,
   previousPeriod,
@@ -115,6 +116,13 @@ export interface MerchantStatsOptions {
   readonly now?: Date | undefined;
   /** Шаг столбиков. Не задан — сутки. */
   readonly step?: SeriesStep | undefined;
+  /**
+   * Только заявки, поданные этим человеком кабинета, — «Только я» в
+   * аналитике. Вызовы API и доставки вебхуков при этом остаются общими:
+   * ключ принадлежит кабинету, а не человеку, и своих вызовов у
+   * сотрудника не бывает — экран их в этом отборе не показывает.
+   */
+  readonly submittedBy?: string | undefined;
 }
 
 /** Исполнено с даты и оборот по валютам — строка списка мерчантов. */
@@ -215,7 +223,7 @@ export async function summarizeMerchant(
     to: tomorrow,
   };
 
-  const mine = eq(exchangeRequests.merchantId, merchantId);
+  const mine = merchantRequests(merchantId, options.submittedBy);
   // Группирует база, а не память: корзин у квартального ряда восемь, а
   // дней за два года — семьсот с лишним, и возить их в приложение ради
   // сложения нечего.

@@ -31,7 +31,8 @@ export type IconName =
   | 'key'
   | 'plug'
   | 'book'
-  | 'plus';
+  | 'plus'
+  | 'pie';
 
 export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
   const common = {
@@ -193,6 +194,13 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
       return (
         <svg {...common}>
           <path d="M12 5v14M5 12h14" />
+        </svg>
+      );
+    case 'pie':
+      return (
+        <svg {...common}>
+          <path d="M20 13.5A8 8 0 1 1 10.5 4" />
+          <path d="M14 3.5A7 7 0 0 1 20.5 10H14z" />
         </svg>
       );
   }

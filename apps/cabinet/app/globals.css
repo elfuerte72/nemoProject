@@ -2149,6 +2149,53 @@ button.calc__code:hover,
 }
 
 /*
+ * «Было» — в строке своей валюты, мелко и справа: под столбиком оно
+ * читалось бы как ещё одна валюта. На узкой карточке уходит под сумму,
+ * а не сжимает её.
+ */
+.money-flags__row {
+  flex-wrap: wrap;
+}
+
+.money-flags__was {
+  margin-left: auto;
+  font-family: var(--font-ui), system-ui, sans-serif;
+  font-size: 12.5px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+/*
+ * В карточке суммы — главное число, и набраны они как числа плиток:
+ * моноширинно и весомо. В плитке они уже стоят в её числе.
+ */
+.card > .money-flags .money-flags__amount,
+.card > .money-flags--empty .money-flags__amount {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.money-flags--empty {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/* Стороны заявки в строке списка: две суммы со значками и стрелка. */
+.row__title--deal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.row__arrow {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+/*
  * «По валютам» — кнопкой: свёрнутой держит до трёх валют с оплатами,
  * нажатием раскрывает все валюты сервиса списком поверх плиток.
  */
@@ -3275,4 +3322,610 @@ a.stat--current:hover {
   .pos__layout {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ── Аналитика ───────────────────────────────────────────────────────
+ *
+ * Устроена по образцу Love&Pay (24 сентября 2026): фильтры одной строкой
+ * над всем, плитки, графики парами, таблицы разрезов. Лицо — кабинета:
+ * волоски вместо теней, моноширинные числа, один оттенок индиго на всех
+ * графиках, кроме тех, где цвет значит исход.
+ */
+
+/* Фильтры: период слева, шаг и «чьи заявки» справа; на узком — в столбик. */
+.anbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+
+.anbar > .period {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+}
+
+.anbar__right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+/* Срез одной строкой под фильтрами: что выбрано, с чем сравнивается, когда посчитано. */
+.anbar__meta {
+  margin: -14px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/*
+ * Шапка с переключателем переносится целиком: на узком экране
+ * переключатель уходит под заголовок, а не сжимает его в столбик. Одна
+ * кнопка CSV остаётся в строке заголовка — для неё место есть всегда.
+ */
+.card__head:has(> .card__tools) {
+  flex-wrap: wrap;
+}
+
+.page--wide .card__head > div:first-child {
+  min-width: 0;
+}
+
+/* Инструменты в шапке карточки: переключатель показателя и выгрузка. */
+.card__tools {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/*
+ * Таблица в половине экрана — плотнее, а оборот в ней переносится по
+ * валютам: «43 000 RUB · 6 200 USDT» в одну строку выталкивал колонку
+ * за край карточки.
+ */
+.duo .datatable th,
+.duo .datatable td,
+.trio .datatable th,
+.trio .datatable td {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.duo .datatable td:last-child,
+.trio .datatable td:last-child {
+  white-space: normal;
+}
+
+.datatable .nowrap {
+  white-space: nowrap;
+}
+
+/*
+ * Сегменты — выбор одного из нескольких равноправных: шаг динамики,
+ * показатель графика. Обоймой, а не россыпью чипов: россыпь читается
+ * как набор отметок, из которых можно выбрать несколько.
+ */
+.seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.seg__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: calc(var(--radius-control) - 4px);
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.seg__item:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.seg__item--on,
+.seg__item--on:hover {
+  background: rgba(var(--gold-rgb), 0.12);
+  color: var(--gold-light);
+}
+
+.seg__item:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 1px;
+}
+
+/* Два блока рядом; на узком — друг под другом. */
+.duo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .duo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
+ * Три узких блока рядом — валюты, сроки, рекорды: в каждом по нескольку
+ * строк, и во всю ширину они растягивались бы в две пустые трети.
+ */
+.trio {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .trio {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Карточка аналитики: заголовок, график и таблица — с ровным шагом. */
+.trio > .card,
+.duo > .card,
+.page--wide > .card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ── Столбики с осью ─────────────────────────────────────────────── */
+
+.colchart {
+  --plot: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.colchart__frame {
+  display: grid;
+  grid-template-columns: var(--axis, 28px) minmax(0, 1fr);
+  gap: 10px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+}
+
+/* Деления — моноширинно и тихо: ось подпирает числа, а не спорит с ними. */
+.colchart__axis {
+  position: relative;
+  height: var(--plot);
+}
+
+.colchart__tick {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.colchart__plot {
+  position: relative;
+  height: var(--plot);
+  border-radius: 4px;
+}
+
+.colchart__plot:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 4px;
+}
+
+/* Сетка волоском и сплошная: пунктир читался бы как порог. */
+.colchart__grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--hairline-soft);
+}
+
+.colchart__cols {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+}
+
+/* Цель наведения — вся колонка до верха, не только сам столбик. */
+.colchart__col {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.colchart__col--active {
+  background: var(--surface-soft-strong);
+}
+
+/*
+ * Столбик не толще двадцати четырёх точек и скруглён только сверху:
+ * к основанию он прирастает, а не лежит на нём таблеткой. Между
+ * соседями — два пикселя поверхности, но не ценой самого столбика: на
+ * телефоне у года по дням колонка уже пикселя, и отступ съел бы его
+ * целиком. Тогда столбик в пиксель, и соседи сливаются, а не исчезают.
+ */
+.colchart__bar {
+  display: block;
+  width: calc(100% - 2px);
+  min-width: 1px;
+  max-width: 24px;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--chart-sent);
+}
+
+.colchart__bar--none {
+  min-height: 0;
+}
+
+.colchart__x {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  margin-left: calc(var(--axis, 28px) + 10px);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/*
+ * Подпись шире колонки выходит за её край поровну в обе стороны, а не
+ * переносится: `text-align` у переполненной строки прижимал бы её к
+ * началу, и дата уезжала вправо от своего столбика. Последняя подпись
+ * прижата к правому краю графика — иначе половина её вылезала бы за
+ * карточку.
+ */
+.colchart__x > span {
+  display: flex;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.colchart__x > span:last-child {
+  justify-content: flex-end;
+}
+
+@media (max-width: 600px) {
+  .colchart__minor {
+    visibility: hidden;
+  }
+}
+
+/* ── Карта нагрузки ──────────────────────────────────────────────── */
+
+/*
+ * Ступени — один оттенок индиго от светлого к тёмному, проверенные
+ * валидатором `dataviz` (`--ordinal`, светлая держит 2,09:1 к белому).
+ * Пустая клетка серая: «ни одной» и «одна» различаются сразу.
+ */
+.heatmap {
+  --heat-0: var(--surface-soft-strong);
+  --heat-1: #b5afd4;
+  --heat-2: #948cc0;
+  --heat-3: #6b5fa8;
+  --heat-4: #4e448b;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.heatmap__grid {
+  display: grid;
+  grid-template-columns: 26px repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  border-radius: 4px;
+}
+
+.heatmap__grid:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 4px;
+}
+
+.heatmap__hour,
+.heatmap__day {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.heatmap__day {
+  align-self: center;
+}
+
+.heatmap__cell {
+  display: block;
+  min-height: 18px;
+  border-radius: 3px;
+  background: var(--heat-0);
+}
+
+.heatmap__cell--1 {
+  background: var(--heat-1);
+}
+
+.heatmap__cell--2 {
+  background: var(--heat-2);
+}
+
+.heatmap__cell--3 {
+  background: var(--heat-3);
+}
+
+.heatmap__cell--4 {
+  background: var(--heat-4);
+}
+
+.heatmap__cell--active {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 3px var(--text);
+}
+
+.heatmap__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.heatmap__scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.heatmap__scale .heatmap__cell {
+  width: 14px;
+  min-height: 14px;
+}
+
+/* ── Состояния полосой ───────────────────────────────────────────── */
+
+/*
+ * Путь заявки — пятью ступенями одного оттенка, от новой к исполненной
+ * (проверены `dataviz --ordinal`); отменённая — цветом отказа. Между
+ * долями — зазор в два пикселя, а не рамка.
+ */
+.statebar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-soft-strong);
+}
+
+.statebar__seg {
+  display: block;
+  min-width: 4px;
+}
+
+.statebar__seg--new {
+  background: #b5afd4;
+}
+
+.statebar__seg--in_progress {
+  background: #948cc0;
+}
+
+.statebar__seg--rate_confirmed {
+  background: #7a6fb4;
+}
+
+.statebar__seg--payment_received {
+  background: #5f54a0;
+}
+
+.statebar__seg--completed {
+  background: #40367e;
+}
+
+.statebar__seg--cancelled {
+  background: var(--down);
+}
+
+.statelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.statelist__row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) 48px 52px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.statelist__row--none {
+  color: var(--text-faint);
+}
+
+.statelist__key {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.statelist__count,
+.statelist__share {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.statelist__share {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Дни недели полосами ─────────────────────────────────────────── */
+
+.hbars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hbars__row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 40px 48px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.hbars__name {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.hbars__track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-soft-strong);
+  overflow: hidden;
+}
+
+.hbars__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--chart-sent);
+}
+
+.hbars__count,
+.hbars__share {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hbars__share {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Имя и значение ──────────────────────────────────────────────── */
+
+.kv {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kv__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.kv__row:first-child {
+  border-top: none;
+}
+
+.kv__name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.kv__hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.kv__value {
+  margin: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.kv__list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+/* Сколько получателей — счётчиками над таблицей. */
+.tally {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tally__item {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.tally__item b {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: var(--text);
+}
+
+/* Двойник графика таблицей — свёрнут под ним. */
+.astable__summary {
+  width: fit-content;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.astable[open] > .astable__summary {
+  margin-bottom: 10px;
 }

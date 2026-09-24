@@ -97,10 +97,16 @@ export const merchantStats = cache(
     to: number,
     offsetMinutes: number,
     step: SeriesStep = 'day',
+    /** «Только мои» — кто подал; пустая строка — вся команда. Строкой: ключ памяти. */
+    submittedBy = '',
   ): Promise<MerchantStats> => {
     const { actor } = await viewer();
     const period: AnalyticsPeriod = { from: new Date(from), to: new Date(to) };
-    return getCore().summarizeMerchant(actor, actor.merchantId, period, { offsetMinutes, step });
+    return getCore().summarizeMerchant(actor, actor.merchantId, period, {
+      offsetMinutes,
+      step,
+      ...(submittedBy ? { submittedBy } : {}),
+    });
   },
 );
 
@@ -115,12 +121,14 @@ export const merchantBreakdowns = cache(
     to: number,
     offsetMinutes: number,
     step: SeriesStep,
+    submittedBy = '',
   ): Promise<MerchantBreakdowns> => {
     const { actor } = await viewer();
     const period: AnalyticsPeriod = { from: new Date(from), to: new Date(to) };
     return getCore().breakdownMerchant(actor, actor.merchantId, period, {
       offsetMinutes,
       step,
+      ...(submittedBy ? { submittedBy } : {}),
     });
   },
 );

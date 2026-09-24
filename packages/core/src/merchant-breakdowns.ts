@@ -1,4 +1,4 @@
-import { and, count, desc, eq, or, sql, sum } from 'drizzle-orm';
+import { and, count, desc, eq, lt, or, sql, sum } from 'drizzle-orm';
 import { clientRequisites, exchangeRequests, merchantUsers } from '@nemo/db';
 import {
   Money,
@@ -8,6 +8,7 @@ import {
   type ExchangeKind,
   type ExchangeRequestSource,
   type ExchangeRequestStatus,
+  type MerchantUserRole,
   type PayoutMethod,
   type PromptPayIdType,
   type RequisiteKind,
@@ -25,6 +26,7 @@ import {
   localStepOf,
   localWeekdayOf,
   requireOffset,
+  merchantRequests,
   requirePeriod,
   requireStep,
   stepStartOf,
@@ -93,6 +95,8 @@ export interface MerchantStaffSlice extends MerchantSlice {
   /** Пусто у заявок по ключу API — он ничей — и у поданных до отметки. */
   readonly userId: string | null;
   readonly name: string | null;
+  /** Роль сейчас, а не в день подачи: таблица отвечает «кто это», а не «кем был». */
+  readonly role: MerchantUserRole | null;
 }
 
 export interface MerchantSourceSlice extends MerchantSlice {
@@ -117,6 +121,41 @@ export interface MerchantRecipientSlice extends MerchantSlice {
   readonly qrHint: string | null;
   readonly promptpayIdType: PromptPayIdType | null;
   readonly alipayAccount: string | null;
+  /** Когда ему подали последнюю заявку в периоде. Без поданных в период — пусто. */
+  readonly lastSubmittedAt: Date | null;
+  /**
+   * Первая заявка ему за всё время мерчанта пришлась на период: раньше
+   * мерчант ему заявок не подавал. Считается по подаче, а не по оплате —
+   * как «новые в базе» у образца: появился в базе тот, кому подали, чем
+   * бы заявка ни кончилась. И по всем заявкам кабинета, а не по отбору
+   * «только я»: «новый» — про получателя, а не про того, кто подал.
+   */
+  readonly fresh: boolean;
+}
+
+/**
+ * Получатели периода числами — то, чем у Love&Pay служат «клиенты».
+ * Считаются по всем, а не по показанным строкам: у списка предел, у
+ * этих чисел его нет.
+ */
+export interface MerchantRecipientCounts {
+  /** Скольким подали хотя бы одну заявку в период. */
+  readonly total: number;
+  /** Из них впервые — раньше мерчант им заявок не подавал. */
+  readonly fresh: number;
+  /** Из них вернувшихся — тех, кому подавали и до периода. */
+  readonly returning: number;
+}
+
+/**
+ * Деньги одной валюты с обеих сторон: сколько мерчант отдал в ней и
+ * сколько в ней получили получатели. Обе — по исполненным в период:
+ * отданное и полученное по одной заявке лежат в одном дне.
+ */
+export interface MerchantCurrencySlice {
+  readonly code: string;
+  readonly given: { readonly amount: Amount; readonly count: number } | null;
+  readonly received: { readonly amount: Amount; readonly count: number } | null;
 }
 
 export interface MerchantSeriesPoint {
@@ -126,6 +165,8 @@ export interface MerchantSeriesPoint {
   readonly completed: number;
   readonly cancelled: number;
   readonly turnover: readonly MoneyByCurrency[];
+  /** Скольким разным получателям подали на этом шаге. */
+  readonly recipients: number;
 }
 
 /**
@@ -168,6 +209,18 @@ export interface MerchantRecords {
   readonly largest: readonly MerchantBiggest[];
   readonly fastest: MerchantFastest | null;
   readonly slowest: MerchantFastest | null;
+  /**
+   * День с наибольшим числом исполненных — днём, какой бы шаг ни был
+   * выбран у динамики: «лучший день» за неделю назвал бы неделю. Ровня
+   * разводится ранним днём.
+   */
+  readonly bestDay: { readonly at: string; readonly completed: number } | null;
+  /**
+   * Середина сроков от подачи до исполнения, минуты. Рядом со средним:
+   * одна заявка, зависшая на выходные, утаскивает среднее на часы, а
+   * середину — нет.
+   */
+  readonly medianMinutes: number | null;
 }
 
 export interface MerchantBreakdowns {
@@ -196,6 +249,20 @@ export interface MerchantBreakdowns {
   readonly byHour: readonly { readonly hour: number; readonly submitted: number }[];
   /** Семь дней недели, понедельник первым. */
   readonly byWeekday: readonly { readonly weekday: number; readonly submitted: number }[];
+  /**
+   * Карта нагрузки: поданные по дню недели и часу — семь строк,
+   * понедельник первым, по двадцать четыре часа, включая пустые.
+   */
+  readonly load: readonly (readonly number[])[];
+  readonly recipients: MerchantRecipientCounts;
+  /** Отдано и получено по валютам — и те, в которых было только одно из двух. */
+  readonly byCurrency: readonly MerchantCurrencySlice[];
+  /**
+   * Середина чека по валюте отдачи — рядом со средним на плитке.
+   * Серединой служит сама заявка ряда, а не среднее двух соседних: число
+   * с экрана можно найти в списке заявок.
+   */
+  readonly medianTicket: readonly { readonly code: string; readonly amount: Amount }[];
   readonly records: MerchantRecords;
 }
 
@@ -204,6 +271,8 @@ export interface MerchantBreakdownOptions {
   readonly offsetMinutes?: number | undefined;
   /** Шаг сетки динамики. Не задан — сутки. */
   readonly step?: SeriesStep | undefined;
+  /** Только заявки, поданные этим человеком кабинета, — «Только я» в аналитике. */
+  readonly submittedBy?: string | undefined;
 }
 
 /** Сколько строк получателей отдаётся: дальше таблицу не читают. */
@@ -216,10 +285,12 @@ interface Bucket {
   cancelled: number;
   converted: number;
   turnover: Map<string, { amount: Amount; count: number }>;
+  /** Последняя подача в период — моментом; пусто, пока поданных не было. */
+  last: number | null;
 }
 
 function emptyBucket(): Bucket {
-  return { submitted: 0, completed: 0, cancelled: 0, converted: 0, turnover: new Map() };
+  return { submitted: 0, completed: 0, cancelled: 0, converted: 0, turnover: new Map(), last: null };
 }
 
 function addTo(bucket: Bucket, row: ComboRow): void {
@@ -227,6 +298,8 @@ function addTo(bucket: Bucket, row: ComboRow): void {
   bucket.completed += row.completed;
   bucket.cancelled += row.cancelled;
   bucket.converted += row.converted;
+  const last = row.last?.getTime() ?? null;
+  if (last !== null && (bucket.last === null || last > bucket.last)) bucket.last = last;
   if (row.completed === 0) return;
   const line = bucket.turnover.get(row.fromCode) ?? { amount: Money.ZERO, count: 0 };
   bucket.turnover.set(row.fromCode, {
@@ -267,6 +340,7 @@ interface ComboRow {
   readonly source: ExchangeRequestSource | null;
   readonly submittedByUserId: string | null;
   readonly submittedByName: string | null;
+  readonly submittedByRole: MerchantUserRole | null;
   readonly requisiteKind: RequisiteKind | null;
   readonly bankName: string | null;
   readonly phone: string | null;
@@ -283,6 +357,9 @@ interface ComboRow {
   readonly cancelled: number;
   readonly converted: number;
   readonly amount: string | null;
+  /** Получено по исполненным в период — в валюте получения. */
+  readonly received: string | null;
+  readonly last: Date | null;
 }
 
 /**
@@ -292,7 +369,22 @@ interface ComboRow {
  * А» с пустым телефоном и «Т-Банк» с телефоном «А» дали бы один ключ, и
  * две карты слились бы в одну строку разреза.
  */
-function recipientKey(row: ComboRow): string {
+type RecipientFields = Pick<
+  ComboRow,
+  | 'requisiteKind'
+  | 'bankName'
+  | 'phone'
+  | 'cardLast4'
+  | 'network'
+  | 'addressHint'
+  | 'holderName'
+  | 'accountLast4'
+  | 'qrHint'
+  | 'promptpayIdType'
+  | 'alipayAccount'
+>;
+
+function recipientKey(row: RecipientFields): string {
   return [
     row.requisiteKind,
     row.bankName,
@@ -320,7 +412,8 @@ export async function breakdownMerchant(
   const offset = requireOffset(options.offsetMinutes);
   const step = requireStep(options.step);
 
-  const mine = eq(exchangeRequests.merchantId, merchantId);
+  const ofMerchant = eq(exchangeRequests.merchantId, merchantId);
+  const mine = merchantRequests(merchantId, options.submittedBy);
   const submittedIn = submittedWithin(window);
   const completedIn = completedWithin(window);
   const cancelledIn = cancelledWithin(window);
@@ -337,6 +430,27 @@ export async function breakdownMerchant(
    * рекорд и его длительность могли бы разойтись.
    */
   const minutes = sql<string>`extract(epoch from (${exchangeRequests.completedAt} - ${exchangeRequests.createdAt})) / 60`;
+  const completedDay = localStepOf(exchangeRequests.completedAt, offset, 'day');
+  /*
+   * Получатель в запросе — тем же набором полей, что и в ключе
+   * `recipientKey`: сравнивать их строкой в памяти и записью в базе —
+   * одно и то же правило, записанное дважды. Список колонок для
+   * группировки берётся из того же выбора, а не набирается второй раз.
+   */
+  const recipientSelect = {
+    requisiteKind: clientRequisites.kind,
+    bankName: clientRequisites.bankName,
+    phone: clientRequisites.phone,
+    cardLast4: clientRequisites.cardLast4,
+    network: clientRequisites.network,
+    addressHint: clientRequisites.addressHint,
+    holderName: clientRequisites.holderName,
+    accountLast4: clientRequisites.accountLast4,
+    qrHint: clientRequisites.qrHint,
+    promptpayIdType: clientRequisites.promptpayIdType,
+    alipayAccount: clientRequisites.alipayAccount,
+  };
+  const recipientColumns = Object.values(recipientSelect);
 
   const [
     combos,
@@ -348,6 +462,11 @@ export async function breakdownMerchant(
     largest,
     fastest,
     slowest,
+    recipientsByStep,
+    firstSubmitted,
+    bestDay,
+    medianTicket,
+    medianMinutes,
   ] = await Promise.all([
     ctx.db
       .select({
@@ -357,17 +476,8 @@ export async function breakdownMerchant(
         source: exchangeRequests.source,
         submittedByUserId: exchangeRequests.submittedByUserId,
         submittedByName: merchantUsers.name,
-        requisiteKind: clientRequisites.kind,
-        bankName: clientRequisites.bankName,
-        phone: clientRequisites.phone,
-        cardLast4: clientRequisites.cardLast4,
-        network: clientRequisites.network,
-        addressHint: clientRequisites.addressHint,
-        holderName: clientRequisites.holderName,
-        accountLast4: clientRequisites.accountLast4,
-        qrHint: clientRequisites.qrHint,
-        promptpayIdType: clientRequisites.promptpayIdType,
-        alipayAccount: clientRequisites.alipayAccount,
+        submittedByRole: merchantUsers.role,
+        ...recipientSelect,
         submitted: sql`count(*) filter (where ${submittedIn})`.mapWith(Number),
         completed: sql`count(*) filter (where ${completedIn})`.mapWith(Number),
         cancelled: sql`count(*) filter (where ${cancelledIn})`.mapWith(Number),
@@ -377,6 +487,12 @@ export async function breakdownMerchant(
         amount: sql<
           string | null
         >`sum(${exchangeRequests.fromAmount}) filter (where ${completedIn})`,
+        received: sql<
+          string | null
+        >`sum(${exchangeRequests.toAmount}) filter (where ${completedIn})`,
+        last: sql<Date | null>`max(${exchangeRequests.createdAt}) filter (where ${submittedIn})`.mapWith(
+          exchangeRequests.createdAt,
+        ),
       })
       .from(exchangeRequests)
       .leftJoin(clientRequisites, eq(exchangeRequests.requisitesId, clientRequisites.id))
@@ -391,17 +507,8 @@ export async function breakdownMerchant(
         exchangeRequests.source,
         exchangeRequests.submittedByUserId,
         merchantUsers.name,
-        clientRequisites.kind,
-        clientRequisites.bankName,
-        clientRequisites.phone,
-        clientRequisites.cardLast4,
-        clientRequisites.network,
-        clientRequisites.addressHint,
-        clientRequisites.holderName,
-        clientRequisites.accountLast4,
-        clientRequisites.qrHint,
-        clientRequisites.promptpayIdType,
-        clientRequisites.alipayAccount,
+        merchantUsers.role,
+        ...recipientColumns,
       ),
     ctx.db
       .select({ at: submittedStep, n: count() })
@@ -462,17 +569,101 @@ export async function breakdownMerchant(
       .where(and(mine, completedIn))
       .orderBy(sql`${minutes} desc`, exchangeRequests.completedAt)
       .limit(1),
+    /*
+     * Разных получателей на шаге — записью из видимых полей, а не
+     * ссылкой на запись: по API запись заводится на каждую заявку, и
+     * счёт ссылок назвал бы двадцать человек там, где была одна карта.
+     */
+    ctx.db
+      .select({
+        at: submittedStep,
+        n: sql`count(distinct (${sql.join(
+          recipientColumns.map((column) => sql`${column}`),
+          sql`, `,
+        )}))`.mapWith(Number),
+      })
+      .from(exchangeRequests)
+      .innerJoin(clientRequisites, eq(exchangeRequests.requisitesId, clientRequisites.id))
+      .where(and(mine, submittedIn))
+      .groupBy(submittedStep),
+    /*
+     * Когда каждому получателю мерчант впервые подал заявку — за всё
+     * время и по всему кабинету, чем бы она ни кончилась: «новый» —
+     * свойство получателя, и отбор «только я» его не меняет. Считается
+     * по подаче, а не по оплате (см. `fresh`). Спрашивается только о
+     * тех, кто в период попал.
+     */
+    ctx.db
+      .select({
+        ...recipientSelect,
+        first: sql<Date>`min(${exchangeRequests.createdAt})`.mapWith(exchangeRequests.createdAt),
+      })
+      .from(exchangeRequests)
+      .innerJoin(clientRequisites, eq(exchangeRequests.requisitesId, clientRequisites.id))
+      .where(and(ofMerchant, lt(exchangeRequests.createdAt, window.to)))
+      .groupBy(...recipientColumns)
+      // Граница — с явным типом: у агрегата нет колонки, по которой
+      // драйвер узнал бы, что перед ним момент, а не строка.
+      .having(sql`max(${exchangeRequests.createdAt}) >= ${window.from.toISOString()}::timestamptz`),
+    ctx.db
+      .select({ at: completedDay, n: count() })
+      .from(exchangeRequests)
+      .where(and(mine, completedIn))
+      .groupBy(completedDay)
+      .orderBy(sql`count(*) desc`, completedDay)
+      .limit(1),
+    ctx.db
+      .select({
+        code: exchangeRequests.fromCode,
+        amount: sql<string>`percentile_disc(0.5) within group (order by ${exchangeRequests.fromAmount})`,
+      })
+      .from(exchangeRequests)
+      .where(and(mine, completedIn))
+      .groupBy(exchangeRequests.fromCode),
+    ctx.db
+      .select({
+        minutes: sql<string | null>`percentile_disc(0.5) within group (order by ${minutes})`,
+      })
+      .from(exchangeRequests)
+      .where(and(mine, completedIn)),
   ]);
 
   /* ── Пять разрезов из одной группировки ────────────────────────── */
+
+  /*
+   * Если два ряда группировки сошлись в один ключ — а `recipientKey`
+   * склеивает пустое значение с пустой строкой, которые база различает, —
+   * первой считается самая ранняя дата. Операции пустых строк в
+   * реквизиты не пишут, но «новый» при таком совпадении не должен
+   * зависеть от того, какой ряд база отдала последним.
+   */
+  const firstSubmittedAt = new Map<string, number>();
+  for (const row of firstSubmitted) {
+    const key = recipientKey(row);
+    const first = row.first.getTime();
+    firstSubmittedAt.set(key, Math.min(first, firstSubmittedAt.get(key) ?? first));
+  }
+  const isFresh = (row: RecipientFields): boolean => {
+    const first = firstSubmittedAt.get(recipientKey(row));
+    return first !== undefined && first >= window.from.getTime();
+  };
 
   const directions = new Map<string, { row: ComboRow; bucket: Bucket }>();
   const methods = new Map<PayoutMethod | 'none', Bucket>();
   const recipients = new Map<string, { row: ComboRow; bucket: Bucket }>();
   const sources = new Map<ExchangeRequestSource | 'none', Bucket>();
   const staff = new Map<string, { row: ComboRow; bucket: Bucket }>();
+  const given = new Map<string, { amount: Amount; count: number }>();
+  const received = new Map<string, { amount: Amount; count: number }>();
 
   for (const row of combos as ComboRow[]) {
+    if (row.completed > 0) {
+      addMoney(given, row.fromCode, row.amount, row.completed);
+      // Полученное бывает пустым, пока менеджер не назвал курс; у
+      // исполненной оно есть всегда, но пустое сложилось бы в ноль.
+      if (row.received !== null) addMoney(received, row.toCode, row.received, row.completed);
+    }
+
     const direction = `${row.fromCode}\u0000${row.toCode}\u0000${row.kind}`;
     const inDirection = directions.get(direction) ?? { row, bucket: emptyBucket() };
     addTo(inDirection.bucket, row);
@@ -532,9 +723,16 @@ export async function breakdownMerchant(
       promptpayIdType: row.promptpayIdType,
       alipayAccount: row.alipayAccount,
       ...sliceOf(bucket),
+      lastSubmittedAt: bucket.last === null ? null : new Date(bucket.last),
+      fresh: isFresh(row),
     }))
     .sort(unknownLast((one) => one.kind));
   const byRecipient = allRecipients.slice(0, RECIPIENTS_SHOWN);
+  // Получатели — только названные и только те, кому в период подавали:
+  // заявка без записи получателя человеком не считается, а исполненная
+  // в период по давней подаче — не повод считать её получателя.
+  const counted = allRecipients.filter((one) => one.kind !== null && one.submitted > 0);
+  const freshCount = counted.filter((one) => one.fresh).length;
 
   const bySource = [...sources.entries()]
     .map(([source, bucket]) => ({
@@ -547,6 +745,7 @@ export async function breakdownMerchant(
     .map(({ row, bucket }) => ({
       userId: row.submittedByUserId,
       name: row.submittedByName,
+      role: row.submittedByRole,
       ...sliceOf(bucket),
     }))
     .sort(unknownLast((one) => one.userId));
@@ -554,6 +753,7 @@ export async function breakdownMerchant(
   /* ── Динамика ──────────────────────────────────────────────────── */
 
   const submittedBy = new Map(submittedSeries.map((row) => [row.at, row.n]));
+  const recipientsBy = new Map(recipientsByStep.map((row) => [row.at, row.n]));
   const cancelledBy = new Map(cancelledSeries.map((row) => [row.at, row.n]));
   const completedBy = new Map<string, Bucket>();
   for (const row of completedSeries) {
@@ -581,6 +781,7 @@ export async function breakdownMerchant(
       completed: done?.completed ?? 0,
       cancelled: cancelledBy.get(at) ?? 0,
       turnover: done ? moneyOf(done) : [],
+      recipients: recipientsBy.get(at) ?? 0,
     };
   });
 
@@ -601,6 +802,22 @@ export async function breakdownMerchant(
     (best, one) => (one.submitted > 0 && (best === null || one.submitted > best.submitted) ? one : best),
     null,
   );
+
+  const load = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
+  for (const row of clock) {
+    const line = load[row.weekday - 1];
+    if (line !== undefined && row.hour >= 0 && row.hour < 24) line[row.hour] = (line[row.hour] ?? 0) + row.n;
+  }
+
+  const codes = [...new Set([...given.keys(), ...received.keys()])].sort((a, b) => a.localeCompare(b));
+  const byCurrency: MerchantCurrencySlice[] = codes.map((code) => ({
+    code,
+    given: given.get(code) ?? null,
+    received: received.get(code) ?? null,
+  }));
+
+  const best = bestDay[0];
+  const middle = medianMinutes[0]?.minutes;
 
   return {
     period: window,
@@ -625,6 +842,16 @@ export async function breakdownMerchant(
         .filter((row) => row.weekday === index + 1)
         .reduce((total, row) => total + row.n, 0),
     })),
+    load,
+    recipients: {
+      total: counted.length,
+      fresh: freshCount,
+      returning: counted.length - freshCount,
+    },
+    byCurrency,
+    medianTicket: medianTicket
+      .map((row) => ({ code: row.code, amount: Money.toAmount(row.amount) }))
+      .sort((a, b) => a.code.localeCompare(b.code)),
     records: {
       busiestStep: busiest === null ? null : { at: busiest.at, submitted: busiest.submitted },
       largest: largest
@@ -637,8 +864,24 @@ export async function breakdownMerchant(
         .sort((a, b) => a.code.localeCompare(b.code)),
       fastest: takeRecord(fastest),
       slowest: takeRecord(slowest),
+      bestDay: best === undefined ? null : { at: best.at, completed: best.n },
+      medianMinutes: middle === null || middle === undefined ? null : Number(middle),
     },
   };
+}
+
+/** Прибавить сумму к валюте в карте: суммы по валютам копятся порознь. */
+function addMoney(
+  into: Map<string, { amount: Amount; count: number }>,
+  code: string,
+  amount: string | null,
+  count: number,
+): void {
+  const line = into.get(code) ?? { amount: Money.ZERO, count: 0 };
+  into.set(code, {
+    amount: Money.add(line.amount, Money.toAmount(amount ?? '0')),
+    count: line.count + count,
+  });
 }
 
 /**

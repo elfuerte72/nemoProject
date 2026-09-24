@@ -26,6 +26,7 @@ export function Stat({
   tone = 'plain',
   href,
   current = false,
+  wide = false,
 }: {
   label: string;
   value: ReactNode;
@@ -40,15 +41,25 @@ export function Stat({
    * `aria-current`.
    */
   current?: boolean;
+  /**
+   * Плитка в две колонки — для денег по валютам: у суммы и «было» в
+   * одной строке в узкой плитке места нет, и она вытягивалась бы
+   * втрое выше соседей.
+   */
+  wide?: boolean;
 }) {
-  const className = `stat stat--${tone}${current ? ' stat--current' : ''}`;
+  const className = `stat stat--${tone}${current ? ' stat--current' : ''}${wide ? ' stat--wide' : ''}`;
   const body = (
     <>
       <span className="stat__label">
         <span className="stat__dot" aria-hidden />
         {label}
       </span>
-      <span className="stat__value">{value}</span>
+      {/*
+        Число — блоком, а не строкой: в плитку кладут и список денег по
+        валютам, а список внутри строчного элемента — невалидная разметка.
+      */}
+      <div className="stat__value">{value}</div>
       {note ? <span className="stat__note">{note}</span> : undefined}
     </>
   );

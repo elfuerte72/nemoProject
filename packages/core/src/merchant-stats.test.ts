@@ -246,6 +246,62 @@ describe('сводка мерчанта за период', () => {
     expect(stats.current.turnover).toEqual([]);
   });
 
+  /**
+   * «Только я» в аналитике: числа того, кто подал, а не всей команды.
+   * Заявка по ключу API в них не попадает — она ничья, — и заявка
+   * коллеги тоже, сколько бы она ни стоила.
+   */
+  it('по отбору «только я» считает поданное этим человеком', async () => {
+    const period = { from: at(7, 0), to: at(0, 0) };
+    const added = await core.addMerchantUser(merchant, {
+      email: 'anna@example.com',
+      password: 'правильная лошадь батарейка',
+      name: 'Анна',
+      role: 'operator',
+    });
+    const anna = {
+      type: 'merchant',
+      merchantId: merchant.merchantId,
+      userId: added.id,
+      role: 'operator',
+    } as const;
+    const byKey = { ...anna, userId: null } as const;
+    await givenRequest({
+      owner: anna,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      submittedAt: at(4),
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '900',
+      fate: 'completed',
+      submittedAt: at(3),
+    });
+    await givenRequest({
+      owner: byKey,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '50',
+      fate: 'open',
+      submittedAt: at(2),
+    });
+
+    const mine = await core.summarizeMerchant(merchant, merchant.merchantId, period, {
+      submittedBy: added.id,
+    });
+    const all = await core.summarizeMerchant(merchant, merchant.merchantId, period);
+
+    expect(mine.current).toMatchObject({ submitted: 1, completed: 1, open: 0 });
+    expect(mine.current.turnover).toEqual([{ code: 'USDT', amount: '100', count: 1 }]);
+    expect(mine.series.reduce((total, one) => total + one.submitted, 0)).toBe(1);
+    expect(all.current).toMatchObject({ submitted: 3, completed: 2, open: 1 });
+  });
+
   it('считает вызовы API с долей отказов и доставки вебхуков', async () => {
     const period = { from: at(7, 0), to: at(0, 0) };
     const key = await core.issueApiKey(merchant, { label: 'Сайт' });

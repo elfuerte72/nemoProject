@@ -1,22 +1,17 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
+import { CurrencyFlag } from '@nemo/flags';
 import {
   EmptyState,
   ExchangeCountTiles,
   firstParam,
-  formatShare,
   Greeting,
-  IntegrationTiles,
   Moment,
-  MoneyCompare,
   PeriodChips,
   QuietRefresh,
-  Stat,
   Stats,
-  trendTone,
 } from '@nemo/ui';
 import { formatMoney } from '@nemo/ui/format';
-import { averageByCurrency, formatByCurrency } from '@nemo/ui/money-list';
 import { PERIOD_LABELS, TZ_COOKIE, dayOf, readTzOffset, resolvePeriod } from '@nemo/ui/period';
 import { merchantRoleCan, WEBHOOK_ENDPOINT_STATE_LABELS } from '@nemo/types';
 import { attentionOf } from '@/lib/attention';
@@ -28,6 +23,7 @@ import { merchantStats, openCount, requestCounts, viewer } from '@/lib/reads';
 import { AttentionLine } from '@/app/ui/attention-line';
 import { SeriesBars } from '@/app/ui/series-bars';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
+import { MoneyFlags } from '@/app/ui/money-flags';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +37,14 @@ export const dynamic = 'force-dynamic';
  * приходит тем же ответом, что плитки. Последние заявки остаются на
  * первом экране: обзор открывают, чтобы взглянуть на заявку, а не
  * только на плитки.
+ *
+ * С 24 сентября 2026 обзор отвечает только на «что происходит»: сколько
+ * подано, исполнено, отменено, что в работе и какой оборот. Срок до
+ * исполнения, конверсия, средний чек, вызовы API и доставки вебхуков
+ * переехали в «Аналитику» — это числа для разбора, а не для ежедневного
+ * взгляда, и на обзоре они отодвигали последние заявки на второй экран.
+ * Тревога о сломанной интеграции осталась строкой над приветствием:
+ * она про действие сегодня, а не про число за период.
  *
  * Подсказки «как это устроено» здесь нет с 20 сентября 2026. Она
  * занимала полосу между приветствием и числами — то самое место, куда
@@ -166,9 +170,9 @@ export default async function OverviewPage({
           </h2>
           <span className="section__rule" />
           {/*
-            Вход в аналитику стоит здесь, а не в меню: отдельный пункт
-            обещал бы вторую правду о тех же числах, а разрезы за них
-            спрашивают тогда же, когда смотрят на плитки.
+            «Аналитика» с 24 сентября 2026 есть и в меню, а кнопка здесь
+            осталась: разрезы спрашивают тогда же, когда смотрят на
+            плитки, и кнопка ведёт в тот же период, что выбран на обзоре.
           */}
           <Link className="btn btn--soft btn--tiny" href={`/analytics?${csvQuery}`}>
             Аналитика
@@ -186,22 +190,11 @@ export default async function OverviewPage({
         />
 
         <Stats>
-          <ExchangeCountTiles current={current} previous={previous} openHref="/requests" />
-          <Stat
-            label="Конверсия"
-            value={formatShare(current.conversion)}
-            note={
-              current.conversion === null
-                ? 'поданных в период нет'
-                : `исполнено из поданных · было ${formatShare(previous.conversion)}`
-            }
-            tone={trendTone(current.conversion, previous.conversion)}
-          />
-          <IntegrationTiles
-            apiCalls={current.apiCalls}
-            webhookDeliveries={current.webhookDeliveries}
-            callsHref="/calls"
-            webhooksHref="/webhooks"
+          <ExchangeCountTiles
+            current={current}
+            previous={previous}
+            openHref="/requests"
+            duration={false}
           />
         </Stats>
 
@@ -209,19 +202,7 @@ export default async function OverviewPage({
           <section className="card">
             <h2 className="card__title">Оборот</h2>
             <p className="card__note">Отдано по исполненным заявкам — по каждой валюте отдельно</p>
-            <MoneyCompare now={current.turnover} before={previous.turnover} />
-          </section>
-
-          <section className="card">
-            <h2 className="card__title">Средний чек</h2>
-            <p className="card__note">Оборот на число исполненных заявок — по каждой валюте</p>
-            {/*
-              Карточкой, а не плиткой: у мерчанта две валюты отдачи и
-              больше, а плитка рассчитана на одно число — двумя она
-              разъезжается на три строки и забирает полосу себе.
-            */}
-            <p className="money">{formatByCurrency(averageByCurrency(current.turnover))}</p>
-            <p className="muted">было {formatByCurrency(averageByCurrency(previous.turnover))}</p>
+            <MoneyFlags lines={current.turnover} before={previous.turnover} size={22} />
           </section>
 
           <section className="card">
@@ -301,11 +282,23 @@ export default async function OverviewPage({
             {recent.map((request) => (
               <li key={request.id} className="row">
                 <Link className="row__main" href={`/requests/${request.id}`}>
-                  <span className="row__title">
-                    {formatMoney(request.fromAmount, request.fromCode)} →{' '}
-                    {request.toAmount
-                      ? formatMoney(request.toAmount, request.toCode)
-                      : request.toCode}
+                  {/*
+                    Стороны сделки — значком валюты, как в таблицах
+                    «Счетов» и «Возвратов»: пару узнают по флагам раньше,
+                    чем прочтут коды.
+                  */}
+                  <span className="row__title row__title--deal">
+                    <span className="money-cell">
+                      <CurrencyFlag code={request.fromCode} size={18} />
+                      {formatMoney(request.fromAmount, request.fromCode)}
+                    </span>
+                    <span className="row__arrow">→</span>
+                    <span className="money-cell">
+                      <CurrencyFlag code={request.toCode} size={18} />
+                      {request.toAmount
+                        ? formatMoney(request.toAmount, request.toCode)
+                        : request.toCode}
+                    </span>
                   </span>
                   <span className="row__meta">
                     {request.reference ? `${request.reference} · ` : ''}

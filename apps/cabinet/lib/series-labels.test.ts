@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStep, SERIES_STEP_KEYS, STEP_KEYS } from './analytics-texts';
+import { ANALYTICS_STEP_KEYS, resolveStep, SERIES_STEP_KEYS } from './analytics-texts';
 import { barLabel, barLabelled, barTitle, SERIES_SPAN } from './series-labels';
 
 /**
@@ -59,17 +59,17 @@ describe('состав выбора', () => {
   });
 
   /*
-   * В аналитике ряд идёт по выбранному наверху периоду, а он не длиннее
-   * ста восьмидесяти дней: квартальными столбиками там нечего
-   * сравнивать — их было бы два.
+   * В аналитике ряд идёт по выбранному наверху периоду, а быстрые чипы
+   * не длиннее года: квартальных столбиков вышло бы четыре. Вместо
+   * квартала там «Авто» — длинный свой период крупнеет сам.
    */
-  it('в аналитике квартала нет', () => {
-    expect(STEP_KEYS).toEqual(['day', 'week', 'month']);
+  it('в аналитике квартала нет, есть «Авто»', () => {
+    expect(ANALYTICS_STEP_KEYS).toEqual(['auto', 'day', 'week', 'month']);
   });
 
   it('шаг из адреса сверяется со списком того экрана, который спрашивает', () => {
     expect(resolveStep('quarter', SERIES_STEP_KEYS)).toBe('quarter');
-    expect(resolveStep('quarter')).toBe('day');
+    expect(resolveStep('quarter', ['day', 'week', 'month'])).toBe('day');
     expect(resolveStep('годами', SERIES_STEP_KEYS)).toBe('day');
     expect(resolveStep(undefined, SERIES_STEP_KEYS)).toBe('day');
   });

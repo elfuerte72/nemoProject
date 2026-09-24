@@ -381,6 +381,7 @@ describe('разрезы мерчанта', () => {
       {
         userId: added.id,
         name: 'Анна',
+        role: 'operator',
         submitted: 2,
         completed: 1,
         cancelled: 0,
@@ -390,6 +391,7 @@ describe('разрезы мерчанта', () => {
       {
         userId: null,
         name: null,
+        role: null,
         submitted: 1,
         completed: 0,
         cancelled: 0,
@@ -607,6 +609,301 @@ describe('разрезы мерчанта', () => {
     await expect(
       core.breakdownMerchant(merchant, other.merchantId, period()),
     ).rejects.toThrow(/не найден/i);
+  });
+});
+
+/**
+ * Разрезы раздела «Аналитика», собранного по образцу Love&Pay
+ * (24 сентября 2026): отбор «только я», получатели как клиенты —
+ * сколько их, кто новый и кто вернулся, — валюты с обеих сторон,
+ * карта нагрузки, лучший день и медианы. Арифметика та же, ADR-0013.
+ */
+describe('разрезы аналитики по образцу Love&Pay', () => {
+  it('по отбору «только я» считает поданное этим человеком', async () => {
+    const added = await core.addMerchantUser(merchant, {
+      email: 'anna@example.com',
+      password: 'правильная лошадь батарейка',
+      name: 'Анна',
+      role: 'operator',
+    });
+    const anna = {
+      type: 'merchant',
+      merchantId: merchant.merchantId,
+      userId: added.id,
+      role: 'operator',
+    } as const;
+    await givenRequest({
+      owner: anna,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      submittedAt: at(5),
+      finishedAt: at(5, 13),
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '900',
+      fate: 'completed',
+      submittedAt: at(4),
+      finishedAt: at(4, 13),
+      payout: OTHER_CARD,
+    });
+    await givenRequest({
+      owner: { ...anna, userId: null },
+      fromCode: 'RUB',
+      toCode: 'USDT',
+      fromAmount: '50000',
+      fate: 'open',
+      submittedAt: at(3),
+      source: 'api',
+    });
+
+    const cut = await core.breakdownMerchant(merchant, merchant.merchantId, period(), {
+      submittedBy: added.id,
+    });
+
+    expect(cut.byStaff.map((one) => one.name)).toEqual(['Анна']);
+    expect(cut.byDirection).toHaveLength(1);
+    expect(cut.series.reduce((total, one) => total + one.submitted, 0)).toBe(1);
+    expect(cut.funnel.stages.reduce((total, one) => total + one.count, 0)).toBe(1);
+    expect(cut.records.largest).toEqual([
+      { code: 'USDT', amount: '100', requestId: expect.any(String), reference: null },
+    ]);
+    expect(cut.recipients).toEqual({ total: 1, fresh: 1, returning: 0 });
+  });
+
+  /**
+   * Получатель в аналитике — то, чем у Love&Pay служит клиент: сколько
+   * их за период, сколько пришли впервые и сколько вернулись. Новый —
+   * тот, кому мерчант прежде не подавал ни одной заявки, а не тот, кто
+   * впервые попал в выбранные дни.
+   */
+  it('считает получателей: всего, новых и вернувшихся, и когда им подавали последний раз', async () => {
+    // Карта Сбербанка знакома с прошлого месяца — в период она пришла
+    // не новой, хоть и заявка по ней в нём одна.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      submittedAt: at(30),
+      finishedAt: at(30, 13),
+      payout: CARD,
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      submittedAt: at(5),
+      finishedAt: at(5, 13),
+      payout: CARD,
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '40',
+      fate: 'open',
+      submittedAt: at(4),
+      payout: OTHER_CARD,
+    });
+    const later = at(2, 15);
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '60',
+      fate: 'open',
+      submittedAt: later,
+      payout: OTHER_CARD,
+    });
+    // Кошелёк дважды за период, но впервые: он новый, а не вернувшийся.
+    // Вернувшийся — тот, кому подавали и до периода, а не тот, кому
+    // подали в нём больше одной заявки.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'RUB',
+      toCode: 'USDT',
+      fromAmount: '50000',
+      fate: 'open',
+      submittedAt: at(1),
+      payout: WALLET,
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'RUB',
+      toCode: 'USDT',
+      fromAmount: '30000',
+      fate: 'open',
+      submittedAt: at(1, 15),
+      payout: WALLET,
+    });
+
+    const cut = await core.breakdownMerchant(merchant, merchant.merchantId, period());
+
+    expect(cut.recipients).toEqual({ total: 3, fresh: 2, returning: 1 });
+    const tbank = cut.byRecipient.find((one) => one.bankName === 'Т-Банк');
+    expect(tbank).toMatchObject({ submitted: 2, fresh: true });
+    expect(tbank?.lastSubmittedAt?.getTime()).toBe(later.getTime());
+    const sber = cut.byRecipient.find((one) => one.bankName === 'Сбербанк');
+    expect(sber).toMatchObject({ submitted: 1, fresh: false });
+  });
+
+  it('раскладывает деньги по валютам: сколько отдано и сколько получено', async () => {
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      submittedAt: at(5),
+      finishedAt: at(5, 13),
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'RUB',
+      toCode: 'USDT',
+      fromAmount: '8000',
+      fate: 'completed',
+      submittedAt: at(4),
+      finishedAt: at(4, 13),
+    });
+    // Незавершённая ни в отданное, ни в полученное не идёт.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '70',
+      fate: 'open',
+      submittedAt: at(3),
+    });
+
+    const cut = await core.breakdownMerchant(merchant, merchant.merchantId, period());
+
+    // Курс сцены — «80», и названный курс операция умножает на отданное
+    // в любую сторону: сто USDT дают 8 000 RUB, 8 000 RUB — 640 000 USDT.
+    // Правдоподобие курса здесь ни при чём — проверяется, что отданное
+    // и полученное легли каждое в свою валюту.
+    expect(cut.byCurrency).toEqual([
+      {
+        code: 'RUB',
+        given: { amount: '8000', count: 1 },
+        received: { amount: '8000', count: 1 },
+      },
+      {
+        code: 'USDT',
+        given: { amount: '100', count: 1 },
+        received: { amount: '640000', count: 1 },
+      },
+    ]);
+  });
+
+  it('строит карту нагрузки по дням недели и часам того, кто смотрит', async () => {
+    const moment = at(3, 10);
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'open',
+      submittedAt: moment,
+    });
+
+    const bangkok = await core.breakdownMerchant(merchant, merchant.merchantId, period(), {
+      offsetMinutes: 7 * 60,
+    });
+
+    expect(bangkok.load).toHaveLength(7);
+    expect(bangkok.load.every((row) => row.length === 24)).toBe(true);
+    const local = new Date(moment.getTime() + 7 * 60 * 60 * 1000);
+    const weekday = (local.getUTCDay() + 6) % 7;
+    expect(bangkok.load[weekday]?.[local.getUTCHours()]).toBe(1);
+    expect(bangkok.load.flat().reduce((total, one) => total + one, 0)).toBe(1);
+  });
+
+  it('считает получателей на каждом шаге динамики', async () => {
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'open',
+      submittedAt: at(3, 9),
+      payout: CARD,
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'open',
+      submittedAt: at(3, 11),
+      payout: CARD,
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'open',
+      submittedAt: at(3, 13),
+      payout: OTHER_CARD,
+    });
+
+    const cut = await core.breakdownMerchant(merchant, merchant.merchantId, period());
+
+    const day = cut.series.find((one) => one.at === dayKeyOf(at(3)));
+    expect(day).toMatchObject({ submitted: 3, recipients: 2 });
+    expect(cut.series.filter((one) => one.at !== day?.at).every((one) => one.recipients === 0)).toBe(
+      true,
+    );
+  });
+
+  it('называет лучший день, медиану чека и медиану срока исполнения', async () => {
+    // Два исполнения в один день — он и лучший, какой бы шаг ни был выбран.
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '100',
+      fate: 'completed',
+      submittedAt: at(5, 9),
+      finishedAt: at(5, 10),
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '900',
+      fate: 'completed',
+      submittedAt: at(5, 11),
+      finishedAt: at(5, 14),
+    });
+    await givenRequest({
+      owner: merchant,
+      fromCode: 'USDT',
+      toCode: 'RUB',
+      fromAmount: '300',
+      fate: 'completed',
+      submittedAt: at(2, 9),
+      finishedAt: at(2, 11),
+    });
+
+    const cut = await core.breakdownMerchant(merchant, merchant.merchantId, period(), {
+      step: 'week',
+    });
+
+    expect(cut.records.bestDay).toEqual({ at: dayKeyOf(at(5)), completed: 2 });
+    // Медиана — середина ряда 100, 300, 900: тройка заявок, а не среднее.
+    expect(cut.medianTicket).toEqual([{ code: 'USDT', amount: '300' }]);
+    // Сроки 60, 120 и 180 минут: середина — два часа.
+    expect(cut.records.medianMinutes).toBeCloseTo(120, 0);
   });
 });
 
