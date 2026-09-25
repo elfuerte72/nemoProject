@@ -4,7 +4,8 @@ import { useRef, useState } from 'react';
 import type { CodeExample } from '@/lib/webhook-guide';
 
 /**
- * Пример проверки подписи с переключателем языков.
+ * Пример кода с переключателем языков: проверка подписи вебхука в «Как
+ * встроить», подпись запроса на странице «API».
  *
  * Клиентским компонентом, а не тремя блоками подряд: три листинга
  * одного и того же уводят взгляд, а разработчик читает свой. Выбор в
@@ -18,7 +19,14 @@ import type { CodeExample } from '@/lib/webhook-guide';
  * подходит: там выбор живёт в адресе, а тут он ничего не меняет за
  * пределами блока.
  */
-export function SignatureExamples({ examples }: { examples: readonly CodeExample[] }) {
+export function CodeExamples({
+  examples,
+  id,
+}: {
+  readonly examples: readonly CodeExample[];
+  /** Начало идентификаторов вкладок: панель ссылается на свою вкладку по нему. */
+  readonly id: string;
+}) {
   const [language, setLanguage] = useState(examples[0]?.language);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const chosen = examples.find((one) => one.language === language) ?? examples[0];
@@ -43,9 +51,9 @@ export function SignatureExamples({ examples }: { examples: readonly CodeExample
               }}
               type="button"
               role="tab"
-              id={`signature-tab-${example.language}`}
+              id={`${id}-tab-${example.language}`}
               aria-selected={current}
-              aria-controls={`signature-panel-${chosen.language}`}
+              aria-controls={`${id}-panel-${chosen.language}`}
               // Один Tab на весь ряд: внутрь ряда ведут стрелки, а
               // следующий Tab уносит к самому листингу.
               tabIndex={current ? 0 : -1}
@@ -66,8 +74,8 @@ export function SignatureExamples({ examples }: { examples: readonly CodeExample
       <pre
         className="code"
         role="tabpanel"
-        id={`signature-panel-${chosen.language}`}
-        aria-labelledby={`signature-tab-${chosen.language}`}
+        id={`${id}-panel-${chosen.language}`}
+        aria-labelledby={`${id}-tab-${chosen.language}`}
         // Листинг прокручивается вбок, и добраться до прокрутки нужно с
         // клавиатуры тоже.
         tabIndex={0}

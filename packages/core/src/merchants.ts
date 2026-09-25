@@ -14,7 +14,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from '@nemo/crypto';
-import { merchantEmailTokens, merchants, merchantUsers } from '@nemo/db';
+import { merchantEmailTokens, merchants, merchantSessions, merchantUsers } from '@nemo/db';
 import {
   looksLikeEmail,
   looksLikePassword,
@@ -36,6 +36,7 @@ import {
   type Owner,
 } from './actor.js';
 import type { CoreConfig, Executor } from './context.js';
+import { sessionIsLive, startMerchantSession, type SessionClient } from './merchant-sessions.js';
 import {
   ConflictError,
   ForbiddenError,
@@ -129,6 +130,13 @@ export interface MerchantSession {
   readonly merchantId: string;
   /** Кто именно вошёл: людей у мерчанта несколько (тикет 17). */
   readonly userId: string;
+  /**
+   * Номер записи о входе (`merchant_sessions`): его несёт кука, по нему
+   * сессию отключают по одной. С 24 сентября 2026.
+   */
+  readonly sessionId: string;
+  /** До какого момента действует сессия: тот же срок ставится куке. */
+  readonly expiresAt: Date;
   readonly sessionEpoch: number;
   readonly role: MerchantUserRole;
   /** Название организации — его кабинет ставит в шапку. */
@@ -519,7 +527,7 @@ export async function verifyMerchantEmail(
  */
 export async function beginMerchantLogin(
   ctx: CoreConfig,
-  input: { email: string; password: string },
+  input: { email: string; password: string } & SessionClient,
 ): Promise<MerchantSession> {
   const email = input.email.trim().toLowerCase();
   const [found] = await ctx.db
@@ -548,7 +556,8 @@ export async function beginMerchantLogin(
   if (found.user.disabledAt !== null) {
     throw new ForbiddenError('Доступ в кабинет закрыт: спросите владельца кабинета');
   }
-  return toSession(found.user, found.merchant);
+  const started = await startMerchantSession(ctx.db, found.user, input);
+  return toSession(found.user, found.merchant, started);
 }
 
 /**
@@ -563,10 +572,16 @@ function unknownMerchantHash(): Promise<string> {
   return absentHash;
 }
 
-function toSession(user: MerchantUserRow, merchant: MerchantRow): MerchantSession {
+function toSession(
+  user: MerchantUserRow,
+  merchant: MerchantRow,
+  session: { readonly id: string; readonly expiresAt: Date },
+): MerchantSession {
   return {
     merchantId: merchant.id,
     userId: user.id,
+    sessionId: session.id,
+    expiresAt: session.expiresAt,
     sessionEpoch: user.sessionEpoch,
     role: user.role,
     name: merchant.name,
@@ -577,32 +592,36 @@ function toSession(user: MerchantUserRow, merchant: MerchantRow): MerchantSessio
 }
 
 /**
- * Сессия по куке: тот ли это человек и то ли поколение.
+ * Сессия по куке: тот ли это человек и жива ли его запись о входе —
+ * не отключена, не истекла и того же поколения (`sessionIsLive`).
  *
- * Поколение сверяется здесь, а не в приложении: правило «смена пароля
- * обрывает сессии» должно действовать при любом пути к кабинету, а
- * маршрутов у него много.
+ * Проверка здесь, а не в приложении: правило «отключённая сессия не
+ * пускает» должно действовать при любом пути к кабинету, а маршрутов у
+ * него много.
  *
- * Закрытый доступ обрывает сессию тем же поколением, что и смена
- * пароля: второго способа не пускать вошедшего здесь не заводится —
- * два способа разошлись бы, и один из них однажды забыли бы позвать.
+ * Закрытый доступ и смена пароля обрывают сессию поколением: второго
+ * способа не пускать всех разом здесь не заводится — два способа
+ * разошлись бы, и один из них однажды забыли бы позвать.
  */
 export async function getMerchantSession(
   ctx: CoreConfig,
   userId: string,
-  sessionEpoch: number,
+  sessionId: string,
+  client: SessionClient = {},
 ): Promise<MerchantSession> {
+  const signedOut = new ForbiddenError('Сессия больше не действует: войдите заново');
+  if (!(await sessionIsLive(ctx.db, userId, sessionId, client))) throw signedOut;
+
   const [found] = await ctx.db
-    .select({ user: merchantUsers, merchant: merchants })
+    .select({ user: merchantUsers, merchant: merchants, expiresAt: merchantSessions.expiresAt })
     .from(merchantUsers)
     .innerJoin(merchants, eq(merchants.id, merchantUsers.merchantId))
+    .innerJoin(merchantSessions, eq(merchantSessions.id, sessionId))
     .where(eq(merchantUsers.id, userId))
     .limit(1);
 
-  if (!found || found.user.sessionEpoch !== sessionEpoch) {
-    throw new ForbiddenError('Сессия больше не действует: войдите заново');
-  }
-  return toSession(found.user, found.merchant);
+  if (!found) throw signedOut;
+  return toSession(found.user, found.merchant, { id: sessionId, expiresAt: found.expiresAt });
 }
 
 /**

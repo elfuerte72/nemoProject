@@ -4,6 +4,7 @@ import { apiKeys, merchants } from '@nemo/db';
 import { requireMerchantAbility, requireStaff, type Actor } from './actor.js';
 import type { CoreConfig } from './context.js';
 import { ConflictError, InvalidInputError, NotFoundError } from './errors.js';
+import { apiAddressesOf } from './api-addresses.js';
 import { merchantOwnerRecipient, requireActiveMerchant } from './merchants.js';
 import type { Notification } from './notifications.js';
 import { randomAlphanumeric } from './secrets.js';
@@ -57,6 +58,11 @@ export type ApiKeyAuth =
       readonly keyId: string;
       /** Требует ли мерчант подписи HMAC у своих запросов. */
       readonly signatureRequired: boolean;
+      /**
+       * С каких адресов мерчант разрешил вызовы; пустой — с любых.
+       * Сверяет адаптер (`addressAllowed`): адрес вызова знает он.
+       */
+      readonly allowedAddresses: readonly string[];
     }
   | { readonly ok: false; readonly reason: 'unknown' }
   | {
@@ -313,6 +319,7 @@ export async function authenticateApiKey(ctx: CoreConfig, secret: string): Promi
     merchantId: found.merchantId,
     keyId: found.keyId,
     signatureRequired: found.signatureRequired,
+    allowedAddresses: await apiAddressesOf(ctx, found.merchantId),
   };
 }
 

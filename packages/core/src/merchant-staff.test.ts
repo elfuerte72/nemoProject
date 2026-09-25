@@ -126,10 +126,14 @@ describe('роль и пароль человека', () => {
   it('роль меняется, и сессия при этом не обрывается', async () => {
     const owner = await givenMerchant();
     const added = await core.addMerchantUser(owner, OPERATOR);
+    const before = await core.beginMerchantLogin({
+      email: OPERATOR.email,
+      password: OPERATOR.password,
+    });
 
     const changed = await core.updateMerchantUser(owner, added.id, { role: 'viewer' });
     expect(changed.role).toBe('viewer');
-    expect((await core.getMerchantSession(added.id, 1)).role).toBe('viewer');
+    expect((await core.getMerchantSession(added.id, before.sessionId)).role).toBe('viewer');
   });
 
   it('владельцу роль не меняется', async () => {
@@ -149,10 +153,14 @@ describe('роль и пароль человека', () => {
   it('новый пароль обрывает прежние сессии человека', async () => {
     const owner = await givenMerchant();
     const added = await core.addMerchantUser(owner, OPERATOR);
+    const before = await core.beginMerchantLogin({
+      email: OPERATOR.email,
+      password: OPERATOR.password,
+    });
 
     await core.setMerchantUserPassword(owner, added.id, 'другая длинная фраза');
 
-    await expect(core.getMerchantSession(added.id, 1)).rejects.toThrow();
+    await expect(core.getMerchantSession(added.id, before.sessionId)).rejects.toThrow();
     const session = await core.beginMerchantLogin({
       email: OPERATOR.email,
       password: 'другая длинная фраза',
@@ -173,12 +181,16 @@ describe('закрытие доступа', () => {
   it('закрытый не входит, а его сессия обрывается в ту же секунду', async () => {
     const owner = await givenMerchant();
     const added = await core.addMerchantUser(owner, OPERATOR);
-    expect((await core.getMerchantSession(added.id, 1)).userId).toBe(added.id);
+    const before = await core.beginMerchantLogin({
+      email: OPERATOR.email,
+      password: OPERATOR.password,
+    });
+    expect((await core.getMerchantSession(added.id, before.sessionId)).userId).toBe(added.id);
 
     const closed = await core.setMerchantUserAccess(owner, added.id, { allowed: false });
     expect(closed.disabledAt).not.toBeNull();
 
-    await expect(core.getMerchantSession(added.id, 1)).rejects.toThrow();
+    await expect(core.getMerchantSession(added.id, before.sessionId)).rejects.toThrow();
     await expect(
       core.beginMerchantLogin({ email: OPERATOR.email, password: OPERATOR.password }),
     ).rejects.toThrow(/доступ/i);

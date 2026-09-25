@@ -607,8 +607,9 @@ pnpm typecheck --force && pnpm exec turbo test --force && pnpm build --force
   и тест сверяет его с маршрутами. Ключам нужен `API_KEY_PREFIX`
   (`sk_live_` на боевом, `sk_test_` на песочнице), толчку панели о
   новой заявке — `ADMIN_URL` и `SCHEDULER_SECRET`, разделу «Песочница»
-  — `CABINET_SANDBOX_URL`; журнал вызовов чистит планировщик раз в
-  сутки: `POST /api/maintenance/purge-logs` с тем же секретом.
+  — `CABINET_SANDBOX_URL`; журнал вызовов и отжившие сессии кабинета
+  чистит планировщик раз в сутки: `POST /api/maintenance/purge-logs`
+  с тем же секретом.
   Вебхуки мерчантов разбирает воркер, живущий в процессе кабинета
   ([ADR-0018](docs/adr/0018-vebhuki-cherez-ishodyaschuyu-ochered-v-baze.md)):
   планировщика ему не нужно, но доставки идут, только пока кабинет

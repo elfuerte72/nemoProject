@@ -13,17 +13,32 @@ info:
 
     Ошибки — телом `{ "error": { "code", "message" } }`: код машинный,
     слова человеку. Коды: `unauthorized`, `invalid_signature`,
-    `rate_limited`, `invalid_input`, `not_found`, `forbidden`,
-    `transition_not_allowed`, `conflict`, `unavailable`, `internal`.
+    `address_not_allowed`, `rate_limited`, `invalid_input`, `not_found`,
+    `forbidden`, `transition_not_allowed`, `conflict`, `unavailable`,
+    `internal`.
 
-    Пределы — 100 вызовов в минуту и 1 000 в час на ключ; сверх них
-    ответ `429` с заголовком `retry-after` в секундах.
+    У каждого ответа есть заголовок `x-request-id` — идентификатор
+    вызова. По нему вызов находится в журнале вызовов кабинета; назовите
+    его поддержке, если что-то не так.
+
+    Пределы — 100 вызовов в минуту и 1 000 в час на ключ. Остаток
+    приходит в каждом ответе, где ключ действует и адрес разрешён:
+    `x-ratelimit-limit-minute`,
+    `x-ratelimit-remaining-minute`, `x-ratelimit-limit-hour`,
+    `x-ratelimit-remaining-hour` и `x-ratelimit-reset` — время ISO, когда
+    откроется окно, которое держит. Сверх предела ответ `429` с
+    заголовком `retry-after` в секундах.
 
     Подпись запроса — по желанию, включается в кабинете; включённая
     обязательна. Заголовки `x-timestamp` (Unix-время в секундах) и
     `x-signature` — HMAC-SHA256 ключом от строки
     `METHOD\npath?query\ntimestamp\nsha256(body)`, шестнадцатеричный.
     Окно пять минут, повтор той же подписи отвергается.
+
+    Разрешённые адреса — тоже по желанию, в кабинете, раздел «API». Пока
+    список пуст, вызовы принимаются с любого адреса; с первым адресом в
+    нём вызов с других получает `403 address_not_allowed`.
+
 servers:
   - url: /api/v1
     description: Тот же домен, что у кабинета — боевой или песочница.
@@ -92,6 +107,10 @@ paths:
                 payWithinMinutes: 120
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AddressNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /quote:
     post:
@@ -133,6 +152,10 @@ paths:
                   payoutDecimals: 2
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AddressNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '422':
           $ref: '#/components/responses/InvalidInput'
         '503':
@@ -202,6 +225,10 @@ paths:
                 nextCursor: null
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AddressNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '422':
           $ref: '#/components/responses/InvalidInput'
     post:
@@ -271,8 +298,12 @@ paths:
                   completedAt: null
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '403':
-          description: Мерчант ещё не одобрен или отключён
+          description: |
+            Мерчант ещё не одобрен или отключён — `forbidden`; вызов не с
+            разрешённого адреса — `address_not_allowed`
           content:
             application/json:
               schema:
@@ -319,6 +350,10 @@ paths:
                   completedAt: '2026-09-07T11:20:00.000Z'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AddressNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -359,6 +394,10 @@ paths:
                   completedAt: null
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AddressNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -407,6 +446,10 @@ paths:
                     createdAt: '2026-09-01T08:00:00.000Z'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AddressNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
     post:
       tags: [requisites]
       summary: Сохранить получателя
@@ -452,6 +495,10 @@ paths:
                   createdAt: '2026-09-07T10:00:00.000Z'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AddressNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '422':
           $ref: '#/components/responses/InvalidInput'
 
@@ -479,6 +526,10 @@ paths:
                 ok: true
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AddressNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -531,6 +582,30 @@ components:
             error:
               code: not_found
               message: 'Заявка не найдена'
+    AddressNotAllowed:
+      description: Вызов пришёл с адреса, которого нет в списке разрешённых
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: address_not_allowed
+              message: 'Вызовы с адреса 198.51.100.9 не разрешены: список разрешённых адресов — в кабинете, раздел «API»'
+    RateLimited:
+      description: Сверх предела вызовов — повторить через `retry-after` секунд
+      headers:
+        retry-after:
+          description: Через сколько секунд повторить
+          schema: { type: integer }
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: rate_limited
+              message: 'Слишком много вызовов: не больше 100 в минуту и 1000 в час на ключ. Повторите через 17 с.'
     Unavailable:
       description: Источник котировок молчит; повторить можно как есть
       content:

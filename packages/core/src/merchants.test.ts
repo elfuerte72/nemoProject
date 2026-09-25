@@ -194,6 +194,7 @@ describe('вход мерчанта', () => {
    */
   it('смена пароля увеличивает поколение сессии', async () => {
     const merchantId = await registered();
+    const before = await core.beginMerchantLogin({ email: ANKETA.email, password: ANKETA.password });
     const actor = await ownerActor();
 
     await core.changeMerchantPassword(actor, {
@@ -206,8 +207,10 @@ describe('вход мерчанта', () => {
       password: 'другая длинная фраза',
     });
     expect(session.sessionEpoch).toBe(2);
-    await expect(core.getMerchantSession(actor.userId, 1)).rejects.toThrow();
-    expect((await core.getMerchantSession(actor.userId, 2)).merchantId).toBe(merchantId);
+    await expect(core.getMerchantSession(actor.userId, before.sessionId)).rejects.toThrow();
+    expect((await core.getMerchantSession(actor.userId, session.sessionId)).merchantId).toBe(
+      merchantId,
+    );
   });
 
   it('смена пароля без нынешнего не проходит', async () => {

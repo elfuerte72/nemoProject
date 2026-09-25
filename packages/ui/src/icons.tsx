@@ -32,7 +32,9 @@ export type IconName =
   | 'plug'
   | 'book'
   | 'plus'
-  | 'pie';
+  | 'pie'
+  | 'history'
+  | 'shield';
 
 export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
   const common = {
@@ -194,6 +196,21 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
       return (
         <svg {...common}>
           <path d="M12 5v14M5 12h14" />
+        </svg>
+      );
+    case 'history':
+      // Циферблат со стрелкой назад: «что было» — изменения, прошлые входы.
+      return (
+        <svg {...common}>
+          <path d="M4 12a8 8 0 1 0 2.3-5.6" />
+          <path d="M4 4v3.5h3.5M12 8v4l2.5 2" />
+        </svg>
+      );
+    case 'shield':
+      return (
+        <svg {...common}>
+          <path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z" />
+          <path d="m9 12 2 2 4-4" />
         </svg>
       );
     case 'pie':

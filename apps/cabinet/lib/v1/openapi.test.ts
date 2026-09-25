@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { V1_ERRORS, V1_RESPONSE_HEADERS } from './reference';
 import { toApiRequest, toApiRequisites } from './views';
 
 /**
@@ -53,6 +54,7 @@ function appRoutes(): Map<string, Set<string>> {
 }
 
 interface Spec {
+  info: { description: string };
   paths: Record<string, Record<string, { responses: Record<string, unknown> }>>;
   components: { responses: Record<string, unknown> };
 }
@@ -166,5 +168,34 @@ describe('договор API', () => {
     }
 
     expect(missing).toEqual([]);
+  });
+
+  /*
+   * Код отказа — то, по чему разбирает ответ чужой код. Код, который
+   * адаптер отдаёт, а договор не называет, мерчант впервые увидит в
+   * проде; справка на странице «Документация» и договор обязаны
+   * называть одно и то же.
+   */
+  it('называет каждый код отказа адаптера — тот же набор, что справка', () => {
+    const named = [...spec.info.description.matchAll(/`([a-z_]+)`/g)]
+      .map((match) => match[1]!)
+      .filter((word) => word in V1_ERRORS);
+    expect(new Set(named)).toEqual(new Set(Object.keys(V1_ERRORS)));
+  });
+
+  it('называет заголовки ответа, которые описывает справка', () => {
+    for (const header of V1_RESPONSE_HEADERS) {
+      expect(spec.info.description, header.name).toContain(header.name);
+    }
+  });
+
+  it('у каждой операции описаны отказы по адресу и по пределу', () => {
+    for (const [path, methods] of Object.entries(spec.paths)) {
+      for (const [method, operation] of Object.entries(methods)) {
+        expect(Object.keys(operation.responses), `${method} ${path}`).toEqual(
+          expect.arrayContaining(['401', '403', '429']),
+        );
+      }
+    }
   });
 });

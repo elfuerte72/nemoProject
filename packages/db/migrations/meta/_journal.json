@@ -267,6 +267,13 @@
       "when": 1789984707992,
       "tag": "0037_request_api_key",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790257764423,
+      "tag": "0038_developer_security",
+      "breakpoints": true
     }
   ]
 }

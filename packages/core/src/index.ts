@@ -119,6 +119,19 @@ import {
   type MerchantBreakdownOptions,
 } from './merchant-breakdowns.js';
 import {
+  addApiAddress,
+  listApiAddresses,
+  removeApiAddress,
+} from './api-addresses.js';
+import {
+  endMerchantSession,
+  listMerchantSessions,
+  purgeMerchantSessions,
+  revokeMerchantSession,
+  revokeOtherMerchantSessions,
+  type SessionClient,
+} from './merchant-sessions.js';
+import {
   authenticateApiKey,
   issueApiKey,
   listApiKeys,
@@ -142,6 +155,7 @@ import {
 } from './webhooks.js';
 import {
   countApiRequestLog,
+  listApiCallerAddresses,
   listApiRequestLog,
   logApiRequest,
   purgeApiRequestLog,
@@ -347,10 +361,22 @@ export function createCore(ctx: CoreConfig) {
     verifyMerchantEmail: (token: string) => verifyMerchantEmail(ctx, token),
     resendMerchantEmailVerification: (actor: Actor) =>
       resendMerchantEmailVerification(ctx, actor),
-    beginMerchantLogin: (input: { email: string; password: string }) =>
+    beginMerchantLogin: (input: { email: string; password: string } & SessionClient) =>
       beginMerchantLogin(ctx, input),
-    getMerchantSession: (userId: string, sessionEpoch: number) =>
-      getMerchantSession(ctx, userId, sessionEpoch),
+    getMerchantSession: (userId: string, sessionId: string, client?: SessionClient) =>
+      getMerchantSession(ctx, userId, sessionId, client),
+    /*
+     * Сессии человека: список и отключение — вошедшим; выход — по куке,
+     * без исполнителя, как и вход; чистка — планировщиком.
+     */
+    listMerchantSessions: (actor: Actor) => listMerchantSessions(ctx, actor),
+    revokeMerchantSession: (actor: Actor, sessionId: string) =>
+      revokeMerchantSession(ctx, actor, sessionId),
+    revokeOtherMerchantSessions: (actor: Actor, keepSessionId: string) =>
+      revokeOtherMerchantSessions(ctx, actor, keepSessionId),
+    endMerchantSession: (userId: string, sessionId: string) =>
+      endMerchantSession(ctx, userId, sessionId),
+    purgeMerchantSessions: (olderThan: Date) => purgeMerchantSessions(ctx, olderThan),
     getMerchantProfile: (actor: Actor) => getMerchantProfile(ctx, actor),
     changeMerchantPassword: (
       actor: Actor,
@@ -428,6 +454,10 @@ export function createCore(ctx: CoreConfig) {
     authenticateApiKey: (secret: string) => authenticateApiKey(ctx, secret),
     setSignatureRequired: (actor: Actor, required: boolean) =>
       setSignatureRequired(ctx, actor, required),
+    listApiAddresses: (actor: Actor) => listApiAddresses(ctx, actor),
+    addApiAddress: (actor: Actor, input: { address: string; note: string }) =>
+      addApiAddress(ctx, actor, input),
+    removeApiAddress: (actor: Actor, id: string) => removeApiAddress(ctx, actor, id),
     logApiRequest: (input: ApiRequestLogInput) => logApiRequest(ctx, input),
     listApiRequestLog: (actor: Actor, filter?: ApiRequestLogFilter) =>
       listApiRequestLog(ctx, actor, filter),
@@ -436,6 +466,8 @@ export function createCore(ctx: CoreConfig) {
     summarizeApiRequestLog: (actor: Actor, period: { since: Date }) =>
       summarizeApiRequestLog(ctx, actor, period),
     purgeApiRequestLog: (olderThan: Date) => purgeApiRequestLog(ctx, olderThan),
+    listApiCallerAddresses: (actor: Actor, period: { since: Date }) =>
+      listApiCallerAddresses(ctx, actor, period),
 
     /*
      * Вебхуки (docs/adr/0018): точки заводит мерчант, строки доставок
@@ -820,7 +852,12 @@ export type {
   IssuedApiKey,
 } from './api-keys.js';
 export { API_KEY_PREFIXES, isApiKeyPrefix } from './api-keys.js';
+export type { ApiAddressView } from './api-addresses.js';
+export type { MerchantSessionView, SessionClient } from './merchant-sessions.js';
+export { looksLikeSessionId, MERCHANT_SESSION_TTL_MS } from './merchant-sessions.js';
+export { addressAllowed, MAX_API_ADDRESSES, normalizeApiAddress } from './api-addresses.js';
 export type {
+  ApiCallerAddress,
   ApiRequestLogEntry,
   ApiRequestLogFilter,
   ApiRequestLogInput,

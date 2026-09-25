@@ -8,37 +8,48 @@ import { issueToken, readToken, SessionError, viewerOrElse } from './session';
 /**
  * Подписанная кука кабинета.
  *
- * Проверяется здесь то, чего не видно глазами: подпись, срок и
- * поколение. Ошибка в любом из трёх выглядит как работающий вход — и
+ * Проверяется здесь то, чего не видно глазами: подпись, срок и номер
+ * сессии. Ошибка в любом из трёх выглядит как работающий вход — и
  * обнаруживается тем, что в кабинет зашёл не тот.
  */
 
 const secret = 'x'.repeat(32);
 const options = { secret };
+const USER = '3f1c2a9e-5b7d-4c0e-9a11-2f6d8e4b7c31';
+const SESSION = '7d3c1e0b-5d0a-4a8e-9f3e-2c1b7d4a9e10';
 
 describe('кука сессии', () => {
   it('переживает выдачу и чтение', () => {
-    const token = issueToken({ userId: 'u1', sessionEpoch: 3 }, options);
-    expect(readToken(token, options)).toEqual({ userId: 'u1', sessionEpoch: 3 });
+    const token = issueToken({ userId: USER, sessionId: SESSION }, options);
+    expect(readToken(token, options)).toEqual({ userId: USER, sessionId: SESSION });
   });
 
-  it('подделанная не читается: подпись покрывает всё, включая поколение', () => {
-    const token = issueToken({ userId: 'u1', sessionEpoch: 3 }, options);
-    const [id, epoch, expires, signature] = token.split('.');
+  it('подделанная не читается: подпись покрывает всё, включая номер сессии', () => {
+    const token = issueToken({ userId: USER, sessionId: SESSION }, options);
+    const [id, session, expires, signature] = token.split('.');
+    const other = '00000000-0000-4000-8000-000000000000';
 
-    expect(() => readToken(`m2.${epoch}.${expires}.${signature}`, options)).toThrow(SessionError);
-    expect(() => readToken(`${id}.9.${expires}.${signature}`, options)).toThrow(SessionError);
+    expect(() => readToken(`${other}.${session}.${expires}.${signature}`, options)).toThrow(
+      SessionError,
+    );
+    expect(() => readToken(`${id}.${other}.${expires}.${signature}`, options)).toThrow(SessionError);
     expect(() => readToken(token, { secret: 'y'.repeat(32) })).toThrow(SessionError);
   });
 
   it('истёкшая не читается', () => {
     const token = issueToken(
-      { userId: 'u1', sessionEpoch: 1 },
-      { ...options, ttlSeconds: 60, now: new Date('2026-09-06T10:00:00Z') },
+      { userId: USER, sessionId: SESSION },
+      { ...options, expiresAt: new Date('2026-09-06T10:01:00Z') },
     );
     expect(() =>
       readToken(token, { ...options, now: new Date('2026-09-06T10:01:01Z') }),
     ).toThrow(SessionError);
+  });
+
+  it('срок куки — срок записи о входе, до секунды', () => {
+    const expiresAt = new Date('2026-10-24T10:00:00.700Z');
+    const token = issueToken({ userId: USER, sessionId: SESSION }, { ...options, expiresAt });
+    expect(token.split('.')[2]).toBe(String(Math.floor(expiresAt.getTime() / 1000)));
   });
 
   it('пустая и обрезанная — тоже отказ, а не пустая сессия', () => {
@@ -48,21 +59,20 @@ describe('кука сессии', () => {
   });
 
   /*
-   * Поколение читается числом: строка в этом месте прошла бы сверку с
-   * поколением из базы только по случайности, а не пройдя её — выкинула
-   * бы из кабинета того, чья кука в порядке.
+   * До 24 сентября 2026 вторым полем куки было поколение, числом. Такая
+   * кука подписана тем же секретом и подпись проходит — но номер сессии
+   * из неё не выйдет, и в базу с ним ходить нельзя: запрос с «1» вместо
+   * uuid падал бы пятисотым. После выката каждый входит заново.
    */
-  it('поколение не число — отказ', () => {
-    const token = issueToken({ userId: 'u1', sessionEpoch: 1 }, options);
-    const [id, , expires] = token.split('.');
-    const forged = `${id}.первое.${expires}`;
+  it('кука прежнего вида — отказ «войдите заново», а не поход в базу', () => {
+    const forged = `${USER}.1.${Math.floor(Date.now() / 1000) + 3600}`;
     expect(() => readToken(`${forged}.${signOf(forged)}`, options)).toThrow(SessionError);
   });
 });
 
 function signOf(body: string): string {
   // Тот же способ подписи, что и в модуле: тест подделывает не подпись,
-  // а поколение — и должен пройти проверку подписи, чтобы дойти до него.
+  // а содержимое — и должен пройти проверку подписи, чтобы дойти до него.
   return createHmac('sha256', secret).update(body).digest('base64url');
 }
 

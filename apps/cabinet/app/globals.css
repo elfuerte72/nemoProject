@@ -223,8 +223,90 @@
 }
 
 /* Форма выпуска: поле и кнопка в ряд, на узком окне ряд складывается. */
-.form-row--issue {
+.form-row--issue,
+.form-row--address {
   align-items: flex-end;
+}
+
+/* Разрешённый адрес: адрес, назначение, когда добавлен, действие. */
+.table--addresses {
+  --cols: minmax(0, 1fr) minmax(0, 1fr) 150px minmax(0, 0.9fr);
+}
+
+/*
+ * Переключатель кнопкой: у «Счетов» он ссылка, здесь — действие без
+ * адреса, и кнопке надо снять собственное оформление, чтобы выглядеть
+ * так же.
+ */
+button.switch {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button.switch:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+button.switch[aria-busy='true'] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* Откуда звали за сутки: адрес, сколько раз и что с ним сделать. */
+.callers {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.callers__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.callers__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.callers__item {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+  font-size: 13px;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.callers__item:first-child {
+  border-top: none;
+}
+
+.callers .card__note {
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .callers__item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .callers__item > .muted {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 /* Пример запроса и тела ответов: моноширинно, с прокруткой внутри, без переноса страницы. */
@@ -250,11 +332,23 @@
   overflow-wrap: anywhere;
 }
 
+/* ── Сессии ──────────────────────────────────────────────────────── */
+
+/* Устройство, адрес, была активность, вход, действие. */
+.table--sessions {
+  --cols: minmax(0, 1.4fr) 150px 150px 150px minmax(0, 1fr);
+}
+
+.session__here {
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+
 /* ── Журнал вызовов ──────────────────────────────────────────────── */
 
 .table--calls {
-  --cols: 130px 64px minmax(0, 1.1fr) 64px 80px minmax(0, 0.9fr)
-    minmax(0, 1.3fr);
+  --cols: 130px 64px minmax(0, 1.8fr) 64px 80px minmax(0, 0.9fr)
+    minmax(0, 0.8fr);
 }
 
 /*
@@ -267,7 +361,221 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * Отказ под путём, как у Love&Pay: строка читается «куда звали — что
+ * ответили» без перевода взгляда через всю таблицу.
+ */
+.call__error {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--danger-text);
+}
+
+/* Отказанный вызов отмечен кромкой слева — видно при быстром просмотре. */
+.call--failed .call__row {
+  box-shadow: inset 2px 0 0 var(--danger-text);
+}
+
+.call__row {
+  cursor: pointer;
+}
+
+/* Путь — кнопка, открывающая карточку, но читается как текст строки. */
+.call__open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.call__open:hover {
+  text-decoration: underline;
+}
+
+.call__open:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.call__address {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Метод и поиск в ряд с табами, на узком окне — под ними. */
+.calls-search {
+  display: flex;
+  flex: 1 1 420px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* ── Карточка вызова ─────────────────────────────────────────────── */
+
+.call-card {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-card, 16px);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--lift), 0 24px 64px rgba(0, 0, 0, 0.28);
+}
+
+.call-card::backdrop {
+  background: rgba(10, 12, 24, 0.45);
+}
+
+.call-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px;
+}
+
+.call-card__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.call-card__error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-inner);
+  background: rgba(242, 104, 95, 0.1);
+  color: var(--danger-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.call-card__label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.call-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Изменения API ───────────────────────────────────────────────── */
+
+.changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.change {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.change__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.change__date {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+.change__items {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  /*
+   * Имя заголовка переносится целиком, а рвётся посреди, только если не
+   * влезает и одно в строку — на телефоне: «x-ratelimit-r / emaining»
+   * читается как два слова.
+   */
+  overflow-wrap: break-word;
+}
+
+.change__action {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-inner);
+  background: var(--surface-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.change__label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 /* ── Документация ────────────────────────────────────────────────── */
+
+/* Справочная таблица: код или заголовок слева, слова справа. */
+.reftable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.reftable th {
+  padding: 0 0 8px;
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.reftable td {
+  padding: 9px 12px 9px 0;
+  vertical-align: top;
+  border-top: 1px solid var(--hairline-soft);
+  overflow-wrap: anywhere;
+}
+
+.reftable td:first-child {
+  width: 38%;
+  font-size: 12.5px;
+}
+
+.reftable__action {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+}
+
 
 .op {
   border-radius: var(--radius-inner);

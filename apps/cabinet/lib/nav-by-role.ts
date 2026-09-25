@@ -24,6 +24,7 @@ const NEEDS: Readonly<Record<string, MerchantAbility>> = {
   '/webhooks': 'integration',
   '/webhooks/guide': 'integration',
   '/calls': 'integration',
+  '/changelog': 'integration',
   '/docs': 'integration',
   '/sandbox': 'integration',
   '/staff': 'staff',
@@ -38,7 +39,7 @@ export function navGroupsFor(role: MerchantUserRole): readonly NavGroup[] {
     }),
   }))
     // Заголовок ни над чем читается как поломка: у наблюдателя от
-    // «Интеграции» не остаётся ни одного пункта, и самой группы быть
+    // «Разработчикам» не остаётся ни одного пункта, и самой группы быть
     // не должно.
     .filter((group) => group.items.length > 0);
 }

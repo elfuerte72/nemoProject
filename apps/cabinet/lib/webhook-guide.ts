@@ -148,7 +148,8 @@ export const WEBHOOK_EVENT_EXAMPLES: readonly EventExample[] = webhookEvents.map
 }));
 
 export interface CodeExample {
-  readonly language: 'node' | 'python' | 'php';
+  /** Машинное имя языка: из него собираются идентификаторы вкладок. */
+  readonly language: 'node' | 'python' | 'php' | 'curl';
   readonly label: string;
   readonly code: string;
 }

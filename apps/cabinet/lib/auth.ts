@@ -1,5 +1,6 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import type { Actor, MerchantSession } from '@nemo/core';
+import { addressOf, UNKNOWN_ADDRESS } from '@/lib/attempts';
 import { getCore } from '@/lib/core';
 import { readToken, SESSION_COOKIE, sessionSecret, viewerOrElse } from '@/lib/session';
 
@@ -15,10 +16,11 @@ export interface MerchantViewer {
  * Кто выполняет запрос в кабинете.
  *
  * Две ступени: подписанная кука говорит, что вход состоялся и не истёк,
- * а обращение в базу — что поколение то же и человек всё ещё тот, за
- * кого себя выдаёт. Второе обязательно при каждом запросе: смена
- * пароля и закрытие доступа обрывают сессии немедленно, а не когда
- * истечёт выданная раньше кука. Роль читается там же и тем же
+ * а обращение в базу — что запись о входе жива (не отключена, того же
+ * поколения) и человек всё ещё тот, за кого себя выдаёт. Второе
+ * обязательно при каждом запросе: отключение сессии, смена пароля и
+ * закрытие доступа обрывают её немедленно, а не когда истечёт
+ * выданная раньше кука. Роль читается там же и тем же
  * запросом: понижённый до наблюдателя перестаёт подавать заявки сразу,
  * а не после перезахода.
  *
@@ -30,7 +32,12 @@ export async function requireViewer(): Promise<MerchantViewer> {
   const store = await cookies();
   const payload = readToken(store.get(SESSION_COOKIE)?.value, { secret: sessionSecret() });
 
-  const session = await getCore().getMerchantSession(payload.userId, payload.sessionEpoch);
+  // Адрес едет в запись о входе вместе с отметкой «была активность»:
+  // по нему в «Сессиях» видно, откуда сессией пользовались последний раз.
+  const address = addressOf({ headers: await headers() });
+  const session = await getCore().getMerchantSession(payload.userId, payload.sessionId, {
+    address: address === UNKNOWN_ADDRESS ? null : address,
+  });
   return {
     actor: {
       type: 'merchant',

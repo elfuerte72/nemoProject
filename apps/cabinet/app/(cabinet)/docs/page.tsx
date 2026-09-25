@@ -1,7 +1,9 @@
 import { Fragment, type ReactNode } from 'react';
+import Link from 'next/link';
 import { allowedHere } from '@/lib/access';
 import { loadApiDoc, type DocOperation } from '@/lib/openapi';
 import { viewer } from '@/lib/reads';
+import { V1_ERROR_CODES, V1_ERRORS, V1_RESPONSE_HEADERS } from '@/lib/v1/reference';
 import { DisabledBanner } from '@/app/ui/disabled-banner';
 import { NoAccess } from '@/app/ui/no-access';
 
@@ -14,6 +16,11 @@ export const dynamic = 'force-dynamic';
  * чужого домена на рабочем месте мерчанта закрыт чаще, чем кажется, а
  * договор невелик — девять операций. Тест сверяет файл с маршрутами,
  * поэтому страница не отстаёт от кода.
+ *
+ * Коды ошибок и заголовки ответа — таблицами, как у Love&Pay v2:
+ * разработчик приходит сюда с кодом из ответа и ищет его, а не читает
+ * абзацы. Таблицы — из `lib/v1/reference.ts`, и тест сверяет их с
+ * договором.
  */
 export default async function DocsPage() {
   const access = await allowedHere('/docs');
@@ -40,7 +47,71 @@ export default async function DocsPage() {
       <section className="card">
         <h2 className="card__title">Как устроено</h2>
         {paragraphs(doc.intro)}
+        <p className="op__text">
+          Пример запроса на Node.js, Python, PHP и curl — в разделе{' '}
+          <Link className="who__link" href="/keys">
+            «API»
+          </Link>
+          ; с включённой подписью он подписывает запрос. Что менялось в договоре — в{' '}
+          <Link className="who__link" href="/changelog">
+            «Изменениях API»
+          </Link>
+          .
+        </p>
       </section>
+
+      <div className="duo">
+        <section className="card">
+          <h2 className="card__title">Коды ошибок</h2>
+          <table className="reftable">
+            <thead>
+              <tr>
+                <th scope="col">Код</th>
+                <th scope="col">Что значит и что делать</th>
+              </tr>
+            </thead>
+            <tbody>
+              {V1_ERROR_CODES.map((code) => (
+                <tr key={code}>
+                  <td className="mono">
+                    {V1_ERRORS[code].status}
+                    <br />
+                    {code}
+                  </td>
+                  <td>
+                    {V1_ERRORS[code].meaning}
+                    <span className="reftable__action">{V1_ERRORS[code].action}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="card">
+          <h2 className="card__title">Заголовки ответа</h2>
+          <table className="reftable">
+            <thead>
+              <tr>
+                <th scope="col">Заголовок</th>
+                <th scope="col">Что в нём</th>
+              </tr>
+            </thead>
+            <tbody>
+              {V1_RESPONSE_HEADERS.map((header) => (
+                <tr key={header.name}>
+                  <td className="mono">{header.name}</td>
+                  <td>{header.meaning}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="card__note">
+            Остаток предела приходит в ответах, где ключ действует и адрес разрешён;
+            x-request-id — в каждом ответе API, даже на отказ без ключа.
+          </p>
+        </section>
+      </div>
 
       {doc.tags.map((tag) => (
         <section key={tag.name} className="section">
